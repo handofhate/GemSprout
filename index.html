@@ -1322,24 +1322,34 @@ async function pushToFirestore() {
   }
 }
 
-function subscribeToFirestore() {
+function subscribeToFirestore(onFirstLoad) {
   if (firestoreUnsub) firestoreUnsub();
+  let firstSnapshot = true;
   firestoreUnsub = db.doc(FAMILY_DOC).onSnapshot(snap => {
     if (snap.exists) {
       const incoming = snap.data();
-      // Only update if data changed to avoid re-render loops
       if (JSON.stringify(incoming) !== JSON.stringify(D)) {
         D = incoming;
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
-        S.syncStatus = 'ok';
-        updateSyncBar();
-        renderCurrentView();
       }
+    }
+    S.syncStatus = 'ok';
+    updateSyncBar();
+    if (firstSnapshot) {
+      firstSnapshot = false;
+      if (typeof onFirstLoad === 'function') onFirstLoad();
+    } else {
+      renderCurrentView();
     }
   }, err => {
     S.syncStatus = 'error';
     updateSyncBar();
     console.warn('Firestore listener error:', err);
+    // If first load fails fall back to whatever is in localStorage
+    if (firstSnapshot) {
+      firstSnapshot = false;
+      if (typeof onFirstLoad === 'function') onFirstLoad();
+    }
   });
 }
 
@@ -3588,10 +3598,18 @@ function grandmaActivityCard(a) {
    INIT — bootstrap the app on page load
 ═══════════════════════════════════════════════════════════════ */
 
-function init() {
-  loadData();
-  // Show UI immediately from localStorage, then sync Firestore in background
-  if (!D.setup || D.family.members.length === 0) {
+function showLoading() {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center';
+  el.innerHTML = `
+    <div style="font-size:3.5rem">⭐</div>
+    <div style="color:#fff;font-size:1.8rem;font-weight:800">Family Hub</div>
+    <div style="color:rgba(255,255,255,0.8);font-size:1rem">⏳ Loading...</div>`;
+}
+
+function routeAfterLoad() {
+  if (!D.setup || !D.family || D.family.members.length === 0) {
     S.setupMembers = [];
     S.setupStep    = 0;
     showScreen('screen-setup');
@@ -3599,12 +3617,29 @@ function init() {
   } else {
     showAppPin();
   }
-  // Anonymous sign-in keeps Firestore security rules satisfied
-  auth.signInAnonymously().then(() => {
-    subscribeToFirestore();
-  }).catch(err => {
-    console.warn('Firestore sync unavailable (anonymous auth failed):', err);
-  });
+}
+
+function init() {
+  loadData();
+  const hasLocalData = D.setup && D.family && D.family.members.length > 0;
+
+  if (hasLocalData) {
+    // Fast path: local data exists — show PIN immediately, sync in background
+    showAppPin();
+    auth.signInAnonymously()
+      .then(() => subscribeToFirestore())
+      .catch(err => console.warn('Firestore sync unavailable:', err));
+  } else {
+    // Slow path: no local data (fresh install or standalone PWA first launch)
+    // Wait for Firestore before routing so we don't wrongly show setup wizard
+    showLoading();
+    auth.signInAnonymously()
+      .then(() => subscribeToFirestore(routeAfterLoad))
+      .catch(err => {
+        console.warn('Firestore unavailable, falling back to local data:', err);
+        routeAfterLoad();
+      });
+  }
 }
 
 // Start on DOM ready
