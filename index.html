@@ -1108,15 +1108,8 @@
 </head>
 <body>
 
-  <!-- ═══════════ SCREEN: AUTH (Google Sign-In) ═══════════ -->
-  <div id="screen-auth" class="screen active" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;gap:20px;text-align:center">
-    <div style="font-size:4rem">⭐</div>
-    <div style="color:#fff;font-size:2rem;font-weight:800;text-shadow:0 2px 12px rgba(0,0,0,0.25)">Family Hub</div>
-    <div id="auth-msg" style="color:rgba(255,255,255,0.85);font-size:1rem">Sign in to continue</div>
-    <button id="signin-btn" onclick="signIn()" style="background:#fff;color:#333;border:none;padding:14px 32px;border-radius:50px;font-size:1.05rem;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.2)">
-      Sign in with Google
-    </button>
-  </div>
+  <!-- ═══════════ SCREEN: AUTH (unused — PIN gate replaces this) ═══════════ -->
+  <div id="screen-auth" class="screen"></div>
 
   <!-- ═══════════ SCREEN: HOME (Profile Picker) ═══════════ -->
   <div id="screen-home" class="screen">
@@ -1168,117 +1161,52 @@
 
   <script>
 /* ═══════════════════════════════════════════════════════════════
-   FIREBASE CONFIG + AUTH
+   FIREBASE CONFIG + PIN AUTH
 ═══════════════════════════════════════════════════════════════ */
 
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyAt-6FAoqpM5IR_XB6AnMcDUTRZwKdosr8",
-  authDomain:        "family-hub-9ad4d.web.app",
+  authDomain:        "family-hub-9ad4d.firebaseapp.com",
   projectId:         "family-hub-9ad4d",
   storageBucket:     "family-hub-9ad4d.firebasestorage.app",
   messagingSenderId: "280625694071",
   appId:             "1:280625694071:web:ecedf22458fd9214474d72",
 };
 
-const ALLOWED_EMAILS = [
-  'tylerlynncollum@gmail.com',
-  'zmcollum@gmail.com',
-  'gtcollum@gmail.com',
-  'agcollum@gmail.com',
-];
-
 const FAMILY_DOC = 'families/collum';
 
 firebase.initializeApp(FIREBASE_CONFIG);
 const auth = firebase.auth();
 const db   = firebase.firestore();
-const REDIRECT_ATTEMPT_KEY = 'familyHub.redirectAttemptAt';
 
-function readRedirectAttemptAt() {
-  try { return Number(localStorage.getItem(REDIRECT_ATTEMPT_KEY) || 0); }
-  catch (_) { return 0; }
+// ── APP-LEVEL PIN GATE ────────────────────────────────────────
+function showAppPin() {
+  if (!D.settings || !D.settings.parentPin) { renderHome(); return; }
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  S.pinMode   = 'app';
+  document.getElementById('pin-content').innerHTML = `
+    <div class="pin-avatar">⭐</div>
+    <div class="pin-title">Family Hub</div>
+    <div class="pin-sub">Enter parent PIN to continue</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>`;
 }
 
-function markRedirectAttempt() {
-  try { localStorage.setItem(REDIRECT_ATTEMPT_KEY, String(Date.now())); }
-  catch (_) {}
-}
-
-function clearRedirectAttempt() {
-  try { localStorage.removeItem(REDIRECT_ATTEMPT_KEY); }
-  catch (_) {}
-}
-
-function redirectToCanonicalHostIfNeeded() {
-  const host = (window.location.hostname || '').toLowerCase();
-  const path = window.location.pathname || '/';
-  const canonicalHost = (FIREBASE_CONFIG.authDomain || '').toLowerCase();
-  const isGithubProjectPath = host === 'handofhate.github.io' && path.toLowerCase().startsWith('/family-hub');
-
-  if (isGithubProjectPath && canonicalHost && host !== canonicalHost) {
-    const target = `https://${canonicalHost}/`;
-    window.location.replace(target);
-    return true;
-  }
-  return false;
-}
-
-function redirectTroubleshootingHint() {
-  try {
-    const appProtocol = window.location.protocol;
-    const appHost = window.location.hostname;
-    const authHost = (FIREBASE_CONFIG.authDomain || '').toLowerCase();
-    const sameHost = appHost && authHost && appHost.toLowerCase() === authHost;
-    const localhostLike = appHost === 'localhost' || appHost === '127.0.0.1';
-
-    if (appProtocol === 'file:') {
-      return 'This page is opened as a local file. Firebase Google sign-in requires an http(s) hosted URL.';
-    }
-    if (appProtocol !== 'https:' && !localhostLike) {
-      return 'This page is not on HTTPS. Use an HTTPS URL for Google/Firebase auth redirects.';
-    }
-    if (!sameHost && !authHost.endsWith('.firebaseapp.com')) {
-      return `Auth domain mismatch: app is ${appHost}, Firebase authDomain is ${authHost}. Set authDomain to the app domain and authorize https://${appHost}/__/auth/handler in Firebase Auth.`;
-    }
-    if (!sameHost && authHost.endsWith('.firebaseapp.com')) {
-      return `App domain (${appHost}) differs from authDomain (${authHost}). On Safari, redirect sign-in often fails unless authDomain uses the same app domain with /__/auth/handler configured.`;
-    }
-  } catch (_) {}
-  return 'Check Firebase redirect best-practice setup for your hosting domain.';
-}
-
-function signIn() {
-  const appHost = (window.location.hostname || '').toLowerCase();
-  const authHost = (FIREBASE_CONFIG.authDomain || '').toLowerCase();
-  if (authHost && appHost && appHost !== authHost) {
-    const targetUrl = `https://${authHost}/`;
-    document.getElementById('auth-msg').textContent =
-      `Redirecting to secure sign-in host (${authHost})...`;
-    window.location.href = targetUrl;
-    return;
-  }
-
-  const provider = new firebase.auth.GoogleAuthProvider();
-  markRedirectAttempt();
-  document.getElementById('auth-msg').textContent = 'Opening Google sign-in...';
-  document.getElementById('signin-btn').style.display = 'none';
-  auth.signInWithRedirect(provider).catch(err => {
-    clearRedirectAttempt();
-    document.getElementById('auth-msg').textContent =
-      err && err.message ? err.message : 'Sign-in failed. Please try again.';
-    document.getElementById('signin-btn').style.display = '';
-  });
-}
-
-function signOut() {
-  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
-  clearRedirectAttempt();
-  auth.signOut().then(() => {
-    D = {};
-    showScreen('screen-auth');
-    document.getElementById('auth-msg').textContent = 'Sign in to continue';
-    document.getElementById('signin-btn').style.display = '';
-  });
+// ── SWITCH USER (requires PIN) ────────────────────────────────
+function goHome() {
+  S.currentUser = null;
+  showAppPin();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1337,6 +1265,7 @@ let S = {            // UI state (not persisted)
   setupStep:     0,
   setupMembers:  [],   // unified non-parent members during setup
   pinBuffer:     '',
+  pinMode:       'app', // 'app' = gate to member picker | 'parent' = gate to parent view
   syncStatus:    'idle', // 'idle' | 'syncing' | 'ok' | 'error'
 };
 
@@ -1783,7 +1712,6 @@ function selectProfile(id) {
 function routeToView(member) {
   const mode = member.displayMode;
   if (member.role === 'parent') {
-    if (D.settings.parentPin) { renderPin(); return; }
     renderParentView();
   } else if (mode === 'elder' || member.role === 'viewer') {
     renderGrandmaView();
@@ -1813,7 +1741,7 @@ function renderPin() {
       `).join('')}
     </div>
     <div id="pin-error" class="pin-error hidden"></div>
-    <button class="btn btn-secondary mt-16" onclick="renderHome()">← Back</button>`;
+    <button class="btn btn-secondary mt-16" onclick="showAppPin()">← Back</button>`;
 }
 
 function pinKey(k) {
@@ -1830,6 +1758,8 @@ function pinKey(k) {
   if (S.pinBuffer.length === 4) {
     setTimeout(() => {
       if (S.pinBuffer === D.settings.parentPin) {
+        S.pinBuffer = '';
+        if (S.pinMode === 'app') { renderHome(); return; }
         renderParentView();
       } else {
         S.pinBuffer = '';
@@ -2206,7 +2136,7 @@ function renderKidHeader() {
   const pts = m.points || 0;
   document.getElementById('kid-header').innerHTML = `
     <div class="header-left">
-      <button class="btn-back" onclick="renderHome()">←</button>
+      <button class="btn-back" onclick="goHome()">←</button>
       <span class="header-avatar">${m.avatar||'🙂'}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
@@ -2728,7 +2658,7 @@ function renderParentHeader() {
   const pending = pendingApprovals().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
-      <button class="btn-back" onclick="renderHome()">←</button>
+      <button class="btn-back" onclick="goHome()">←</button>
       <span class="header-avatar">${m?.avatar||'🧑'}</span>
       <div>
         <div class="header-name">${esc(D.family.name)}</div>
@@ -3356,7 +3286,7 @@ function renderParentSettings() {
       </p>
       <div style="display:flex;gap:10px;align-items:center">
         <span style="font-size:0.9rem;color:var(--green);font-weight:600">✅ Active</span>
-        <button class="btn btn-secondary btn-sm" onclick="signOut()">Sign Out</button>
+        <button class="btn btn-secondary btn-sm" onclick="goHome()">Switch User</button>
       </div>
       ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
     </div>
@@ -3454,7 +3384,7 @@ function renderGrandmaHeader() {
   const m = S.currentUser;
   document.getElementById('grandma-header').innerHTML = `
     <div class="header-left">
-      <button class="btn-back" onclick="renderHome()">←</button>
+      <button class="btn-back" onclick="goHome()">←</button>
       <span class="header-avatar">${m?.avatar||'👵'}</span>
       <div>
         <div class="header-name">${esc(m?.name||'Grandma')}</div>
@@ -3658,52 +3588,22 @@ function grandmaActivityCard(a) {
    INIT — bootstrap the app on page load
 ═══════════════════════════════════════════════════════════════ */
 
-async function init() {
-  if (redirectToCanonicalHostIfNeeded()) return;
-
-  await auth.getRedirectResult().then(result => {
-    if (result && result.user) clearRedirectAttempt();
+function init() {
+  loadData();
+  // Show UI immediately from localStorage, then sync Firestore in background
+  if (!D.setup || D.family.members.length === 0) {
+    S.setupMembers = [];
+    S.setupStep    = 0;
+    showScreen('screen-setup');
+    renderSetupStep();
+  } else {
+    showAppPin();
+  }
+  // Anonymous sign-in keeps Firestore security rules satisfied
+  auth.signInAnonymously().then(() => {
+    subscribeToFirestore();
   }).catch(err => {
-    clearRedirectAttempt();
-    const isMissingState = err && err.code === 'auth/missing-initial-state';
-    document.getElementById('auth-msg').textContent = isMissingState
-      ? 'Sign-in could not complete on this Safari session. Reload and try again.'
-      : (err && err.message ? err.message : 'Sign-in failed. Please try again.');
-    document.getElementById('signin-btn').style.display = '';
-  });
-
-  auth.onAuthStateChanged(user => {
-    if (!user) {
-      showScreen('screen-auth');
-      const redirectedAt = readRedirectAttemptAt();
-      const recentRedirect = redirectedAt && (Date.now() - redirectedAt < 10 * 60 * 1000);
-      if (recentRedirect) {
-        clearRedirectAttempt();
-        document.getElementById('auth-msg').textContent =
-          `Google sign-in was interrupted before completion. ${redirectTroubleshootingHint()}`;
-      }
-      document.getElementById('signin-btn').style.display = '';
-      return;
-    }
-    clearRedirectAttempt();
-    if (!ALLOWED_EMAILS.includes(user.email)) {
-      document.getElementById('auth-msg').textContent =
-        `${user.email} is not authorized. Contact the family admin.`;
-      document.getElementById('signin-btn').style.display = 'none';
-      auth.signOut();
-      showScreen('screen-auth');
-      return;
-    }
-    loadData(); // load from localStorage cache first (instant)
-    subscribeToFirestore(); // then sync from Firestore in real time
-    if (!D.setup || D.family.members.length === 0) {
-      S.setupMembers = [];
-      S.setupStep    = 0;
-      showScreen('screen-setup');
-      renderSetupStep();
-    } else {
-      renderHome();
-    }
+    console.warn('Firestore sync unavailable (anonymous auth failed):', err);
   });
 }
 
