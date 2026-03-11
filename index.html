@@ -1195,7 +1195,13 @@ const db   = firebase.firestore();
 
 function signIn() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithRedirect(provider);
+  document.getElementById('auth-msg').textContent = 'Opening Google sign-in...';
+  document.getElementById('signin-btn').style.display = 'none';
+  auth.signInWithRedirect(provider).catch(err => {
+    document.getElementById('auth-msg').textContent =
+      err && err.message ? err.message : 'Sign-in failed. Please try again.';
+    document.getElementById('signin-btn').style.display = '';
+  });
 }
 
 function signOut() {
@@ -3586,6 +3592,14 @@ function grandmaActivityCard(a) {
 ═══════════════════════════════════════════════════════════════ */
 
 function init() {
+  auth.getRedirectResult().catch(err => {
+    const isMissingState = err && err.code === 'auth/missing-initial-state';
+    document.getElementById('auth-msg').textContent = isMissingState
+      ? 'Sign-in could not complete on this Safari session. Reload and try again.'
+      : (err && err.message ? err.message : 'Sign-in failed. Please try again.');
+    document.getElementById('signin-btn').style.display = '';
+  });
+
   auth.onAuthStateChanged(user => {
     if (!user) {
       showScreen('screen-auth');
