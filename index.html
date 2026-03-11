@@ -1,0 +1,3607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Family Hub">
+  <meta name="theme-color" content="#6C63FF">
+  <title>⭐ Family Hub</title>
+  <style>
+    /* ══════════════════════════════════════════
+       VARIABLES & RESET
+    ══════════════════════════════════════════ */
+    :root {
+      --purple:  #6C63FF;
+      --pink:    #FF6584;
+      --teal:    #43D9AD;
+      --yellow:  #FFD93D;
+      --green:   #6BCB77;
+      --orange:  #FF9A3C;
+      --blue:    #45B7D1;
+      --bg:      #F0F4FF;
+      --card:    #FFFFFF;
+      --text:    #2D3047;
+      --muted:   #6B7280;
+      --border:  #E5E7EB;
+      --shadow:  0 4px 20px rgba(0,0,0,0.08);
+      --radius:  16px;
+      --base-font: 16px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: var(--base-font); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ══════════════════════════════════════════
+       SCREEN SYSTEM
+    ══════════════════════════════════════════ */
+    .screen { display: none; min-height: 100vh; flex-direction: column; }
+    .screen.active { display: flex; }
+
+    /* ══════════════════════════════════════════
+       HOME SCREEN
+    ══════════════════════════════════════════ */
+    #screen-home {
+      background: linear-gradient(145deg, #667eea 0%, #764ba2 100%);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      gap: 0;
+    }
+    .home-logo { font-size: 3.5rem; margin-bottom: 8px; }
+    .home-title {
+      color: #fff;
+      font-size: 2.2rem;
+      font-weight: 800;
+      text-align: center;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      margin-bottom: 4px;
+    }
+    .home-family-name {
+      color: rgba(255,255,255,0.85);
+      font-size: 1.1rem;
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .profile-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 22px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      transition: transform 0.18s, box-shadow 0.18s;
+      position: relative;
+      overflow: hidden;
+    }
+    .profile-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 5px;
+      background: var(--member-color, var(--purple));
+    }
+    .profile-card:active { transform: scale(0.96); }
+    .profile-avatar { font-size: 3rem; line-height: 1; }
+    .profile-name   { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .profile-role   { font-size: 0.75rem; color: var(--muted); }
+    .profile-points {
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: var(--yellow);
+      padding: 2px 10px;
+      border-radius: 20px;
+      color: var(--text);
+    }
+    .home-setup-btn {
+      margin-top: 24px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-radius: 14px;
+      padding: 10px 22px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    /* ══════════════════════════════════════════
+       APP HEADER
+    ══════════════════════════════════════════ */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 10px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .header-left  { display: flex; align-items: center; gap: 10px; }
+    .header-avatar { font-size: 2rem; }
+    .header-name   { font-weight: 700; font-size: 1.05rem; }
+    .header-sub    { font-size: 0.75rem; color: var(--muted); }
+    .header-badge  {
+      background: var(--yellow);
+      color: var(--text);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    .header-badge.green { background: var(--green); color: #fff; }
+    .btn-back {
+      background: none; border: none;
+      font-size: 1.6rem; cursor: pointer; padding: 2px 6px;
+      color: var(--text);
+    }
+    .btn-icon-sm {
+      width: 36px; height: 36px;
+      border-radius: 10px; border: none;
+      cursor: pointer; font-size: 1rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: inherit; transition: opacity 0.15s;
+    }
+    .btn-icon-sm:active { opacity: 0.7; }
+    .btn-icon-edit   { background: #EDE9FE; color: var(--purple); }
+    .btn-icon-delete { background: #FEE2E2; color: #EF4444; }
+    .btn-icon-approve{ background: #DCFCE7; color: #16A34A; }
+    .btn-icon-reject { background: #FEE2E2; color: #EF4444; }
+
+    /* ══════════════════════════════════════════
+       BOTTOM NAV
+    ══════════════════════════════════════════ */
+    .nav-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #fff;
+      display: flex;
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      z-index: 100;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.07);
+    }
+    .nav-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 4px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      font-family: inherit;
+      color: var(--muted);
+      font-size: 0.68rem;
+      font-weight: 600;
+      gap: 2px;
+      transition: color 0.2s;
+      position: relative;
+    }
+    .nav-item.active { color: var(--purple); }
+    .nav-item.active .nav-icon { transform: translateY(-2px); }
+    .nav-icon { font-size: 1.5rem; transition: transform 0.2s; }
+    .nav-badge {
+      position: absolute;
+      top: 4px; right: calc(50% - 20px);
+      background: #EF4444; color: #fff;
+      border-radius: 999px;
+      font-size: 0.65rem; font-weight: 700;
+      padding: 1px 6px;
+      min-width: 18px; text-align: center;
+    }
+
+    /* ══════════════════════════════════════════
+       MAIN CONTENT AREA
+    ══════════════════════════════════════════ */
+    .main-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 16px 100px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ══════════════════════════════════════════
+       CARDS
+    ══════════════════════════════════════════ */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .section-title { font-size: 1rem; font-weight: 700; }
+
+    /* ══════════════════════════════════════════
+       BUTTONS
+    ══════════════════════════════════════════ */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.12s, box-shadow 0.12s;
+      text-decoration: none;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-full { width: 100%; }
+    .btn-sm { padding: 8px 16px; font-size: 0.85rem; border-radius: 10px; }
+    .btn-primary { background: var(--purple); color: #fff; box-shadow: 0 4px 14px rgba(108,99,255,0.35); }
+    .btn-secondary { background: #fff; color: var(--text); border: 2px solid var(--border); }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-danger  { background: #EF4444; color: #fff; }
+    .btn-warning { background: var(--yellow); color: var(--text); }
+    .btn-teal    { background: var(--teal); color: #fff; }
+    .btn-pink    { background: var(--pink); color: #fff; }
+    .btn-ghost   { background: transparent; color: var(--purple); border: 2px solid var(--purple); }
+
+    /* ══════════════════════════════════════════
+       FORM ELEMENTS
+    ══════════════════════════════════════════ */
+    .form-group { margin-bottom: 16px; }
+    .form-label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+    .form-label-hint { font-size: 0.75rem; color: var(--muted); font-weight: 400; margin-left: 6px; }
+    input[type=text], input[type=number], input[type=date], input[type=time],
+    input[type=password], select, textarea {
+      width: 100%;
+      padding: 11px 14px;
+      border: 2px solid var(--border);
+      border-radius: 11px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text);
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--purple);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    .input-row { display: flex; gap: 10px; }
+    .input-row > * { flex: 1; }
+
+    /* ══════════════════════════════════════════
+       AVATAR + COLOR PICKERS
+    ══════════════════════════════════════════ */
+    .avatar-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .avatar-opt {
+      font-size: 1.8rem;
+      text-align: center;
+      padding: 6px;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: #F9FAFB;
+    }
+    .avatar-opt.sel { border-color: var(--purple); background: #EDE9FE; }
+    .color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .color-swatch {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .color-swatch.sel { border-color: var(--text); transform: scale(1.2); }
+
+    /* ══════════════════════════════════════════
+       TOGGLE
+    ══════════════════════════════════════════ */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 14px;
+      background: #F9FAFB;
+      border-radius: 11px;
+      margin-bottom: 10px;
+    }
+    .toggle-label { font-weight: 600; font-size: 0.95rem; }
+    .toggle-sub   { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .toggle { position: relative; width: 48px; height: 26px; flex-shrink: 0; }
+    .toggle input { display: none; }
+    .toggle-track {
+      position: absolute; inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      top: 3px; left: 3px;
+      transition: transform 0.2s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .toggle input:checked ~ .toggle-track { background: var(--purple); }
+    .toggle input:checked ~ .toggle-track::after { transform: translateX(22px); }
+
+    /* ══════════════════════════════════════════
+       CHORE ITEMS
+    ══════════════════════════════════════════ */
+    .chore-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #F9FAFB;
+      margin-bottom: 9px;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .chore-item.done    { background: #F0FDF4; border-color: var(--green); }
+    .chore-item.pending { background: #FFFBEB; border-color: var(--yellow); }
+    .chore-icon  { font-size: 2rem; flex-shrink: 0; }
+    .chore-info  { flex: 1; min-width: 0; }
+    .chore-name  { font-weight: 600; font-size: 0.95rem; }
+    .chore-meta  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .chore-action { flex-shrink: 0; }
+    .chore-btn {
+      padding: 8px 14px;
+      border-radius: 9px;
+      border: none;
+      font-weight: 700;
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .chore-btn:active { opacity: 0.7; }
+    .chore-btn-do      { background: var(--purple); color: #fff; }
+    .chore-btn-pending { background: var(--yellow); color: var(--text); cursor: default; }
+    .chore-btn-done    { background: var(--green); color: #fff; cursor: default; }
+
+    /* ══════════════════════════════════════════
+       TINY (5yo) KID MODE
+    ══════════════════════════════════════════ */
+    .tiny-mode .chore-item {
+      flex-direction: column;
+      text-align: center;
+      padding: 18px 12px;
+      border-radius: 18px;
+      cursor: pointer;
+    }
+    .tiny-mode .chore-icon  { font-size: 4rem; }
+    .tiny-mode .chore-name  { font-size: 1.25rem; font-weight: 700; }
+    .tiny-mode .chore-meta  { font-size: 0.9rem; }
+    .tiny-mode .chore-btn   { padding: 12px 22px; font-size: 1.05rem; border-radius: 14px; }
+    .tiny-mode .card-title  { font-size: 1.3rem; }
+    .tiny-mode .prize-card  { padding: 22px 12px; }
+    .tiny-mode .prize-icon  { font-size: 3.5rem; }
+    .tiny-mode .prize-name  { font-size: 1rem; }
+    .tiny-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+    /* ══════════════════════════════════════════
+       GRANDMA MODE
+    ══════════════════════════════════════════ */
+    .grandma-mode {
+      font-size: 1.2rem;
+    }
+    .grandma-mode .card-title   { font-size: 1.4rem; }
+    .grandma-mode .chore-item   { padding: 18px; }
+    .grandma-mode .chore-name   { font-size: 1.15rem; }
+    .grandma-mode .nav-icon     { font-size: 1.9rem; }
+    .grandma-mode .nav-item     { font-size: 0.85rem; padding: 10px 4px; }
+    .grandma-mode .btn          { font-size: 1.1rem; padding: 14px 22px; }
+    .grandma-mode input, .grandma-mode select { font-size: 1.1rem; padding: 14px; }
+
+    /* ══════════════════════════════════════════
+       PROGRESS BARS
+    ══════════════════════════════════════════ */
+    .progress-wrap {
+      background: var(--border);
+      border-radius: 999px;
+      height: 12px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.6s ease;
+      background: linear-gradient(90deg, var(--purple), var(--pink));
+    }
+    .progress-fill.green  { background: var(--green); }
+    .progress-fill.yellow { background: var(--yellow); }
+    .progress-fill.teal   { background: var(--teal); }
+    .progress-fill.orange { background: var(--orange); }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* ══════════════════════════════════════════
+       STATS GRID
+    ══════════════════════════════════════════ */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 13px;
+      padding: 14px 10px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+    .stat-val   { font-size: 1.8rem; font-weight: 800; color: var(--purple); line-height: 1; }
+    .stat-label { font-size: 0.7rem; color: var(--muted); font-weight: 600; margin-top: 4px; }
+
+    /* ══════════════════════════════════════════
+       FAMILY GOAL CARD
+    ══════════════════════════════════════════ */
+    .goal-card {
+      background: linear-gradient(135deg, var(--purple), var(--pink));
+      color: #fff;
+      border-radius: 20px;
+      padding: 22px;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 30px rgba(108,99,255,0.28);
+    }
+    .goal-icon    { font-size: 3.5rem; text-align: center; display: block; margin-bottom: 6px; }
+    .goal-title   { font-size: 1.4rem; font-weight: 800; text-align: center; }
+    .goal-sub     { text-align: center; opacity: 0.85; font-size: 0.9rem; margin-bottom: 14px; }
+    .goal-bar-bg  { background: rgba(255,255,255,0.3); border-radius: 999px; height: 14px; overflow: hidden; }
+    .goal-bar-fill{ height: 100%; border-radius: 999px; background: var(--yellow); transition: width 0.6s; }
+    .goal-pts     { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.9rem; opacity: 0.9; }
+    .contrib-row  { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .contrib-avatar { font-size: 1.3rem; flex-shrink: 0; }
+    .contrib-name   { font-size: 0.85rem; font-weight: 600; width: 55px; flex-shrink: 0; }
+    .contrib-bar-bg { flex: 1; background: rgba(255,255,255,0.25); border-radius: 999px; height: 9px; overflow: hidden; }
+    .contrib-fill   { height: 100%; border-radius: 999px; background: rgba(255,255,255,0.8); }
+    .contrib-val    { font-size: 0.8rem; font-weight: 700; width: 36px; text-align: right; }
+
+    /* ══════════════════════════════════════════
+       PRIZE CARDS
+    ══════════════════════════════════════════ */
+    .prize-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .prize-card {
+      background: #fff;
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .prize-card.can-afford {
+      border-color: var(--purple);
+      background: #F5F3FF;
+    }
+    .prize-card.family-type { border-color: var(--teal); background: #F0FAFA; }
+    .prize-icon { font-size: 2.5rem; display: block; margin-bottom: 6px; }
+    .prize-name { font-weight: 700; font-size: 0.88rem; margin-bottom: 4px; }
+    .prize-cost {
+      display: inline-block;
+      background: var(--yellow);
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+    .prize-type-badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-top: 4px;
+    }
+    .prize-type-badge.family { background: #CCFBF1; color: #0D9488; }
+    .prize-type-badge.individual { background: #EDE9FE; color: var(--purple); }
+
+    /* ══════════════════════════════════════════
+       SAVINGS CARD
+    ══════════════════════════════════════════ */
+    .savings-card {
+      background: linear-gradient(135deg, #43D9AD, #0EA5E9);
+      color: #fff;
+      border-radius: 18px;
+      padding: 22px;
+      text-align: center;
+      box-shadow: 0 8px 28px rgba(67,217,173,0.28);
+      margin-bottom: 14px;
+    }
+    .savings-amount { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+    .savings-label  { opacity: 0.85; margin-bottom: 14px; font-size: 0.9rem; }
+
+    /* ══════════════════════════════════════════
+       BADGES
+    ══════════════════════════════════════════ */
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .badge-purple { background: #EDE9FE; color: var(--purple); }
+    .badge-green  { background: #DCFCE7; color: #16A34A; }
+    .badge-yellow { background: #FEF9C3; color: #CA8A04; }
+    .badge-red    { background: #FEE2E2; color: #DC2626; }
+    .badge-teal   { background: #CCFBF1; color: #0D9488; }
+
+    /* ══════════════════════════════════════════
+       HISTORY LIST
+    ══════════════════════════════════════════ */
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #F3F4F6;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-icon { font-size: 1.4rem; }
+    .history-info { flex: 1; }
+    .history-title { font-weight: 600; font-size: 0.9rem; }
+    .history-date  { font-size: 0.75rem; color: var(--muted); }
+    .history-pts   { font-weight: 700; font-size: 0.9rem; }
+    .history-pts.pos { color: var(--green); }
+    .history-pts.neg { color: #EF4444; }
+
+    /* ══════════════════════════════════════════
+       ACTIVITY ITEMS
+    ══════════════════════════════════════════ */
+    .activity-item {
+      display: flex;
+      gap: 12px;
+      padding: 13px;
+      background: #F9FAFB;
+      border-radius: 12px;
+      margin-bottom: 9px;
+      align-items: flex-start;
+    }
+    .activity-icon  { font-size: 1.9rem; flex-shrink: 0; }
+    .activity-info  { flex: 1; }
+    .activity-title { font-weight: 700; font-size: 0.95rem; }
+    .activity-meta  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .activity-who   { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+    .who-chip {
+      background: #EDE9FE;
+      color: var(--purple);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    /* ══════════════════════════════════════════
+       ADMIN CARDS (parent manage view)
+    ══════════════════════════════════════════ */
+    .admin-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px;
+      background: #fff;
+      border-radius: 13px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .admin-icon { font-size: 2rem; flex-shrink: 0; }
+    .admin-info { flex: 1; min-width: 0; }
+    .admin-name { font-weight: 700; font-size: 0.95rem; }
+    .admin-meta { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+    .admin-actions { display: flex; gap: 7px; flex-shrink: 0; }
+
+    /* Member rows */
+    .member-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 14px;
+      background: #F9FAFB;
+      border-radius: 12px;
+      margin-bottom: 9px;
+    }
+    .member-avatar { font-size: 2rem; }
+    .member-info   { flex: 1; }
+    .member-name   { font-weight: 700; }
+    .member-stats  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .member-pts    { font-weight: 800; font-size: 1.1rem; color: var(--purple); }
+
+    /* ══════════════════════════════════════════
+       MODAL
+    ══════════════════════════════════════════ */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 500;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 0 0 0;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 24px 24px 0 0;
+      padding: 6px 22px 30px;
+      width: 100%;
+      max-height: 92vh;
+      overflow-y: auto;
+      animation: slideUp 0.28s ease;
+    }
+    .modal-handle {
+      width: 42px; height: 4px;
+      background: var(--border);
+      border-radius: 999px;
+      margin: 10px auto 16px;
+    }
+    .modal-title { font-size: 1.2rem; font-weight: 800; margin-bottom: 18px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions .btn { flex: 1; }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+
+    /* ══════════════════════════════════════════
+       TABS (inside parent view)
+    ══════════════════════════════════════════ */
+    .tab-strip {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      margin-bottom: 18px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .tab-strip::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      padding: 7px 16px;
+      border-radius: 999px;
+      border: 2px solid var(--border);
+      background: #fff;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .tab-btn.active { background: var(--purple); color: #fff; border-color: var(--purple); }
+
+    /* ══════════════════════════════════════════
+       PIN SCREEN
+    ══════════════════════════════════════════ */
+    #screen-pin {
+      background: var(--bg);
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      gap: 0;
+    }
+    .pin-avatar { font-size: 4rem; margin-bottom: 10px; }
+    .pin-title  { font-size: 1.5rem; font-weight: 800; margin-bottom: 6px; }
+    .pin-sub    { color: var(--muted); margin-bottom: 28px; }
+    .pin-dots {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+    .pin-dot {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--purple);
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .pin-dot.filled { background: var(--purple); }
+    .pin-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      max-width: 250px;
+    }
+    .pin-key {
+      background: #fff;
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 1.4rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.12s;
+      text-align: center;
+    }
+    .pin-key:active { background: var(--purple); color: #fff; border-color: var(--purple); }
+    .pin-error { color: #EF4444; font-weight: 700; margin-top: 14px; font-size: 0.9rem; }
+
+    /* ══════════════════════════════════════════
+       SETUP SCREEN
+    ══════════════════════════════════════════ */
+    #screen-setup {
+      background: var(--bg);
+      align-items: center;
+    }
+    .setup-wrap {
+      width: 100%;
+      max-width: 480px;
+      padding: 0 20px 40px;
+    }
+    .setup-top {
+      text-align: center;
+      padding: 40px 0 28px;
+    }
+    .setup-emoji { font-size: 3rem; }
+    .setup-title { font-size: 1.8rem; font-weight: 800; margin-top: 8px; }
+    .setup-sub   { color: var(--muted); margin-top: 6px; }
+    .step-indicator {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: all 0.2s;
+    }
+    .step-dot.active { background: var(--purple); width: 22px; border-radius: 4px; }
+    .step-dot.done   { background: var(--purple); }
+    .setup-step { display: none; }
+    .setup-step.active { display: block; }
+    .kid-setup-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      border: 2px solid var(--border);
+    }
+    .kid-setup-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .chore-checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: #F9FAFB;
+      border-radius: 10px;
+      margin-bottom: 7px;
+      cursor: pointer;
+    }
+    .chore-checkbox-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--purple); cursor: pointer; }
+    .chore-checkbox-icon { font-size: 1.5rem; }
+    .chore-checkbox-label { flex: 1; font-weight: 600; font-size: 0.9rem; }
+    .chore-checkbox-pts   { font-size: 0.78rem; color: var(--muted); }
+
+    /* ══════════════════════════════════════════
+       CELEBRATION OVERLAY
+    ══════════════════════════════════════════ */
+    .celebration-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.25s;
+    }
+    .celebration-box {
+      background: #fff;
+      border-radius: 24px;
+      padding: 38px 32px;
+      text-align: center;
+      max-width: 300px;
+      width: 90%;
+      animation: bounceIn 0.35s;
+    }
+    .cel-icon    { font-size: 5rem; line-height: 1; }
+    .cel-title   { font-size: 1.7rem; font-weight: 800; margin: 14px 0 6px; }
+    .cel-sub     { color: var(--muted); margin-bottom: 20px; }
+    .cel-points  {
+      font-size: 2rem; font-weight: 800;
+      color: var(--purple);
+      background: #EDE9FE;
+      border-radius: 14px;
+      padding: 8px 20px;
+      display: inline-block;
+      margin-bottom: 20px;
+    }
+    @keyframes bounceIn {
+      0%   { transform: scale(0.5); opacity: 0; }
+      70%  { transform: scale(1.08); }
+      100% { transform: scale(1);   opacity: 1; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; } to { opacity: 1; }
+    }
+
+    /* ══════════════════════════════════════════
+       CONFETTI
+    ══════════════════════════════════════════ */
+    .confetti-wrap {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      overflow: hidden;
+    }
+    .confetti-piece {
+      position: absolute;
+      width: 9px; height: 9px;
+      border-radius: 2px;
+      animation: confettiFall linear forwards;
+    }
+    @keyframes confettiFall {
+      0%   { transform: translateY(-60px) rotate(0deg);    opacity: 1; }
+      100% { transform: translateY(110vh) rotate(720deg);  opacity: 0; }
+    }
+
+    /* Points burst float */
+    .pts-burst {
+      position: fixed;
+      font-size: 1.4rem;
+      font-weight: 900;
+      color: var(--yellow);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      pointer-events: none;
+      z-index: 998;
+      animation: ptsFloat 1.6s forwards;
+    }
+    @keyframes ptsFloat {
+      0%   { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-110px) scale(1.4); opacity: 0; }
+    }
+
+    /* ══════════════════════════════════════════
+       TOAST NOTIFICATION
+    ══════════════════════════════════════════ */
+    .toast {
+      position: fixed;
+      top: 76px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--text);
+      color: #fff;
+      padding: 11px 22px;
+      border-radius: 999px;
+      font-weight: 600;
+      z-index: 1000;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      animation: toastIn 0.25s, toastOut 0.3s 2.4s forwards;
+    }
+    @keyframes toastIn  { from { transform: translateX(-50%) translateY(-16px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+
+    /* ══════════════════════════════════════════
+       EMPTY STATE
+    ══════════════════════════════════════════ */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 2.8rem; margin-bottom: 10px; }
+    .empty-text { font-size: 0.95rem; }
+
+    /* ══════════════════════════════════════════
+       SYNC STATUS
+    ══════════════════════════════════════════ */
+    .sync-bar {
+      background: #EDE9FE;
+      color: var(--purple);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 6px 16px;
+      text-align: center;
+    }
+    .sync-bar.error { background: #FEE2E2; color: #DC2626; }
+    .sync-bar.ok    { background: #DCFCE7; color: #16A34A; }
+
+    /* ══════════════════════════════════════════
+       EMOJI ICON PICKER (for chores/prizes)
+    ══════════════════════════════════════════ */
+    .icon-picker {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      margin-top: 6px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .icon-opt {
+      font-size: 1.6rem;
+      text-align: center;
+      padding: 5px;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      background: #F9FAFB;
+      transition: all 0.12s;
+    }
+    .icon-opt.sel { border-color: var(--purple); background: #EDE9FE; }
+
+    /* ══════════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════════ */
+    @media (min-width: 600px) {
+      .profile-grid { grid-template-columns: repeat(4, 1fr); max-width: 520px; }
+    }
+    @media (min-width: 768px) {
+      .main-content     { max-width: 680px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+      .app-header       { max-width: 680px; margin: 0 auto; left: 50%; transform: translateX(-50%); width: 100%; position: sticky; }
+      .nav-bar          { max-width: 680px; left: 50%; transform: translateX(-50%); border-radius: 20px 20px 0 0; }
+      .prize-grid       { grid-template-columns: repeat(3, 1fr); }
+      .stats-grid       { grid-template-columns: repeat(4, 1fr); }
+      .pin-grid         { max-width: 280px; }
+    }
+    @media (min-width: 1024px) {
+      .main-content { max-width: 760px; }
+      .app-header   { max-width: 760px; }
+      .nav-bar      { max-width: 760px; }
+    }
+
+    /* ══════════════════════════════════════════
+       UTILITIES
+    ══════════════════════════════════════════ */
+    .text-center { text-align: center; }
+    .text-muted  { color: var(--muted); }
+    .mt-8  { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-0  { margin-bottom: 0; }
+    .flex  { display: flex; }
+    .flex-center { display: flex; align-items: center; justify-content: center; }
+    .gap-8 { gap: 8px; }
+    .gap-10{ gap: 10px; }
+    .fw-700{ font-weight: 700; }
+    .hidden{ display: none !important; }
+    .divider { height: 1px; background: var(--border); margin: 14px 0; }
+    .color-accent { color: var(--purple); }
+
+    /* ══════════════════════════════════════════
+       BIRTHDAY STYLES
+    ══════════════════════════════════════════ */
+    @keyframes bdayGlow {
+      0%,100% { box-shadow: 0 0 0 0 rgba(255,215,0,0); }
+      50%      { box-shadow: 0 0 0 8px rgba(255,215,0,0.5); }
+    }
+    .bday-card {
+      animation: bdayGlow 1.8s infinite;
+      background: linear-gradient(135deg,#fff9c4,#ffe0f0,#e8f5ff) !important;
+    }
+    .bday-card::before { background: linear-gradient(90deg,#FFD700,#FF69B4,#87CEEB) !important; }
+    .bday-banner {
+      background: linear-gradient(90deg,#FFD700,#FF69B4,#87CEEB,#FFD700);
+      background-size: 200% 100%;
+      animation: bdayScroll 3s linear infinite;
+      color: #fff;
+      font-weight: 800;
+      text-align: center;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    @keyframes bdayScroll {
+      0%   { background-position: 0% 0%; }
+      100% { background-position: 200% 0%; }
+    }
+    .bday-badge {
+      position: absolute;
+      top: -6px; right: -6px;
+      font-size: 1.4rem;
+      animation: bdayBounce 1s infinite alternate;
+    }
+    @keyframes bdayBounce {
+      from { transform: scale(1) rotate(-10deg); }
+      to   { transform: scale(1.2) rotate(10deg); }
+    }
+    .display-mode-row {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .mode-opt {
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 4px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 700;
+      transition: all 0.15s;
+      background: #F9FAFB;
+    }
+    .mode-opt.sel { border-color: var(--purple); background: #EDE9FE; color: var(--purple); }
+    .mode-opt-icon { font-size: 1.4rem; display: block; margin-bottom: 3px; }
+
+    /* Star shimmer for tiny mode */
+    @keyframes starShimmer {
+      0%, 100% { transform: scale(1) rotate(0deg); }
+      50%       { transform: scale(1.2) rotate(10deg); }
+    }
+    .star-shimmer { animation: starShimmer 1.5s infinite; display: inline-block; }
+
+    /* Pulse for pending items that need attention */
+    @keyframes pulseBorder {
+      0%, 100% { border-color: var(--yellow); }
+      50%       { border-color: var(--orange); box-shadow: 0 0 0 4px rgba(255,154,60,0.2); }
+    }
+    .pulse { animation: pulseBorder 2s infinite; }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════ SCREEN: HOME (Profile Picker) ═══════════ -->
+  <div id="screen-home" class="screen">
+    <div id="home-content"></div>
+  </div>
+
+  <!-- ═══════════ SCREEN: SETUP WIZARD ═══════════ -->
+  <div id="screen-setup" class="screen">
+    <div class="setup-wrap" id="setup-content"></div>
+  </div>
+
+  <!-- ═══════════ SCREEN: PIN ENTRY ═══════════ -->
+  <div id="screen-pin" class="screen">
+    <div id="pin-content"></div>
+  </div>
+
+  <!-- ═══════════ SCREEN: KID VIEW ═══════════ -->
+  <div id="screen-kid" class="screen">
+    <div id="kid-sync-bar"></div>
+    <header class="app-header" id="kid-header"></header>
+    <main  class="main-content" id="kid-content"></main>
+    <nav   class="nav-bar"      id="kid-nav"></nav>
+  </div>
+
+  <!-- ═══════════ SCREEN: PARENT VIEW ═══════════ -->
+  <div id="screen-parent" class="screen">
+    <div id="parent-sync-bar"></div>
+    <header class="app-header" id="parent-header"></header>
+    <main  class="main-content" id="parent-content"></main>
+    <nav   class="nav-bar"      id="parent-nav"></nav>
+  </div>
+
+  <!-- ═══════════ SCREEN: GRANDMA VIEW ═══════════ -->
+  <div id="screen-grandma" class="screen">
+    <header class="app-header" id="grandma-header"></header>
+    <main  class="main-content grandma-mode" id="grandma-content"></main>
+    <nav   class="nav-bar grandma-mode"      id="grandma-nav"></nav>
+  </div>
+
+  <!-- ═══════════ OVERLAYS ═══════════ -->
+  <div id="modal-root"></div>
+  <div id="celebration-root"></div>
+  <div id="confetti-root"></div>
+
+  <script>
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 2 — DATA LAYER · UTILITIES · ANIMATIONS · CLOUD SYNC
+═══════════════════════════════════════════════════════════════ */
+
+'use strict';
+
+// ── CONSTANTS ────────────────────────────────────────────────
+const AVATARS = ['🦁','🐯','🐻','🐼','🦊','🐰','🐸','🐨','🦄','🐱',
+                 '🦋','🌟','🚀','⚡','🌈','🦖','🐉','🌺','🎈','🏆',
+                 '👑','🎀','🎸','🦸','🧙','🐬','🦅','🐝','🌵','🎃'];
+
+const COLORS  = ['#6C63FF','#FF6584','#43D9AD','#FFD93D','#6BCB77',
+                 '#FF9A3C','#4ECDC4','#45B7D1','#E91E63','#9C27B0'];
+
+const CHORE_ICONS = ['🛏️','🧸','🦷','🍽️','🧹','🐾','📚','👕','🗑️',
+                     '🌿','🧴','🚿','🪣','🍳','🛒','📦','🧺','🪴',
+                     '🐕','🐱','🧽','🪥','🚽','🌙','🏠','🪞','🧲','🎒','🖼️','🛁'];
+
+const PRIZE_ICONS = ['🎬','📱','🌙','🍕','🎁','🍦','🎮','🎡','🛍️',
+                     '🎪','🎠','🏖️','🎭','🎨','🎳','🍿','🎵','🧁',
+                     '🧩','🪁','🚲','🏊','🎤','🎯','⛸️','🏄'];
+
+const DEFAULT_CHORES = [
+  { title:'Make My Bed',       icon:'🛏️', points:10, frequency:'daily'  },
+  { title:'Brush Teeth',       icon:'🦷', points:5,  frequency:'daily'  },
+  { title:'Put Toys Away',     icon:'🧸', points:10, frequency:'daily'  },
+  { title:'Set the Table',     icon:'🍽️', points:10, frequency:'daily'  },
+  { title:'Clear the Table',   icon:'🧹', points:10, frequency:'daily'  },
+  { title:'Take Out Trash',    icon:'🗑️', points:15, frequency:'weekly' },
+  { title:'Do Homework',       icon:'📚', points:20, frequency:'daily'  },
+  { title:'Put Clothes Away',  icon:'👕', points:10, frequency:'daily'  },
+  { title:'Feed the Pet',      icon:'🐾', points:15, frequency:'daily'  },
+  { title:'Help with Laundry', icon:'🧺', points:20, frequency:'weekly' },
+];
+
+const DEFAULT_PRIZES = [
+  { title:'Movie Night Pick',        icon:'🎬', cost:100, type:'individual' },
+  { title:'30 min Extra Screen Time',icon:'📱', cost:50,  type:'individual' },
+  { title:'Stay Up 30 min Late',     icon:'🌙', cost:75,  type:'individual' },
+  { title:'Choose Dinner',           icon:'🍕', cost:75,  type:'individual' },
+  { title:'Small Toy or Book',       icon:'🎁', cost:250, type:'individual' },
+  { title:'Family Ice Cream Night',  icon:'🍦', cost:400, type:'family'     },
+  { title:'Family Movie Night',      icon:'🎬', cost:500, type:'family'     },
+  { title:'Bowling Night',           icon:'🎳', cost:800, type:'family'     },
+];
+
+// ── APP STATE ────────────────────────────────────────────────
+let D = {};          // the live data object (mirrors localStorage)
+let S = {            // UI state (not persisted)
+  currentUser:   null,
+  kidTab:        'chores',
+  parentTab:     'home',
+  grandmaTab:    'today',
+  setupStep:     0,
+  setupMembers:  [],   // unified non-parent members during setup
+  pinBuffer:     '',
+  syncStatus:    'idle', // 'idle' | 'syncing' | 'ok' | 'error'
+};
+
+// ── DEFAULT DATA ──────────────────────────────────────────────
+function defaultData() {
+  return {
+    v: 2,
+    setup: false,
+    settings: {
+      parentPin:       '',
+      autoApprove:     false,
+      pointsPerDollar: 10,
+      currency:        '$',
+      cloudBinId:      '',
+      cloudApiKey:     '',
+      lastSync:        null,
+    },
+    family: { name:'Our Family', members:[] },
+    chores:     [],
+    prizes:     [],
+    familyGoal: null,
+    activities: [],
+    history:    [],
+  };
+}
+
+// ── LOCALSTORAGE ──────────────────────────────────────────────
+const LS_KEY = 'familyHub_v2';
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    D = raw ? JSON.parse(raw) : defaultData();
+  } catch(e) {
+    D = defaultData();
+  }
+}
+
+function saveData() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+  if (D.settings.cloudBinId) syncToCloud();
+}
+
+// ── UTILITIES ─────────────────────────────────────────────────
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+
+function today() {
+  return new Date().toISOString().slice(0,10); // YYYY-MM-DD
+}
+
+function weekStart() {
+  const d   = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day===0 ? -6 : 1);
+  return new Date(d.setDate(diff)).toISOString().slice(0,10);
+}
+
+function fmtDate(str) {
+  if (!str) return '';
+  const [y,m,d] = str.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[+m-1]} ${+d}`;
+}
+
+function fmtPts(n) { return n === 1 ? '1 pt' : `${n} pts`; }
+
+function getMember(id) {
+  return D.family.members.find(m => m.id === id);
+}
+
+function isTiny(member) {
+  if (!member) return false;
+  if (member.displayMode) return member.displayMode === 'tiny';
+  // legacy fallback
+  return member.mode === 'tiny' || (member.age != null && member.age <= 6);
+}
+
+function isBirthday(member) {
+  if (!member || !member.birthday) return false;
+  const [mm, dd] = member.birthday.split('-').map(Number);
+  const now = new Date();
+  return now.getMonth() + 1 === mm && now.getDate() === dd;
+}
+
+function pendingApprovals() {
+  const arr = [];
+  for (const chore of D.chores) {
+    for (const [mid, comp] of Object.entries(chore.completions || {})) {
+      if (comp && comp.status === 'pending' && comp.date === today()) {
+        arr.push({ chore, memberId: mid });
+      }
+    }
+  }
+  return arr;
+}
+
+// ── CHORE STATUS ──────────────────────────────────────────────
+function choreStatus(chore, memberId) {
+  const comp = chore.completions?.[memberId];
+  if (!comp) return 'none';
+  const t = today();
+  const w = weekStart();
+  if (chore.frequency === 'daily') {
+    return comp.date === t ? comp.status : 'none';
+  } else if (chore.frequency === 'weekly') {
+    return comp.date >= w && comp.date <= t ? comp.status : 'none';
+  } else { // once
+    return comp.status || 'none';
+  }
+}
+
+function doCompleteChore(choreId, memberId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return null;
+  if (choreStatus(chore, memberId) !== 'none') return null;
+  if (!chore.completions) chore.completions = {};
+
+  if (D.settings.autoApprove) {
+    chore.completions[memberId] = { status:'done', date:today() };
+    member.points      = (member.points      || 0) + chore.points;
+    member.totalEarned = (member.totalEarned || 0) + chore.points;
+    addHistory('chore', memberId, chore.title, chore.points);
+    saveData();
+    return { approved:true, points:chore.points };
+  } else {
+    chore.completions[memberId] = { status:'pending', date:today() };
+    saveData();
+    return { approved:false };
+  }
+}
+
+function doApproveChore(choreId, memberId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+  chore.completions[memberId] = { status:'done', date:today() };
+  member.points      = (member.points      || 0) + chore.points;
+  member.totalEarned = (member.totalEarned || 0) + chore.points;
+  addHistory('chore', memberId, chore.title, chore.points);
+  saveData();
+}
+
+function doRejectChore(choreId, memberId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore) return;
+  if (chore.completions) delete chore.completions[memberId];
+  saveData();
+}
+
+// ── PRIZE REDEMPTION ──────────────────────────────────────────
+function doRedeemPrize(prizeId, memberId) {
+  const prize  = D.prizes.find(p => p.id === prizeId);
+  const member = getMember(memberId);
+  if (!prize || !member) return false;
+
+  if (prize.type === 'family') {
+    const total = Object.values(D.familyGoal?.contributions || {}).reduce((a,b)=>a+b,0);
+    if (total < prize.cost) return false;
+    D.familyGoal.contributions = {};
+    addHistory('prize', memberId, prize.title, -prize.cost);
+  } else {
+    if ((member.points||0) < prize.cost) return false;
+    member.points -= prize.cost;
+    addHistory('prize', memberId, prize.title, -prize.cost);
+  }
+
+  if (!prize.redemptions) prize.redemptions = [];
+  prize.redemptions.push({ memberId, date:today() });
+  saveData();
+  return true;
+}
+
+// ── FAMILY GOAL ───────────────────────────────────────────────
+function doContributeToGoal(memberId, points) {
+  const member = getMember(memberId);
+  if (!member || !D.familyGoal) return false;
+  if ((member.points||0) < points || points <= 0) return false;
+  member.points -= points;
+  D.familyGoal.contributions = D.familyGoal.contributions || {};
+  D.familyGoal.contributions[memberId] = (D.familyGoal.contributions[memberId]||0) + points;
+  addHistory('goal', memberId, D.familyGoal.title, -points);
+  saveData();
+  return true;
+}
+
+function goalTotal() {
+  if (!D.familyGoal) return 0;
+  return Object.values(D.familyGoal.contributions||{}).reduce((a,b)=>a+b,0);
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+function addHistory(type, memberId, title, points) {
+  D.history.unshift({ id:genId(), type, memberId, title, points, date:today() });
+  if (D.history.length > 80) D.history.pop();
+}
+
+// ── TEXT-TO-SPEECH ────────────────────────────────────────────
+let ttsEnabled = true;
+
+function speak(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt  = new SpeechSynthesisUtterance(text);
+  utt.rate   = 0.88;
+  utt.pitch  = 1.15;
+  utt.volume = 1;
+  window.speechSynthesis.speak(utt);
+}
+
+// ── TOAST ─────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2900);
+}
+
+// ── POINTS BURST ──────────────────────────────────────────────
+function pointsBurst(x, y, points) {
+  const el = document.createElement('div');
+  el.className = 'pts-burst';
+  el.textContent = `+${points} ⭐`;
+  el.style.left = `${x}px`;
+  el.style.top  = `${y}px`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1700);
+}
+
+// ── CONFETTI ──────────────────────────────────────────────────
+const CONFETTI_COLORS = ['#6C63FF','#FF6584','#FFD93D','#43D9AD','#6BCB77','#FF9A3C','#fff'];
+
+function launchConfetti(count = 60) {
+  const wrap = document.getElementById('confetti-root');
+  wrap.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    const color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+    piece.style.cssText = `
+      left:${Math.random()*100}%;
+      top:0;
+      background:${color};
+      width:${6+Math.random()*8}px;
+      height:${6+Math.random()*8}px;
+      border-radius:${Math.random()>0.5 ? '50%':'2px'};
+      animation-duration:${2+Math.random()*2}s;
+      animation-delay:${Math.random()*0.8}s;
+    `;
+    wrap.appendChild(piece);
+  }
+  setTimeout(() => { wrap.innerHTML = ''; }, 4000);
+}
+
+// ── CELEBRATION OVERLAY ───────────────────────────────────────
+function showCelebration({ icon='⭐', title='Great job!', sub='', points=null, tts=null, onClose=null }) {
+  const root = document.getElementById('celebration-root');
+  const ptsHtml = points !== null ? `<div class="cel-points">+${points} ⭐</div>` : '';
+
+  root.innerHTML = `
+    <div class="celebration-overlay" id="cel-overlay">
+      <div class="celebration-box">
+        <div class="cel-icon">${icon}</div>
+        <div class="cel-title">${title}</div>
+        ${sub ? `<div class="cel-sub">${sub}</div>` : ''}
+        ${ptsHtml}
+        <button class="btn btn-primary btn-full" onclick="closeCelebration()">Yay! 🎉</button>
+      </div>
+    </div>`;
+
+  launchConfetti();
+  if (tts) speak(tts);
+
+  window._celebOnClose = onClose;
+}
+
+function closeCelebration() {
+  document.getElementById('celebration-root').innerHTML = '';
+  if (typeof window._celebOnClose === 'function') {
+    window._celebOnClose();
+    window._celebOnClose = null;
+  }
+}
+
+// ── MODAL ─────────────────────────────────────────────────────
+function showModal(html) {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBg(event)">
+      <div class="modal">
+        <div class="modal-handle"></div>
+        ${html}
+      </div>
+    </div>`;
+}
+
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+
+function closeModalIfBg(e) {
+  if (e.target.id === 'modal-overlay') closeModal();
+}
+
+// ── SCREEN NAVIGATION ─────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── CLOUD SYNC (JSONbin.io) ───────────────────────────────────
+let syncTimer = null;
+
+async function syncToCloud() {
+  if (!D.settings.cloudBinId) return;
+  S.syncStatus = 'syncing';
+  updateSyncBar();
+  try {
+    const headers = { 'Content-Type':'application/json' };
+    if (D.settings.cloudApiKey) headers['X-Access-Key'] = D.settings.cloudApiKey;
+    headers['X-Bin-Versioning'] = 'false';
+
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${D.settings.cloudBinId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(D),
+    });
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    D.settings.lastSync = new Date().toISOString();
+    localStorage.setItem(LS_KEY, JSON.stringify(D));
+    S.syncStatus = 'ok';
+  } catch(e) {
+    S.syncStatus = 'error';
+    console.warn('Cloud sync error:', e);
+  }
+  updateSyncBar();
+}
+
+async function syncFromCloud() {
+  if (!D.settings.cloudBinId) return;
+  S.syncStatus = 'syncing';
+  updateSyncBar();
+  try {
+    const headers = {};
+    if (D.settings.cloudApiKey) headers['X-Access-Key'] = D.settings.cloudApiKey;
+
+    const res  = await fetch(`https://api.jsonbin.io/v3/b/${D.settings.cloudBinId}/latest`, { headers });
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const json = await res.json();
+    if (json.record) {
+      D = json.record;
+      localStorage.setItem(LS_KEY, JSON.stringify(D));
+      S.syncStatus = 'ok';
+      renderCurrentView();
+    }
+  } catch(e) {
+    S.syncStatus = 'error';
+    console.warn('Cloud fetch error:', e);
+  }
+  updateSyncBar();
+}
+
+function updateSyncBar() {
+  ['kid-sync-bar','parent-sync-bar'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!D.settings.cloudBinId) { el.innerHTML=''; return; }
+    if (S.syncStatus==='syncing') { el.className='sync-bar'; el.textContent='☁️ Syncing...'; }
+    else if (S.syncStatus==='ok')  { el.className='sync-bar ok'; el.textContent='☁️ Synced'; setTimeout(()=>{el.innerHTML=''},3000); }
+    else if (S.syncStatus==='error'){ el.className='sync-bar error'; el.textContent='⚠️ Sync failed — check connection'; }
+    else { el.innerHTML=''; }
+  });
+}
+
+function startSyncPoller() {
+  if (syncTimer) clearInterval(syncTimer);
+  if (D.settings.cloudBinId) {
+    syncTimer = setInterval(syncFromCloud, 45000); // poll every 45s
+  }
+}
+
+// ── RE-RENDER CURRENT VIEW ────────────────────────────────────
+// Called after cloud sync updates D; re-renders whichever view is active
+function renderCurrentView() {
+  if (!S.currentUser) return;
+  const u = S.currentUser;
+  if (u.role === 'parent')  renderParentView();
+  else if (u.role === 'viewer') renderGrandmaView();
+  else renderKidView();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 3 — HOME SCREEN + SETUP WIZARD
+═══════════════════════════════════════════════════════════════ */
+
+// ── HOME SCREEN ───────────────────────────────────────────────
+function renderHome() {
+  showScreen('screen-home');
+  const members = D.family.members;
+  const cards = members.map(m => {
+    const bday    = isBirthday(m);
+    const mode    = m.displayMode || (m.role === 'viewer' ? 'elder' : 'regular');
+    const modeLabel = m.role === 'parent' ? 'Parent'
+                    : mode === 'elder'    ? 'Elder'
+                    : mode === 'tiny'     ? 'Little Kid'
+                    : 'Kid';
+    const ptsLabel = m.role === 'parent' ? '⚙️ Admin'
+                   : mode === 'elder'    ? '👁️ View'
+                   : `⭐ ${m.points||0} pts`;
+    return `
+      <button class="profile-card${bday?' bday-card':''}" style="--member-color:${m.color||'#6C63FF'};position:relative"
+              onclick="selectProfile('${m.id}')">
+        ${bday ? `<span class="bday-badge">🎂</span>` : ''}
+        <span class="profile-avatar">${m.avatar||'🙂'}</span>
+        <span class="profile-name">${esc(m.name)}</span>
+        <span class="profile-role">${modeLabel}</span>
+        <span class="profile-points">${ptsLabel}</span>
+      </button>`;
+  }).join('');
+  const anyBday = members.some(m => m.role !== 'parent' && isBirthday(m));
+  const bdayBanner = anyBday
+    ? `<div class="bday-banner">🎂 It's a birthday today! 🎉</div>` : '';
+
+  document.getElementById('home-content').innerHTML = `
+    <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100vh;display:flex;flex-direction:column">
+      <div class="home-logo">⭐</div>
+      <div class="home-title">Family Hub</div>
+      <div class="home-family-name">${esc(D.family.name)}</div>
+      <div class="profile-grid">${cards}</div>
+      <button class="home-setup-btn" onclick="goSetup()">⚙️ Edit Family</button>
+    </div>`;
+
+  // Inline — since we're modifying a child of the screen, re-render properly:
+  const root = document.getElementById('screen-home');
+  root.innerHTML = `
+    ${bdayBanner}
+    <div class="home-logo" style="color:#fff;font-size:3.5rem;margin-top:20px">⭐</div>
+    <div class="home-title">Family Hub</div>
+    <div class="home-family-name">${esc(D.family.name)}</div>
+    <div class="profile-grid" style="max-width:420px;width:100%;padding:0 24px">${cards}</div>
+    <button class="home-setup-btn mt-12" onclick="goSetup()">⚙️ Edit Family</button>
+    <div style="height:24px"></div>`;
+}
+
+function selectProfile(id) {
+  const member = getMember(id);
+  if (!member) return;
+
+  // Birthday check — trigger before entering any view
+  if (isBirthday(member)) {
+    S.currentUser = member;
+    launchConfetti(80);
+    showCelebration({
+      icon:  '🎂',
+      title: `Happy Birthday, ${member.name}!`,
+      sub:   '🎉 Have an amazing day! 🎉',
+      tts:   `Happy Birthday ${member.name}! Wishing you the most wonderful day!`,
+      onClose: () => routeToView(member),
+    });
+    return;
+  }
+
+  S.currentUser = member;
+  routeToView(member);
+}
+
+function routeToView(member) {
+  const mode = member.displayMode;
+  if (member.role === 'parent') {
+    if (D.settings.parentPin) { renderPin(); return; }
+    renderParentView();
+  } else if (mode === 'elder' || member.role === 'viewer') {
+    renderGrandmaView();
+  } else {
+    renderKidView(); // handles both 'tiny' and 'regular'
+  }
+}
+
+// ── PIN SCREEN ────────────────────────────────────────────────
+function renderPin() {
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  const m = S.currentUser;
+  document.getElementById('pin-content').innerHTML = `
+    <div class="pin-avatar">${m.avatar||'👤'}</div>
+    <div class="pin-title">Welcome back, ${esc(m.name)}!</div>
+    <div class="pin-sub">Enter your PIN</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>
+    <button class="btn btn-secondary mt-16" onclick="renderHome()">← Back</button>`;
+}
+
+function pinKey(k) {
+  if (k === '⌫') {
+    S.pinBuffer = S.pinBuffer.slice(0,-1);
+  } else if (S.pinBuffer.length < 4) {
+    S.pinBuffer += k;
+  }
+  // Update dots
+  for (let i=0;i<4;i++) {
+    const dot = document.getElementById('pd'+i);
+    if (dot) dot.classList.toggle('filled', i < S.pinBuffer.length);
+  }
+  if (S.pinBuffer.length === 4) {
+    setTimeout(() => {
+      if (S.pinBuffer === D.settings.parentPin) {
+        renderParentView();
+      } else {
+        S.pinBuffer = '';
+        for (let i=0;i<4;i++) { const d=document.getElementById('pd'+i); if(d) d.classList.remove('filled'); }
+        const err = document.getElementById('pin-error');
+        if (err) { err.textContent='Incorrect PIN, try again'; err.classList.remove('hidden'); }
+      }
+    }, 200);
+  }
+}
+
+// ── SETUP WIZARD ──────────────────────────────────────────────
+const SETUP_STEPS = ['welcome','members','chores','prizes','sync','done'];
+
+function goSetup() {
+  S.setupStep    = 0;
+  // All non-parent members in one unified list
+  S.setupMembers = D.family.members
+    .filter(m => m.role !== 'parent')
+    .map(m => ({...m}));
+  showScreen('screen-setup');
+  renderSetupStep();
+}
+
+function renderSetupStep() {
+  const step  = S.setupStep;
+  const total = SETUP_STEPS.length;
+  const dots  = SETUP_STEPS.map((_,i) =>
+    `<div class="step-dot ${i===step?'active':i<step?'done':''}"></div>`
+  ).join('');
+
+  let content = '';
+  switch(SETUP_STEPS[step]) {
+
+    case 'welcome': content = `
+      <div class="setup-top">
+        <div class="setup-emoji">🏠</div>
+        <div class="setup-title">${D.setup ? 'Edit Family' : 'Welcome!'}</div>
+        <div class="setup-sub">${D.setup ? 'Update your family settings.' : "Let's set up your Family Hub in just a few steps."}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Family name</label>
+        <input type="text" id="setup-family-name" placeholder="The Smiths" value="${esc(D.family.name||'')}">
+      </div>
+      <button class="btn btn-primary btn-full" onclick="setupNext()">Let's go →</button>`;
+      break;
+
+    case 'members': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji">👨‍👩‍👧‍👦</div>
+        <div class="setup-title">Family Members</div>
+        <div class="setup-sub">Add anyone who will use the app — kids, elders, anyone!</div>
+      </div>
+      <div id="members-list">${S.setupMembers.map((m,i)=>memberSetupCard(m,i)).join('')}</div>
+      <button class="btn btn-secondary btn-full mt-8" onclick="addMemberCard()" style="margin-bottom:14px">+ Add a family member</button>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'chores': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji">📋</div>
+        <div class="setup-title">Starter Chores</div>
+        <div class="setup-sub">Pick some to add. You can edit everything later.</div>
+      </div>
+      <div id="chore-checks">
+        ${DEFAULT_CHORES.map((c,i) => `
+          <label class="chore-checkbox-row">
+            <input type="checkbox" id="sc${i}" ${D.setup&&D.chores.find(x=>x.title===c.title)?'checked':!D.setup?'checked':''}>
+            <span class="chore-checkbox-icon">${c.icon}</span>
+            <span class="chore-checkbox-label">${c.title}</span>
+            <span class="chore-checkbox-pts">${fmtPts(c.points)} · ${c.frequency}</span>
+          </label>`).join('')}
+      </div>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'prizes': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji">🎁</div>
+        <div class="setup-title">Prize Shop</div>
+        <div class="setup-sub">Choose prizes kids can earn. Add your own later!</div>
+      </div>
+      <div id="prize-checks">
+        ${DEFAULT_PRIZES.map((p,i) => `
+          <label class="chore-checkbox-row">
+            <input type="checkbox" id="sp${i}" ${D.setup&&D.prizes.find(x=>x.title===p.title)?'checked':!D.setup?'checked':''}>
+            <span class="chore-checkbox-icon">${p.icon}</span>
+            <span class="chore-checkbox-label">${p.title}</span>
+            <span class="chore-checkbox-pts">${p.cost} pts · ${p.type}</span>
+          </label>`).join('')}
+      </div>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'sync': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji">☁️</div>
+        <div class="setup-title">Family Sync</div>
+        <div class="setup-sub">Keep all devices (iPads, phones, PC) in sync automatically.</div>
+      </div>
+      <div class="card" style="background:#F5F3FF;border:2px solid var(--purple);margin-bottom:14px">
+        <div class="card-title">🔗 How sync works</div>
+        <p style="font-size:0.88rem;line-height:1.6;color:var(--muted)">
+          1. Create a free account at <strong>jsonbin.io</strong><br>
+          2. Click <em>New Bin</em>, paste <code>{}</code>, save it<br>
+          3. Copy the Bin ID from the URL<br>
+          4. Paste it below — all devices will stay in sync!
+        </p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Bin ID <span class="form-label-hint">(optional — skip to use local only)</span></label>
+        <input type="text" id="setup-bin-id" placeholder="e.g. 64abc123def456..." value="${esc(D.settings.cloudBinId||'')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">API Key <span class="form-label-hint">(optional, for private bins)</span></label>
+        <input type="password" id="setup-api-key" placeholder="$2b$10$..." value="${esc(D.settings.cloudApiKey||'')}">
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Auto-approve chores</div>
+          <div class="toggle-sub">Kids earn points instantly without parent approval</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setup-auto-approve" ${D.settings.autoApprove?'checked':''}>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Parent PIN <span class="form-label-hint">(leave blank = no PIN)</span></label>
+        <input type="password" id="setup-pin" maxlength="4" placeholder="4 digits" value="${esc(D.settings.parentPin||'')}">
+      </div>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Finish! 🎉</button>
+      </div>`;
+      break;
+
+    case 'done': content = `
+      <div style="text-align:center;padding:40px 20px">
+        <div style="font-size:5rem">🎉</div>
+        <div class="setup-title mt-12">You're all set!</div>
+        <div class="setup-sub mt-8" style="margin-bottom:28px">Your Family Hub is ready. Have fun!</div>
+        <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go! →</button>
+      </div>`;
+      break;
+  }
+
+  document.getElementById('setup-content').innerHTML = `
+    <div class="step-indicator" style="padding-top:16px">${dots}</div>
+    <div class="setup-step active">${content}</div>`;
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function memberSetupCard(mem, i) {
+  const avatarOpts = AVATARS.slice(0,24).map(a =>
+    `<div class="avatar-opt${a===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','${a}',true)">${a}</div>`
+  ).join('');
+  const colorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c===mem.color?' sel':''}" style="background:${c}" onclick="setMemberField(${i},'color','${c}',true)"></div>`
+  ).join('');
+
+  const dm = mem.displayMode || 'regular';
+  const modes = [
+    { id:'tiny',    icon:'🐣', label:'Little Kid',  sub:'Big icons + voice' },
+    { id:'regular', icon:'🧒', label:'Big Kid',     sub:'Standard view' },
+    { id:'elder',   icon:'👵', label:'Elder',       sub:'Large text, simple' },
+  ];
+  const modeOpts = modes.map(m =>
+    `<div class="mode-opt${dm===m.id?' sel':''}" onclick="setMemberField(${i},'displayMode','${m.id}',true)">
+      <span class="mode-opt-icon">${m.icon}</span>${m.label}<br>
+      <span style="font-size:0.68rem;opacity:0.7">${m.sub}</span>
+    </div>`
+  ).join('');
+
+  // Birthday dropdowns
+  const [bdMm, bdDd] = (mem.birthday||'').split('-');
+  const monthSel = `<select id="bday-m-${i}" onchange="setMemberBday(${i})">
+    <option value="">Month</option>
+    ${MONTHS.map((mn,idx)=>`<option value="${String(idx+1).padStart(2,'0')}" ${bdMm===String(idx+1).padStart(2,'0')?'selected':''}>${mn}</option>`).join('')}
+  </select>`;
+  const daySel = `<select id="bday-d-${i}" onchange="setMemberBday(${i})">
+    <option value="">Day</option>
+    ${Array.from({length:31},(_,n)=>n+1).map(d=>`<option value="${String(d).padStart(2,'0')}" ${bdDd===String(d).padStart(2,'0')?'selected':''}>${d}</option>`).join('')}
+  </select>`;
+
+  return `
+    <div class="kid-setup-card" id="member-card-${i}">
+      <div class="kid-setup-card-header">
+        <span style="font-size:1.5rem;font-weight:700">${mem.avatar||'🙂'} Member ${i+1}</span>
+        <button class="btn-icon-sm btn-icon-delete" onclick="removeMemberCard(${i})">✕</button>
+      </div>
+      <div class="input-row">
+        <div class="form-group mb-0">
+          <label class="form-label">Name</label>
+          <input type="text" id="mname-${i}" placeholder="Name" value="${esc(mem.name||'')}">
+        </div>
+        <div class="form-group mb-0" style="flex:0 0 80px">
+          <label class="form-label">Age <span class="form-label-hint">opt.</span></label>
+          <input type="number" id="mage-${i}" min="1" max="110" placeholder="Age" value="${mem.age||''}">
+        </div>
+      </div>
+      <div class="form-group mt-8">
+        <label class="form-label">🎂 Birthday <span class="form-label-hint">for surprise animations!</span></label>
+        <div class="input-row">${monthSel}${daySel}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Display Mode</label>
+        <div class="display-mode-row">${modeOpts}</div>
+      </div>
+      <div class="form-group mt-8">
+        <label class="form-label">Avatar</label>
+        <div class="avatar-grid">${avatarOpts}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-row">${colorSwatches}</div>
+      </div>
+    </div>`;
+}
+
+// Unified member card helpers
+function addMemberCard() {
+  const defaults = ['🦁','🐯','🐻','🐼','👵','🌸'];
+  const i = S.setupMembers.length;
+  S.setupMembers.push({
+    id: genId(), name:'', age:null,
+    avatar: defaults[i % defaults.length],
+    color:  COLORS[i % COLORS.length],
+    displayMode: 'regular', role:'kid',
+    points:0, savings:0, totalEarned:0, birthday:'',
+  });
+  renderSetupStep();
+}
+
+function removeMemberCard(i) { S.setupMembers.splice(i,1); renderSetupStep(); }
+
+function setMemberField(i, field, value, rerender=false) {
+  if (S.setupMembers[i]) S.setupMembers[i][field] = value;
+  if (rerender) renderSetupStep();
+}
+
+function setMemberBday(i) {
+  const mm = document.getElementById(`bday-m-${i}`)?.value;
+  const dd = document.getElementById(`bday-d-${i}`)?.value;
+  if (S.setupMembers[i]) S.setupMembers[i].birthday = (mm && dd) ? `${mm}-${dd}` : '';
+}
+
+function setupNext() {
+  const stepName = SETUP_STEPS[S.setupStep];
+
+  if (stepName === 'welcome') {
+    const name = document.getElementById('setup-family-name')?.value.trim();
+    if (!name) { toast('Please enter a family name'); return; }
+    D.family.name = name;
+  }
+
+  if (stepName === 'members') {
+    // Flush any still-pending form values before validating
+    S.setupMembers.forEach((m,i) => {
+      const ni = document.getElementById(`mname-${i}`);
+      const ai = document.getElementById(`mage-${i}`);
+      if (ni) m.name = ni.value.trim();
+      if (ai) m.age  = parseInt(ai.value)||null;
+      setMemberBday(i); // flush birthday selects
+    });
+    if (S.setupMembers.length === 0) { toast('Add at least one family member'); return; }
+    if (S.setupMembers.some(m=>!m.name)) { toast('Every member needs a name'); return; }
+  }
+
+  if (stepName === 'chores') {
+    const kidMembers = S.setupMembers.filter(m=>m.displayMode!=='elder');
+    DEFAULT_CHORES.forEach((c,i) => {
+      const cb = document.getElementById('sc'+i);
+      if (cb && cb.checked && !D.chores.find(x=>x.title===c.title)) {
+        D.chores.push({
+          id: genId(),
+          title: c.title,
+          icon:  c.icon,
+          points: c.points,
+          frequency: c.frequency,
+          assignedTo: kidMembers.map(k=>k.id),
+          completions: {},
+          description: '',
+        });
+      }
+    });
+  }
+
+  if (stepName === 'prizes') {
+    DEFAULT_PRIZES.forEach((p,i) => {
+      const cb = document.getElementById('sp'+i);
+      if (cb && cb.checked && !D.prizes.find(x=>x.title===p.title)) {
+        D.prizes.push({ id:genId(), title:p.title, icon:p.icon, cost:p.cost, type:p.type, redemptions:[] });
+      }
+    });
+  }
+
+  if (stepName === 'sync') {
+    const binEl  = document.getElementById('setup-bin-id');
+    const keyEl  = document.getElementById('setup-api-key');
+    const autoEl = document.getElementById('setup-auto-approve');
+    const pinEl  = document.getElementById('setup-pin');
+    if (binEl)  D.settings.cloudBinId    = binEl.value.trim();
+    if (keyEl)  D.settings.cloudApiKey   = keyEl.value.trim();
+    if (autoEl) D.settings.autoApprove   = autoEl.checked;
+    if (pinEl)  D.settings.parentPin     = pinEl.value.trim();
+  }
+
+  S.setupStep++;
+  if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
+  renderSetupStep();
+}
+
+function setupBack() {
+  if (S.setupStep > 0) { S.setupStep--; renderSetupStep(); }
+}
+
+function finishSetup() {
+  const parent = D.family.members.find(m=>m.role==='parent') ||
+                 { id:genId(), name:'Parent', avatar:'🧑', color:'#6C63FF', role:'parent', points:0, savings:0, totalEarned:0 };
+
+  // Derive role from displayMode, preserve existing points/savings
+  const mergedMembers = S.setupMembers.map(m => {
+    const existing = D.family.members.find(x=>x.id===m.id) || {};
+    const role = m.displayMode === 'elder' ? 'viewer' : 'kid';
+    return { ...existing, ...m, role };
+  });
+
+  D.family.members = [parent, ...mergedMembers];
+
+  // Assign orphaned chores to all non-elder members
+  const kidIds = mergedMembers.filter(m=>m.role==='kid').map(m=>m.id);
+  D.chores.forEach(c => {
+    if (!c.assignedTo || c.assignedTo.length === 0) c.assignedTo = kidIds;
+  });
+
+  D.setup = true;
+  saveData();
+  startSyncPoller();
+  renderHome();
+}
+
+// ── HTML ESCAPE ───────────────────────────────────────────────
+function esc(str) {
+  return String(str||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 4 — KID VIEWS  (8yo normal · 5yo tiny + TTS)
+═══════════════════════════════════════════════════════════════ */
+
+// ── MAIN KID VIEW ENTRY ───────────────────────────────────────
+function renderKidView() {
+  const m = S.currentUser;
+  if (!m) return;
+  const tiny = isTiny(m);
+
+  showScreen('screen-kid');
+  if (tiny) {
+    document.getElementById('kid-content').className = 'main-content tiny-mode';
+    ttsEnabled = true; // always on for tiny kids
+    if ('speechSynthesis' in window) speak(`Hi ${m.name}! Let's see your chores!`);
+  } else {
+    document.getElementById('kid-content').className = 'main-content';
+  }
+
+  renderKidHeader();
+  renderKidNav();
+  renderKidTab();
+}
+
+function renderKidHeader() {
+  const m = S.currentUser;
+  if (!m) return;
+  const pts = m.points || 0;
+  document.getElementById('kid-header').innerHTML = `
+    <div class="header-left">
+      <button class="btn-back" onclick="renderHome()">←</button>
+      <span class="header-avatar">${m.avatar||'🙂'}</span>
+      <div>
+        <div class="header-name">Hi, ${esc(m.name)}!</div>
+        <div class="header-sub">${todayDisplay()}</div>
+      </div>
+    </div>
+    <div class="header-badge">⭐ ${pts}</div>`;
+}
+
+function renderKidNav() {
+  const m    = S.currentUser;
+  const tiny = isTiny(m);
+  const tabs = tiny
+    ? [['chores','📋','Chores'],['shop','🎁','Prizes'],['goal','🎯','Goal']]
+    : [['chores','📋','Chores'],['points','⭐','Points'],['shop','🛍️','Shop'],['goal','🎯','Goal']];
+
+  document.getElementById('kid-nav').innerHTML = tabs.map(([id,icon,label]) => `
+    <button class="nav-item${S.kidTab===id?' active':''}" onclick="switchKidTab('${id}')">
+      <span class="nav-icon">${icon}</span>${label}
+    </button>`).join('');
+}
+
+function switchKidTab(tab) {
+  S.kidTab = tab;
+  renderKidNav();
+  renderKidTab();
+}
+
+function renderKidTab() {
+  switch(S.kidTab) {
+    case 'chores': renderKidChores(); break;
+    case 'points': renderKidPoints(); break;
+    case 'shop':   renderKidShop();   break;
+    case 'goal':   renderKidGoal();   break;
+  }
+}
+
+// ── CHORES TAB ────────────────────────────────────────────────
+function renderKidChores() {
+  const m    = S.currentUser;
+  const tiny = isTiny(m);
+  const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+
+  if (myChores.length === 0) {
+    document.getElementById('kid-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🎉</div>
+        <div class="empty-text">No chores assigned yet! Ask a parent.</div>
+      </div>`;
+    return;
+  }
+
+  const done    = myChores.filter(c => choreStatus(c,m.id)==='done');
+  const pending = myChores.filter(c => choreStatus(c,m.id)==='pending');
+  const todo    = myChores.filter(c => choreStatus(c,m.id)==='none');
+
+  const totalPts = myChores.reduce((s,c)=>s+c.points,0);
+  const earnedPts= done.reduce((s,c)=>s+c.points,0);
+  const pct      = totalPts>0 ? Math.round(earnedPts/totalPts*100) : 0;
+
+  let html = `
+    <div class="card" style="background:linear-gradient(135deg,${m.color||'#6C63FF'},${m.color||'#6C63FF'}dd);color:#fff;border-radius:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <div style="font-size:1.6rem;font-weight:800">${done.length} / ${myChores.length}</div>
+          <div style="opacity:0.85;font-size:0.85rem">chores done today</div>
+        </div>
+        <div style="font-size:${tiny?'3rem':'2rem'}">${pct===100?'🏆':m.avatar||'⭐'}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.3);border-radius:999px;height:10px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;border-radius:999px;background:#FFD93D;transition:width 0.5s"></div>
+      </div>
+      <div style="font-size:0.8rem;opacity:0.85;margin-top:6px;text-align:right">+${earnedPts} pts earned today</div>
+    </div>`;
+
+  // Todo chores
+  if (todo.length > 0) {
+    html += `<div class="card-title">📋 To Do</div>`;
+    if (tiny) {
+      html += `<div class="tiny-grid">`;
+      todo.forEach(c => { html += tinyChoreCard(c, m, 'none'); });
+      html += `</div>`;
+    } else {
+      todo.forEach(c => { html += normalChoreCard(c, m, 'none'); });
+    }
+  }
+
+  // Pending
+  if (pending.length > 0) {
+    html += `<div class="card-title mt-12">⏳ Waiting for Approval</div>`;
+    pending.forEach(c => { html += tiny ? tinyChoreCard(c,m,'pending') : normalChoreCard(c,m,'pending'); });
+  }
+
+  // Done
+  if (done.length > 0) {
+    html += `<div class="card-title mt-12">✅ Done Today</div>`;
+    done.forEach(c => { html += tiny ? tinyChoreCard(c,m,'done') : normalChoreCard(c,m,'done'); });
+  }
+
+  document.getElementById('kid-content').innerHTML = html;
+}
+
+function normalChoreCard(chore, member, status) {
+  let btnHtml = '';
+  if (status==='none') {
+    btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)">Done! ✓</button>`;
+  } else if (status==='pending') {
+    btnHtml = `<span class="chore-btn chore-btn-pending">⏳ Pending</span>`;
+  } else {
+    btnHtml = `<span class="chore-btn chore-btn-done">✅ Done</span>`;
+  }
+  return `
+    <div class="chore-item ${status}">
+      <span class="chore-icon">${chore.icon}</span>
+      <div class="chore-info">
+        <div class="chore-name">${esc(chore.title)}</div>
+        <div class="chore-meta">${fmtPts(chore.points)} · ${chore.frequency}</div>
+      </div>
+      <div class="chore-action">${btnHtml}</div>
+    </div>`;
+}
+
+function tinyChoreCard(chore, member, status) {
+  const tts = `${chore.title}. Worth ${chore.points} stars!`;
+  let btnHtml = '';
+  if (status==='none') {
+    btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)" style="font-size:1.2rem;padding:14px 20px">✓ Done!</button>`;
+  } else if (status==='pending') {
+    btnHtml = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">⏳ Waiting...</span>`;
+  } else {
+    btnHtml = `<span class="chore-btn chore-btn-done" style="font-size:1rem">⭐ Done!</span>`;
+  }
+  return `
+    <div class="chore-item ${status}" onclick="speak('${tts.replace(/'/g,"\\'")}')">
+      <span class="chore-icon" style="font-size:4rem">${chore.icon}</span>
+      <div class="chore-name" style="font-size:1.2rem">${esc(chore.title)}</div>
+      <div class="chore-meta">⭐ ${chore.points} stars</div>
+      ${btnHtml}
+    </div>`;
+}
+
+function kidCompleteChore(choreId, evt) {
+  evt && evt.stopPropagation();
+  const m = S.currentUser;
+  if (!m) return;
+  const result = doCompleteChore(choreId, m.id);
+  if (!result) return;
+
+  const chore = D.chores.find(c=>c.id===choreId);
+  if (!result.approved) {
+    toast('Chore submitted! Waiting for parent approval ⏳');
+    if (isTiny(m)) speak('All done! Waiting for Mom or Dad to check!');
+  } else {
+    // Show celebration
+    const tiny = isTiny(m);
+    if (tiny) {
+      showCelebration({
+        icon: chore?.icon||'⭐',
+        title: 'Amazing job! 🎉',
+        sub:   esc(chore?.title||'Chore'),
+        points: chore?.points||0,
+        tts: `Wow! You finished ${chore?.title}! You earned ${chore?.points} stars! You are amazing!`,
+        onClose: () => { renderKidChores(); renderKidHeader(); }
+      });
+    } else {
+      // Subtle points burst
+      if (evt) {
+        const rect = evt.target.getBoundingClientRect();
+        pointsBurst(rect.left + rect.width/2, rect.top, chore?.points||0);
+      }
+      toast(`+${chore?.points} pts! Great work! ⭐`);
+      renderKidChores();
+      renderKidHeader();
+    }
+  }
+  renderKidNav();
+}
+
+// ── POINTS TAB (8yo) ──────────────────────────────────────────
+function renderKidPoints() {
+  const m   = S.currentUser;
+  const pts = m.points || 0;
+  const tot = m.totalEarned || 0;
+  const sav = m.savings || 0;
+
+  // Cheapest prize they can afford
+  const nextPrize = D.prizes
+    .filter(p=>p.type==='individual' && p.cost > pts)
+    .sort((a,b)=>a.cost-b.cost)[0];
+  const pctToNext = nextPrize ? Math.min(100,Math.round(pts/nextPrize.cost*100)) : 100;
+
+  const myHistory = D.history.filter(h=>h.memberId===m.id).slice(0,15);
+
+  let html = `
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-val">${pts}</div><div class="stat-label">⭐ Points</div></div>
+      <div class="stat-card"><div class="stat-val">${tot}</div><div class="stat-label">🏆 All Time</div></div>
+      <div class="stat-card"><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label">💰 Savings</div></div>
+    </div>`;
+
+  if (nextPrize) {
+    html += `
+      <div class="card">
+        <div class="card-title">🎯 Next Prize</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <span style="font-size:2rem">${nextPrize.icon}</span>
+          <div style="flex:1">
+            <div style="font-weight:700">${esc(nextPrize.title)}</div>
+            <div style="font-size:0.8rem;color:var(--muted)">${pts} / ${nextPrize.cost} pts</div>
+          </div>
+          <div style="font-weight:800;color:var(--purple)">${nextPrize.cost-pts} to go!</div>
+        </div>
+        <div class="progress-wrap"><div class="progress-fill" style="width:${pctToNext}%"></div></div>
+      </div>`;
+  } else if (D.prizes.filter(p=>p.type==='individual').length > 0) {
+    html += `<div class="card"><div class="text-center" style="padding:10px 0">🏆 You can afford all the prizes! Time to redeem!</div></div>`;
+  }
+
+  // Savings tracker
+  html += `
+    <div class="savings-card">
+      <div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px">💰 My Savings Jar</div>
+      <div class="savings-amount">${D.settings.currency||'$'}${sav.toFixed(2)}</div>
+      <div class="savings-label">Keep saving!</div>
+      <button class="btn btn-secondary btn-sm" onclick="showSavingsModal('${m.id}')">+ Add Savings</button>
+    </div>`;
+
+  // History
+  if (myHistory.length > 0) {
+    html += `<div class="card"><div class="card-title">📜 Recent Activity</div>`;
+    myHistory.forEach(h => {
+      const pos = h.points > 0;
+      html += `
+        <div class="history-item">
+          <span class="history-icon">${h.type==='chore'?'✅':h.type==='prize'?'🎁':'🎯'}</span>
+          <div class="history-info">
+            <div class="history-title">${esc(h.title)}</div>
+            <div class="history-date">${fmtDate(h.date)}</div>
+          </div>
+          <div class="history-pts ${pos?'pos':'neg'}">${pos?'+':''}${h.points}</div>
+        </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="empty-state"><div class="empty-icon">📜</div><div class="empty-text">Complete chores to earn points!</div></div>`;
+  }
+
+  document.getElementById('kid-content').innerHTML = html;
+}
+
+function showSavingsModal(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  const rate = D.settings.pointsPerDollar || 10;
+  showModal(`
+    <div class="modal-title">💰 Savings Jar</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">
+      Convert points to savings (${rate} pts = ${D.settings.currency||'$'}1.00) or ask a parent to add money directly.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Points to convert <span class="form-label-hint">(you have ${m.points||0})</span></label>
+      <input type="number" id="save-pts" min="0" max="${m.points||0}" step="${rate}" placeholder="${rate}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" onclick="doSavePoints('${memberId}')">Convert ✓</button>
+    </div>`);
+}
+
+function doSavePoints(memberId) {
+  const m    = getMember(memberId);
+  const pts  = parseInt(document.getElementById('save-pts')?.value)||0;
+  const rate = D.settings.pointsPerDollar || 10;
+  if (!m || pts <= 0 || pts > (m.points||0) || pts % rate !== 0) {
+    toast(`Must be a multiple of ${rate} pts`); return;
+  }
+  const dollars = pts / rate;
+  m.points  -= pts;
+  m.savings  = (m.savings||0) + dollars;
+  addHistory('savings', memberId, `Converted ${pts} pts to savings`, -pts);
+  saveData();
+  closeModal();
+  toast(`+${D.settings.currency||'$'}${dollars.toFixed(2)} saved! 💰`);
+  renderKidPoints();
+  renderKidHeader();
+}
+
+// ── SHOP TAB ──────────────────────────────────────────────────
+function renderKidShop() {
+  const m    = S.currentUser;
+  const tiny = isTiny(m);
+  const pts  = m.points || 0;
+  const indiv = D.prizes.filter(p => p.type === 'individual');
+  const family= D.prizes.filter(p => p.type === 'family');
+  const goalTotal2 = goalTotal();
+
+  if (D.prizes.length === 0) {
+    document.getElementById('kid-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🎁</div>
+        <div class="empty-text">No prizes yet! Ask a parent to add some.</div>
+      </div>`;
+    return;
+  }
+
+  const renderPrizeCard = (p, isFamily=false) => {
+    const balance  = isFamily ? goalTotal2 : pts;
+    const canAfford = balance >= p.cost;
+    const cls = canAfford ? 'can-afford' : (isFamily ? 'family-type':'');
+    const tts  = `${p.title}. Costs ${p.cost} points.${canAfford?' You can get this!':` You need ${p.cost-balance} more points.`}`;
+    return `
+      <div class="prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',${isFamily},event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
+           ${tiny?`title="${esc(tts)}"`:''}>
+        <span class="prize-icon">${p.icon}</span>
+        <div class="prize-name">${esc(p.title)}</div>
+        <div class="prize-cost">⭐ ${p.cost}</div>
+        ${!tiny&&isFamily?`<div class="prize-type-badge family">👨‍👩‍👧‍👦 Family</div>`:''}
+        ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-pts} more pts needed</div>`:''}
+      </div>`;
+  };
+
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:1.5rem;font-weight:800">⭐ ${pts}</div>
+        <div style="font-size:0.8rem;color:var(--muted)">your points</div>
+      </div>
+      ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
+    </div>`;
+
+  if (indiv.length > 0) {
+    html += `<div class="section-row"><span class="section-title">🎁 My Prizes</span></div>
+             <div class="prize-grid">${indiv.map(p=>renderPrizeCard(p,false)).join('')}</div>`;
+  }
+
+  if (family.length > 0) {
+    const goalPts = goalTotal2;
+    html += `
+      <div class="section-row mt-12"><span class="section-title">👨‍👩‍👧‍👦 Family Prizes</span></div>
+      <div class="card" style="background:#F0FAFA;border:2px solid var(--teal);margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:700">🏦 Family Goal Bank</span>
+          <span style="font-weight:800;color:var(--teal)">⭐ ${goalPts} pts</span>
+        </div>
+        ${!tiny?`<p style="font-size:0.8rem;color:var(--muted);margin-top:6px">Everyone contributes to unlock family prizes!</p>`:''}
+      </div>
+      <div class="prize-grid">${family.map(p=>renderPrizeCard(p,true)).join('')}</div>`;
+  }
+
+  document.getElementById('kid-content').innerHTML = html;
+}
+
+function kidRedeemPrize(prizeId, isFamily, evt) {
+  evt && evt.stopPropagation();
+  const m     = S.currentUser;
+  const prize = D.prizes.find(p=>p.id===prizeId);
+  if (!m || !prize) return;
+
+  const pts    = isFamily ? goalTotal() : (m.points||0);
+  if (pts < prize.cost) {
+    const need = prize.cost - pts;
+    if (isTiny(m)) speak(`You need ${need} more stars for this prize!`);
+    else toast(`Need ${need} more pts for "${prize.title}"`);
+    return;
+  }
+
+  const confirm = isFamily
+    ? `Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for the whole family? (costs ${prize.cost} family pts)`
+    : `Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for ${prize.cost} of your ⭐ ${m.points||0} points?`;
+
+  showModal(`
+    <div class="modal-title">${prize.icon} Redeem Prize?</div>
+    <p style="margin-bottom:20px;line-height:1.6">${confirm}</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
+      <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}',${isFamily})">Yes, redeem! 🎉</button>
+    </div>`);
+}
+
+function confirmRedeem(prizeId, isFamily) {
+  const m     = S.currentUser;
+  const prize = D.prizes.find(p=>p.id===prizeId);
+  closeModal();
+  const ok = doRedeemPrize(prizeId, m?.id);
+  if (!ok) { toast('Could not redeem — not enough points'); return; }
+
+  showCelebration({
+    icon:   prize.icon,
+    title:  'Prize Unlocked!',
+    sub:    prize.title,
+    tts:    isTiny(m) ? `You got it! ${prize.title}! Go tell Mom or Dad!` : null,
+    onClose: () => { renderKidShop(); renderKidHeader(); }
+  });
+}
+
+// ── GOAL TAB ──────────────────────────────────────────────────
+function renderKidGoal() {
+  const m   = S.currentUser;
+  const g   = D.familyGoal;
+  const pts = m.points || 0;
+
+  if (!g) {
+    document.getElementById('kid-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🎯</div>
+        <div class="empty-text">No family goal set yet. Ask a parent to add one!</div>
+      </div>`;
+    return;
+  }
+
+  const total  = goalTotal();
+  const target = g.targetPoints || 1;
+  const pct    = Math.min(100, Math.round(total/target*100));
+  const myContrib = (g.contributions||{})[m.id] || 0;
+
+  // Contribution breakdown
+  const kids = D.family.members.filter(k=>k.role==='kid');
+  const contribs = kids.map(k => {
+    const c = (g.contributions||{})[k.id]||0;
+    const pctBar = total>0 ? Math.round(c/total*100) : 0;
+    return `
+      <div class="contrib-row">
+        <span class="contrib-avatar">${k.avatar||'🙂'}</span>
+        <span class="contrib-name" style="color:#fff">${esc(k.name)}</span>
+        <div class="contrib-bar-bg"><div class="contrib-fill" style="width:${pctBar}%"></div></div>
+        <span class="contrib-val">${c}</span>
+      </div>`;
+  }).join('');
+
+  const tiny = isTiny(m);
+
+  let html = `
+    <div class="goal-card">
+      <span class="goal-icon">${g.icon||'🎯'}</span>
+      <div class="goal-title">${esc(g.title)}</div>
+      <div class="goal-sub">${total} / ${target} pts</div>
+      <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
+      <div class="goal-pts">${pct}% there! ${pct===100?'🏆 Goal reached!':''}</div>
+      <div style="height:14px"></div>
+      ${contribs}
+    </div>`;
+
+  if (pct < 100) {
+    html += `
+      <div class="card">
+        <div class="card-title">🤝 Your Contribution</div>
+        <div style="margin-bottom:12px;font-size:0.9rem;color:var(--muted)">
+          You've contributed <strong>${myContrib} pts</strong> so far.<br>
+          You have <strong>${pts} pts</strong> available to contribute.
+        </div>
+        ${pts > 0
+          ? `<button class="btn btn-primary btn-full" onclick="showContributeModal('${m.id}')">
+               ${tiny?'Give Stars to the Goal! ⭐':'Contribute Points ⭐'}
+             </button>`
+          : `<p class="text-muted text-center">Complete chores to earn points first!</p>`}
+      </div>`;
+  } else {
+    html += `
+      <div class="card" style="text-align:center;padding:24px">
+        <div style="font-size:3rem">🏆</div>
+        <div style="font-size:1.2rem;font-weight:800;margin:10px 0">Goal Achieved!</div>
+        <div style="color:var(--muted)">Tell a parent to collect the reward!</div>
+      </div>`;
+  }
+
+  document.getElementById('kid-content').innerHTML = html;
+}
+
+function showContributeModal(memberId) {
+  const m = getMember(memberId);
+  if (!m || !D.familyGoal) return;
+  showModal(`
+    <div class="modal-title">🎯 ${esc(D.familyGoal.title)}</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">
+      You have <strong>${m.points||0} pts</strong>. How many do you want to contribute toward the family goal?
+    </p>
+    <div class="form-group">
+      <label class="form-label">Points to contribute</label>
+      <input type="number" id="contrib-pts" min="1" max="${m.points||0}" placeholder="e.g. 50">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="doContrib('${memberId}')">Contribute! ⭐</button>
+    </div>`);
+}
+
+function doContrib(memberId) {
+  const pts = parseInt(document.getElementById('contrib-pts')?.value)||0;
+  if (pts <= 0) { toast('Enter points to contribute'); return; }
+  const ok = doContributeToGoal(memberId, pts);
+  closeModal();
+  if (!ok) { toast('Not enough points!'); return; }
+  toast(`+${pts} pts contributed to the family goal! 🎯`);
+  const m = getMember(memberId);
+  if (isTiny(m)) speak(`You gave ${pts} stars to the family goal! Amazing!`);
+  renderKidGoal();
+  renderKidHeader();
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+function todayDisplay() {
+  return new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 5 — PARENT ADMIN VIEW
+═══════════════════════════════════════════════════════════════ */
+
+// ── PARENT VIEW ENTRY ─────────────────────────────────────────
+function renderParentView() {
+  showScreen('screen-parent');
+  renderParentHeader();
+  renderParentNav();
+  renderParentTab();
+}
+
+function renderParentHeader() {
+  const m = S.currentUser;
+  const pending = pendingApprovals().length;
+  document.getElementById('parent-header').innerHTML = `
+    <div class="header-left">
+      <button class="btn-back" onclick="renderHome()">←</button>
+      <span class="header-avatar">${m?.avatar||'🧑'}</span>
+      <div>
+        <div class="header-name">${esc(D.family.name)}</div>
+        <div class="header-sub">Parent Dashboard</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      ${pending>0?`<span class="header-badge" style="background:#EF4444;color:#fff">⏳ ${pending}</span>`:''}
+      <button class="btn-icon-sm" style="background:#EDE9FE;color:var(--purple)" onclick="syncFromCloud()" title="Sync now">☁️</button>
+    </div>`;
+}
+
+function renderParentNav() {
+  const pending = pendingApprovals().length;
+  const tabs = [
+    ['home','🏠','Overview'],
+    ['chores','📋','Chores'],
+    ['prizes','🎁','Prizes'],
+    ['plans','📅','Plans'],
+    ['settings','⚙️','Settings'],
+  ];
+  document.getElementById('parent-nav').innerHTML = tabs.map(([id,icon,label]) => `
+    <button class="nav-item${S.parentTab===id?' active':''}" onclick="switchParentTab('${id}')">
+      <span class="nav-icon">${icon}</span>${label}
+      ${id==='home'&&pending>0?`<span class="nav-badge">${pending}</span>`:''}
+    </button>`).join('');
+}
+
+function switchParentTab(tab) {
+  S.parentTab = tab;
+  renderParentNav();
+  renderParentTab();
+}
+
+function renderParentTab() {
+  switch(S.parentTab) {
+    case 'home':     renderParentHome();     break;
+    case 'chores':   renderParentChores();   break;
+    case 'prizes':   renderParentPrizes();   break;
+    case 'plans':    renderParentPlans();    break;
+    case 'settings': renderParentSettings(); break;
+  }
+}
+
+// ── PARENT HOME (OVERVIEW) ────────────────────────────────────
+function renderParentHome() {
+  const kids    = D.family.members.filter(m=>m.role==='kid');
+  const pending = pendingApprovals();
+  const t       = today();
+
+  // Pending approvals
+  let html = '';
+  if (pending.length > 0) {
+    html += `<div class="card" style="border:2px solid var(--yellow)">
+      <div class="card-title">⏳ Needs Approval</div>`;
+    pending.forEach(({chore, memberId}) => {
+      const mem = getMember(memberId);
+      if (!mem) return;
+      html += `
+        <div class="admin-card">
+          <span class="admin-icon">${chore.icon}</span>
+          <div class="admin-info">
+            <div class="admin-name">${esc(chore.title)}</div>
+            <div class="admin-meta">${mem.avatar} ${esc(mem.name)} · +${chore.points} pts</div>
+          </div>
+          <div class="admin-actions">
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}')">✓</button>
+            <button class="btn-icon-sm btn-icon-reject"  onclick="rejectChore('${chore.id}','${memberId}')">✕</button>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Family goal progress
+  const g = D.familyGoal;
+  if (g) {
+    const total  = goalTotal();
+    const target = g.targetPoints||1;
+    const pct    = Math.min(100,Math.round(total/target*100));
+    html += `
+      <div class="goal-card">
+        <span class="goal-icon">${g.icon||'🎯'}</span>
+        <div class="goal-title">${esc(g.title)}</div>
+        <div class="goal-sub">${total} / ${target} pts · ${pct}%</div>
+        <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  }
+
+  // Kids overview
+  html += `<div class="card"><div class="card-title">👨‍👩‍👧‍👦 Kids Today</div>`;
+  if (kids.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">👶</div><div class="empty-text">No kids yet — go to Setup!</div></div>`;
+  }
+  kids.forEach(kid => {
+    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
+    const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
+    const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
+    const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
+    html += `
+      <div class="member-row" style="border-left:4px solid ${kid.color||'#6C63FF'}">
+        <span class="member-avatar">${kid.avatar||'🙂'}</span>
+        <div class="member-info">
+          <div class="member-name">${esc(kid.name)}</div>
+          <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtPts(kid.points||0)}</div>
+          <div class="progress-wrap" style="height:8px;margin:6px 0 0">
+            <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
+          </div>
+        </div>
+        <div class="member-pts">${kid.points||0}</div>
+      </div>`;
+  });
+  html += `</div>`;
+
+  // Today's activities
+  const todayActivities = D.activities.filter(a=>a.date===t);
+  if (todayActivities.length > 0) {
+    html += `<div class="card"><div class="card-title">📅 Today's Plans</div>`;
+    todayActivities.forEach(a => { html += activityCard(a); });
+    html += `</div>`;
+  }
+
+  // Quick actions
+  html += `
+    <div class="card">
+      <div class="card-title">⚡ Quick Actions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="btn btn-primary btn-sm" onclick="showChoreModal()">+ Add Chore</button>
+        <button class="btn btn-pink   btn-sm" onclick="showPrizeModal()">+ Add Prize</button>
+        <button class="btn btn-teal   btn-sm" onclick="showGoalModal()">🎯 Set Goal</button>
+        <button class="btn btn-warning btn-sm" onclick="showActivityModal()">+ Plan Event</button>
+      </div>
+    </div>`;
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+function approveChore(choreId, memberId) {
+  doApproveChore(choreId, memberId);
+  const m = getMember(memberId);
+  const c = D.chores.find(x=>x.id===choreId);
+  toast(`✅ Approved "${c?.title}" for ${m?.name} (+${c?.points} pts)`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+function rejectChore(choreId, memberId) {
+  doRejectChore(choreId, memberId);
+  const m = getMember(memberId);
+  toast(`Rejected chore for ${m?.name}`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+// ── PARENT CHORES ─────────────────────────────────────────────
+function renderParentChores() {
+  const kids = D.family.members.filter(m=>m.role==='kid');
+  let html = `
+    <div class="section-row">
+      <span class="section-title">📋 All Chores (${D.chores.length})</span>
+      <button class="btn btn-primary btn-sm" onclick="showChoreModal()">+ Add</button>
+    </div>`;
+
+  if (D.chores.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">No chores yet. Add one!</div></div>`;
+  }
+
+  D.chores.forEach(chore => {
+    const assignedKids = (chore.assignedTo||[]).map(id=>getMember(id)?.avatar||'').join(' ');
+    html += `
+      <div class="admin-card">
+        <span class="admin-icon">${chore.icon}</span>
+        <div class="admin-info">
+          <div class="admin-name">${esc(chore.title)}</div>
+          <div class="admin-meta">${fmtPts(chore.points)} · ${chore.frequency} · ${assignedKids||'no one'}</div>
+        </div>
+        <div class="admin-actions">
+          <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')">✏️</button>
+          <button class="btn-icon-sm btn-icon-delete" onclick="deleteChore('${chore.id}')">🗑️</button>
+        </div>
+      </div>`;
+  });
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+function showChoreModal(choreId) {
+  const kids  = D.family.members.filter(m=>m.role==='kid');
+  const chore = choreId ? D.chores.find(c=>c.id===choreId) : null;
+  const c     = chore || { title:'', icon:'🛏️', points:10, frequency:'daily', assignedTo:kids.map(k=>k.id), description:'' };
+
+  const iconOpts = CHORE_ICONS.map(ic =>
+    `<div class="icon-opt${ic===c.icon?' sel':''}" onclick="selChoreIcon(this,'${ic}')">${ic}</div>`
+  ).join('');
+  const assignOpts = kids.map(k => `
+    <label class="chore-checkbox-row">
+      <input type="checkbox" name="assign" value="${k.id}" ${c.assignedTo?.includes(k.id)?'checked':''}>
+      <span class="chore-checkbox-icon">${k.avatar}</span>
+      <span class="chore-checkbox-label">${esc(k.name)}</span>
+    </label>`).join('');
+
+  showModal(`
+    <div class="modal-title">${chore?'Edit':'Add'} Chore</div>
+    <input type="hidden" id="cm-icon" value="${c.icon}">
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-picker">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chore name</label>
+      <input type="text" id="cm-title" placeholder="e.g. Make Bed" value="${esc(c.title)}">
+    </div>
+    <div class="input-row">
+      <div class="form-group mb-0">
+        <label class="form-label">Points</label>
+        <input type="number" id="cm-points" min="1" max="500" value="${c.points}">
+      </div>
+      <div class="form-group mb-0">
+        <label class="form-label">Frequency</label>
+        <select id="cm-freq">
+          <option value="daily"  ${c.frequency==='daily'  ?'selected':''}>Daily</option>
+          <option value="weekly" ${c.frequency==='weekly' ?'selected':''}>Weekly</option>
+          <option value="once"   ${c.frequency==='once'   ?'selected':''}>One-time</option>
+        </select>
+      </div>
+    </div>
+    ${kids.length>0?`<div class="form-group"><label class="form-label">Assign to</label>${assignOpts}</div>`:''}
+    <div class="form-group">
+      <label class="form-label">Description <span class="form-label-hint">optional</span></label>
+      <textarea id="cm-desc" placeholder="Any instructions...">${esc(c.description||'')}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveChore('${choreId||''}')">Save ✓</button>
+    </div>`);
+}
+
+function selChoreIcon(el, icon) {
+  document.getElementById('cm-icon').value = icon;
+  el.closest('.icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function saveChore(choreId) {
+  const title  = document.getElementById('cm-title')?.value.trim();
+  const icon   = document.getElementById('cm-icon')?.value || '📋';
+  const points = parseInt(document.getElementById('cm-points')?.value)||10;
+  const freq   = document.getElementById('cm-freq')?.value || 'daily';
+  const desc   = document.getElementById('cm-desc')?.value.trim();
+  const assigned = [...document.querySelectorAll('input[name=assign]:checked')].map(x=>x.value);
+
+  if (!title) { toast('Enter a chore name'); return; }
+
+  if (choreId) {
+    const c = D.chores.find(x=>x.id===choreId);
+    if (c) { Object.assign(c, { title, icon, points, frequency:freq, assignedTo:assigned, description:desc }); }
+  } else {
+    D.chores.push({ id:genId(), title, icon, points, frequency:freq, assignedTo:assigned, description:desc, completions:{} });
+  }
+  saveData();
+  closeModal();
+  toast(choreId ? 'Chore updated!' : 'Chore added!');
+  renderParentChores();
+}
+
+function deleteChore(choreId) {
+  if (!confirm('Delete this chore?')) return;
+  D.chores = D.chores.filter(c=>c.id!==choreId);
+  saveData();
+  toast('Chore deleted');
+  renderParentChores();
+}
+
+// ── PARENT PRIZES ─────────────────────────────────────────────
+function renderParentPrizes() {
+  let html = `
+    <div class="section-row">
+      <span class="section-title">🎁 Prizes (${D.prizes.length})</span>
+      <button class="btn btn-primary btn-sm" onclick="showPrizeModal()">+ Add</button>
+    </div>`;
+
+  if (D.prizes.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">🎁</div><div class="empty-text">No prizes yet. Add one!</div></div>`;
+  }
+
+  D.prizes.forEach(p => {
+    html += `
+      <div class="admin-card">
+        <span class="admin-icon">${p.icon}</span>
+        <div class="admin-info">
+          <div class="admin-name">${esc(p.title)}</div>
+          <div class="admin-meta">${p.cost} pts · <span class="badge ${p.type==='family'?'badge-teal':'badge-purple'}">${p.type}</span></div>
+        </div>
+        <div class="admin-actions">
+          <button class="btn-icon-sm btn-icon-edit"   onclick="showPrizeModal('${p.id}')">✏️</button>
+          <button class="btn-icon-sm btn-icon-delete" onclick="deletePrize('${p.id}')">🗑️</button>
+        </div>
+      </div>`;
+  });
+
+  // Family goal section
+  html += `<div class="divider"></div>
+    <div class="section-row">
+      <span class="section-title">🎯 Family Goal</span>
+      <button class="btn btn-teal btn-sm" onclick="showGoalModal()">Edit</button>
+    </div>`;
+  const g = D.familyGoal;
+  if (g) {
+    const total = goalTotal();
+    const pct   = Math.min(100,Math.round(total/(g.targetPoints||1)*100));
+    html += `
+      <div class="admin-card">
+        <span class="admin-icon">${g.icon||'🎯'}</span>
+        <div class="admin-info">
+          <div class="admin-name">${esc(g.title)}</div>
+          <div class="admin-meta">${total} / ${g.targetPoints} pts · ${pct}%</div>
+          <div class="progress-wrap" style="height:8px;margin-top:6px">
+            <div class="progress-fill teal" style="width:${pct}%"></div>
+          </div>
+        </div>
+        <button class="btn-icon-sm btn-icon-delete" onclick="clearGoal()">🗑️</button>
+      </div>`;
+  } else {
+    html += `<div class="empty-state" style="padding:20px"><div class="empty-icon">🎯</div><div class="empty-text">No family goal yet</div></div>`;
+  }
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+function showPrizeModal(prizeId) {
+  const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
+  const p     = prize || { title:'', icon:'🎁', cost:100, type:'individual' };
+
+  const iconOpts = PRIZE_ICONS.map(ic =>
+    `<div class="icon-opt${ic===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${ic}')">${ic}</div>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">${prize?'Edit':'Add'} Prize</div>
+    <input type="hidden" id="pm-icon" value="${p.icon}">
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-picker">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Prize name</label>
+      <input type="text" id="pm-title" placeholder="e.g. Movie Night Pick" value="${esc(p.title)}">
+    </div>
+    <div class="input-row">
+      <div class="form-group mb-0">
+        <label class="form-label">Points cost</label>
+        <input type="number" id="pm-cost" min="1" value="${p.cost}">
+      </div>
+      <div class="form-group mb-0">
+        <label class="form-label">Type</label>
+        <select id="pm-type">
+          <option value="individual" ${p.type==='individual'?'selected':''}>Individual</option>
+          <option value="family"     ${p.type==='family'    ?'selected':''}>Family</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="savePrize('${prizeId||''}')">Save ✓</button>
+    </div>`);
+}
+
+function selPrizeIcon(el, icon) {
+  document.getElementById('pm-icon').value = icon;
+  el.closest('.icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function savePrize(prizeId) {
+  const title = document.getElementById('pm-title')?.value.trim();
+  const icon  = document.getElementById('pm-icon')?.value || '🎁';
+  const cost  = parseInt(document.getElementById('pm-cost')?.value)||100;
+  const type  = document.getElementById('pm-type')?.value || 'individual';
+  if (!title) { toast('Enter a prize name'); return; }
+
+  if (prizeId) {
+    const p = D.prizes.find(x=>x.id===prizeId);
+    if (p) Object.assign(p, { title, icon, cost, type });
+  } else {
+    D.prizes.push({ id:genId(), title, icon, cost, type, redemptions:[] });
+  }
+  saveData();
+  closeModal();
+  toast(prizeId?'Prize updated!':'Prize added!');
+  renderParentPrizes();
+}
+
+function deletePrize(prizeId) {
+  if (!confirm('Delete this prize?')) return;
+  D.prizes = D.prizes.filter(p=>p.id!==prizeId);
+  saveData();
+  toast('Prize deleted');
+  renderParentPrizes();
+}
+
+function showGoalModal() {
+  const g = D.familyGoal || { title:'', icon:'🎯', targetPoints:500 };
+  const iconOpts = ['🎯','🏰','✈️','🎪','🏖️','🎢','🎡','🏕️','⛷️','🚢','🎠','🎭'].map(ic =>
+    `<div class="icon-opt${ic===g.icon?' sel':''}" onclick="selGoalIcon(this,'${ic}')">${ic}</div>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">🎯 Family Goal</div>
+    <input type="hidden" id="gm-icon" value="${g.icon||'🎯'}">
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-picker" style="grid-template-columns:repeat(6,1fr)">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Goal name</label>
+      <input type="text" id="gm-title" placeholder="e.g. Disney Trip!" value="${esc(g.title)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Points target</label>
+      <input type="number" id="gm-target" min="1" value="${g.targetPoints||500}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" onclick="saveGoal()">Save Goal ✓</button>
+    </div>`);
+}
+
+function selGoalIcon(el, icon) {
+  document.getElementById('gm-icon').value = icon;
+  el.closest('.icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function saveGoal() {
+  const title  = document.getElementById('gm-title')?.value.trim();
+  const icon   = document.getElementById('gm-icon')?.value || '🎯';
+  const target = parseInt(document.getElementById('gm-target')?.value)||500;
+  if (!title) { toast('Enter a goal name'); return; }
+
+  D.familyGoal = { title, icon, targetPoints:target, contributions: D.familyGoal?.contributions||{} };
+  saveData();
+  closeModal();
+  toast('Family goal saved!');
+  renderParentPrizes();
+}
+
+function clearGoal() {
+  if (!confirm('Remove the family goal?')) return;
+  D.familyGoal = null;
+  saveData();
+  renderParentPrizes();
+}
+
+// ── PARENT PLANS (ACTIVITIES) ─────────────────────────────────
+function renderParentPlans() {
+  const t = today();
+  const upcoming = D.activities
+    .filter(a=>a.date>=t)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  const past = D.activities
+    .filter(a=>a.date<t)
+    .sort((a,b)=>b.date.localeCompare(a.date))
+    .slice(0,5);
+
+  let html = `
+    <div class="section-row">
+      <span class="section-title">📅 Plans & Activities</span>
+      <button class="btn btn-primary btn-sm" onclick="showActivityModal()">+ Add</button>
+    </div>`;
+
+  if (upcoming.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">No upcoming plans. Add something fun!</div></div>`;
+  }
+  upcoming.forEach(a => {
+    html += `
+      <div class="admin-card">
+        ${activityCard(a)}
+        <div class="admin-actions" style="margin-left:auto;align-self:flex-start">
+          <button class="btn-icon-sm btn-icon-edit"   onclick="showActivityModal('${a.id}')">✏️</button>
+          <button class="btn-icon-sm btn-icon-delete" onclick="deleteActivity('${a.id}')">🗑️</button>
+        </div>
+      </div>`;
+  });
+
+  if (past.length > 0) {
+    html += `<div class="divider"></div><div class="section-title" style="margin-bottom:10px;color:var(--muted)">Past Events</div>`;
+    past.forEach(a => { html += `<div style="opacity:0.6">${activityCard(a)}</div>`; });
+  }
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+function activityCard(a) {
+  const members = D.family.members;
+  const whoChips = (a.who||[]).map(id=>{
+    const m = getMember(id);
+    return m ? `<span class="who-chip">${m.avatar} ${esc(m.name)}</span>` : '';
+  }).join('');
+  return `
+    <div class="activity-item">
+      <span class="activity-icon">${a.icon||'📅'}</span>
+      <div class="activity-info">
+        <div class="activity-title">${esc(a.title)}</div>
+        <div class="activity-meta">${fmtDate(a.date)}${a.time?' · '+a.time:''}</div>
+        ${whoChips?`<div class="activity-who">${whoChips}</div>`:''}
+        ${a.notes?`<div style="font-size:0.8rem;color:var(--muted);margin-top:4px">${esc(a.notes)}</div>`:''}
+      </div>
+    </div>`;
+}
+
+function showActivityModal(actId) {
+  const act  = actId ? D.activities.find(a=>a.id===actId) : null;
+  const a    = act || { title:'', icon:'📅', date:today(), time:'', who:[], notes:'' };
+  const members = D.family.members.filter(m=>m.role!=='parent');
+  const iconOpts = ['📅','⚽','🎨','🏊','🎪','🏖️','🎠','🎬','🍕','🎁','🎤','🎯','🚗','✈️','🏕️'].map(ic =>
+    `<div class="icon-opt${ic===a.icon?' sel':''}" onclick="selActIcon(this,'${ic}')">${ic}</div>`
+  ).join('');
+  const whoOpts = members.map(m => `
+    <label class="chore-checkbox-row">
+      <input type="checkbox" name="act-who" value="${m.id}" ${a.who?.includes(m.id)?'checked':''}>
+      <span class="chore-checkbox-icon">${m.avatar}</span>
+      <span class="chore-checkbox-label">${esc(m.name)}</span>
+    </label>`).join('');
+
+  showModal(`
+    <div class="modal-title">${act?'Edit':'Add'} Event</div>
+    <input type="hidden" id="am-icon" value="${a.icon||'📅'}">
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-picker" style="grid-template-columns:repeat(7,1fr)">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Event name</label>
+      <input type="text" id="am-title" placeholder="e.g. Soccer Practice" value="${esc(a.title)}">
+    </div>
+    <div class="input-row">
+      <div class="form-group mb-0">
+        <label class="form-label">Date</label>
+        <input type="date" id="am-date" value="${a.date}">
+      </div>
+      <div class="form-group mb-0">
+        <label class="form-label">Time <span class="form-label-hint">optional</span></label>
+        <input type="time" id="am-time" value="${a.time||''}">
+      </div>
+    </div>
+    ${members.length>0?`<div class="form-group"><label class="form-label">Who's going?</label>${whoOpts}</div>`:''}
+    <div class="form-group">
+      <label class="form-label">Notes <span class="form-label-hint">optional</span></label>
+      <textarea id="am-notes" placeholder="Bring snacks, location, etc.">${esc(a.notes||'')}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveActivity('${actId||''}')">Save ✓</button>
+    </div>`);
+}
+
+function selActIcon(el, icon) {
+  document.getElementById('am-icon').value = icon;
+  el.closest('.icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function saveActivity(actId) {
+  const title = document.getElementById('am-title')?.value.trim();
+  const icon  = document.getElementById('am-icon')?.value  || '📅';
+  const date  = document.getElementById('am-date')?.value  || today();
+  const time  = document.getElementById('am-time')?.value  || '';
+  const notes = document.getElementById('am-notes')?.value.trim();
+  const who   = [...document.querySelectorAll('input[name=act-who]:checked')].map(x=>x.value);
+  if (!title) { toast('Enter an event name'); return; }
+
+  if (actId) {
+    const a = D.activities.find(x=>x.id===actId);
+    if (a) Object.assign(a, { title, icon, date, time, who, notes });
+  } else {
+    D.activities.push({ id:genId(), title, icon, date, time, who, notes });
+  }
+  saveData();
+  closeModal();
+  toast(actId?'Event updated!':'Event added!');
+  renderParentPlans();
+}
+
+function deleteActivity(actId) {
+  if (!confirm('Delete this event?')) return;
+  D.activities = D.activities.filter(a=>a.id!==actId);
+  saveData();
+  renderParentPlans();
+}
+
+// ── PARENT SETTINGS ───────────────────────────────────────────
+function renderParentSettings() {
+  const s = D.settings;
+  const kids = D.family.members.filter(m=>m.role==='kid');
+
+  let html = `
+    <div class="card">
+      <div class="card-title">⚙️ General</div>
+      <div class="toggle-row">
+        <div><div class="toggle-label">Auto-approve chores</div>
+          <div class="toggle-sub">Kids earn points instantly</div></div>
+        <label class="toggle">
+          <input type="checkbox" id="s-auto" ${s.autoApprove?'checked':''} onchange="saveSetting('autoApprove',this.checked)">
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Points per dollar (savings conversion)</label>
+        <input type="number" id="s-ppdollar" value="${s.pointsPerDollar||10}" min="1"
+               onchange="saveSetting('pointsPerDollar',parseInt(this.value)||10)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Parent PIN <span class="form-label-hint">(leave blank = no PIN)</span></label>
+        <input type="password" id="s-pin" maxlength="4" value="${s.parentPin||''}" placeholder="4 digits"
+               onchange="saveSetting('parentPin',this.value.trim())">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">☁️ Cloud Sync</div>
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
+        Get a free Bin ID from <strong>jsonbin.io</strong> to sync across all devices automatically.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Bin ID</label>
+        <input type="text" id="s-binid" value="${esc(s.cloudBinId||'')}" placeholder="64abc..."
+               onchange="saveSetting('cloudBinId',this.value.trim())">
+      </div>
+      <div class="form-group">
+        <label class="form-label">API Key <span class="form-label-hint">optional</span></label>
+        <input type="password" id="s-apikey" value="${esc(s.cloudApiKey||'')}" placeholder="$2b$10$..."
+               onchange="saveSetting('cloudApiKey',this.value.trim())">
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-teal btn-sm" onclick="syncFromCloud()">⬇️ Pull from Cloud</button>
+        <button class="btn btn-primary btn-sm" onclick="syncToCloud()">⬆️ Push to Cloud</button>
+      </div>
+      ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
+    </div>
+
+    <div class="card">
+      <div class="card-title">👨‍👩‍👧‍👦 Members</div>
+      ${kids.map(k=>`
+        <div class="member-row" style="border-left:4px solid ${k.color||'#6C63FF'}">
+          <span class="member-avatar">${k.avatar}</span>
+          <div class="member-info">
+            <div class="member-name">${esc(k.name)}</div>
+            <div class="member-stats">Age ${k.age||'?'} · ⭐ ${k.points||0} pts · 💰 ${D.settings.currency||'$'}${(k.savings||0).toFixed(2)}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn-icon-sm btn-icon-edit" onclick="showAddPointsModal('${k.id}')">⭐</button>
+          </div>
+        </div>`).join('')}
+      <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="goSetup()">Edit Family Setup</button>
+    </div>
+
+    <div class="card" style="border:2px solid #FEE2E2">
+      <div class="card-title" style="color:#EF4444">⚠️ Danger Zone</div>
+      <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
+    </div>`;
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+function saveSetting(key, value) {
+  D.settings[key] = value;
+  saveData();
+  if (key==='cloudBinId') startSyncPoller();
+}
+
+function showAddPointsModal(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  showModal(`
+    <div class="modal-title">⭐ Adjust Points — ${esc(m.name)}</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.points||0} pts</strong></p>
+    <div class="form-group">
+      <label class="form-label">Points to add (use negative to remove)</label>
+      <input type="number" id="adj-pts" placeholder="e.g. 25 or -10">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-reason" placeholder="Bonus for helping...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="doAdjustPoints('${memberId}')">Apply ✓</button>
+    </div>`);
+}
+
+function doAdjustPoints(memberId) {
+  const m      = getMember(memberId);
+  const pts    = parseInt(document.getElementById('adj-pts')?.value)||0;
+  const reason = document.getElementById('adj-reason')?.value.trim() || 'Manual adjustment';
+  if (!m || pts===0) { toast('Enter a non-zero amount'); return; }
+  m.points      = Math.max(0, (m.points||0) + pts);
+  m.totalEarned = pts>0 ? (m.totalEarned||0)+pts : m.totalEarned;
+  addHistory('bonus', memberId, reason, pts);
+  saveData();
+  closeModal();
+  toast(`${pts>0?'+':''}${pts} pts for ${m.name}`);
+  renderParentSettings();
+}
+
+function resetAllData() {
+  if (!confirm('This will erase ALL family data. Are you absolutely sure?')) return;
+  if (!confirm('Last chance — really reset everything?')) return;
+  localStorage.removeItem(LS_KEY);
+  D = defaultData();
+  location.reload();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 6 — GRANDMA VIEW + INIT + BOOTSTRAP
+═══════════════════════════════════════════════════════════════ */
+
+// ── GRANDMA VIEW ENTRY ────────────────────────────────────────
+function renderGrandmaView() {
+  const m = S.currentUser;
+  showScreen('screen-grandma');
+  // Apply large-font base to grandma screens
+  document.getElementById('grandma-content').style.fontSize = '1.15rem';
+
+  renderGrandmaHeader();
+  renderGrandmaNav();
+  renderGrandmaTab();
+}
+
+function renderGrandmaHeader() {
+  const m = S.currentUser;
+  document.getElementById('grandma-header').innerHTML = `
+    <div class="header-left">
+      <button class="btn-back" onclick="renderHome()">←</button>
+      <span class="header-avatar">${m?.avatar||'👵'}</span>
+      <div>
+        <div class="header-name">${esc(m?.name||'Grandma')}</div>
+        <div class="header-sub">${todayDisplay()}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="btn-icon-sm" style="background:#F3F4F6;font-size:1.2rem" onclick="grandmaFontUp()" title="Bigger text">A+</button>
+      <button class="btn-icon-sm" style="background:#F3F4F6;font-size:0.85rem" onclick="grandmaFontDown()" title="Smaller text">A-</button>
+    </div>`;
+}
+
+let grandmaFontSize = 1.15;
+function grandmaFontUp()   { grandmaFontSize = Math.min(1.8,grandmaFontSize+0.1); document.getElementById('grandma-content').style.fontSize = grandmaFontSize+'rem'; }
+function grandmaFontDown() { grandmaFontSize = Math.max(0.9,grandmaFontSize-0.1); document.getElementById('grandma-content').style.fontSize = grandmaFontSize+'rem'; }
+
+function renderGrandmaNav() {
+  const tabs = [
+    ['today','📅','Today'],
+    ['family','👨‍👩‍👧‍👦','Family'],
+    ['plans','📋','Plans'],
+  ];
+  document.getElementById('grandma-nav').innerHTML = tabs.map(([id,icon,label]) => `
+    <button class="nav-item${S.grandmaTab===id?' active':''}" onclick="switchGrandmaTab('${id}')">
+      <span class="nav-icon" style="font-size:1.8rem">${icon}</span>
+      <span style="font-size:0.85rem;font-weight:700">${label}</span>
+    </button>`).join('');
+}
+
+function switchGrandmaTab(tab) {
+  S.grandmaTab = tab;
+  renderGrandmaNav();
+  renderGrandmaTab();
+}
+
+function renderGrandmaTab() {
+  switch(S.grandmaTab) {
+    case 'today':  renderGrandmaToday();  break;
+    case 'family': renderGrandmaFamily(); break;
+    case 'plans':  renderGrandmaPlans();  break;
+  }
+}
+
+// ── GRANDMA: TODAY ────────────────────────────────────────────
+function renderGrandmaToday() {
+  const t    = today();
+  const acts = D.activities.filter(a=>a.date===t);
+  const kids = D.family.members.filter(m=>m.role==='kid');
+
+  let html = `
+    <div class="card" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:18px;margin-bottom:16px">
+      <div style="font-size:1.4rem;font-weight:800;margin-bottom:4px">📅 Today</div>
+      <div style="font-size:1.1rem;opacity:0.9">${todayDisplay()}</div>
+    </div>`;
+
+  // Today's activities
+  if (acts.length > 0) {
+    html += `<div class="card"><div class="card-title" style="font-size:1.3rem">🗓️ Today's Plans</div>`;
+    acts.forEach(a => { html += grandmaActivityCard(a); });
+    html += `</div>`;
+  } else {
+    html += `<div class="card">
+      <div class="card-title" style="font-size:1.3rem">🗓️ Today's Plans</div>
+      <div style="text-align:center;padding:16px 0;color:var(--muted);font-size:1rem">No plans scheduled today</div>
+    </div>`;
+  }
+
+  // Kids chore summary
+  html += `<div class="card"><div class="card-title" style="font-size:1.3rem">⭐ Kids' Chores Today</div>`;
+  if (kids.length === 0) {
+    html += `<div style="color:var(--muted)">No kids in the family yet.</div>`;
+  }
+  kids.forEach(kid => {
+    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
+    const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
+    const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
+    html += `
+      <div style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <span style="font-size:2.2rem">${kid.avatar||'🙂'}</span>
+          <div>
+            <div style="font-size:1.3rem;font-weight:700">${esc(kid.name)}</div>
+            <div style="color:var(--muted)">${doneCount} of ${myChores.length} chores done · ⭐ ${kid.points||0} points</div>
+          </div>
+        </div>
+        <div class="progress-wrap" style="height:14px">
+          <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
+        </div>
+        <div style="text-align:right;font-size:0.9rem;color:var(--muted);margin-top:4px">${pct}%</div>
+      </div>`;
+  });
+  html += `</div>`;
+
+  document.getElementById('grandma-content').innerHTML = html;
+}
+
+// ── GRANDMA: FAMILY ───────────────────────────────────────────
+function renderGrandmaFamily() {
+  const kids = D.family.members.filter(m=>m.role==='kid');
+  let html = '';
+
+  kids.forEach(kid => {
+    const myChores = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
+    const done     = myChores.filter(c=>choreStatus(c,kid.id)==='done');
+    const todo     = myChores.filter(c=>choreStatus(c,kid.id)==='none');
+
+    html += `
+      <div class="card" style="border-top:5px solid ${kid.color||'#6C63FF'}">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <span style="font-size:3rem">${kid.avatar||'🙂'}</span>
+          <div>
+            <div style="font-size:1.4rem;font-weight:800">${esc(kid.name)}</div>
+            <div style="color:var(--muted)">Age ${kid.age||'?'}</div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div style="font-size:2rem;font-weight:800;color:${kid.color||'var(--purple)'}">⭐ ${kid.points||0}</div>
+            <div style="font-size:0.85rem;color:var(--muted)">points</div>
+          </div>
+        </div>`;
+
+    if (done.length > 0) {
+      html += `<div style="font-weight:700;margin-bottom:8px;color:var(--green)">✅ Completed today:</div>`;
+      done.forEach(c => {
+        html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6">
+          <span style="font-size:1.8rem">${c.icon}</span>
+          <span style="font-size:1.1rem">${esc(c.title)}</span>
+          <span style="margin-left:auto;color:var(--green);font-weight:700">+${c.points}</span>
+        </div>`;
+      });
+    }
+
+    if (todo.length > 0) {
+      html += `<div style="font-weight:700;margin:10px 0 8px;color:var(--muted)">📋 Still to do:</div>`;
+      todo.forEach(c => {
+        html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6;opacity:0.65">
+          <span style="font-size:1.8rem">${c.icon}</span>
+          <span style="font-size:1.1rem">${esc(c.title)}</span>
+        </div>`;
+      });
+    }
+    html += `</div>`;
+  });
+
+  // Family goal
+  const g = D.familyGoal;
+  if (g) {
+    const total  = goalTotal();
+    const target = g.targetPoints||1;
+    const pct    = Math.min(100,Math.round(total/target*100));
+    html += `
+      <div class="card" style="background:linear-gradient(135deg,var(--purple),var(--pink));color:#fff;border-radius:18px">
+        <div style="font-size:1.3rem;font-weight:800;margin-bottom:4px">🎯 Family Goal: ${esc(g.title)}</div>
+        <div style="margin-bottom:12px;opacity:0.85">${total} of ${target} points saved · ${pct}%</div>
+        <div style="background:rgba(255,255,255,0.3);border-radius:999px;height:14px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:var(--yellow);border-radius:999px;transition:width 0.5s"></div>
+        </div>
+      </div>`;
+  }
+
+  if (kids.length === 0) {
+    html = `<div class="empty-state"><div class="empty-icon">👶</div><div class="empty-text">No kids in the family yet.</div></div>`;
+  }
+
+  document.getElementById('grandma-content').innerHTML = html;
+}
+
+// ── GRANDMA: PLANS ────────────────────────────────────────────
+function renderGrandmaPlans() {
+  const t  = today();
+  const upcoming = D.activities
+    .filter(a=>a.date>=t)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+
+  let html = `<div class="card-title" style="font-size:1.3rem">📅 Upcoming Plans</div>`;
+  if (upcoming.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">No upcoming plans yet.</div></div>`;
+  }
+  upcoming.forEach(a => { html += grandmaActivityCard(a); });
+  document.getElementById('grandma-content').innerHTML = html;
+}
+
+function grandmaActivityCard(a) {
+  const members = D.family.members;
+  const whoText = (a.who||[]).map(id=>{
+    const m = getMember(id);
+    return m ? `${m.avatar} ${m.name}` : '';
+  }).filter(Boolean).join(', ');
+  return `
+    <div style="display:flex;gap:14px;padding:16px;background:#F9FAFB;border-radius:14px;margin-bottom:12px;align-items:flex-start">
+      <span style="font-size:2.5rem;flex-shrink:0">${a.icon||'📅'}</span>
+      <div>
+        <div style="font-size:1.2rem;font-weight:700">${esc(a.title)}</div>
+        <div style="color:var(--muted);margin-top:4px">${fmtDate(a.date)}${a.time?' at '+a.time:''}</div>
+        ${whoText?`<div style="margin-top:6px">${whoText}</div>`:''}
+        ${a.notes?`<div style="margin-top:6px;color:var(--muted)">${esc(a.notes)}</div>`:''}
+      </div>
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INIT — bootstrap the app on page load
+═══════════════════════════════════════════════════════════════ */
+
+function init() {
+  loadData();
+  if (!D.setup || D.family.members.length === 0) {
+    // First time: go to setup wizard
+    S.setupMembers = [];
+    S.setupStep    = 0;
+    showScreen('screen-setup');
+    renderSetupStep();
+  } else {
+    startSyncPoller();
+    if (D.settings.cloudBinId) syncFromCloud();
+    renderHome();
+  }
+}
+
+// Start on DOM ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+console.log('✅ Family Hub fully loaded!');
+  </script>
+</body>
+</html>
