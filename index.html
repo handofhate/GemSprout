@@ -1209,6 +1209,20 @@ function clearRedirectAttempt() {
   catch (_) {}
 }
 
+function redirectToCanonicalHostIfNeeded() {
+  const host = (window.location.hostname || '').toLowerCase();
+  const path = window.location.pathname || '/';
+  const canonicalHost = (FIREBASE_CONFIG.authDomain || '').toLowerCase();
+  const isGithubProjectPath = host === 'handofhate.github.io' && path.toLowerCase().startsWith('/family-hub');
+
+  if (isGithubProjectPath && canonicalHost && host !== canonicalHost) {
+    const target = `https://${canonicalHost}/`;
+    window.location.replace(target);
+    return true;
+  }
+  return false;
+}
+
 function redirectTroubleshootingHint() {
   try {
     const appProtocol = window.location.protocol;
@@ -1234,6 +1248,16 @@ function redirectTroubleshootingHint() {
 }
 
 function signIn() {
+  const appHost = (window.location.hostname || '').toLowerCase();
+  const authHost = (FIREBASE_CONFIG.authDomain || '').toLowerCase();
+  if (authHost && appHost && appHost !== authHost) {
+    const targetUrl = `https://${authHost}/`;
+    document.getElementById('auth-msg').textContent =
+      `Redirecting to secure sign-in host (${authHost})...`;
+    window.location.href = targetUrl;
+    return;
+  }
+
   const provider = new firebase.auth.GoogleAuthProvider();
   markRedirectAttempt();
   document.getElementById('auth-msg').textContent = 'Opening Google sign-in...';
@@ -3635,6 +3659,8 @@ function grandmaActivityCard(a) {
 ═══════════════════════════════════════════════════════════════ */
 
 async function init() {
+  if (redirectToCanonicalHostIfNeeded()) return;
+
   await auth.getRedirectResult().then(result => {
     if (result && result.user) clearRedirectAttempt();
   }).catch(err => {
