@@ -1192,12 +1192,30 @@ const FAMILY_DOC = 'families/collum';
 firebase.initializeApp(FIREBASE_CONFIG);
 const auth = firebase.auth();
 const db   = firebase.firestore();
+const REDIRECT_ATTEMPT_KEY = 'familyHub.redirectAttemptAt';
+
+function readRedirectAttemptAt() {
+  try { return Number(localStorage.getItem(REDIRECT_ATTEMPT_KEY) || 0); }
+  catch (_) { return 0; }
+}
+
+function markRedirectAttempt() {
+  try { localStorage.setItem(REDIRECT_ATTEMPT_KEY, String(Date.now())); }
+  catch (_) {}
+}
+
+function clearRedirectAttempt() {
+  try { localStorage.removeItem(REDIRECT_ATTEMPT_KEY); }
+  catch (_) {}
+}
 
 function signIn() {
   const provider = new firebase.auth.GoogleAuthProvider();
+  markRedirectAttempt();
   document.getElementById('auth-msg').textContent = 'Opening Google sign-in...';
   document.getElementById('signin-btn').style.display = 'none';
   auth.signInWithRedirect(provider).catch(err => {
+    clearRedirectAttempt();
     document.getElementById('auth-msg').textContent =
       err && err.message ? err.message : 'Sign-in failed. Please try again.';
     document.getElementById('signin-btn').style.display = '';
@@ -1206,6 +1224,7 @@ function signIn() {
 
 function signOut() {
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  clearRedirectAttempt();
   auth.signOut().then(() => {
     D = {};
     showScreen('screen-auth');
@@ -3591,8 +3610,11 @@ function grandmaActivityCard(a) {
    INIT — bootstrap the app on page load
 ═══════════════════════════════════════════════════════════════ */
 
-function init() {
-  auth.getRedirectResult().catch(err => {
+async function init() {
+  await auth.getRedirectResult().then(result => {
+    if (result && result.user) clearRedirectAttempt();
+  }).catch(err => {
+    clearRedirectAttempt();
     const isMissingState = err && err.code === 'auth/missing-initial-state';
     document.getElementById('auth-msg').textContent = isMissingState
       ? 'Sign-in could not complete on this Safari session. Reload and try again.'
@@ -3603,8 +3625,17 @@ function init() {
   auth.onAuthStateChanged(user => {
     if (!user) {
       showScreen('screen-auth');
+      const redirectedAt = readRedirectAttemptAt();
+      const recentRedirect = redirectedAt && (Date.now() - redirectedAt < 10 * 60 * 1000);
+      if (recentRedirect) {
+        clearRedirectAttempt();
+        document.getElementById('auth-msg').textContent =
+          'Google sign-in was interrupted before completion. On iPad, allow Google/Firebase auth pages, then try again.';
+      }
+      document.getElementById('signin-btn').style.display = '';
       return;
     }
+    clearRedirectAttempt();
     if (!ALLOWED_EMAILS.includes(user.email)) {
       document.getElementById('auth-msg').textContent =
         `${user.email} is not authorized. Contact the family admin.`;
