@@ -2653,6 +2653,7 @@ function checkChoreBadges(chore, memberId) {
   const doneCount = allEntries.filter(e => e.status === 'done').length;
   if (!Array.isArray(member.badges)) member.badges = [];
   for (const badge of chore.badges) {
+    if (!badge?.id || !badge?.count) continue;
     const key = `cb_${badge.id}`;
     if (doneCount >= badge.count && !member.badges.includes(key)) {
       member.badges.push(key);
@@ -2834,8 +2835,7 @@ function checkComboBonus(memberId) {
   // Update combo streak
   normalizeMember(member);
   const cs = member.comboStreak;
-  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
-  const yStr = yesterday.toISOString().slice(0,10);
+  const yStr = addDaysToDate(today(), -1);
   if (cs.lastDate === yStr) {
     cs.current += 1;
   } else if (cs.lastDate !== today()) {
@@ -3329,10 +3329,12 @@ function pinKey(k) {
         }
         renderParentView();
       } else {
-        S.pinBuffer = '';
-        for (let i=0;i<4;i++) { const d=document.getElementById('pd'+i); if(d) d.classList.remove('filled'); }
         const err = document.getElementById('pin-error');
         if (err) { err.textContent='Incorrect PIN, try again'; err.classList.remove('hidden'); }
+        setTimeout(() => {
+          S.pinBuffer = '';
+          for (let i=0;i<4;i++) { const d=document.getElementById('pd'+i); if(d) d.classList.remove('filled'); }
+        }, 500);
       }
     }, 200);
   }
@@ -4401,6 +4403,7 @@ function confirmRedeem(prizeId) {
   const m     = S.currentUser;
   const prize = D.prizes.find(p=>p.id===prizeId);
   closeModal();
+  if (!prize) { toast('Prize no longer available'); return; }
   const ok = doRedeemPrize(prizeId, m?.id);
   if (!ok) { toast('Could not redeem — not enough points'); return; }
 
@@ -5735,7 +5738,7 @@ function showPrizeModal(prizeId) {
   const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
   const p     = prize || { title:'', icon:'🎁', cost:100, type:'individual' };
 
-  const iconOpts = PRIZE_ICONS.map(ic =>
+  const iconOpts = EMOJI_MAP.slice(0, 48).map(({e:ic}) =>
     `<div class="icon-opt${ic===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${ic}')">${ic}</div>`
   ).join('');
 
@@ -5744,7 +5747,8 @@ function showPrizeModal(prizeId) {
     <input type="hidden" id="pm-icon" value="${p.icon}">
     <div class="form-group">
       <label class="form-label">Icon</label>
-      <div class="icon-picker">${iconOpts}</div>
+      <input type="text" class="icon-search-input" placeholder="🔍 Search icons (e.g. movie, game, food)..." oninput="filterPrizeIcons(this.value)">
+      <div class="icon-picker" id="prize-icon-picker-grid">${iconOpts}</div>
     </div>
     <div class="form-group">
       <label class="form-label">Prize name</label>
@@ -5762,8 +5766,30 @@ function showPrizeModal(prizeId) {
 
 function selPrizeIcon(el, icon) {
   document.getElementById('pm-icon').value = icon;
-  el.closest('.icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.closest('#prize-icon-picker-grid, .icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
   el.classList.add('sel');
+}
+
+function filterPrizeIcons(query) {
+  const q = query.toLowerCase().trim();
+  const cur = document.getElementById('pm-icon')?.value;
+  const grid = document.getElementById('prize-icon-picker-grid');
+  if (!grid) return;
+  const matches = q
+    ? EMOJI_MAP.filter(({e, k}) => k.includes(q) || e.includes(q))
+    : EMOJI_MAP.slice(0, 48);
+  if (matches.length === 0) {
+    grid.innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`;
+  } else {
+    grid.innerHTML = matches.slice(0, 80).map(({e:ic}) =>
+      `<div class="icon-opt${ic===cur?' sel':''}" onclick="selPrizeIcon(this,'${ic}')">${ic}</div>`
+    ).join('');
+  }
+  if (!_emojiLib) {
+    loadEmojiLib().then(lib => {
+      if (lib && document.getElementById('prize-icon-picker-grid')) filterPrizeIcons(query);
+    });
+  }
 }
 
 function savePrize(prizeId) {
