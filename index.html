@@ -2350,6 +2350,19 @@ function pendingApprovals() {
   return arr;
 }
 
+function inProgressChores() {
+  // Chores where a before-photo was approved and the kid is actively working (needs_after phase)
+  const arr = [];
+  for (const chore of D.chores) {
+    if (chore.photoMode !== 'before_after') continue;
+    for (const mid of (chore.assignedTo || [])) {
+      const phase = getChorePhotoPhase(chore, mid);
+      if (phase?.phase === 'needs_after') arr.push({ chore, memberId: mid });
+    }
+  }
+  return arr;
+}
+
 // ── CHORE STATUS ──────────────────────────────────────────────
 function choreStatus(chore, memberId) {
   return getChoreProgress(chore, memberId).status;
@@ -4462,7 +4475,8 @@ function renderParentView() {
 
 function renderParentHeader() {
   const m = S.currentUser;
-  const pending = pendingApprovals().length;
+  const pending    = pendingApprovals().length;
+  const inProgress = inProgressChores().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
       <span class="header-avatar">${m?.avatar||'🧑'}</span>
@@ -4472,13 +4486,16 @@ function renderParentHeader() {
       </div>
     </div>
     <div class="header-actions">
-      ${pending>0?`<span class="header-badge" style="background:#EF4444;color:#fff">⏳ ${pending}</span>`:''}
+      ${pending>0    ? `<span class="header-badge" style="background:#EF4444;color:#fff" title="Needs approval">⏳ ${pending}</span>` : ''}
+      ${inProgress>0 ? `<span class="header-badge" style="background:#3B82F6;color:#fff" title="Kid actively working">🔨 ${inProgress}</span>` : ''}
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
     </div>`;
 }
 
 function renderParentNav() {
-  const pending = pendingApprovals().length;
+  const pending    = pendingApprovals().length;
+  const inProgress = inProgressChores().length;
+  const homeCount  = pending + inProgress;
   const tabs = [
     ['home','🏠','Overview'],
     ['chores','📋','Chores'],
@@ -4490,7 +4507,7 @@ function renderParentNav() {
   document.getElementById('parent-nav').innerHTML = tabs.map(([id,icon,label]) => `
     <button class="nav-item${S.parentTab===id?' active':''}" onclick="switchParentTab('${id}')">
       <span class="nav-icon">${icon}</span>${label}
-      ${id==='home'&&pending>0?`<span class="nav-badge">${pending}</span>`:''}
+      ${id==='home'&&homeCount>0?`<span class="nav-badge">${homeCount}</span>`:''}
     </button>`).join('');
 }
 
@@ -4797,7 +4814,7 @@ function renderParentHome() {
   kids.forEach(kid => {
     const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
     const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
-    const pendCount = myChores.filter(c=>['pending','partial'].includes(choreStatus(c,kid.id))).length;
+    const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
     const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
     const kidCombo  = new Set(getDailyCombo(kid.id));
     const choreRows = myChores.length === 0
