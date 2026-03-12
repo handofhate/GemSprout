@@ -1430,42 +1430,30 @@
     }
 
     /* ── ADVANCED EDITOR OVERLAY ── */
-    #adv-editor-root { position: fixed; inset: 0; z-index: 3000; display: none; background: #f8f9fa; flex-direction: column; }
-    #adv-editor-root.open { display: flex; }
-    .adv-editor-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #1f2937; color: #fff; flex-shrink: 0; }
-    .adv-editor-title  { font-size: 1.1rem; font-weight: 800; flex: 1; }
-    .adv-editor-body   { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .adv-section       { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; overflow: hidden; }
-    .adv-section summary { padding: 14px 16px; cursor: pointer; font-weight: 700; font-size: 0.95rem;
-      display: flex; align-items: center; gap: 8px; list-style: none; user-select: none;
-      background: #f9fafb; border-bottom: 1.5px solid #e5e7eb; }
-    .adv-section[open] summary { border-bottom-color: #d1d5db; }
-    .adv-section-body  { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    /* ── ADVANCED EDITOR ── */
+    #adv-editor-root { position: fixed; inset: 0; z-index: 3000; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #f8f9fa; }
+    #adv-editor-root.open { display: block; }
+    .adv-editor-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #1f2937; color: #fff; }
+    .adv-editor-title  { font-size: 1rem; font-weight: 800; flex: 1; }
+    .adv-editor-body   { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .adv-section       { background: #fff; border-radius: 10px; border: 1px solid #d1d5db; }
+    .adv-section-heading { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; padding: 10px 14px 6px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; border-radius: 10px 10px 0 0; }
+    .adv-section-body  { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
     .adv-field-row     { display: flex; align-items: center; gap: 8px; }
     .adv-field-label   { font-size: 0.78rem; font-weight: 600; color: #6b7280; width: 140px; flex-shrink: 0; }
-    .adv-field-input   { flex: 1; border: 1.5px solid #d1d5db; border-radius: 8px; padding: 6px 10px;
-      font-size: 0.88rem; font-family: inherit; background: #fff; }
+    .adv-field-input   { flex: 1; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 8px; font-size: 0.85rem; font-family: inherit; background: #fff; }
     .adv-field-input:focus { outline: none; border-color: #6C63FF; }
-    .adv-sub-card      { background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb; padding: 12px 14px; }
-    .adv-sub-title     { font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .adv-sub-card      { background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; padding: 10px 12px; }
     .adv-hist-row      { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f3f4f6; font-size: 0.82rem; }
     .adv-hist-row:last-child { border-bottom: none; }
-    .adv-close-btn     { background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 1.2rem;
-      width: 34px; height: 34px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .adv-apply-btn     { background: #6C63FF; color: #fff; border: none; border-radius: 10px;
-      padding: 10px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer; align-self: flex-start; }
-    .adv-apply-btn:hover { background: #5a52e0; }
-    .adv-danger-btn    { background: #EF4444; color: #fff; border: none; border-radius: 10px;
-      padding: 10px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
-    .adv-raw-textarea  { width: 100%; min-height: 320px; font-family: 'Courier New', monospace;
-      font-size: 0.78rem; border: 1.5px solid #d1d5db; border-radius: 10px; padding: 12px;
-      box-sizing: border-box; resize: vertical; line-height: 1.5; }
-    .adv-raw-textarea:focus { outline: none; border-color: #6C63FF; }
-    .adv-status        { font-size: 0.82rem; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
+    .adv-close-btn     { background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 1.2rem; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .adv-apply-btn     { background: #6C63FF; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+    .adv-danger-btn    { background: #EF4444; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+    .adv-raw-textarea  { width: 100%; min-height: 280px; font-family: 'Courier New', monospace; font-size: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; box-sizing: border-box; resize: vertical; line-height: 1.5; }
+    .adv-status        { font-size: 0.8rem; font-weight: 600; padding: 5px 8px; border-radius: 6px; }
     .adv-status.ok     { background: #DCFCE7; color: #166534; }
     .adv-status.err    { background: #FEE2E2; color: #991b1b; }
-    .adv-fields-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    @media (max-width: 480px) { .adv-fields-grid { grid-template-columns: 1fr; } .adv-field-label { width: 120px; } }
+    @media (max-width: 480px) { .adv-field-label { width: 110px; } }
 
     /* ── NOT LISTENING OVERLAY ── */
     #nl-root { position: fixed; inset: 0; z-index: 2000; display: none; }
@@ -5962,18 +5950,10 @@ function advDeleteHistory(entryId) {
 }
 
 function _advRenderPreserving() {
-  // Save scroll position and which sections are open
-  const body = document.querySelector('#adv-editor-root .adv-editor-body');
-  const scroll = body ? body.scrollTop : 0;
-  const openState = {};
-  document.querySelectorAll('#adv-editor-root details[id]').forEach(d => { openState[d.id] = d.open; });
+  const root = document.getElementById('adv-editor-root');
+  const scroll = root ? root.scrollTop : 0;
   _advRender();
-  // Restore
-  const newBody = document.querySelector('#adv-editor-root .adv-editor-body');
-  if (newBody) newBody.scrollTop = scroll;
-  document.querySelectorAll('#adv-editor-root details[id]').forEach(d => {
-    if (d.id in openState) d.open = openState[d.id];
-  });
+  if (root) root.scrollTop = scroll;
 }
 
 function advApplyRawJson() {
@@ -6122,57 +6102,55 @@ function _advRender() {
 
   root.innerHTML = `
     <div class="adv-editor-header">
-      <span style="font-size:1.4rem">🔧</span>
+      <span>🔧</span>
       <span class="adv-editor-title">Advanced Data Editor</span>
       <span id="adv-save-status" class="adv-status" style="margin-right:8px"></span>
       <button class="adv-close-btn" onclick="closeAdvancedEditor()">✕</button>
     </div>
     <div class="adv-editor-body">
 
-      <details id="adv-sec-members" class="adv-section" open>
-        <summary>👤 Members <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">${members.length} total</span></summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">👤 Members (${members.length})</div>
         <div class="adv-section-body">${membersHtml}</div>
-      </details>
+      </div>
 
-      <details id="adv-sec-chores" class="adv-section">
-        <summary>📋 Chores <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">${D.chores.length} total — edit icon, title, points</span></summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">📋 Chores (${D.chores.length}) — icon · title · points</div>
         <div class="adv-section-body">${choresHtml}</div>
-      </details>
+      </div>
 
-      <details id="adv-sec-prizes" class="adv-section">
-        <summary>🎁 Prizes <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">${D.prizes.length} total — edit icon, title, cost</span></summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">🎁 Prizes (${D.prizes.length}) — icon · title · cost</div>
         <div class="adv-section-body">${prizesHtml}</div>
-      </details>
+      </div>
 
-      <details id="adv-sec-settings" class="adv-section">
-        <summary>⚙️ Settings <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">all app settings</span></summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">⚙️ Settings</div>
         <div class="adv-section-body">${settingsHtml}</div>
-      </details>
+      </div>
 
-      <details id="adv-sec-goal" class="adv-section">
-        <summary>🎯 Family Goal</summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">🎯 Family Goal</div>
         <div class="adv-section-body">${goalHtml}</div>
-      </details>
+      </div>
 
-      <details id="adv-sec-history" class="adv-section">
-        <summary>📜 History <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">last 40 entries — tap ✕ to delete</span></summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">📜 History — last 40 entries · tap ✕ to delete</div>
         <div class="adv-section-body">${histHtml}</div>
-      </details>
+      </div>
 
-      <details id="adv-sec-json" class="adv-section">
-        <summary>🗂️ Raw JSON <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">full database — edit with care</span></summary>
+      <div class="adv-section">
+        <div class="adv-section-heading">🗂️ Raw JSON — full database · edit with care</div>
         <div class="adv-section-body">
-          <p style="font-size:0.8rem;color:#6b7280;margin:0 0 8px">
-            ⚠️ Editing raw JSON overwrites all data when you click Apply. Invalid JSON will be rejected.
-          </p>
+          <p style="font-size:0.78rem;color:#6b7280;margin:0 0 8px">⚠️ Clicking Apply overwrites all data. Invalid JSON will be rejected.</p>
           <textarea id="adv-raw-json" class="adv-raw-textarea">${esc(JSON.stringify(D, null, 2))}</textarea>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
             <button class="adv-apply-btn" onclick="advApplyRawJson()">Apply Raw JSON</button>
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)">↺ Reload</button>
+            <button class="adv-apply-btn" style="background:#374151" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)">↺ Reload</button>
             <span id="adv-json-status" class="adv-status"></span>
           </div>
         </div>
-      </details>
+      </div>
 
     </div>`;
 }
