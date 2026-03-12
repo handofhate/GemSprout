@@ -178,11 +178,12 @@
     ══════════════════════════════════════════ */
     .nav-bar {
       position: fixed;
-      bottom: 0; left: 0; right: 0;
+      bottom: 10px; left: 12px; right: 12px;
       background: #fff;
       display: flex;
       border-top: 1px solid var(--border);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 12px);
+      border-radius: 22px;
       z-index: 100;
       box-shadow: 0 -4px 20px rgba(0,0,0,0.07);
     }
@@ -191,7 +192,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 8px 4px;
+      padding: 10px 6px 16px;
       cursor: pointer;
       border: none;
       background: none;
@@ -444,15 +445,15 @@
        GRANDMA MODE
     ══════════════════════════════════════════ */
     .grandma-mode {
-      font-size: 1.2rem;
+      font-size: 1.35rem;
     }
-    .grandma-mode .card-title   { font-size: 1.4rem; }
+    .grandma-mode .card-title   { font-size: 1.7rem; }
     .grandma-mode .chore-item   { padding: 18px; }
-    .grandma-mode .chore-name   { font-size: 1.15rem; }
-    .grandma-mode .nav-icon     { font-size: 1.9rem; }
-    .grandma-mode .nav-item     { font-size: 0.85rem; padding: 10px 4px; }
-    .grandma-mode .btn          { font-size: 1.1rem; padding: 14px 22px; }
-    .grandma-mode input, .grandma-mode select { font-size: 1.1rem; padding: 14px; }
+    .grandma-mode .chore-name   { font-size: 1.3rem; }
+    .grandma-mode .nav-icon     { font-size: 2.1rem; }
+    .grandma-mode .nav-item     { font-size: 1rem; padding: 12px 8px 18px; }
+    .grandma-mode .btn          { font-size: 1.2rem; padding: 16px 24px; }
+    .grandma-mode input, .grandma-mode select { font-size: 1.2rem; padding: 16px; }
 
     /* ══════════════════════════════════════════
        PROGRESS BARS
@@ -1024,24 +1025,127 @@
     }
     .icon-opt.sel { border-color: var(--purple); background: #EDE9FE; }
 
+    .schedule-toolbar {
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:14px;
+      align-items:center;
+    }
+    .schedule-controls {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .schedule-label { font-weight:700; font-size:1rem; }
+    .schedule-nav-btn {
+      border:none;
+      background:#F3F4F6;
+      border-radius:12px;
+      padding:10px 14px;
+      cursor:pointer;
+      font-weight:700;
+      font-family:inherit;
+    }
+    .calendar-grid {
+      display:grid;
+      grid-template-columns:repeat(7, minmax(0, 1fr));
+      gap:8px;
+    }
+    .calendar-dow {
+      text-align:center;
+      color:var(--muted);
+      font-size:0.8rem;
+      font-weight:700;
+      padding:4px 0;
+    }
+    .calendar-day {
+      min-height:120px;
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .calendar-day.is-today { border-color: var(--purple); box-shadow: 0 0 0 2px rgba(108,99,255,0.15); }
+    .calendar-day.is-other { opacity: 0.45; }
+    .calendar-day-num { font-weight:800; font-size:0.95rem; }
+    .calendar-chip {
+      background:#F5F3FF;
+      border-radius:10px;
+      padding:6px 8px;
+      font-size:0.75rem;
+      font-weight:700;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      cursor:pointer;
+    }
+    .week-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+      gap:12px;
+    }
+    .week-day-card {
+      background:#fff;
+      border-radius:16px;
+      padding:14px;
+      border:1px solid var(--border);
+    }
+    .week-day-card.is-today { border-color: var(--purple); }
+    .overview-kids-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
+      gap:12px;
+    }
+    .kid-overview-card {
+      background:#F9FAFB;
+      border-radius:16px;
+      padding:14px;
+      border-left:4px solid var(--purple);
+    }
+    .kid-overview-list { margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+    .kid-overview-item {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      background:#fff;
+      border-radius:12px;
+      padding:10px 12px;
+    }
+    .kid-overview-status {
+      margin-left:auto;
+      font-size:0.75rem;
+      font-weight:800;
+      padding:4px 8px;
+      border-radius:999px;
+    }
+    .kid-overview-status.done { background:#DCFCE7; color:#166534; }
+    .kid-overview-status.pending { background:#FEF3C7; color:#92400E; }
+    .kid-overview-status.todo { background:#E5E7EB; color:#374151; }
+
     /* ══════════════════════════════════════════
        RESPONSIVE
     ══════════════════════════════════════════ */
     @media (min-width: 600px) {
-      .profile-grid { grid-template-columns: repeat(4, 1fr); max-width: 520px; }
+      .profile-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); max-width: 980px; }
     }
     @media (min-width: 768px) {
-      .main-content     { max-width: 680px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
-      .app-header       { max-width: 680px; margin: 0 auto; left: 50%; transform: translateX(-50%); width: 100%; position: sticky; }
-      .nav-bar          { max-width: 680px; left: 50%; transform: translateX(-50%); border-radius: 20px 20px 0 0; }
+      .main-content     { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+      .app-header       { max-width: 1080px; margin: 0 auto; left: 50%; transform: translateX(-50%); width: calc(100% - 24px); position: sticky; }
+      .nav-bar          { max-width: 900px; left: 50%; right: auto; transform: translateX(-50%); border-radius: 24px; }
       .prize-grid       { grid-template-columns: repeat(3, 1fr); }
       .stats-grid       { grid-template-columns: repeat(4, 1fr); }
       .pin-grid         { max-width: 280px; }
     }
     @media (min-width: 1024px) {
-      .main-content { max-width: 760px; }
-      .app-header   { max-width: 760px; }
-      .nav-bar      { max-width: 760px; }
+      .main-content { max-width: 1220px; }
+      .app-header   { max-width: 1220px; }
+      .nav-bar      { max-width: 980px; }
     }
 
     /* ══════════════════════════════════════════
@@ -1207,6 +1311,7 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 const APP_UNLOCK_KEY = 'familyHub.appUnlocked';
+const CURRENT_USER_KEY = 'familyHub.currentUserId';
 
 function setAppUnlocked(v) {
   try { localStorage.setItem(APP_UNLOCK_KEY, v ? '1' : '0'); } catch (_) {}
@@ -1215,6 +1320,18 @@ function setAppUnlocked(v) {
 function isAppUnlocked() {
   try { return localStorage.getItem(APP_UNLOCK_KEY) === '1'; }
   catch (_) { return false; }
+}
+
+function setCurrentUserId(id) {
+  try {
+    if (id) localStorage.setItem(CURRENT_USER_KEY, id);
+    else localStorage.removeItem(CURRENT_USER_KEY);
+  } catch (_) {}
+}
+
+function getCurrentUserId() {
+  try { return localStorage.getItem(CURRENT_USER_KEY) || ''; }
+  catch (_) { return ''; }
 }
 
 // ── APP-LEVEL PIN GATE ────────────────────────────────────────
@@ -1249,6 +1366,7 @@ function showAppPin() {
 // ── SWITCH USER (requires PIN) ────────────────────────────────
 function goHome() {
   S.currentUser = null;
+  setCurrentUserId('');
   showAppPin();
 }
 
@@ -1305,6 +1423,8 @@ let S = {            // UI state (not persisted)
   kidTab:        'chores',
   parentTab:     'home',
   grandmaTab:    'today',
+  plansView:     'month',
+  plansCursor:   '',
   setupStep:     0,
   setupMembers:  [],   // unified non-parent members during setup
   pinBuffer:     '',
@@ -1403,6 +1523,38 @@ function genId() {
 
 function today() {
   return new Date().toISOString().slice(0,10); // YYYY-MM-DD
+}
+
+function parseDateLocal(str) {
+  const [year, month, day] = str.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDate(str, days) {
+  const date = parseDateLocal(str);
+  date.setDate(date.getDate() + days);
+  return formatDateLocal(date);
+}
+
+function addMonthsToDate(str, months) {
+  const date = parseDateLocal(str);
+  date.setMonth(date.getMonth() + months, 1);
+  return formatDateLocal(date);
+}
+
+function startOfWeekDate(str) {
+  const date = parseDateLocal(str);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return formatDateLocal(date);
 }
 
 function weekStart() {
@@ -1761,6 +1913,7 @@ function renderHome() {
 function selectProfile(id) {
   const member = getMember(id);
   if (!member) return;
+  setCurrentUserId(member.id);
 
   // Birthday check — trigger before entering any view
   if (isBirthday(member)) {
@@ -1832,7 +1985,13 @@ function pinKey(k) {
         S.pinBuffer = '';
         if (S.pinMode === 'app') {
           setAppUnlocked(true);
-          renderHome();
+          const rememberedUser = getMember(getCurrentUserId());
+          if (rememberedUser) {
+            S.currentUser = rememberedUser;
+            routeToView(rememberedUser);
+          } else {
+            renderHome();
+          }
           return;
         }
         renderParentView();
@@ -2195,7 +2354,6 @@ function renderKidView() {
   if (tiny) {
     document.getElementById('kid-content').className = 'main-content tiny-mode';
     ttsEnabled = true; // always on for tiny kids
-    if ('speechSynthesis' in window) speak(`Hi ${m.name}! Let's see your chores!`);
   } else {
     document.getElementById('kid-content').className = 'main-content';
   }
@@ -2743,7 +2901,6 @@ function renderParentHeader() {
     </div>
     <div class="header-actions">
       ${pending>0?`<span class="header-badge" style="background:#EF4444;color:#fff">⏳ ${pending}</span>`:''}
-      <button class="btn-icon-sm" style="background:#EDE9FE;color:var(--purple)" onclick="pushToFirestore()" title="Sync now">☁️</button>
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
     </div>`;
 }
@@ -2826,29 +2983,47 @@ function renderParentHome() {
   }
 
   // Kids overview
-  html += `<div class="card"><div class="card-title">👨‍👩‍👧‍👦 Kids Today</div>`;
+  let kidsHtml = '';
   if (kids.length === 0) {
-    html += `<div class="empty-state"><div class="empty-icon">👶</div><div class="empty-text">No kids yet — go to Setup!</div></div>`;
+    kidsHtml = `<div class="empty-state"><div class="empty-icon">👶</div><div class="empty-text">No kids yet — go to Setup!</div></div>`;
   }
   kids.forEach(kid => {
     const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
     const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
     const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
     const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
-    html += `
-      <div class="member-row" style="border-left:4px solid ${kid.color||'#6C63FF'}">
-        <span class="member-avatar">${kid.avatar||'🙂'}</span>
-        <div class="member-info">
-          <div class="member-name">${esc(kid.name)}</div>
-          <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtPts(kid.points||0)}</div>
-          <div class="progress-wrap" style="height:8px;margin:6px 0 0">
-            <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
+    const choreRows = myChores.length === 0
+      ? `<div class="empty-state" style="padding:16px 8px"><div class="empty-text">No chores assigned</div></div>`
+      : `<div class="kid-overview-list">${myChores.map(chore => {
+          const status = choreStatus(chore, kid.id);
+          const statusClass = status === 'done' ? 'done' : status === 'pending' ? 'pending' : 'todo';
+          const statusLabel = status === 'done' ? 'Done' : status === 'pending' ? 'Pending' : 'To do';
+          return `
+            <div class="kid-overview-item">
+              <div>
+                <div style="font-weight:700">${chore.icon} ${esc(chore.title)}</div>
+                <div style="font-size:0.82rem;color:var(--muted)">${fmtPts(chore.points)} · ${esc(chore.frequency)}</div>
+              </div>
+              <span class="kid-overview-status ${statusClass}">${statusLabel}</span>
+            </div>`;
+        }).join('')}</div>`;
+    kidsHtml += `
+      <div class="kid-overview-card" style="border-top:4px solid ${kid.color||'#6C63FF'}">
+        <div class="member-row" style="padding:0;box-shadow:none;background:transparent">
+          <span class="member-avatar">${kid.avatar||'🙂'}</span>
+          <div class="member-info">
+            <div class="member-name">${esc(kid.name)}</div>
+            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtPts(kid.points||0)}</div>
+            <div class="progress-wrap" style="height:8px;margin:6px 0 0">
+              <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
+            </div>
           </div>
+          <div class="member-pts">${kid.points||0}</div>
         </div>
-        <div class="member-pts">${kid.points||0}</div>
+        ${choreRows}
       </div>`;
   });
-  html += `</div>`;
+  html += `<div class="card"><div class="card-title">👨‍👩‍👧‍👦 Kids Today</div>${kids.length>0?`<div class="overview-kids-grid">${kidsHtml}</div>`:kidsHtml}</div>`;
 
   // Today's activities
   const todayActivities = D.activities.filter(a=>a.date===t);
@@ -3192,11 +3367,125 @@ function clearGoal() {
 }
 
 // ── PARENT PLANS (ACTIVITIES) ─────────────────────────────────
+function getParentPlansCursor() {
+  if (!S.plansCursor) S.plansCursor = today();
+  return S.plansCursor;
+}
+
+function setParentPlansView(view) {
+  S.plansView = view;
+  if (!S.plansCursor) S.plansCursor = today();
+  renderParentPlans();
+}
+
+function setParentPlansCursor(dateStr, view) {
+  S.plansCursor = dateStr;
+  if (view) S.plansView = view;
+  renderParentPlans();
+}
+
+function shiftParentPlans(direction) {
+  const cursor = getParentPlansCursor();
+  if (S.plansView === 'day') {
+    S.plansCursor = addDaysToDate(cursor, direction);
+  } else if (S.plansView === 'week') {
+    S.plansCursor = addDaysToDate(cursor, direction * 7);
+  } else {
+    S.plansCursor = addMonthsToDate(cursor, direction);
+  }
+  renderParentPlans();
+}
+
+function parentPlansLabel() {
+  const cursor = parseDateLocal(getParentPlansCursor());
+  if (S.plansView === 'day') {
+    return cursor.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+  }
+  if (S.plansView === 'week') {
+    const start = parseDateLocal(startOfWeekDate(getParentPlansCursor()));
+    const end = parseDateLocal(addDaysToDate(formatDateLocal(start), 6));
+    return `${start.toLocaleDateString('en-US', { month:'short', day:'numeric' })} - ${end.toLocaleDateString('en-US', { month:'short', day:'numeric' })}`;
+  }
+  return cursor.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+}
+
+function renderPlanActivityCard(a, faded) {
+  return `
+    <div class="admin-card"${faded?' style="opacity:0.6"':''}>
+      ${activityCard(a)}
+      <div class="admin-actions" style="margin-left:auto;align-self:flex-start">
+        <button class="btn-icon-sm btn-icon-edit" onclick="showActivityModal('${a.id}')">✏️</button>
+        <button class="btn-icon-sm btn-icon-delete" onclick="deleteActivity('${a.id}')">🗑️</button>
+      </div>
+    </div>`;
+}
+
+function renderParentPlansMonth(cursor) {
+  const current = parseDateLocal(cursor);
+  const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
+  const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+  const gridStart = parseDateLocal(startOfWeekDate(formatDateLocal(monthStart)));
+  const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let html = `<div class="calendar-grid">${dayNames.map(name => `<div class="calendar-dow">${name}</div>`).join('')}`;
+
+  for (let index = 0; index < 42; index += 1) {
+    const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index);
+    const cellKey = formatDateLocal(cellDate);
+    const activities = D.activities
+      .filter(a=>a.date===cellKey)
+      .sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    const isOtherMonth = cellDate < monthStart || cellDate > monthEnd;
+    const isToday = cellKey === today();
+    html += `
+      <button class="calendar-day${isOtherMonth?' is-other':''}${isToday?' is-today':''}" onclick="setParentPlansCursor('${cellKey}','day')">
+        <div class="calendar-day-num">${cellDate.getDate()}</div>
+        ${activities.slice(0,3).map(a => `<div class="calendar-chip">${a.icon||'📅'} ${esc(a.title)}</div>`).join('')}
+        ${activities.length>3?`<div class="calendar-chip">+${activities.length-3} more</div>`:''}
+      </button>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function renderParentPlansWeek(cursor) {
+  const weekStart = parseDateLocal(startOfWeekDate(cursor));
+  let html = `<div class="week-grid">`;
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + offset);
+    const dateKey = formatDateLocal(date);
+    const activities = D.activities
+      .filter(a=>a.date===dateKey)
+      .sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    html += `
+      <div class="week-day-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <div style="font-weight:800">${date.toLocaleDateString('en-US', { weekday:'long' })}</div>
+            <div style="font-size:0.85rem;color:var(--muted)">${date.toLocaleDateString('en-US', { month:'short', day:'numeric' })}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="setParentPlansCursor('${dateKey}','day')">Open</button>
+        </div>
+        ${activities.length ? activities.map(a => activityCard(a)).join('') : `<div class="empty-state" style="padding:18px 10px"><div class="empty-text">Nothing planned</div></div>`}
+      </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderParentPlansDay(cursor) {
+  const activities = D.activities
+    .filter(a=>a.date===cursor)
+    .sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  if (!activities.length) {
+    return `<div class="empty-state"><div class="empty-icon">🗓️</div><div class="empty-text">Nothing planned for this day.</div></div>`;
+  }
+  return activities.map(a => renderPlanActivityCard(a, false)).join('');
+}
+
 function renderParentPlans() {
   const t = today();
-  const upcoming = D.activities
-    .filter(a=>a.date>=t)
-    .sort((a,b)=>a.date.localeCompare(b.date));
+  const cursor = getParentPlansCursor();
   const past = D.activities
     .filter(a=>a.date<t)
     .sort((a,b)=>b.date.localeCompare(a.date))
@@ -3206,25 +3495,31 @@ function renderParentPlans() {
     <div class="section-row">
       <span class="section-title">📅 Plans & Activities</span>
       <button class="btn btn-primary btn-sm" onclick="showActivityModal()">+ Add</button>
+    </div>
+    <div class="schedule-toolbar">
+      <div class="schedule-controls">
+        <button class="schedule-nav-btn" onclick="shiftParentPlans(-1)">‹</button>
+        <div class="schedule-label">${parentPlansLabel()}</div>
+        <button class="schedule-nav-btn" onclick="shiftParentPlans(1)">›</button>
+      </div>
+      <div class="display-mode-row" style="margin-top:0">
+        <button class="mode-opt${S.plansView==='day'?' sel':''}" onclick="setParentPlansView('day')"><span class="mode-opt-icon">☀️</span>Day</button>
+        <button class="mode-opt${S.plansView==='week'?' sel':''}" onclick="setParentPlansView('week')"><span class="mode-opt-icon">🗓️</span>Week</button>
+        <button class="mode-opt${S.plansView==='month'?' sel':''}" onclick="setParentPlansView('month')"><span class="mode-opt-icon">📆</span>Month</button>
+      </div>
     </div>`;
 
-  if (upcoming.length === 0) {
-    html += `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">No upcoming plans. Add something fun!</div></div>`;
+  if (S.plansView === 'day') {
+    html += renderParentPlansDay(cursor);
+  } else if (S.plansView === 'week') {
+    html += renderParentPlansWeek(cursor);
+  } else {
+    html += renderParentPlansMonth(cursor);
   }
-  upcoming.forEach(a => {
-    html += `
-      <div class="admin-card">
-        ${activityCard(a)}
-        <div class="admin-actions" style="margin-left:auto;align-self:flex-start">
-          <button class="btn-icon-sm btn-icon-edit"   onclick="showActivityModal('${a.id}')">✏️</button>
-          <button class="btn-icon-sm btn-icon-delete" onclick="deleteActivity('${a.id}')">🗑️</button>
-        </div>
-      </div>`;
-  });
 
   if (past.length > 0) {
     html += `<div class="divider"></div><div class="section-title" style="margin-bottom:10px;color:var(--muted)">Past Events</div>`;
-    past.forEach(a => { html += `<div style="opacity:0.6">${activityCard(a)}</div>`; });
+    past.forEach(a => { html += renderPlanActivityCard(a, true); });
   }
 
   document.getElementById('parent-content').innerHTML = html;
@@ -3359,10 +3654,10 @@ function renderParentSettings() {
     <div class="card" style="background:#F0FDF4;border:2px solid var(--green)">
       <div class="card-title">☁️ Cloud Sync</div>
       <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
-        Sync is powered by Google Firestore and runs automatically in real time. No configuration needed.
+        Sync is powered by Google Firestore and runs automatically in real time across devices.
       </p>
       <div style="display:flex;gap:10px;align-items:center">
-        <span style="font-size:0.9rem;color:var(--green);font-weight:600">✅ Active</span>
+        <span style="font-size:0.9rem;color:var(--green);font-weight:600">✅ Automatic</span>
         <button class="btn btn-secondary btn-sm" onclick="goHome()">Switch User</button>
       </div>
       ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
@@ -3468,15 +3763,9 @@ function renderGrandmaHeader() {
       </div>
     </div>
     <div class="header-actions">
-      <button class="btn-icon-sm" style="background:#F3F4F6;font-size:1.2rem" onclick="grandmaFontUp()" title="Bigger text">A+</button>
-      <button class="btn-icon-sm" style="background:#F3F4F6;font-size:0.85rem" onclick="grandmaFontDown()" title="Smaller text">A-</button>
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
     </div>`;
 }
-
-let grandmaFontSize = 1.15;
-function grandmaFontUp()   { grandmaFontSize = Math.min(1.8,grandmaFontSize+0.1); document.getElementById('grandma-content').style.fontSize = grandmaFontSize+'rem'; }
-function grandmaFontDown() { grandmaFontSize = Math.max(0.9,grandmaFontSize-0.1); document.getElementById('grandma-content').style.fontSize = grandmaFontSize+'rem'; }
 
 function renderGrandmaNav() {
   const tabs = [
@@ -3682,8 +3971,15 @@ function routeAfterLoad() {
     showScreen('screen-setup');
     renderSetupStep();
   } else {
-    if (isAppUnlocked()) renderHome();
-    else showAppPin();
+    if (isAppUnlocked()) {
+      const rememberedUser = getMember(getCurrentUserId());
+      if (rememberedUser) {
+        S.currentUser = rememberedUser;
+        routeToView(rememberedUser);
+      } else {
+        renderHome();
+      }
+    } else showAppPin();
   }
 }
 
@@ -3693,8 +3989,15 @@ function init() {
 
   if (hasLocalData) {
     // Fast path: local data exists — show PIN immediately, sync in background
-    if (isAppUnlocked()) renderHome();
-    else showAppPin();
+    if (isAppUnlocked()) {
+      const rememberedUser = getMember(getCurrentUserId());
+      if (rememberedUser) {
+        S.currentUser = rememberedUser;
+        routeToView(rememberedUser);
+      } else {
+        renderHome();
+      }
+    } else showAppPin();
     auth.signInAnonymously()
       .then(() => subscribeToFirestore())
       .catch(err => console.warn('Firestore sync unavailable:', err));
