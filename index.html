@@ -1430,6 +1430,44 @@
       white-space: nowrap;
     }
 
+    /* ── ADVANCED EDITOR OVERLAY ── */
+    #adv-editor-root { position: fixed; inset: 0; z-index: 3000; display: none; background: #f8f9fa; flex-direction: column; }
+    #adv-editor-root.open { display: flex; }
+    .adv-editor-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #1f2937; color: #fff; flex-shrink: 0; }
+    .adv-editor-title  { font-size: 1.1rem; font-weight: 800; flex: 1; }
+    .adv-editor-body   { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .adv-section       { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; overflow: hidden; }
+    .adv-section summary { padding: 14px 16px; cursor: pointer; font-weight: 700; font-size: 0.95rem;
+      display: flex; align-items: center; gap: 8px; list-style: none; user-select: none;
+      background: #f9fafb; border-bottom: 1.5px solid #e5e7eb; }
+    .adv-section[open] summary { border-bottom-color: #d1d5db; }
+    .adv-section-body  { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .adv-field-row     { display: flex; align-items: center; gap: 8px; }
+    .adv-field-label   { font-size: 0.78rem; font-weight: 600; color: #6b7280; width: 140px; flex-shrink: 0; }
+    .adv-field-input   { flex: 1; border: 1.5px solid #d1d5db; border-radius: 8px; padding: 6px 10px;
+      font-size: 0.88rem; font-family: inherit; background: #fff; }
+    .adv-field-input:focus { outline: none; border-color: #6C63FF; }
+    .adv-sub-card      { background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb; padding: 12px 14px; }
+    .adv-sub-title     { font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .adv-hist-row      { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f3f4f6; font-size: 0.82rem; }
+    .adv-hist-row:last-child { border-bottom: none; }
+    .adv-close-btn     { background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 1.2rem;
+      width: 34px; height: 34px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .adv-apply-btn     { background: #6C63FF; color: #fff; border: none; border-radius: 10px;
+      padding: 10px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer; align-self: flex-start; }
+    .adv-apply-btn:hover { background: #5a52e0; }
+    .adv-danger-btn    { background: #EF4444; color: #fff; border: none; border-radius: 10px;
+      padding: 10px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
+    .adv-raw-textarea  { width: 100%; min-height: 320px; font-family: 'Courier New', monospace;
+      font-size: 0.78rem; border: 1.5px solid #d1d5db; border-radius: 10px; padding: 12px;
+      box-sizing: border-box; resize: vertical; line-height: 1.5; }
+    .adv-raw-textarea:focus { outline: none; border-color: #6C63FF; }
+    .adv-status        { font-size: 0.82rem; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
+    .adv-status.ok     { background: #DCFCE7; color: #166534; }
+    .adv-status.err    { background: #FEE2E2; color: #991b1b; }
+    .adv-fields-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    @media (max-width: 480px) { .adv-fields-grid { grid-template-columns: 1fr; } .adv-field-label { width: 120px; } }
+
     /* ── NOT LISTENING OVERLAY ── */
     #nl-root { position: fixed; inset: 0; z-index: 2000; display: none; }
     #nl-root.open { display: flex; flex-direction: column; align-items: center;
@@ -1513,6 +1551,7 @@
   <div id="modal-root"></div>
   <div id="celebration-root"></div>
   <div id="confetti-root"></div>
+  <div id="adv-editor-root"></div>
   <div id="nl-root"></div>
 
   <!-- Firebase SDK -->
@@ -5848,6 +5887,283 @@ function deleteActivity(actId) {
   renderParentPlans();
 }
 
+// ── ADVANCED DATA EDITOR ──────────────────────────────────────
+function showAdvancedEditor() {
+  const root = document.getElementById('adv-editor-root');
+  root.classList.add('open');
+  _advRender();
+}
+
+function closeAdvancedEditor() {
+  const root = document.getElementById('adv-editor-root');
+  root.classList.remove('open');
+  root.innerHTML = '';
+}
+
+function _advField(label, inputHtml) {
+  return `<div class="adv-field-row">
+    <span class="adv-field-label">${label}</span>
+    ${inputHtml}
+  </div>`;
+}
+
+function _advInput(type, val, onchange, extra='') {
+  const v = val === null || val === undefined ? '' : val;
+  return `<input type="${type}" class="adv-field-input" value="${esc(String(v))}"
+    ${type==='color'?`value="${v}"`:''}
+    onchange="${onchange}" ${extra}>`;
+}
+
+function _advCheck(checked, onchange) {
+  return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+    <input type="checkbox" ${checked?'checked':''} onchange="${onchange}"
+      style="width:18px;height:18px;cursor:pointer">
+    <span style="font-size:0.82rem;color:#6b7280">${checked?'On':'Off'}</span>
+  </label>`;
+}
+
+function advSetMember(id, field, val) {
+  const m = getMember(id);
+  if (!m) return;
+  if (field.includes('.')) {
+    const [a, b] = field.split('.');
+    if (!m[a] || typeof m[a] !== 'object') m[a] = {};
+    m[a][b] = val;
+  } else {
+    m[field] = val;
+  }
+  saveData();
+  _advRefreshStatus(`Member saved`);
+}
+
+function advSetChore(id, field, val) {
+  const c = D.chores.find(x => x.id === id);
+  if (!c) return;
+  c[field] = val;
+  saveData();
+  _advRefreshStatus(`Chore saved`);
+}
+
+function advSetPrize(id, field, val) {
+  const p = D.prizes.find(x => x.id === id);
+  if (!p) return;
+  p[field] = val;
+  saveData();
+  _advRefreshStatus(`Prize saved`);
+}
+
+function advDeleteHistory(entryId) {
+  const idx = D.history.findIndex(h => h.id === entryId);
+  if (idx >= 0) { D.history.splice(idx, 1); saveData(); _advRender(); }
+}
+
+function advApplyRawJson() {
+  const ta = document.getElementById('adv-raw-json');
+  const statusEl = document.getElementById('adv-json-status');
+  try {
+    const parsed = JSON.parse(ta.value);
+    D = normalizeData(parsed);
+    saveData();
+    if (statusEl) { statusEl.className = 'adv-status ok'; statusEl.textContent = '✅ Applied & saved successfully'; }
+    _advRender();
+  } catch(e) {
+    if (statusEl) { statusEl.className = 'adv-status err'; statusEl.textContent = `❌ JSON error: ${e.message}`; }
+  }
+}
+
+function _advRefreshStatus(msg) {
+  const el = document.getElementById('adv-save-status');
+  if (!el) return;
+  el.className = 'adv-status ok';
+  el.textContent = `✅ ${msg}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.textContent = ''; el.className = ''; }, 2000);
+}
+
+function _advRender() {
+  const root = document.getElementById('adv-editor-root');
+  if (!root) return;
+
+  const members = D.family.members;
+  const kids = members.filter(m => m.role === 'kid');
+
+  // ── Members section ──
+  const membersHtml = members.map(m => {
+    normalizeMember(m);
+    const fields = [
+      _advField('Name',         _advInput('text',   m.name,            `advSetMember('${m.id}','name',this.value)`)),
+      _advField('Avatar',       _advInput('text',   m.avatar,          `advSetMember('${m.id}','avatar',this.value)`)),
+      _advField('Age',          _advInput('number', m.age||'',         `advSetMember('${m.id}','age',+this.value)`)),
+      _advField('Color',        _advInput('color',  m.color||'#6C63FF',`advSetMember('${m.id}','color',this.value)`)),
+      _advField('Role',         `<select class="adv-field-input" onchange="advSetMember('${m.id}','role',this.value)">
+        ${['parent','kid','viewer'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}
+      </select>`),
+      _advField('Points ⭐',    _advInput('number', m.points||0,       `advSetMember('${m.id}','points',+this.value)`)),
+      _advField('Total Earned', _advInput('number', m.totalEarned||0,  `advSetMember('${m.id}','totalEarned',+this.value)`)),
+      _advField('Savings 💰',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
+      _advField('XP 🔮',        _advInput('number', m.xp||0,           `advSetMember('${m.id}','xp',+this.value)`)),
+      _advField('Streak Current',_advInput('number', m.streak?.current||0, `advSetMember('${m.id}','streak.current',+this.value)`)),
+      _advField('Streak Best',  _advInput('number', m.streak?.best||0, `advSetMember('${m.id}','streak.best',+this.value)`)),
+      _advField('Streak Last Date', _advInput('date', m.streak?.lastDate||'', `advSetMember('${m.id}','streak.lastDate',this.value)`)),
+      _advField('NL Today Secs',_advInput('number', m.nlTodaySecs||0,  `advSetMember('${m.id}','nlTodaySecs',+this.value)`)),
+      _advField('NL Lifetime Secs',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
+      _advField('NL Date',      _advInput('date',   m.nlDate||'',      `advSetMember('${m.id}','nlDate',this.value)`)),
+      _advField('Combo Bonus Date',_advInput('date', m.comboBonusDate||'', `advSetMember('${m.id}','comboBonusDate',this.value)`)),
+      _advField('Badges (JSON)',`<textarea class="adv-field-input" rows="2" style="resize:vertical"
+        onchange="advSetMember('${m.id}','badges',JSON.parse(this.value||'[]'))">${esc(JSON.stringify(m.badges||[]))}</textarea>`),
+    ].join('');
+    return `<details class="adv-sub-card" style="margin-bottom:8px">
+      <summary style="cursor:pointer;font-weight:700;font-size:0.9rem;list-style:none;display:flex;align-items:center;gap:8px;padding:4px 0">
+        ${m.avatar||'🙂'} ${esc(m.name)} <span style="font-size:0.75rem;color:#9ca3af;font-weight:400">${m.role}</span>
+      </summary>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${fields}</div>
+    </details>`;
+  }).join('');
+
+  // ── Chores section ──
+  const choresHtml = D.chores.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No chores yet</div>'
+    : D.chores.map(c => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6">
+        <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'📋'}</span>
+        <span style="flex:1;font-size:0.85rem;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.title)}">${esc(c.title)}</span>
+        <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">pts</label>
+        <input type="number" class="adv-field-input" style="width:70px" value="${c.points||0}"
+          onchange="advSetChore('${c.id}','points',+this.value)">
+        <input type="text" class="adv-field-input" style="width:70px" value="${esc(c.icon||'')}" placeholder="icon"
+          onchange="advSetChore('${c.id}','icon',this.value)">
+        <input type="text" class="adv-field-input" style="flex:1;min-width:80px" value="${esc(c.title||'')}" placeholder="title"
+          onchange="advSetChore('${c.id}','title',this.value)">
+      </div>`).join('');
+
+  // ── Prizes section ──
+  const prizesHtml = D.prizes.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No prizes yet</div>'
+    : D.prizes.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6">
+        <span style="font-size:1.2rem;width:28px;text-align:center">${p.icon||'🎁'}</span>
+        <input type="text" class="adv-field-input" style="width:60px" value="${esc(p.icon||'')}" placeholder="icon"
+          onchange="advSetPrize('${p.id}','icon',this.value)">
+        <input type="text" class="adv-field-input" style="flex:2;min-width:80px" value="${esc(p.title||'')}" placeholder="title"
+          onchange="advSetPrize('${p.id}','title',this.value)">
+        <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">cost</label>
+        <input type="number" class="adv-field-input" style="width:75px" value="${p.cost||0}"
+          onchange="advSetPrize('${p.id}','cost',+this.value)">
+      </div>`).join('');
+
+  // ── Settings section ──
+  const SETTING_LABELS = {
+    autoApprove:'Auto-approve chores', pointsPerDollar:'Points per dollar', parentPin:'Parent PIN',
+    levelingEnabled:'Leveling enabled', streakEnabled:'Streaks enabled',
+    streakBonus3:'Streak bonus (3d)', streakBonus7:'Streak bonus (7d)', streakBonus14:'Streak bonus (14d)', streakBonus30:'Streak bonus (30d)',
+    notListeningSecs:'NL secs per point', currency:'Currency symbol', familyName:'Family name',
+    lastSync:'Last sync (auto)', comboEnabled:'Combo bonus enabled',
+  };
+  const settingsHtml = Object.entries(D.settings).map(([k, v]) => {
+    const label = SETTING_LABELS[k] || k;
+    let input;
+    if (typeof v === 'boolean') {
+      input = _advCheck(v, `advSetSetting('${k}',this.checked)`);
+    } else if (typeof v === 'number') {
+      input = _advInput('number', v, `advSetSetting('${k}',+this.value)`);
+    } else {
+      input = _advInput('text', v, `advSetSetting('${k}',this.value)`);
+    }
+    return _advField(label, input);
+  }).join('');
+
+  // ── History section ──
+  const histItems = (D.history || []).slice(0, 40);
+  const typeIcon = { chore:'✅', prize:'🎁', penalty:'🔇', bonus:'⚡', level:'🏆' };
+  const histHtml = histItems.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No history yet</div>'
+    : histItems.map(h => {
+        const mem = getMember(h.memberId);
+        const ptsStr = (h.points||0) >= 0 ? `+${h.points}` : `${h.points}`;
+        const ptsCol = (h.points||0) >= 0 ? '#166534' : '#991b1b';
+        return `<div class="adv-hist-row">
+          <span style="width:20px;text-align:center">${typeIcon[h.type]||'📝'}</span>
+          <span style="width:24px">${mem?.avatar||''}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title)}</span>
+          <span style="color:${ptsCol};font-weight:700;white-space:nowrap;margin-right:6px">${ptsStr}</span>
+          <span style="color:#9ca3af;white-space:nowrap;margin-right:8px">${h.date}</span>
+          <button onclick="advDeleteHistory('${h.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:6px;padding:2px 8px;font-size:0.75rem;cursor:pointer;flex-shrink:0">✕</button>
+        </div>`;
+      }).join('');
+
+  // ── Family Goal section ──
+  const g = D.familyGoal || {};
+  const goalHtml = `
+    ${_advField('Title',      _advInput('text',   g.title||'',          `D.familyGoal=D.familyGoal||{};D.familyGoal.title=this.value;saveData();_advRefreshStatus('Saved')`))}
+    ${_advField('Icon',       _advInput('text',   g.icon||'',           `D.familyGoal=D.familyGoal||{};D.familyGoal.icon=this.value;saveData();_advRefreshStatus('Saved')`))}
+    ${_advField('Target Pts', _advInput('number', g.targetPoints||0,    `D.familyGoal=D.familyGoal||{};D.familyGoal.targetPoints=+this.value;saveData();_advRefreshStatus('Saved')`))}
+    ${_advField('Description',_advInput('text',   g.description||'',    `D.familyGoal=D.familyGoal||{};D.familyGoal.description=this.value;saveData();_advRefreshStatus('Saved')`))}
+    <div style="margin-top:6px"><button class="adv-danger-btn" style="font-size:0.8rem;padding:7px 14px"
+      onclick="if(confirm('Clear family goal?')){D.familyGoal=null;saveData();_advRender();}">Clear Goal</button></div>`;
+
+  root.innerHTML = `
+    <div class="adv-editor-header">
+      <span style="font-size:1.4rem">🔧</span>
+      <span class="adv-editor-title">Advanced Data Editor</span>
+      <span id="adv-save-status" class="adv-status" style="margin-right:8px"></span>
+      <button class="adv-close-btn" onclick="closeAdvancedEditor()">✕</button>
+    </div>
+    <div class="adv-editor-body">
+
+      <details class="adv-section" open>
+        <summary>👤 Members <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">${members.length} total</span></summary>
+        <div class="adv-section-body">${membersHtml}</div>
+      </details>
+
+      <details class="adv-section">
+        <summary>📋 Chores <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">${D.chores.length} total — edit icon, title, points</span></summary>
+        <div class="adv-section-body">${choresHtml}</div>
+      </details>
+
+      <details class="adv-section">
+        <summary>🎁 Prizes <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">${D.prizes.length} total — edit icon, title, cost</span></summary>
+        <div class="adv-section-body">${prizesHtml}</div>
+      </details>
+
+      <details class="adv-section">
+        <summary>⚙️ Settings <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">all app settings</span></summary>
+        <div class="adv-section-body">${settingsHtml}</div>
+      </details>
+
+      <details class="adv-section">
+        <summary>🎯 Family Goal</summary>
+        <div class="adv-section-body">${goalHtml}</div>
+      </details>
+
+      <details class="adv-section">
+        <summary>📜 History <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">last 40 entries — tap ✕ to delete</span></summary>
+        <div class="adv-section-body">${histHtml}</div>
+      </details>
+
+      <details class="adv-section">
+        <summary>🗂️ Raw JSON <span style="font-size:0.75rem;color:#9ca3af;font-weight:400;margin-left:4px">full database — edit with care</span></summary>
+        <div class="adv-section-body">
+          <p style="font-size:0.8rem;color:#6b7280;margin:0 0 8px">
+            ⚠️ Editing raw JSON overwrites all data when you click Apply. Invalid JSON will be rejected.
+          </p>
+          <textarea id="adv-raw-json" class="adv-raw-textarea">${esc(JSON.stringify(D, null, 2))}</textarea>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <button class="adv-apply-btn" onclick="advApplyRawJson()">Apply Raw JSON</button>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)">↺ Reload</button>
+            <span id="adv-json-status" class="adv-status"></span>
+          </div>
+        </div>
+      </details>
+
+    </div>`;
+}
+
+function advSetSetting(key, val) {
+  D.settings[key] = val;
+  saveData();
+  _advRefreshStatus('Setting saved');
+}
+
 // ── PARENT SETTINGS ───────────────────────────────────────────
 function renderParentSettings() {
   const s = D.settings;
@@ -5968,6 +6284,15 @@ function renderParentSettings() {
           <button class="btn btn-secondary btn-sm"
                   onclick="debugSetPoints('${k.id}')">Set</button>
         </div>`).join('')}
+    </div>
+
+    <div class="card" style="border:2px solid #1f2937">
+      <div class="card-title" style="color:#1f2937">🔧 Advanced</div>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:14px">
+        Edit every value in the database directly — member stats, chore points, prize costs, settings, history, and raw JSON.
+      </p>
+      <button class="btn btn-sm" style="width:100%;background:#1f2937;color:#fff;font-size:0.95rem;padding:12px"
+              onclick="showAdvancedEditor()">🔧 Open Advanced Editor</button>
     </div>
 
     <div class="card" style="border:2px solid #FEE2E2">
