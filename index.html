@@ -422,24 +422,23 @@
     .chore-btn-done    { background: var(--green); color: #fff; cursor: default; }
 
     /* ══════════════════════════════════════════
-       TINY (5yo) KID MODE
+       TINY (5yo) KID MODE — same layout, bigger everything
     ══════════════════════════════════════════ */
-    .tiny-mode .chore-item {
-      flex-direction: column;
-      text-align: center;
-      padding: 18px 12px;
-      border-radius: 18px;
-      cursor: pointer;
-    }
-    .tiny-mode .chore-icon  { font-size: 4rem; }
-    .tiny-mode .chore-name  { font-size: 1.25rem; font-weight: 700; }
-    .tiny-mode .chore-meta  { font-size: 0.9rem; }
-    .tiny-mode .chore-btn   { padding: 12px 22px; font-size: 1.05rem; border-radius: 14px; }
+    .tiny-mode .chore-item  { cursor: pointer; padding: 16px 14px; }
+    .tiny-mode .chore-icon  { font-size: 3rem; }
+    .tiny-mode .chore-name  { font-size: 1.2rem; font-weight: 800; }
+    .tiny-mode .chore-meta  { font-size: 0.92rem; }
+    .tiny-mode .chore-btn   { padding: 14px 22px; font-size: 1.1rem; border-radius: 14px; }
     .tiny-mode .card-title  { font-size: 1.3rem; }
-    .tiny-mode .prize-card  { padding: 22px 12px; }
+    .tiny-mode .nav-item    { font-size: 1rem; padding: 10px 4px; }
+    .tiny-mode .nav-icon    { font-size: 1.5rem; }
+    .tiny-mode .prize-card  { padding: 22px 14px; }
     .tiny-mode .prize-icon  { font-size: 3.5rem; }
-    .tiny-mode .prize-name  { font-size: 1rem; }
-    .tiny-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .tiny-mode .prize-name  { font-size: 1rem; font-weight: 700; }
+    .tiny-mode .prize-cost  { font-size: 0.95rem; }
+    .tiny-mode .stat-val    { font-size: 1.6rem; }
+    .tiny-mode .btn         { font-size: 1rem; padding: 14px 18px; }
+    .tiny-mode .drag-handle { display: none; } /* no reorder handle for little kids */
 
     /* ══════════════════════════════════════════
        GRANDMA MODE
@@ -1323,6 +1322,49 @@
       cursor: pointer; border: 2px solid var(--border); margin-top: 8px;
     }
 
+    /* ── DAILY COMBO ── */
+    @keyframes combo-glow {
+      0%,100% { box-shadow: 0 0 0 2px #F59E0B, 0 0 10px 2px rgba(245,158,11,0.35); }
+      50%      { box-shadow: 0 0 0 3px #FBBF24, 0 0 22px 6px rgba(251,191,36,0.65); }
+    }
+    @keyframes sparkle-spin {
+      0%   { transform: rotate(0deg)   scale(1);   opacity: 1; }
+      50%  { transform: rotate(180deg) scale(1.3); opacity: 0.8; }
+      100% { transform: rotate(360deg) scale(1);   opacity: 1; }
+    }
+    .combo-chore {
+      animation: combo-glow 2s ease-in-out infinite;
+      background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%) !important;
+      border-color: #F59E0B !important;
+    }
+    .combo-sparkle {
+      display: inline-block;
+      animation: sparkle-spin 2.5s linear infinite;
+      font-style: normal;
+    }
+    .combo-banner {
+      border-radius: 16px; padding: 14px 16px; margin-bottom: 12px;
+      background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+      border: 2px solid #F59E0B;
+    }
+    .combo-banner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .combo-banner-title  { font-weight: 800; font-size: 1rem; color: #92400E; }
+    .combo-banner-sub    { font-size: 0.78rem; color: #B45309; margin-top: 2px; }
+    .combo-progress-badge {
+      font-size: 1.4rem; font-weight: 900; color: #D97706;
+      background: #fff; border-radius: 99px; width: 52px; height: 52px;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid #F59E0B; flex-shrink: 0;
+    }
+    .combo-progress-badge.complete { background: #F59E0B; color: #fff; }
+    .combo-chore-list { display: flex; flex-direction: column; gap: 6px; }
+    .combo-chore-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.85rem; font-weight: 600; color: #92400E;
+    }
+    .combo-chore-item.done { text-decoration: line-through; opacity: 0.55; }
+    .combo-chore-item-check { font-size: 1rem; width: 20px; text-align: center; }
+
     /* Drag-to-reorder */
     .drag-handle {
       cursor: grab; color: var(--muted); font-size: 1.2rem;
@@ -2064,6 +2106,7 @@ function normalizeMember(m) {
   if (!m.streak) m.streak = { current: 0, best: 0, lastDate: null };
   if (!Array.isArray(m.badges)) m.badges = [];
   if (typeof m.xp === 'undefined') m.xp = m.totalEarned || 0;
+  if (typeof m.comboBonusDate === 'undefined') m.comboBonusDate = null;
   return m;
 }
 
@@ -2591,6 +2634,78 @@ function checkAfterPointsAwarded(member, pts) {
   awardBadgeIfNew(member, 'first_chore');
   checkPointBadges(member);
   if (s.levelingEnabled) checkLevelUp(member, prevLevel);
+  // Check if daily combo is now complete
+  checkComboBonus(member.id);
+}
+
+// ── DAILY COMBO BONUS ─────────────────────────────────────────
+// Seeded shuffle so the same 3 chores are picked all day per kid
+function _seededShuffle(arr, seed) {
+  let s = seed >>> 0;
+  const rand = () => {
+    s += 0x6D2B79F5; let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Cache so getDailyCombo is O(1) after first call per day/member
+let _comboCache = {};
+function getDailyCombo(memberId) {
+  const key = today() + '|' + memberId;
+  if (_comboCache[key]) return _comboCache[key];
+  // Only include repeating chores assigned to this member
+  const eligible = D.chores.filter(c =>
+    c.assignedTo?.includes(memberId) && c.schedule?.period !== 'once'
+  );
+  if (eligible.length <= 3) {
+    _comboCache[key] = eligible.map(c => c.id);
+    return _comboCache[key];
+  }
+  // Seed: hash of today's date string + member ID
+  let seed = 0;
+  const str = key;
+  for (let i = 0; i < str.length; i++) {
+    seed = Math.imul(seed ^ str.charCodeAt(i), 0x9E3779B9);
+  }
+  _comboCache[key] = _seededShuffle(eligible, seed).slice(0, 3).map(c => c.id);
+  return _comboCache[key];
+}
+
+function checkComboBonus(memberId) {
+  const member = getMember(memberId);
+  if (!member) return;
+  const combo = getDailyCombo(memberId);
+  if (combo.length < 3) return;
+  if (member.comboBonusDate === today()) return; // already awarded today
+
+  const allDone = combo.every(id => {
+    const chore = D.chores.find(c => c.id === id);
+    return chore && getChoreProgress(chore, memberId).status === 'done';
+  });
+  if (!allDone) return;
+
+  member.comboBonusDate = today();
+  const bonusPts = combo.reduce((sum, id) => {
+    const chore = D.chores.find(c => c.id === id);
+    return sum + (chore?.points || 0);
+  }, 0);
+  member.points      = (member.points      || 0) + bonusPts;
+  member.totalEarned = (member.totalEarned || 0) + bonusPts;
+  if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
+  addHistory('chore', memberId, '⚡ Daily Combo Bonus!', bonusPts);
+  // Trigger big celebration
+  setTimeout(() => {
+    launchConfetti(120);
+    toast(`⚡ COMBO COMPLETE! +${bonusPts} bonus pts!`);
+  }, 300);
 }
 
 // ── NOT LISTENING ─────────────────────────────────────────────
@@ -3455,12 +3570,12 @@ function renderKidHeader() {
 }
 
 function renderKidNav() {
-  const m    = S.currentUser;
-  const tiny = isTiny(m);
-  const tabs = tiny
-    ? [['chores','📋','Chores'],['shop','🎁','Prizes'],['goal','🎯','Goal']]
-    : [['chores','📋','Chores'],['points','⭐','Points'],['shop','🛍️','Shop'],['goal','🎯','Goal']];
-
+  const tabs = [
+    ['chores','📋','Chores'],
+    ['points','⭐','Points'],
+    ['shop','🛍️','Shop'],
+    ['goal','🎯','Goal'],
+  ];
   document.getElementById('kid-nav').innerHTML = tabs.map(([id,icon,label]) => `
     <button class="nav-item${S.kidTab===id?' active':''}" onclick="switchKidTab('${id}')">
       <span class="nav-icon">${icon}</span>${label}
@@ -3484,8 +3599,7 @@ function renderKidTab() {
 
 // ── CHORES TAB ────────────────────────────────────────────────
 function renderKidChores() {
-  const m    = S.currentUser;
-  const tiny = isTiny(m);
+  const m = S.currentUser;
   const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
 
   if (myChores.length === 0) {
@@ -3509,6 +3623,12 @@ function renderKidChores() {
   const earnedPts   = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.doneCount || 0) * chore.points), 0);
   const pct      = totalPts>0 ? Math.round(earnedPts/totalPts*100) : 0;
 
+  // Daily combo
+  const comboIds  = new Set(getDailyCombo(m.id));
+  const comboChores = [...comboIds].map(id => D.chores.find(c => c.id === id)).filter(Boolean);
+  const comboCompleted = comboChores.filter(c => progressMap.get(c.id)?.status === 'done').length;
+  const comboBonusAlreadyAwarded = m.comboBonusDate === today();
+
   let html = `
     <div class="card" style="background:linear-gradient(135deg,${m.color||'#6C63FF'},${m.color||'#6C63FF'}dd);color:#fff;border-radius:18px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -3524,53 +3644,62 @@ function renderKidChores() {
       <div style="font-size:0.8rem;opacity:0.85;margin-top:6px;text-align:right">+${earnedPts} pts earned today</div>
     </div>`;
 
+  // Combo banner
+  if (comboChores.length >= 3) {
+    const bonusPts = comboChores.reduce((s, c) => s + c.points, 0);
+    html += `
+      <div class="combo-banner">
+        <div class="combo-banner-header">
+          <div>
+            <div class="combo-banner-title"><i class="combo-sparkle">⚡</i> Daily Combo ${comboBonusAlreadyAwarded ? '— Complete! 🎉' : ''}</div>
+            <div class="combo-banner-sub">${comboBonusAlreadyAwarded
+              ? `You earned +${bonusPts} bonus pts today!`
+              : `Complete all 3 for +${bonusPts} bonus pts (2× those chores!)`}</div>
+          </div>
+          <div class="combo-progress-badge ${comboCompleted >= 3 ? 'complete' : ''}">${comboCompleted}/3</div>
+        </div>
+        <div class="combo-chore-list">
+          ${comboChores.map(c => {
+            const isDone = progressMap.get(c.id)?.status === 'done';
+            return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
+              <span class="combo-chore-item-check">${isDone ? '✅' : '⬜'}</span>
+              <span>${c.icon} ${esc(c.title)}</span>
+              <span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.points}×2</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
   // Todo chores
   if (todo.length > 0) {
     html += `<div class="card-title">📋 To Do</div>`;
-    if (tiny) {
-      html += `<div class="tiny-grid">`;
-      todo.forEach(c => { html += tinyChoreCard(c, m, progressMap.get(c.id)); });
-      html += `</div>`;
-    } else {
-      html += `<div id="sort-todo">`;
-      todo.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id)); });
-      html += `</div>`;
-    }
+    html += `<div id="sort-todo">`;
+    todo.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
   }
 
   // Pending / partial
   if (pending.length > 0) {
     html += `<div class="card-title mt-12">⏳ In Progress</div>`;
-    if (tiny) {
-      pending.forEach(c => { html += tinyChoreCard(c,m,progressMap.get(c.id)); });
-    } else {
-      html += `<div id="sort-pending">`;
-      pending.forEach(c => { html += normalChoreCard(c,m,progressMap.get(c.id)); });
-      html += `</div>`;
-    }
+    html += `<div id="sort-pending">`;
+    pending.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
   }
 
   // Done
   if (done.length > 0) {
     html += `<div class="card-title mt-12">✅ Done Today</div>`;
-    if (tiny) {
-      done.forEach(c => { html += tinyChoreCard(c,m,progressMap.get(c.id)); });
-    } else {
-      html += `<div id="sort-done">`;
-      done.forEach(c => { html += normalChoreCard(c,m,progressMap.get(c.id)); });
-      html += `</div>`;
-    }
+    html += `<div id="sort-done">`;
+    done.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
   }
 
   if (unavailable.length > 0) {
     html += `<div class="card-title mt-12">🕒 Later</div>`;
-    if (tiny) {
-      unavailable.forEach(c => { html += tinyChoreCard(c,m,progressMap.get(c.id)); });
-    } else {
-      html += `<div id="sort-unavail">`;
-      unavailable.forEach(c => { html += normalChoreCard(c,m,progressMap.get(c.id)); });
-      html += `</div>`;
-    }
+    html += `<div id="sort-unavail">`;
+    unavailable.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
   }
 
   document.getElementById('kid-content').innerHTML = html;
@@ -3582,7 +3711,14 @@ function renderKidChores() {
   });
 }
 
-function normalChoreCard(chore, member, progress) {
+function normalChoreCard(chore, member, progress, comboIds = null) {
+  const isCombo = comboIds?.has(chore.id) || false;
+  const sparkle = isCombo ? `<i class="combo-sparkle" style="position:absolute;top:-6px;right:-2px;font-size:0.9rem;pointer-events:none">⚡</i>` : '';
+  const comboClass = isCombo ? ' combo-chore' : '';
+  const tiny = isTiny(member);
+  const ttsText = `${chore.title}. Worth ${chore.points} stars!`;
+  const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
+
   // Slot mode: show per-slot rows inside the card
   if (progress?.isSlotMode) {
     const slotsHtml = (progress.slotStatuses || []).map(({slot, status: ss}) => {
@@ -3600,11 +3736,11 @@ function normalChoreCard(chore, member, progress) {
       return `<div class="chore-slot-row"><span class="chore-slot-label">${esc(label)}</span>${slotBtn}</div>`;
     }).join('');
     return `
-      <div class="chore-item ${progress.status}" data-drag-id="${chore.id}">
+      <div class="chore-item ${progress.status}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
         <span class="drag-handle">⠿</span>
-        <span class="chore-icon">${chore.icon}</span>
+        <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
         <div class="chore-info">
-          <div class="chore-name">${esc(chore.title)}</div>
+          <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
           <div class="chore-meta">${fmtPts(chore.points)} per slot</div>
           <div class="chore-slots">${slotsHtml}</div>
         </div>
@@ -3614,7 +3750,7 @@ function normalChoreCard(chore, member, progress) {
   // Standard mode — check for photo phase first
   const photoPhase = getChorePhotoPhase(chore, member?.id);
   if (photoPhase) {
-    return normalChoreCardPhoto(chore, member, progress, photoPhase);
+    return normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds);
   }
 
   const status = progress?.status || 'none';
@@ -3631,11 +3767,11 @@ function normalChoreCard(chore, member, progress) {
     btnHtml = `<span class="chore-btn chore-btn-done">✅ Done</span>`;
   }
   return `
-    <div class="chore-item ${status}" data-drag-id="${chore.id}">
+    <div class="chore-item ${status}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
       <span class="drag-handle">⠿</span>
-      <span class="chore-icon">${chore.icon}</span>
+      <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
       <div class="chore-info">
-        <div class="chore-name">${esc(chore.title)}</div>
+        <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
         <div class="chore-meta">${fmtPts(chore.points)} · ${esc(choreScheduleSummary(chore))}</div>
         ${target>0?`<div class="chore-meta">${submitted}/${target} submitted${progress?.availabilityText?` · ${esc(progress.availabilityText)}`:''}</div>`:progress?.availabilityText?`<div class="chore-meta">${esc(progress.availabilityText)}</div>`:''}
       </div>
@@ -3643,7 +3779,13 @@ function normalChoreCard(chore, member, progress) {
     </div>`;
 }
 
-function normalChoreCardPhoto(chore, member, progress, photoPhase) {
+function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = null) {
+  const isCombo = comboIds?.has(chore.id) || false;
+  const sparkle = isCombo ? `<i class="combo-sparkle" style="position:absolute;top:-6px;right:-2px;font-size:0.9rem;pointer-events:none">⚡</i>` : '';
+  const comboClass = isCombo ? ' combo-chore' : '';
+  const tiny = isTiny(member);
+  const ttsText = `${chore.title}. Worth ${chore.points} stars!`;
+  const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
   const { phase } = photoPhase;
   let statusClass = 'none';
   let hintHtml = '';
@@ -3671,11 +3813,11 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase) {
   }
 
   return `
-    <div class="chore-item ${statusClass}" data-drag-id="${chore.id}">
+    <div class="chore-item ${statusClass}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
       <span class="drag-handle">⠿</span>
-      <span class="chore-icon">${chore.icon}</span>
+      <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
       <div class="chore-info">
-        <div class="chore-name">${esc(chore.title)}</div>
+        <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
         <div class="chore-meta">${fmtPts(chore.points)} · ${esc(choreScheduleSummary(chore))}</div>
         ${hintHtml}
       </div>
@@ -3683,72 +3825,9 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase) {
     </div>`;
 }
 
+// Tiny mode now uses normalChoreCard — isTiny() handled inside for TTS/sizing
 function tinyChoreCard(chore, member, progress) {
-  const status = progress?.status || 'none';
-  const tts = `${chore.title}. Worth ${chore.points} stars!`;
-
-  if (progress?.isSlotMode) {
-    const slotsHtml = (progress.slotStatuses || []).map(({slot, status: ss}) => {
-      const label = slot.label || formatTimeWindow({start:slot.start, end:slot.end});
-      let slotBtn;
-      if (ss === 'done')         slotBtn = `<span class="chore-btn chore-btn-done" style="font-size:1rem">⭐ Done!</span>`;
-      else if (ss === 'pending') slotBtn = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">⏳ Waiting...</span>`;
-      else if (ss === 'available') {
-        const lbl = chore.requiresPhoto ? '📷 Take Photo' : '✓ Done!';
-        slotBtn = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')" style="font-size:1.1rem;padding:12px 18px">${lbl}</button>`;
-      } else {
-        slotBtn = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">🕒 Later</span>`;
-      }
-      return `<div class="chore-slot-row"><span class="chore-slot-label" style="font-size:1rem">${esc(label)}</span>${slotBtn}</div>`;
-    }).join('');
-    return `
-      <div class="chore-item ${status}" onclick="speak('${tts.replace(/'/g,"\\'")}')">
-        <span class="chore-icon" style="font-size:4rem">${chore.icon}</span>
-        <div class="chore-name" style="font-size:1.2rem">${esc(chore.title)}</div>
-        <div class="chore-meta">⭐ ${chore.points} stars per time</div>
-        <div class="chore-slots" style="width:100%">${slotsHtml}</div>
-      </div>`;
-  }
-
-  const photoPhase = getChorePhotoPhase(chore, member?.id);
-  let btnHtml = '';
-  let extraMeta = '';
-
-  if (photoPhase) {
-    const { phase } = photoPhase;
-    if (phase === 'needs_before') {
-      extraMeta = `<div class="chore-meta">📷 Take a before photo first!</div>`;
-      btnHtml   = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'before')" style="font-size:1.1rem;padding:12px 18px">📷 Request!</button>`;
-    } else if (phase === 'before_pending') {
-      extraMeta = `<div class="chore-meta">⏳ Waiting for OK to start...</div>`;
-      btnHtml   = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">⏳ Waiting...</span>`;
-    } else if (phase === 'needs_after') {
-      extraMeta = `<div class="chore-meta">🟢 Go do it! Then take a done photo!</div>`;
-      btnHtml   = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'after')" style="font-size:1.1rem;padding:12px 18px">📷 Done!</button>`;
-    } else if (phase === 'after_pending') {
-      btnHtml   = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">⏳ Waiting...</span>`;
-    } else {
-      btnHtml   = `<span class="chore-btn chore-btn-done" style="font-size:1rem">⭐ Done!</span>`;
-    }
-  } else if (progress?.canSubmit) {
-    btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)" style="font-size:1.2rem;padding:14px 20px">✓ ${progress.completedCount > 0 ? 'Again!' : 'Done!'}</button>`;
-  } else if (status==='pending' || status==='partial') {
-    btnHtml = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">⏳ Waiting...</span>`;
-  } else if (status==='unavailable') {
-    btnHtml = `<span class="chore-btn chore-btn-pending" style="font-size:1rem">🕒 Later</span>`;
-  } else {
-    btnHtml = `<span class="chore-btn chore-btn-done" style="font-size:1rem">⭐ Done!</span>`;
-  }
-  return `
-    <div class="chore-item ${status}" onclick="speak('${tts.replace(/'/g,"\\'")}')">
-      <span class="chore-icon" style="font-size:4rem">${chore.icon}</span>
-      <div class="chore-name" style="font-size:1.2rem">${esc(chore.title)}</div>
-      <div class="chore-meta">⭐ ${chore.points} stars</div>
-      ${extraMeta}
-      ${!photoPhase && progress?.targetCount?`<div class="chore-meta">${progress.completedCount}/${progress.targetCount} done</div>`:''}
-      ${!photoPhase && progress?.availabilityText?`<div class="chore-meta">${esc(progress.availabilityText)}</div>`:''}
-      ${btnHtml}
-    </div>`;
+  return normalChoreCard(chore, member, progress);
 }
 
 // entryTypeOverride: 'before' | 'after' | null
