@@ -2135,6 +2135,7 @@ function normalizeChore(chore) {
 function normalizeMember(m) {
   if (!m || typeof m !== 'object') return m;
   if (!m.streak) m.streak = { current: 0, best: 0, lastDate: null };
+  if (!m.comboStreak) m.comboStreak = { current: 0, best: 0, lastDate: null };
   if (!Array.isArray(m.badges)) m.badges = [];
   if (typeof m.xp === 'undefined') m.xp = m.totalEarned || 0;
   if (typeof m.comboBonusDate === 'undefined') m.comboBonusDate = null;
@@ -2767,10 +2768,25 @@ function checkComboBonus(memberId) {
   member.totalEarned = (member.totalEarned || 0) + bonusPts;
   if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
   addHistory('chore', memberId, '⚡ Daily Combo Bonus!', bonusPts);
+
+  // Update combo streak
+  normalizeMember(member);
+  const cs = member.comboStreak;
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+  const yStr = yesterday.toISOString().slice(0,10);
+  if (cs.lastDate === yStr) {
+    cs.current += 1;
+  } else if (cs.lastDate !== today()) {
+    cs.current = 1;
+  }
+  if (cs.current > (cs.best || 0)) cs.best = cs.current;
+  cs.lastDate = today();
+
   // Trigger big celebration
   setTimeout(() => {
     launchConfetti(120);
-    toast(`⚡ COMBO COMPLETE! +${bonusPts} bonus pts!`);
+    const streakMsg = cs.current > 1 ? ` 🔥 ${cs.current} day combo streak!` : '';
+    toast(`⚡ COMBO COMPLETE! +${bonusPts} bonus pts!${streakMsg}`);
   }, 300);
 }
 
@@ -3631,18 +3647,21 @@ function renderKidHeader() {
   const pts = m.points || 0;
   normalizeMember(m);
   const { current: lvl } = getMemberLevel(m);
-  const streak = m.streak?.current || 0;
-  const showLevel  = D.settings.levelingEnabled !== false;
-  const showStreak = D.settings.streakEnabled !== false && streak >= 1;
+  const streak      = m.streak?.current || 0;
+  const comboStreak = m.comboStreak?.current || 0;
+  const showLevel       = D.settings.levelingEnabled !== false;
+  const showStreak      = D.settings.streakEnabled !== false && streak >= 1;
+  const showComboStreak = comboStreak >= 2;
   document.getElementById('kid-header').innerHTML = `
     <div class="header-left">
       <span class="header-avatar">${m.avatar||'🙂'}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px">
-          ${showLevel  ? `<span class="header-level-badge">${lvl.icon} ${lvl.name}</span>` : ''}
-          ${showStreak ? `<span class="header-streak-badge">🔥 ${streak} day streak</span>` : ''}
-          ${!showLevel && !showStreak ? `<div class="header-sub">${todayDisplay()}</div>` : ''}
+          ${showLevel       ? `<span class="header-level-badge">${lvl.icon} ${lvl.name}</span>` : ''}
+          ${showStreak      ? `<span class="header-streak-badge">🔥 ${streak}d streak</span>` : ''}
+          ${showComboStreak ? `<span class="header-streak-badge" style="background:#FEF3C7;border-color:#F59E0B;color:#92400E">⚡ ${comboStreak}d combos</span>` : ''}
+          ${!showLevel && !showStreak && !showComboStreak ? `<div class="header-sub">${todayDisplay()}</div>` : ''}
         </div>
       </div>
     </div>
@@ -4589,6 +4608,8 @@ function buildMemberStats(member) {
     badgeCount:       (member.badges || []).length,
     bestStreak:       member.streak?.best || 0,
     currentStreak:    member.streak?.current || 0,
+    bestComboStreak:  member.comboStreak?.best || 0,
+    currentComboStreak: member.comboStreak?.current || 0,
     savings:          member.savings || 0,
     comboCount:       bonusHist.length,
     comboStars:       bonusHist.reduce((s,h) => s + Math.abs(h.points||0), 0),
@@ -4646,7 +4667,8 @@ function renderMemberStatsCard(member) {
 
   const levelSection = _statSection('🏆 Level & Streaks',
     _statTile('🏆','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name) +
-    _statTile('🔥','Best Streak', `${s.bestStreak}d`, '#b45309') +
+    _statTile('🔥','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '') +
+    _statTile('⚡','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '') +
     _statTile('📅','Days Active', s.daysActive, '#0e7490')
   );
 
@@ -6119,6 +6141,9 @@ function _advRender() {
       _advField('NL Lifetime Secs',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
       _advField('NL Date',      _advInput('date',   m.nlDate||'',      `advSetMember('${m.id}','nlDate',this.value)`)),
       _advField('Combo Bonus Date',_advInput('date', m.comboBonusDate||'', `advSetMember('${m.id}','comboBonusDate',this.value)`)),
+      _advField('Combo Streak',    _advInput('number', m.comboStreak?.current||0, `advSetMember('${m.id}','comboStreak.current',+this.value)`)),
+      _advField('Combo Streak Best',_advInput('number', m.comboStreak?.best||0,   `advSetMember('${m.id}','comboStreak.best',+this.value)`)),
+      _advField('Combo Streak Date',_advInput('date',  m.comboStreak?.lastDate||'', `advSetMember('${m.id}','comboStreak.lastDate',this.value)`)),
       _advField('Badges (JSON)',`<textarea class="adv-field-input" rows="2" style="resize:vertical"
         onchange="advSetMember('${m.id}','badges',JSON.parse(this.value||'[]'))">${esc(JSON.stringify(m.badges||[]))}</textarea>`),
     ].join('');
