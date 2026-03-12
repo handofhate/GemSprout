@@ -4810,20 +4810,6 @@ function renderParentHome() {
     html += `</div>`;
   }
 
-  // Team goals progress
-  (D.teamGoals||[]).forEach(g => {
-    const total  = goalTotal(g);
-    const target = g.targetPoints||1;
-    const pct    = Math.min(100,Math.round(total/target*100));
-    html += `
-      <div class="goal-card">
-        <span class="goal-icon">${g.icon||'🏆'}</span>
-        <div class="goal-title">${esc(g.title)}</div>
-        <div class="goal-sub">${total} / ${target} pts · ${pct}%</div>
-        <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
-      </div>`;
-  });
-
   // Kids overview
   let kidsHtml = '';
   if (kids.length === 0) {
