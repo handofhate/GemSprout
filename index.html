@@ -4675,7 +4675,7 @@ function buildMemberStats(member) {
     levelUps:         Math.max(levelHist.length, lvlInfo.current.level - 1),
     currentLevel:     lvlInfo.current,
     daysActive,
-    bestDate:         bestDate ? { date: bestDate[0], 💎: bestDate[1] } : null,
+    bestDate:         bestDate ? { date: bestDate[0], dmds: bestDate[1] } : null,
     favChore,
     avgChoresPerDay:  daysActive > 0 ? (choreHist.length / daysActive).toFixed(1) : '—',
     choreBreakdown,
@@ -4767,10 +4767,10 @@ function renderMemberStatsCard(member) {
     _statTile('⏱️','NL Time', s.nlFmt, '#b45309', 'lifetime')
   );
 
-  const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.💎} 💎` : 'No data yet';
+  const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.dmds} 💎` : 'No data yet';
   const favChoreSub = s.favChore ? `${s.favChore[1]}× completed` : 'No chores yet';
   const extraSection = _statSection('💎 Fun Facts',
-    _statTile('🗓️','Best Day', s.bestDate ? `${s.bestDate.💎}💎` : '—', '#d97706', bestDaySub) +
+    _statTile('🗓️','Best Day', s.bestDate ? `${s.bestDate.dmds} 💎` : '—', '#d97706', bestDaySub) +
     _statTile('❤️','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub) +
     _statTile('💵','💎 Spent', s.diamondsSpent, '#374151', 'on prizes')
   );

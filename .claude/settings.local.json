@@ -8,7 +8,9 @@
       "Bash(wc -l __/auth/*.js)",
       "Bash(node -e \":*)",
       "Bash(python rename_diamonds.py)",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(python check.py)",
+      "Bash(rm check.py)"
     ]
   }
 }
