@@ -3561,14 +3561,20 @@ function renderCurrentView() {
   let startY = 0, pulling = false, triggered = false, activeScroller = null;
   let lastScrollTime = 0;
   const THRESHOLD = 72; // px to pull before release triggers refresh
-  const SCROLL_COOLDOWN = 400; // ms to wait after inertial scroll before arming PTR
+  const SCROLL_COOLDOWN = 350; // ms to wait after any scroll before arming PTR
 
-  // Track whenever a .main-content element scrolls (catches inertial scroll arrivals)
-  document.addEventListener('scroll', e => {
-    if (e.target && e.target.classList && e.target.classList.contains('main-content')) {
-      lastScrollTime = Date.now();
-    }
-  }, { passive: true, capture: true });
+  // Track all scrolls — element-level (main-content) and window-level
+  const markScroll = () => { lastScrollTime = Date.now(); };
+  document.addEventListener('scroll', markScroll, { passive: true, capture: true });
+  window.addEventListener('scroll', markScroll, { passive: true });
+
+  // Returns true if the page is definitely NOT at the very top
+  function pageIsScrolled() {
+    if (window.scrollY > 2) return true;
+    if (document.documentElement.scrollTop > 2) return true;
+    if (activeScroller && activeScroller.scrollTop > 2) return true;
+    return false;
+  }
 
   function setIndicator(pullPx) {
     if (pullPx <= 0) {
@@ -3607,22 +3613,20 @@ function renderCurrentView() {
   }
 
   document.addEventListener('touchstart', e => {
-    // Only pull when the scroll container is at the very top and not still coasting
     const scroller = e.target.closest('.main-content');
-    if (!scroller || scroller.scrollTop > 2) return;
-    if (Date.now() - lastScrollTime < SCROLL_COOLDOWN) return;
-    startY        = e.touches[0].clientY;
-    pulling       = true;
-    triggered     = false;
+    if (!scroller) return;
     activeScroller = scroller;
+    if (pageIsScrolled()) return;
+    if (Date.now() - lastScrollTime < SCROLL_COOLDOWN) return;
+    startY    = e.touches[0].clientY;
+    pulling   = true;
+    triggered = false;
   }, { passive: true });
 
   document.addEventListener('touchmove', e => {
     if (!pulling) return;
-    // Abort if the container has scrolled down since touchstart (e.g. inertia was still running)
-    if (activeScroller && activeScroller.scrollTop > 2) {
-      pulling = false; activeScroller = null; setIndicator(0); return;
-    }
+    // Abort if the page has scrolled since touchstart
+    if (pageIsScrolled()) { pulling = false; setIndicator(0); return; }
     const dy = e.touches[0].clientY - startY;
     if (dy <= 0) { pulling = false; setIndicator(0); return; }
     setIndicator(dy);
