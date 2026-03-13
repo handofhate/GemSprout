@@ -1556,6 +1556,30 @@
       font-weight: 800; font-size: 1rem; border: none; cursor: pointer; }
     .nl-btn-cancel { padding: 12px 32px; border-radius: 99px; background: #374151; color: #9CA3AF;
       font-weight: 700; font-size: 1rem; border: none; cursor: pointer; }
+    /* ── Split Household ─────────────────────────────────── */
+    .sh-section { margin-top: 12px; }
+    .sh-week-block { margin-bottom: 10px; }
+    .sh-week-label { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .sh-days-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .sh-day-btn {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 7px 2px; border-radius: 8px; font-size: 0.62rem; font-weight: 700;
+      border: 2px solid var(--border); cursor: pointer; background: var(--bg);
+      color: var(--text-muted); transition: all 0.13s; user-select: none; line-height: 1.3;
+    }
+    .sh-day-btn.here { background: var(--green); border-color: var(--green); color: #fff; }
+    .sh-day-btn.away { opacity: 0.45; }
+    .sh-overrides-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .sh-override-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg); border-radius: 8px; font-size: 0.82rem; }
+    .sh-override-label { flex: 1; }
+    .sh-badge { padding: 2px 9px; border-radius: 99px; font-size: 0.72rem; font-weight: 700; }
+    .sh-badge.here { background: #D1FAE5; color: #065F46; }
+    .sh-badge.away { background: #FEE2E2; color: #991B1B; }
+    .sh-add-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+    .sh-add-row input[type=date], .sh-add-row select { flex: 1; min-width: 0; }
+    .here-check-member-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .here-check-member-row:last-child { border-bottom: none; }
+    .here-check-btns { display: flex; gap: 6px; margin-left: auto; }
   </style>
 </head>
 <body>
@@ -2127,6 +2151,9 @@ function normalizeMember(m) {
   }
   if (!m.streak) m.streak = { current: 0, best: 0, lastDate: null };
   if (!m.comboStreak) m.comboStreak = { current: 0, best: 0, lastDate: null };
+  if (!m.splitHousehold) m.splitHousehold = { enabled: false, cycle: Array(14).fill(true), referenceMonday: getMostRecentMonday(), overrides: {} };
+  if (!m.splitHousehold.overrides) m.splitHousehold.overrides = {};
+  if (!Array.isArray(m.splitHousehold.cycle) || m.splitHousehold.cycle.length !== 14) m.splitHousehold.cycle = Array(14).fill(true);
   if (!Array.isArray(m.badges)) m.badges = [];
   // Migrate legacy badge IDs
   m.badges = m.badges.map(b => b === 'pts_50' ? 'dmds_50' : b === 'pts_200' ? 'dmds_200' : b === 'pts_500' ? 'dmds_500' : b === 'pts_1000' ? 'dmds_1000' : b);
@@ -2469,6 +2496,13 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
     }
   }
 
+  // Auto-here: if member is scheduled as away today but is completing a chore,
+  // they must actually be home — record a one-off override so streak logic knows.
+  const _todayStr = today();
+  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _todayStr)) {
+    member.splitHousehold.overrides[_todayStr] = true;
+  }
+
   if (!chore.completions) chore.completions = {};
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
 
@@ -2679,12 +2713,13 @@ function updateStreak(member) {
   let bonus = 0;
   if (st.lastDate === t) {
     // Already counted today
-  } else if (st.lastDate && dateDiffDays(st.lastDate, t) === 1) {
+  } else if (st.lastDate && !streakHasGap(member, st.lastDate, t)) {
+    // No missed "here" days between last completion and today — streak continues
     st.current += 1;
     st.best = Math.max(st.best, st.current);
     bonus = getStreakBonus(st.current);
   } else {
-    // Reset streak (gap > 1 day)
+    // At least one "here" day was skipped — reset streak
     st.current = 1;
     st.best = Math.max(st.best, 1);
   }
@@ -2704,6 +2739,309 @@ function dateDiffDays(dateStr1, dateStr2) {
   const d1 = new Date(dateStr1 + 'T00:00:00');
   const d2 = new Date(dateStr2 + 'T00:00:00');
   return Math.round((d2 - d1) / 86400000);
+}
+
+// ── Split Household helpers ────────────────────────────────────────────────
+
+function getMostRecentMonday() {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun … 6=Sat
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return formatDateLocal(d);
+}
+
+// Returns true if member is expected to be at THIS household on the given date.
+// Always returns true when split household is disabled.
+function isMemberHereOnDate(member, dateStr) {
+  const sh = member.splitHousehold;
+  if (!sh || !sh.enabled) return true;
+  const overrides = sh.overrides || {};
+  if (dateStr in overrides) return overrides[dateStr];
+  // Map date → position in 14-day cycle (index 0 = Monday of week 1)
+  const ref  = new Date((sh.referenceMonday || getMostRecentMonday()) + 'T00:00:00');
+  const d    = new Date(dateStr + 'T00:00:00');
+  const diff = Math.round((d - ref) / 86400000);
+  const pos  = ((diff % 14) + 14) % 14;
+  return sh.cycle?.[pos] !== false;
+}
+
+// Returns true if there is at least one "here" day between fromDate and toDate
+// that had no recorded chore completion — meaning the streak should break.
+function streakHasGap(member, fromDate, toDate) {
+  const from = new Date(fromDate + 'T00:00:00');
+  const to   = new Date(toDate   + 'T00:00:00');
+  const diff = Math.round((to - from) / 86400000);
+  if (diff <= 1) return false;
+  for (let i = 1; i < diff; i++) {
+    const d   = new Date(from.getTime() + i * 86400000);
+    const ds  = formatDateLocal(d);
+    if (isMemberHereOnDate(member, ds)) return true; // missed a here-day → gap
+  }
+  return false; // all intervening days were away days
+}
+
+// Schedules (or immediately runs) the 6 pm "are they actually here?" check.
+function scheduleHereCheck() {
+  const now   = new Date();
+  const sixPm = new Date(now);
+  sixPm.setHours(18, 0, 0, 0);
+  const ms = sixPm - now;
+  if (ms <= 0) {
+    // Already past 6pm — check now (only once per day)
+    if (S.hereCheckDate !== today()) runHereCheck();
+  } else {
+    setTimeout(() => { if (S.hereCheckDate !== today()) runHereCheck(); }, ms);
+  }
+}
+
+function runHereCheck() {
+  S.hereCheckDate = today();
+  const t = today();
+  const missing = (D.family?.members || []).filter(m => {
+    if (m.role !== 'kid') return false;
+    if (!m.splitHousehold?.enabled) return false;
+    if (!isMemberHereOnDate(m, t)) return false;
+    // Has any chore completion today?
+    return !D.chores.some(c =>
+      c.completions?.[m.id]?.some(e => e.date === t && (e.status === 'done' || e.status === 'pending'))
+    );
+  });
+  if (!missing.length) return;
+  showHereCheckModal(missing);
+  // Browser notification (works when PWA is open; on installed PWA may work in bg)
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    const names = missing.map(m => m.name).join(', ');
+    new Notification('Family Hub', {
+      body: `${names} hasn't done any chores today — are they actually home?`,
+    });
+  }
+}
+
+// ── Split Household Modal ─────────────────────────────────────────────────
+
+const DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function showSplitHouseholdModal(memberId) {
+  const member = getMember(memberId);
+  if (!member) return;
+  S.shMemberId = memberId;
+  const sh = member.splitHousehold;
+  const enabled = sh.enabled;
+  const cycle = [...sh.cycle];
+  const ref = sh.referenceMonday || getMostRecentMonday();
+
+  const weekGrid = (weekIdx) => DAY_LABELS.map((lbl, i) => {
+    const pos = weekIdx * 7 + i;
+    const here = cycle[pos] !== false;
+    return `<button class="sh-day-btn ${here ? 'here' : 'away'}" onclick="toggleShDay(${pos})" id="sh-day-${pos}">${lbl}</button>`;
+  }).join('');
+
+  const overrideRows = Object.entries(sh.overrides || {})
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([date, isHere]) => `
+      <div class="sh-override-row" id="sh-ov-${date}">
+        <span class="sh-override-label">${date}</span>
+        <span class="sh-badge ${isHere ? 'here' : 'away'}">${isHere ? 'Here' : 'Away'}</span>
+        <button class="btn-icon-sm" onclick="removeShOverride('${date}')">✕</button>
+      </div>`).join('');
+
+  const html = `
+    <div class="modal-backdrop" id="split-household-modal" onclick="if(event.target===this)closeSplitHouseholdModal()">
+      <div class="modal" style="max-width:420px;max-height:90vh;overflow-y:auto">
+        <div class="modal-header">
+          <span class="modal-title">🏠 Split Household — ${esc(member.name)}</span>
+          <button class="btn-icon" onclick="closeSplitHouseholdModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="toggle-row" style="margin-bottom:16px">
+            <div>
+              <div class="toggle-label">Enable Split Household</div>
+              <div class="toggle-sub">Streaks skip days they're at the other household</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="sh-enabled" ${enabled ? 'checked' : ''} onchange="toggleShConfig()">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <div id="sh-config" style="${enabled ? '' : 'display:none'}">
+            <div class="form-group">
+              <label class="form-label">Week 1 starts on <span class="form-label-hint">pick any Monday</span></label>
+              <input type="date" id="sh-ref-monday" value="${ref}" onchange="refreshShGrid()">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Schedule — tap a day to toggle here / away</label>
+              <div class="sh-section">
+                <div class="sh-week-block">
+                  <div class="sh-week-label">Week 1</div>
+                  <div class="sh-days-row" id="sh-week1-row">${weekGrid(0)}</div>
+                </div>
+                <div class="sh-week-block">
+                  <div class="sh-week-label">Week 2</div>
+                  <div class="sh-days-row" id="sh-week2-row">${weekGrid(1)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">One-off exceptions</label>
+              <div class="sh-overrides-list" id="sh-overrides-list">${overrideRows || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>'}</div>
+              <div class="sh-add-row">
+                <input type="date" id="sh-ov-date" value="${today()}">
+                <select id="sh-ov-type">
+                  <option value="true">Here</option>
+                  <option value="false">Away</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="addShOverride()">Add</button>
+              </div>
+            </div>
+
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
+              💡 If they complete a chore on a scheduled away day, it automatically marks them as here for that day.
+              At 6 pm on scheduled here-days with no chore activity, you'll get a prompt asking if they're actually home.
+            </p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeSplitHouseholdModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveSplitHousehold()">Save</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Request notification permission when enabling
+  if (enabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function toggleShConfig() {
+  const on = document.getElementById('sh-enabled')?.checked;
+  document.getElementById('sh-config').style.display = on ? '' : 'none';
+  if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// Holds temporary cycle state while modal is open
+function _getShCycle() {
+  const btns = document.querySelectorAll('[id^="sh-day-"]');
+  const cycle = Array(14).fill(true);
+  btns.forEach(btn => {
+    const pos = parseInt(btn.id.replace('sh-day-',''));
+    cycle[pos] = btn.classList.contains('here');
+  });
+  return cycle;
+}
+
+function toggleShDay(pos) {
+  const btn = document.getElementById(`sh-day-${pos}`);
+  if (!btn) return;
+  const nowHere = btn.classList.contains('here');
+  btn.classList.toggle('here', !nowHere);
+  btn.classList.toggle('away', nowHere);
+}
+
+function refreshShGrid() {
+  // Re-render cycle preview based on current toggle states (no data change needed)
+}
+
+function addShOverride() {
+  const date = document.getElementById('sh-ov-date')?.value;
+  const type = document.getElementById('sh-ov-type')?.value === 'true';
+  if (!date) return;
+  const member = getMember(S.shMemberId);
+  if (!member) return;
+  member.splitHousehold.overrides[date] = type;
+  // Refresh list
+  const list = document.getElementById('sh-overrides-list');
+  if (!list) return;
+  list.innerHTML = Object.entries(member.splitHousehold.overrides)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([d, isHere]) => `
+      <div class="sh-override-row" id="sh-ov-${d}">
+        <span class="sh-override-label">${d}</span>
+        <span class="sh-badge ${isHere ? 'here' : 'away'}">${isHere ? 'Here' : 'Away'}</span>
+        <button class="btn-icon-sm" onclick="removeShOverride('${d}')">✕</button>
+      </div>`).join('') || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>';
+}
+
+function removeShOverride(date) {
+  const member = getMember(S.shMemberId);
+  if (!member) return;
+  delete member.splitHousehold.overrides[date];
+  document.getElementById(`sh-ov-${date}`)?.remove();
+  if (!Object.keys(member.splitHousehold.overrides).length) {
+    const list = document.getElementById('sh-overrides-list');
+    if (list) list.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>';
+  }
+}
+
+function saveSplitHousehold() {
+  const member = getMember(S.shMemberId);
+  if (!member) return;
+  member.splitHousehold.enabled = document.getElementById('sh-enabled')?.checked || false;
+  member.splitHousehold.referenceMonday = document.getElementById('sh-ref-monday')?.value || getMostRecentMonday();
+  member.splitHousehold.cycle = _getShCycle();
+  // overrides were already mutated live by addShOverride / removeShOverride
+  saveData();
+  closeSplitHouseholdModal();
+  toast('Split Household schedule saved');
+  renderParentSettings();
+}
+
+function closeSplitHouseholdModal() {
+  document.getElementById('split-household-modal')?.remove();
+}
+
+// ── Here-Check Modal (6 pm prompt) ────────────────────────────────────────
+
+function showHereCheckModal(members) {
+  const rows = members.map(m => `
+    <div class="here-check-member-row">
+      <span style="font-size:1.8rem">${m.avatar}</span>
+      <span style="font-weight:600;flex:1">${esc(m.name)}</span>
+      <div class="here-check-btns">
+        <button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="markHereToday('${m.id}')">Here ✓</button>
+        <button class="btn btn-secondary btn-sm" onclick="markAwayToday('${m.id}')">Away</button>
+      </div>
+    </div>`).join('');
+
+  const html = `
+    <div class="modal-backdrop" id="here-check-modal">
+      <div class="modal" style="max-width:380px">
+        <div class="modal-header">
+          <span class="modal-title">🏠 Are they home?</span>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:12px">
+            It's past 6 pm and these kids haven't done any chores today. Are they actually at your house?
+          </p>
+          <div>${rows}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="document.getElementById('here-check-modal')?.remove()">Dismiss</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function markHereToday(memberId) {
+  const member = getMember(memberId);
+  if (member?.splitHousehold) member.splitHousehold.overrides[today()] = true;
+  saveData();
+  document.getElementById('here-check-modal')?.remove();
+}
+
+function markAwayToday(memberId) {
+  const member = getMember(memberId);
+  if (member?.splitHousehold) member.splitHousehold.overrides[today()] = false;
+  saveData();
+  document.getElementById('here-check-modal')?.remove();
 }
 
 function getStreakBonus(streakCount) {
@@ -6721,6 +7059,7 @@ function renderParentSettings() {
           </div>
           <div style="display:flex;gap:6px">
             <button class="btn-icon-sm btn-icon-edit" onclick="showAddPointsModal('${k.id}')">💎</button>
+            <button class="btn-icon-sm" title="Split Household schedule" onclick="showSplitHouseholdModal('${k.id}')" style="font-size:0.95rem;${k.splitHousehold?.enabled ? 'background:var(--green);color:#fff;border-color:var(--green)' : ''}">🏠</button>
           </div>
         </div>`).join('')}
       <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="goSetup()">Edit Family Setup</button>
@@ -7095,6 +7434,7 @@ function routeAfterLoad() {
 
 function init() {
   loadData();
+  scheduleHereCheck();
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
 
   if (hasLocalData) {
