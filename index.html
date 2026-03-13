@@ -11,6 +11,7 @@
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css">
   <style>
     /* ══════════════════════════════════════════
        VARIABLES & RESET
@@ -1095,27 +1096,43 @@
     }
 
     /* ══════════════════════════════════════════
-       EMOJI ICON PICKER (for chores/prizes)
+       ICON PICKER (Phosphor duotone, for chores/prizes)
     ══════════════════════════════════════════ */
     .icon-picker {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 5px;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
       margin-top: 6px;
-      max-height: 140px;
+      max-height: 196px;
       overflow-y: auto;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 6px;
     }
     .icon-opt {
-      font-size: 1.6rem;
-      text-align: center;
-      padding: 5px;
-      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.55rem;
+      padding: 8px 4px;
+      border-radius: 10px;
       border: 2px solid transparent;
       cursor: pointer;
       background: #F9FAFB;
       transition: all 0.12s;
     }
+    .icon-opt:active { transform: scale(0.9); }
     .icon-opt.sel { border-color: var(--purple); background: #EDE9FE; }
+    /* Color swatches for icon picker */
+    .icon-color-row {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+    }
+    .icon-color-swatch {
+      width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+      border: 3px solid transparent; transition: all 0.15s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    }
+    .icon-color-swatch.sel { border-color: var(--text); transform: scale(1.18); }
 
     .schedule-toolbar {
       display:flex;
@@ -1713,176 +1730,136 @@ const ICONS = {
   today:    `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="4" y="7" width="20" height="18" rx="3" fill="#43D9AD" fill-opacity=".18" stroke="#43D9AD" stroke-width="1.8"/><line x1="4" y1="13" x2="24" y2="13" stroke="#43D9AD" stroke-width="1.8"/><line x1="9" y1="4" x2="9" y2="10" stroke="#43D9AD" stroke-width="1.8" stroke-linecap="round"/><line x1="19" y1="4" x2="19" y2="10" stroke="#43D9AD" stroke-width="1.8" stroke-linecap="round"/><circle cx="14" cy="19.5" r="4" fill="#43D9AD" opacity=".8"/></svg>`,
 };
 
-// Unified emoji map used for both chore and prize icon pickers (with search)
-const EMOJI_MAP = [
-  // Bedroom / Sleep
-  {e:'🛏️',k:'bed bedroom sleep make morning'},
-  {e:'💤',k:'sleep nap rest night'},
-  {e:'🌙',k:'night sleep bedtime moon'},
-  {e:'🌅',k:'morning sunrise wake up'},
-  {e:'☀️',k:'morning sun wake up day'},
+// Phosphor duotone icon map for chore and prize pickers
+// n = Phosphor icon name, k = search keywords
+const ICON_MAP = [
+  // Bedroom / Morning
+  {n:'bed',             k:'bed sleep bedroom morning make'},
+  {n:'moon',            k:'night sleep bedtime moon'},
+  {n:'sun-horizon',     k:'morning sunrise wake up early'},
+  {n:'alarm',           k:'alarm clock wake up morning timer'},
+  {n:'coffee',          k:'coffee morning drink wake up caffeine'},
   // Hygiene
-  {e:'🦷',k:'teeth brush dental hygiene morning'},
-  {e:'🪥',k:'toothbrush brush teeth'},
-  {e:'🚿',k:'shower bath wash hygiene'},
-  {e:'🛁',k:'bath tub soak wash clean'},
-  {e:'🧴',k:'lotion shampoo soap body wash'},
-  {e:'🧼',k:'soap wash hands clean hygiene'},
-  {e:'🪒',k:'shave razor face wash'},
-  {e:'💊',k:'medicine vitamin pill health'},
+  {n:'tooth',           k:'teeth brush dental hygiene morning'},
+  {n:'shower',          k:'shower bath wash hygiene clean'},
+  {n:'hand-soap',       k:'soap wash hands clean hygiene'},
+  {n:'drop',            k:'water wash clean hygiene'},
+  {n:'bandaids',        k:'bandaid first aid medicine health'},
   // Kitchen / Dishes
-  {e:'🍽️',k:'dishes plate table set clear dinner'},
-  {e:'🥄',k:'spoon silverware cutlery dishes'},
-  {e:'🍳',k:'cook cooking breakfast eggs pan'},
-  {e:'🧑‍🍳',k:'cook chef kitchen prepare'},
-  {e:'🥘',k:'cook meal dinner pot'},
-  {e:'🥗',k:'salad healthy food prep'},
-  {e:'🥞',k:'breakfast pancake morning'},
-  {e:'🥣',k:'cereal breakfast bowl morning'},
-  {e:'🍵',k:'tea hot drink morning'},
-  {e:'☕',k:'coffee tea morning drink'},
-  {e:'🫙',k:'jar pantry organize kitchen storage'},
-  {e:'♻️',k:'recycle sort separate'},
-  {e:'🗑️',k:'trash garbage bin empty take out'},
+  {n:'fork-knife',      k:'dishes silverware cutlery table set dinner'},
+  {n:'cooking-pot',     k:'cook cooking pot dinner meal'},
+  {n:'egg',             k:'egg cook breakfast morning'},
+  {n:'orange-slice',    k:'fruit healthy food snack'},
+  {n:'salad',           k:'salad healthy food prep'},
+  {n:'pizza-slice',     k:'pizza dinner food choose'},
+  {n:'hamburger',       k:'burger sandwich lunch dinner'},
+  {n:'popcorn',         k:'popcorn movie night snack'},
   // Cleaning
-  {e:'🧹',k:'broom sweep floor clean'},
-  {e:'🧺',k:'laundry clothes wash basket hamper'},
-  {e:'🪣',k:'bucket mop clean floor'},
-  {e:'🧽',k:'sponge scrub clean dishes kitchen'},
-  {e:'🫧',k:'bubbles clean soap wash'},
-  {e:'🧻',k:'toilet paper bathroom'},
-  {e:'🪠',k:'plunger toilet clean'},
-  {e:'🚰',k:'faucet sink clean bathroom'},
-  {e:'🪟',k:'window clean house wipe'},
-  {e:'🪞',k:'mirror clean bathroom wipe'},
-  // Clothes / Laundry
-  {e:'👕',k:'shirt clothes laundry fold put away'},
-  {e:'🧦',k:'socks clothes laundry fold'},
-  {e:'👗',k:'dress clothes laundry fold'},
-  {e:'👖',k:'pants jeans clothes laundry'},
-  {e:'🧤',k:'gloves clothes winter'},
-  {e:'🎒',k:'backpack bag school pack unpack'},
-  // Garden / Outdoors
-  {e:'🌿',k:'plant water garden outdoor nature'},
-  {e:'🪴',k:'plant pot indoor water care'},
-  {e:'🌺',k:'flower plant garden tend'},
-  {e:'🌱',k:'seedling garden plant grow water'},
-  {e:'🌻',k:'sunflower garden outdoor'},
-  {e:'🍃',k:'leaf rake yard garden'},
-  {e:'🌾',k:'yard garden outdoor nature'},
-  // Pets
-  {e:'🐾',k:'pet dog cat feed walk animal'},
-  {e:'🐕',k:'dog pet walk feed'},
-  {e:'🐱',k:'cat pet feed indoor'},
-  {e:'🐟',k:'fish pet feed tank aquarium'},
-  {e:'🐠',k:'fish pet aquarium tank'},
-  {e:'🐇',k:'rabbit bunny pet hutch'},
+  {n:'broom',           k:'broom sweep floor clean'},
+  {n:'trash',           k:'trash garbage bin empty take out'},
+  {n:'recycle',         k:'recycle sort separate bins'},
+  {n:'spray-bottle',    k:'spray clean wipe surface disinfect'},
+  {n:'toilet',          k:'toilet clean bathroom scrub'},
+  {n:'bathtub',         k:'bath tub soak wash clean bathroom'},
+  {n:'bucket',          k:'bucket mop clean floor'},
+  // Laundry / Clothes
+  {n:'t-shirt',         k:'shirt clothes laundry fold put away'},
+  {n:'pants',           k:'pants jeans clothes laundry fold'},
+  {n:'hoodie',          k:'hoodie sweatshirt clothes laundry'},
+  {n:'sneaker',         k:'shoes sneakers put away'},
+  {n:'washing-machine', k:'laundry wash clothes machine washer'},
   // School / Study
-  {e:'📚',k:'books homework study school learn read'},
-  {e:'📖',k:'book read study homework'},
-  {e:'✏️',k:'pencil write homework school'},
-  {e:'📝',k:'write notes homework school list'},
-  {e:'📐',k:'ruler math school project'},
-  {e:'🖊️',k:'pen write homework assignment'},
-  {e:'🗓️',k:'calendar schedule plan agenda'},
-  // Organization
-  {e:'📦',k:'box pack organize room'},
-  {e:'🗂️',k:'folder organize files sort'},
-  {e:'📋',k:'clipboard list chore task check'},
-  {e:'🧲',k:'organize collect pick up'},
-  // House
-  {e:'🏠',k:'house home clean room tidy'},
-  {e:'🚪',k:'door house lock unlock'},
-  {e:'🛋️',k:'sofa couch living room tidy'},
-  {e:'🪑',k:'chair furniture tidy push in'},
-  {e:'🚽',k:'toilet clean bathroom scrub'},
-  {e:'🔑',k:'key lock secure house'},
-  {e:'💡',k:'light lamp electricity switch off'},
-  // Shopping / Errands
-  {e:'🛒',k:'grocery shopping cart errands store'},
-  {e:'🛍️',k:'bag shopping errands carry'},
-  {e:'📮',k:'mail post check mailbox'},
-  // Exercise / Health
-  {e:'🏃',k:'run jog exercise walk outdoor'},
-  {e:'🚴',k:'bike ride exercise outdoor'},
-  {e:'🏊',k:'swim pool exercise sport'},
-  {e:'⚽',k:'soccer ball sport exercise play'},
-  {e:'🏀',k:'basketball sport exercise play'},
-  {e:'💪',k:'exercise strong workout gym'},
-  {e:'🧘',k:'yoga meditation relax stretch'},
-  {e:'🚶',k:'walk dog exercise outdoor stroll'},
-  // Prizes & Rewards
-  {e:'🎬',k:'movie cinema film watch night'},
-  {e:'📱',k:'phone screen time device tablet'},
-  {e:'🍕',k:'pizza dinner choose food'},
-  {e:'🎁',k:'gift present toy surprise reward'},
-  {e:'🍦',k:'ice cream dessert treat sweet'},
-  {e:'🎮',k:'game video gaming play console'},
-  {e:'🎡',k:'amusement park ride fun fair'},
-  {e:'🛍️',k:'shopping mall trip store'},
-  {e:'🎪',k:'carnival fair amusement fun'},
-  {e:'🏖️',k:'beach swim vacation trip'},
-  {e:'🎳',k:'bowling night out fun'},
-  {e:'🍿',k:'popcorn movie night snack'},
-  {e:'🎵',k:'music concert show live'},
-  {e:'🧁',k:'cupcake cake bake birthday treat'},
-  {e:'🧩',k:'puzzle game play fun activity'},
-  {e:'🪁',k:'toy slingshot outside play'},
-  {e:'🚲',k:'bike ride trip outdoor fun'},
-  {e:'🎤',k:'karaoke sing music fun'},
-  {e:'🎯',k:'goal target aim game fun'},
-  {e:'⛸️',k:'skating ice rink fun winter'},
-  {e:'🏄',k:'surf beach water sport outdoor'},
-  {e:'🎠',k:'carousel fun fair amusement park'},
-  {e:'🎭',k:'theater show performance night out'},
-  {e:'🎨',k:'art craft paint create make'},
-  // Achievements
-  {e:'🏆',k:'trophy win award achievement champ'},
-  {e:'💎',k:'star award achievement great job'},
-  {e:'🥇',k:'gold first place win achievement'},
-  {e:'🎖️',k:'medal award badge honor'},
-  {e:'👑',k:'crown royal best champion'},
-  // Fun misc
-  {e:'🎀',k:'ribbon gift bow award'},
-  {e:'🌈',k:'rainbow colorful fun happy'},
-  {e:'🎈',k:'balloon birthday party celebrate'},
-  {e:'🎉',k:'party celebrate confetti fun'},
-  {e:'🤝',k:'help teamwork cooperation family'},
-  {e:'❤️',k:'love care family kind'},
-  {e:'🌟',k:'star shine amazing great'},
-  {e:'🔧',k:'fix repair tool maintain'},
-  {e:'📦',k:'box organize pack storage room'},
-  {e:'🏡',k:'home house family outside yard'},
+  {n:'backpack',        k:'backpack bag school pack unpack'},
+  {n:'books',           k:'books homework study school learn read'},
+  {n:'book-open',       k:'book read study homework'},
+  {n:'pencil',          k:'pencil write homework school'},
+  {n:'exam',            k:'exam test study quiz school'},
+  {n:'graduation-cap',  k:'graduation school learn achievement diploma'},
+  {n:'calculator',      k:'calculator math school homework'},
+  // Health / Exercise
+  {n:'heartbeat',       k:'health heart exercise fitness wellness'},
+  {n:'dumbbell',        k:'weights exercise workout gym strength'},
+  {n:'bicycle',         k:'bike ride exercise outdoor'},
+  {n:'person-simple-run',k:'run jog exercise walk outdoor'},
+  {n:'basketball',      k:'basketball sport exercise play ball'},
+  {n:'soccer-ball',     k:'soccer ball sport exercise play'},
+  // Garden / Outdoors / Pets
+  {n:'plant',           k:'plant water indoor care grow'},
+  {n:'flower',          k:'flower garden tend water'},
+  {n:'tree',            k:'tree garden yard outdoor nature'},
+  {n:'dog',             k:'dog pet walk feed animal'},
+  {n:'paw-print',       k:'pet animal dog cat feed'},
+  {n:'fish',            k:'fish pet tank aquarium feed'},
+  {n:'leaf',            k:'leaf yard garden nature rake'},
+  // Errands / Shopping
+  {n:'shopping-cart',   k:'grocery shopping errands store cart'},
+  {n:'package',         k:'package box mail errand delivery'},
+  {n:'envelope',        k:'mail letter post check mailbox'},
+  {n:'car',             k:'car drive errand trip commute'},
+  // Home / Maintenance
+  {n:'house',           k:'house home clean room tidy'},
+  {n:'sofa',            k:'sofa couch living room tidy vacuum'},
+  {n:'lamp',            k:'lamp light electricity room turn off'},
+  {n:'television',      k:'tv television turn off screen time'},
+  {n:'wrench',          k:'fix repair tool maintain'},
+  {n:'hammer',          k:'fix repair hammer build'},
+  {n:'paint-roller',    k:'paint wall house improve'},
+  {n:'plug',            k:'plug power outlet charge'},
+  {n:'key',             k:'key lock door secure house'},
+  {n:'toolbox',         k:'toolbox tools fix repair'},
+  // Prizes / Achievements
+  {n:'star',            k:'star reward achievement great amazing'},
+  {n:'trophy',          k:'trophy win award achievement champ'},
+  {n:'medal',           k:'medal award honor achievement'},
+  {n:'gift',            k:'gift present toy surprise reward'},
+  {n:'crown',           k:'crown royal best champion win'},
+  {n:'sparkle',         k:'sparkle shine amazing special'},
+  {n:'confetti',        k:'party celebrate fun confetti'},
+  {n:'balloon',         k:'balloon birthday party celebrate'},
+  // Entertainment / Fun
+  {n:'game-controller', k:'game video gaming play console'},
+  {n:'music-notes',     k:'music listen concert fun'},
+  {n:'paint-brush',     k:'art craft paint create make'},
+  {n:'film-strip',      k:'movie cinema film watch night'},
+  {n:'ice-cream',       k:'ice cream dessert treat sweet reward'},
+  // General
+  {n:'heart',           k:'love care family kind'},
+  {n:'check-circle',    k:'check done complete finish task'},
+  {n:'clock',           k:'clock time schedule routine'},
+  {n:'calendar',        k:'calendar schedule plan agenda'},
+  {n:'flag',            k:'flag goal milestone achievement'},
+  {n:'bell',            k:'bell reminder alert notification'},
+  {n:'scissors',        k:'scissors cut craft art'},
+  {n:'users',           k:'family team together group'},
+  {n:'rocket',          k:'rocket launch go fast speed'},
+  {n:'shield',          k:'shield protect safe security'},
+  {n:'lightning',       k:'lightning fast energy power'},
 ];
-
-// Keep legacy arrays for backward compat (prize modal still uses PRIZE_ICONS)
-const CHORE_ICONS = EMOJI_MAP.map(e => e.e);
-const PRIZE_ICONS = ['🎬','📱','🌙','🍕','🎁','🍦','🎮','🎡','🛍️',
-                     '🎪','🎠','🏖️','🎭','🎨','🎳','🍿','🎵','🧁',
-                     '🧩','🪁','🚲','🏊','🎤','🎯','⛸️','🏄'];
+// Legacy alias so any remaining EMOJI_MAP references don't crash
+const EMOJI_MAP = ICON_MAP;
 
 const DEFAULT_CHORES = [
-  { title:'Make My Bed',       icon:'🛏️', diamonds:10, frequency:'daily'  },
-  { title:'Brush Teeth',       icon:'🦷', diamonds:5,  frequency:'daily'  },
-  { title:'Put Toys Away',     icon:'🧸', diamonds:10, frequency:'daily'  },
-  { title:'Set the Table',     icon:'🍽️', diamonds:10, frequency:'daily'  },
-  { title:'Clear the Table',   icon:'🧹', diamonds:10, frequency:'daily'  },
-  { title:'Take Out Trash',    icon:'🗑️', diamonds:15, frequency:'weekly' },
-  { title:'Do Homework',       icon:'📚', diamonds:20, frequency:'daily'  },
-  { title:'Put Clothes Away',  icon:'👕', diamonds:10, frequency:'daily'  },
-  { title:'Feed the Pet',      icon:'🐾', diamonds:15, frequency:'daily'  },
-  { title:'Help with Laundry', icon:'🧺', diamonds:20, frequency:'weekly' },
+  { title:'Make My Bed',       icon:'bed',          iconColor:'#43D9AD', diamonds:10, frequency:'daily'  },
+  { title:'Brush Teeth',       icon:'tooth',        iconColor:'#45B7D1', diamonds:5,  frequency:'daily'  },
+  { title:'Put Toys Away',     icon:'house',        iconColor:'#6C63FF', diamonds:10, frequency:'daily'  },
+  { title:'Set the Table',     icon:'fork-knife',   iconColor:'#FF9A3C', diamonds:10, frequency:'daily'  },
+  { title:'Clear the Table',   icon:'broom',        iconColor:'#6BCB77', diamonds:10, frequency:'daily'  },
+  { title:'Take Out Trash',    icon:'trash',        iconColor:'#6BCB77', diamonds:15, frequency:'weekly' },
+  { title:'Do Homework',       icon:'books',        iconColor:'#45B7D1', diamonds:20, frequency:'daily'  },
+  { title:'Put Clothes Away',  icon:'t-shirt',      iconColor:'#FF6584', diamonds:10, frequency:'daily'  },
+  { title:'Feed the Pet',      icon:'paw-print',    iconColor:'#FF9A3C', diamonds:15, frequency:'daily'  },
+  { title:'Help with Laundry', icon:'washing-machine',iconColor:'#43D9AD',diamonds:20, frequency:'weekly'},
 ];
 
 const DEFAULT_PRIZES = [
-  { title:'Movie Night Pick',        icon:'🎬', cost:100, type:'individual' },
-  { title:'30 min Extra Screen Time',icon:'📱', cost:50,  type:'individual' },
-  { title:'Stay Up 30 min Late',     icon:'🌙', cost:75,  type:'individual' },
-  { title:'Choose Dinner',           icon:'🍕', cost:75,  type:'individual' },
-  { title:'Small Toy or Book',       icon:'🎁', cost:250, type:'individual' },
-  { title:'Family Ice Cream Night',  icon:'🍦', cost:400, type:'family'     },
-  { title:'Family Movie Night',      icon:'🎬', cost:500, type:'family'     },
-  { title:'Bowling Night',           icon:'🎳', cost:800, type:'family'     },
+  { title:'Movie Night Pick',        icon:'film-strip',  iconColor:'#6C63FF', cost:100, type:'individual' },
+  { title:'30 min Extra Screen Time',icon:'television',  iconColor:'#45B7D1', cost:50,  type:'individual' },
+  { title:'Stay Up 30 min Late',     icon:'moon',        iconColor:'#6C63FF', cost:75,  type:'individual' },
+  { title:'Choose Dinner',           icon:'pizza-slice', iconColor:'#FF9A3C', cost:75,  type:'individual' },
+  { title:'Small Toy or Book',       icon:'gift',        iconColor:'#FF6584', cost:250, type:'individual' },
+  { title:'Family Ice Cream Night',  icon:'ice-cream',   iconColor:'#FFD93D', cost:400, type:'family'     },
+  { title:'Family Movie Night',      icon:'film-strip',  iconColor:'#6C63FF', cost:500, type:'family'     },
+  { title:'Bowling Night',           icon:'trophy',      iconColor:'#FFD93D', cost:800, type:'family'     },
 ];
 
 const WEEKDAY_OPTIONS = [
@@ -2197,6 +2174,8 @@ function normalizeChore(chore) {
     ...chore,
     frequency: period,
     repeatCount: targetCount,
+    icon: chore?.icon || 'broom',
+    iconColor: chore?.iconColor || '#6BCB77',
     photoMode: (['after','before_after'].includes(chore?.photoMode) ? chore.photoMode
              : chore?.requiresPhoto === true ? 'after' : 'none'),
     assignedTo: Array.isArray(chore?.assignedTo) ? chore.assignedTo : [],
@@ -2248,7 +2227,9 @@ function normalizeData(data) {
     }
     return normalizeChore(c);
   }) : [];
-  normalized.prizes = Array.isArray(normalized.prizes) ? normalized.prizes : [];
+  normalized.prizes = Array.isArray(normalized.prizes)
+    ? normalized.prizes.map(p => ({ icon:'gift', iconColor:'#FF6584', ...p }))
+    : [];
   normalized.activities = Array.isArray(normalized.activities) ? normalized.activities : [];
   normalized.history = Array.isArray(normalized.history) ? normalized.history : [];
   // Migrate old familyGoal → teamGoals[0]
@@ -3140,11 +3121,37 @@ function speak(text) {
   window.speechSynthesis.speak(utt);
 }
 
+// ── ICON RENDERER ─────────────────────────────────────────────
+// Renders a Phosphor duotone icon or falls back to raw emoji for legacy data
+function renderIcon(name, color, extraStyle='') {
+  if (!name) return '';
+  // Legacy emoji: any string with non-ASCII characters
+  if ([...name].some(c => c.codePointAt(0) > 127)) return name;
+  const col = color || '#6C63FF';
+  return `<i class="ph-duotone ph-${name}" style="color:${col};${extraStyle}"></i>`;
+}
+
+function selChoreColor(el, color) {
+  document.getElementById('cm-icon-color').value = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
+function selPrizeColor(el, color) {
+  document.getElementById('pm-icon-color').value = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('prize-icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
 // ── TOAST ─────────────────────────────────────────────────────
 function toast(msg) {
   const el = document.createElement('div');
   el.className = 'toast';
-  el.textContent = msg;
+  el.innerHTML = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2900);
 }
@@ -3666,7 +3673,7 @@ function renderSetupStep() {
         ${DEFAULT_PRIZES.map((p,i) => `
           <label class="chore-checkbox-row">
             <input type="checkbox" id="sp${i}" ${D.setup&&D.prizes.find(x=>x.title===p.title)?'checked':!D.setup?'checked':''}>
-            <span class="chore-checkbox-icon">${p.icon}</span>
+            <span class="chore-checkbox-icon">${renderIcon(p.icon,p.iconColor)}</span>
             <span class="chore-checkbox-label">${p.title}</span>
             <span class="chore-checkbox-dmds">${p.cost} 💎 · ${p.type}</span>
           </label>`).join('')}
@@ -4166,7 +4173,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
     return `
       <div class="chore-item ${progress.status}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
         <span class="drag-handle">⠿</span>
-        <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
+        <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}${sparkle}</span>
         <div class="chore-info">
           <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
           <div class="chore-meta">${fmtDmds(chore.diamonds)} per slot</div>
@@ -4601,7 +4608,7 @@ function renderKidShop() {
     return `
       <div class="prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
-        <span class="prize-icon">${p.icon}</span>
+        <span class="prize-icon">${renderIcon(p.icon,p.iconColor)}</span>
         <div class="prize-name">${esc(p.title)}</div>
         <div class="prize-cost">💎 ${p.cost}</div>
         ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-dmds} more 💎 needed</div>`:''}
@@ -4637,8 +4644,8 @@ function kidRedeemPrize(prizeId, evt) {
   }
 
   showModal(`
-    <div class="modal-title">${prize.icon} Redeem Prize?</div>
-    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for ${prize.cost} of your 💎 ${dmds} diamonds?</p>
+    <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} Redeem Prize?</div>
+    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your 💎 ${dmds} diamonds?</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
       <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! 🎉</button>
@@ -4654,7 +4661,7 @@ function confirmRedeem(prizeId) {
   if (!ok) { toast('Could not redeem — not enough diamonds'); return; }
 
   showCelebration({
-    icon:   prize.icon,
+    icon:   renderIcon(prize.icon, prize.iconColor, 'font-size:3.5rem'),
     title:  'Prize Unlocked!',
     sub:    prize.title,
     tts:    isTiny(m) ? `You got it! ${prize.title}! Go tell Mom or Dad!` : null,
@@ -5104,7 +5111,7 @@ function renderParentHome() {
         : '';
       html += `
         <div class="admin-card" style="flex-wrap:wrap;gap:10px">
-          <span class="admin-icon">${chore.icon}</span>
+          <span class="admin-icon">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
           <div class="admin-info" style="flex:1;min-width:0">
             <div class="admin-name">${esc(chore.title)}${entryBadge}${slotLabel?` <span style="font-size:0.8rem;color:var(--muted)">(${esc(slotLabel)})</span>`:''}</div>
             <div class="admin-meta">${mem.avatar} ${esc(mem.name)} · ${ptsLabel} · ${fmtDate(entry.date)}</div>
@@ -5182,7 +5189,7 @@ function renderParentHome() {
           return `
             <div class="kid-overview-item" style="${isCombo ? 'background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B;' : ''}${isExpanded ? 'flex-wrap:wrap;' : ''}">
               <div style="flex:1;min-width:0">
-                <div style="font-weight:700">${chore.icon} ${esc(chore.title)}${isCombo ? ' <span style="font-size:0.65rem;font-weight:800;color:#D97706;vertical-align:middle">⚡</span>' : ''}</div>
+                <div style="font-weight:700">${renderIcon(chore.icon,chore.iconColor,'font-size:1.1rem;vertical-align:middle')} ${esc(chore.title)}${isCombo ? ' <span style="font-size:0.65rem;font-weight:800;color:#D97706;vertical-align:middle">⚡</span>' : ''}</div>
                 <div style="font-size:0.82rem;color:var(--muted)">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
               </div>
               <span class="kid-overview-status ${statusClass}">${statusLabel}</span>
@@ -5309,7 +5316,7 @@ function parentMarkChoreDone(choreId, memberId) {
 
   const progress = getChoreProgress(chore, memberId);
   if (progress.status === 'done') {
-    toast(`${chore.icon} Already marked done for ${member.name}`);
+    toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} Already marked done for ${esc(member.name)}`);
     return;
   }
 
@@ -5323,7 +5330,7 @@ function parentMarkChoreDone(choreId, memberId) {
     const available = (progress.slotStatuses || []).filter(s => s.status === 'available');
     const waiting   = (progress.slotStatuses || []).filter(s => s.status === 'waiting');
     const toComplete = available.length > 0 ? available : waiting.slice(0, 1);
-    if (toComplete.length === 0) { toast(`${chore.icon} All slots already submitted for ${member.name}`); return; }
+    if (toComplete.length === 0) { toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} All slots already submitted for ${esc(member.name)}`); return; }
     toComplete.forEach(({ slot }) => {
       chore.completions[memberId].push({
         id: genId(), status: 'done', date: today(), createdAt: Date.now(),
@@ -5400,7 +5407,7 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   checkAfterDiamondsAwarded(member, chore.diamonds);
   checkChoreBadges(chore, memberId);
   saveData();
-  toast(`✅ ${chore.icon} ${slotStatus.slot.label || 'Slot'} done for ${member.name} (+${chore.diamonds} 💎)`);
+  toast(`✅ ${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} ${esc(slotStatus.slot.label || 'Slot')} done for ${esc(member.name)} (+${chore.diamonds} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5423,7 +5430,7 @@ function parentUnmarkSlotDone(choreId, memberId, slotId) {
   if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.diamonds);
   addHistory('penalty', memberId, `↩ Removed: ${chore.title} (${slot?.label || 'slot'})`, -deduct);
   saveData();
-  toast(`↩ Removed ${chore.icon} ${slot?.label || 'slot'} for ${member.name} (−${deduct} 💎)`);
+  toast(`↩ Removed ${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} ${esc(slot?.label || 'slot')} for ${esc(member.name)} (−${deduct} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5539,7 +5546,7 @@ function renderParentChores() {
     html += `
       <div class="admin-card" data-drag-id="${chore.id}">
         <span class="drag-handle" title="Drag to reorder">⠿</span>
-        <span class="admin-icon">${chore.icon}</span>
+        <span class="admin-icon">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
         <div class="admin-info">
           <div class="admin-name">${esc(chore.title)}</div>
           <div class="admin-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))} · ${assignedKids||'no one'}</div>
@@ -5573,8 +5580,12 @@ function showChoreModal(choreId) {
   _editSlots  = c.schedule.slots ? c.schedule.slots.map(s=>({...s})) : [];
   _editBadges = Array.isArray(c.badges) ? c.badges.map(b=>({...b})) : [];
 
-  const iconOpts = EMOJI_MAP.slice(0, 48).map(({e:ic}) =>
-    `<div class="icon-opt${ic===c.icon?' sel':''}" onclick="selChoreIcon(this,'${ic}')">${ic}</div>`
+  const choreColor = c.iconColor || '#6BCB77';
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===c.icon?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===choreColor?' sel':''}" style="background:${col}" onclick="selChoreColor(this,'${col}')"></div>`
   ).join('');
 
   const assignOpts = kids.map(k => `
@@ -5606,10 +5617,12 @@ function showChoreModal(choreId) {
   showModal(`
     <div class="modal-title">${chore?'Edit':'Add'} Chore</div>
     <input type="hidden" id="cm-icon" value="${c.icon}">
+    <input type="hidden" id="cm-icon-color" value="${choreColor}">
     <div class="form-group">
-      <label class="form-label">Icon</label>
-      <input type="text" class="icon-search-input" placeholder="🔍 Search icons (e.g. teeth, laundry, dog)..." oninput="filterIcons(this.value)">
-      <div class="icon-picker" id="icon-picker-grid">${iconOpts}</div>
+      <label class="form-label">Icon &amp; Color</label>
+      <div class="icon-color-row">${colorSwatches}</div>
+      <input type="text" class="icon-search-input" placeholder="Search icons (e.g. broom, teeth, dog)..." oninput="filterIcons(this.value)">
+      <div class="icon-picker" id="icon-picker-grid" style="color:${choreColor}">${iconOpts}</div>
     </div>
     <div class="form-group">
       <label class="form-label">Chore name</label>
@@ -5707,52 +5720,19 @@ function showChoreModal(choreId) {
   renderBadgeEditor();
 }
 
-// Lazy-loaded emojilib dataset (full ~1800 Unicode emoji with keywords)
-let _emojiLib = null;
-let _emojiLibLoading = false;
-
-async function loadEmojiLib() {
-  if (_emojiLib) return _emojiLib;
-  if (_emojiLibLoading) return null;
-  _emojiLibLoading = true;
-  try {
-    const res = await fetch('https://cdn.jsdelivr.net/npm/emojilib@3.0.0/dist/emoji-en-US.json');
-    const raw = await res.json();
-    // Convert { "😀": ["grinning", "face"] } → [{ e: "😀", k: "grinning face" }]
-    _emojiLib = Object.entries(raw).map(([e, keywords]) => ({ e, k: keywords.join(' ') }));
-    _emojiLibLoading = false;
-    return _emojiLib;
-  } catch(err) {
-    _emojiLibLoading = false;
-    console.warn('Could not load emojilib — falling back to local map', err);
-    _emojiLib = EMOJI_MAP; // fallback to our curated set
-    return _emojiLib;
-  }
-}
 
 function filterIcons(query) {
   const q = query.toLowerCase().trim();
   const cur = document.getElementById('cm-icon')?.value;
   const grid = document.getElementById('icon-picker-grid');
   if (!grid) return;
-
-  // Use whatever dataset is already loaded; trigger a load if not yet started
-  const dataset = _emojiLib || EMOJI_MAP;
-  const matches = q ? dataset.filter(({k}) => k.includes(q)) : dataset.slice(0, 60);
-
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
   if (matches.length === 0) {
     grid.innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`;
   } else {
-    grid.innerHTML = matches.slice(0, 80).map(({e:ic}) =>
-      `<div class="icon-opt${ic===cur?' sel':''}" onclick="selChoreIcon(this,'${ic}')">${ic}</div>`
+    grid.innerHTML = matches.map(({n}) =>
+      `<div class="icon-opt${n===cur?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
     ).join('');
-  }
-
-  // If emojilib isn't loaded yet, kick off the load and refresh when done
-  if (!_emojiLib) {
-    loadEmojiLib().then(lib => {
-      if (lib && document.getElementById('icon-picker-grid')) filterIcons(query);
-    });
   }
 }
 
@@ -5857,7 +5837,8 @@ function toggleChoreDayRow(dayIndex) {
 
 function saveChore(choreId) {
   const title  = document.getElementById('cm-title')?.value.trim();
-  const icon   = document.getElementById('cm-icon')?.value || '📋';
+  const icon      = document.getElementById('cm-icon')?.value || 'broom';
+  const iconColor = document.getElementById('cm-icon-color')?.value || '#6BCB77';
   const diamonds = parseInt(document.getElementById('cm-diamonds')?.value)||10;
   const freq   = document.getElementById('cm-freq')?.value || 'day';
   const photoMode = document.getElementById('cm-photo')?.value || 'none';
@@ -5893,7 +5874,7 @@ function saveChore(choreId) {
   const badges = document.getElementById('cm-badges-on')?.checked
     ? _editBadges.filter(b => b.name && b.count > 0).map(b => ({ ...b, id: b.id || genId() }))
     : [];
-  const choreData = { title, icon, diamonds, photoMode, frequency: freq,
+  const choreData = { title, icon, iconColor, diamonds, photoMode, frequency: freq,
     repeatCount: scheduleObj.targetCount, assignedTo: assigned, description: desc, schedule: scheduleObj, badges };
 
   if (choreId) {
@@ -5933,7 +5914,7 @@ function renderParentPrizes() {
   indiv.forEach(p => {
     html += `
       <div class="admin-card">
-        <span class="admin-icon">${p.icon}</span>
+        <span class="admin-icon">${renderIcon(p.icon,p.iconColor,'font-size:1.6rem')}</span>
         <div class="admin-info">
           <div class="admin-name">${esc(p.title)}</div>
           <div class="admin-meta">${p.cost} 💎</div>
@@ -5982,19 +5963,25 @@ function renderParentPrizes() {
 
 function showPrizeModal(prizeId) {
   const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
-  const p     = prize || { title:'', icon:'🎁', cost:100, type:'individual' };
+  const p     = prize || { title:'', icon:'gift', iconColor:'#FF6584', cost:100, type:'individual' };
 
-  const iconOpts = EMOJI_MAP.slice(0, 48).map(({e:ic}) =>
-    `<div class="icon-opt${ic===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${ic}')">${ic}</div>`
+  const prizeColor = p.iconColor || '#FF6584';
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===prizeColor?' sel':''}" style="background:${col}" onclick="selPrizeColor(this,'${col}')"></div>`
   ).join('');
 
   showModal(`
     <div class="modal-title">${prize?'Edit':'Add'} Prize</div>
     <input type="hidden" id="pm-icon" value="${p.icon}">
+    <input type="hidden" id="pm-icon-color" value="${prizeColor}">
     <div class="form-group">
-      <label class="form-label">Icon</label>
-      <input type="text" class="icon-search-input" placeholder="🔍 Search icons (e.g. movie, game, food)..." oninput="filterPrizeIcons(this.value)">
-      <div class="icon-picker" id="prize-icon-picker-grid">${iconOpts}</div>
+      <label class="form-label">Icon &amp; Color</label>
+      <div class="icon-color-row">${colorSwatches}</div>
+      <input type="text" class="icon-search-input" placeholder="Search icons (e.g. movie, game, trophy)..." oninput="filterPrizeIcons(this.value)">
+      <div class="icon-picker" id="prize-icon-picker-grid" style="color:${prizeColor}">${iconOpts}</div>
     </div>
     <div class="form-group">
       <label class="form-label">Prize name</label>
@@ -6021,34 +6008,28 @@ function filterPrizeIcons(query) {
   const cur = document.getElementById('pm-icon')?.value;
   const grid = document.getElementById('prize-icon-picker-grid');
   if (!grid) return;
-  const matches = q
-    ? EMOJI_MAP.filter(({e, k}) => k.includes(q) || e.includes(q))
-    : EMOJI_MAP.slice(0, 48);
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
   if (matches.length === 0) {
     grid.innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`;
   } else {
-    grid.innerHTML = matches.slice(0, 80).map(({e:ic}) =>
-      `<div class="icon-opt${ic===cur?' sel':''}" onclick="selPrizeIcon(this,'${ic}')">${ic}</div>`
+    grid.innerHTML = matches.map(({n}) =>
+      `<div class="icon-opt${n===cur?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
     ).join('');
-  }
-  if (!_emojiLib) {
-    loadEmojiLib().then(lib => {
-      if (lib && document.getElementById('prize-icon-picker-grid')) filterPrizeIcons(query);
-    });
   }
 }
 
 function savePrize(prizeId) {
-  const title = document.getElementById('pm-title')?.value.trim();
-  const icon  = document.getElementById('pm-icon')?.value || '🎁';
-  const cost  = parseInt(document.getElementById('pm-cost')?.value)||100;
+  const title     = document.getElementById('pm-title')?.value.trim();
+  const icon      = document.getElementById('pm-icon')?.value || 'gift';
+  const iconColor = document.getElementById('pm-icon-color')?.value || '#FF6584';
+  const cost      = parseInt(document.getElementById('pm-cost')?.value)||100;
   if (!title) { toast('Enter a prize name'); return; }
 
   if (prizeId) {
     const p = D.prizes.find(x=>x.id===prizeId);
-    if (p) Object.assign(p, { title, icon, cost, type:'individual' });
+    if (p) Object.assign(p, { title, icon, iconColor, cost, type:'individual' });
   } else {
-    D.prizes.push({ id:genId(), title, icon, cost, type:'individual', redemptions:[] });
+    D.prizes.push({ id:genId(), title, icon, iconColor, cost, type:'individual', redemptions:[] });
   }
   saveData();
   closeModal();
