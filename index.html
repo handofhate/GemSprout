@@ -1072,16 +1072,14 @@
     /* ══════════════════════════════════════════
        SYNC STATUS
     ══════════════════════════════════════════ */
-    .sync-bar {
-      background: #EDE9FE;
-      color: var(--purple);
+    .sync-bar.error {
+      background: #FEE2E2;
+      color: #DC2626;
       font-size: 0.78rem;
       font-weight: 700;
       padding: 6px 16px;
       text-align: center;
     }
-    .sync-bar.error { background: #FEE2E2; color: #DC2626; }
-    .sync-bar.ok    { background: #DCFCE7; color: #16A34A; }
 
     /* ══════════════════════════════════════════
        EMOJI ICON PICKER (for chores/prizes)
@@ -1657,7 +1655,12 @@ function showAppPin() {
         <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
       `).join('')}
     </div>
-    <div id="pin-error" class="pin-error hidden"></div>`;
+    <div id="pin-error" class="pin-error hidden"></div>
+    ${getBiometricCredentialId() ? `<button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="tryBiometricUnlock()">🔒 Use Face ID</button>` : ''}`;
+  // Auto-trigger Face ID if registered
+  if (getBiometricCredentialId()) {
+    setTimeout(() => tryBiometricUnlock(), 300);
+  }
 }
 
 // ── SWITCH USER (requires PIN) ────────────────────────────────
@@ -3226,10 +3229,8 @@ function updateSyncBar() {
   ['kid-sync-bar','parent-sync-bar'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (S.syncStatus==='syncing') { el.className='sync-bar'; el.textContent='☁️ Syncing...'; }
-    else if (S.syncStatus==='ok')  { el.className='sync-bar ok'; el.textContent='☁️ Synced'; setTimeout(()=>{ el.className=''; el.innerHTML=''; },3000); }
-    else if (S.syncStatus==='error'){ el.className='sync-bar error'; el.textContent='⚠️ Sync failed — check connection'; }
-    else { el.innerHTML=''; }
+    if (S.syncStatus==='error') { el.className='sync-bar error'; el.textContent='⚠️ Sync failed — check connection'; }
+    else { el.innerHTML=''; el.className=''; }
   });
 }
 
@@ -3464,6 +3465,89 @@ function pinKey(k) {
       }
     }, 200);
   }
+}
+
+// ── BIOMETRIC / FACE ID ───────────────────────────────────────
+const BIOMETRIC_KEY = 'familyhub_biometric_id';
+
+function isBiometricSupported() {
+  return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+}
+
+function getBiometricCredentialId() {
+  return localStorage.getItem(BIOMETRIC_KEY);
+}
+
+async function registerBiometric() {
+  if (!isBiometricSupported()) { alert('Face ID / biometrics not supported on this device.'); return; }
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: 'Family Hub' },
+        user: { id: new Uint8Array(16), name: 'parent', displayName: 'Parent' },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+        },
+        timeout: 60000,
+      }
+    });
+    const id = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+    localStorage.setItem(BIOMETRIC_KEY, id);
+    alert('Face ID set up successfully! You can now use it to unlock the app.');
+    renderParentSettings();
+  } catch(e) {
+    if (e.name !== 'NotAllowedError') alert('Could not set up Face ID: ' + e.message);
+  }
+}
+
+async function authenticateBiometric(onSuccess) {
+  const storedId = getBiometricCredentialId();
+  if (!storedId || !isBiometricSupported()) return false;
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
+    await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{ id: rawId, type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      }
+    });
+    onSuccess();
+    return true;
+  } catch(e) {
+    if (e.name !== 'NotAllowedError') console.warn('Biometric auth failed:', e.message);
+    return false;
+  }
+}
+
+function removeBiometric() {
+  localStorage.removeItem(BIOMETRIC_KEY);
+  alert('Face ID removed.');
+  renderParentSettings();
+}
+
+function tryBiometricUnlock() {
+  authenticateBiometric(() => {
+    S.pinBuffer = '';
+    if (S.pinMode === 'app') {
+      setAppUnlocked(true);
+      const rememberedUser = getMember(getCurrentUserId());
+      if (rememberedUser) {
+        S.currentUser = rememberedUser;
+        routeToView(rememberedUser);
+      } else {
+        renderHome();
+      }
+    } else {
+      renderParentView();
+    }
+  });
 }
 
 // ── SETUP WIZARD ──────────────────────────────────────────────
@@ -6624,6 +6708,13 @@ function renderParentSettings() {
         <input type="password" id="s-pin" maxlength="4" value="${s.parentPin||''}" placeholder="4 digits"
                onchange="saveSetting('parentPin',this.value.trim())">
       </div>
+      ${isBiometricSupported() ? `<div class="form-group">
+        <label class="form-label">Face ID / Biometrics</label>
+        ${getBiometricCredentialId()
+          ? `<button class="btn btn-secondary btn-sm" onclick="removeBiometric()">🔒 Remove Face ID</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="registerBiometric()">🔒 Set Up Face ID</button>`
+        }
+      </div>` : ''}
     </div>
 
     <div class="card">
