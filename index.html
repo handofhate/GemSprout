@@ -1657,9 +1657,10 @@ function showAppPin() {
     </div>
     <div id="pin-error" class="pin-error hidden"></div>
     ${getBiometricCredentialId() ? `<button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="tryBiometricUnlock()">🔒 Use Face ID</button>` : ''}`;
-  // Auto-trigger Face ID if registered
+  // Auto-trigger Face ID once — cancel any previously queued trigger first
+  clearTimeout(S._biometricTimer);
   if (getBiometricCredentialId()) {
-    setTimeout(() => tryBiometricUnlock(), 300);
+    S._biometricTimer = setTimeout(() => tryBiometricUnlock(), 400);
   }
 }
 
@@ -3504,9 +3505,13 @@ async function registerBiometric() {
   }
 }
 
+let _biometricInProgress = false;
+
 async function authenticateBiometric(onSuccess) {
+  if (_biometricInProgress) return false;
   const storedId = getBiometricCredentialId();
   if (!storedId || !isBiometricSupported()) return false;
+  _biometricInProgress = true;
   try {
     const challenge = crypto.getRandomValues(new Uint8Array(32));
     const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
@@ -3523,6 +3528,8 @@ async function authenticateBiometric(onSuccess) {
   } catch(e) {
     if (e.name !== 'NotAllowedError') console.warn('Biometric auth failed:', e.message);
     return false;
+  } finally {
+    _biometricInProgress = false;
   }
 }
 
