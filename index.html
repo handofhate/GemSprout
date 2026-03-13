@@ -109,7 +109,7 @@
     .profile-avatar { font-size: 3rem; line-height: 1; }
     .profile-name   { font-weight: 700; font-size: 1rem; color: var(--text); }
     .profile-role   { font-size: 0.75rem; color: var(--muted); }
-    .profile-points {
+    .profile-diamonds {
       font-size: 0.8rem;
       font-weight: 700;
       background: var(--yellow);
@@ -522,7 +522,7 @@
     .goal-sub     { text-align: center; opacity: 0.85; font-size: 0.9rem; margin-bottom: 14px; }
     .goal-bar-bg  { background: rgba(255,255,255,0.3); border-radius: 999px; height: 14px; overflow: hidden; }
     .goal-bar-fill{ height: 100%; border-radius: 999px; background: var(--yellow); transition: width 0.6s; }
-    .goal-pts     { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.9rem; opacity: 0.9; }
+    .goal-💎     { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.9rem; opacity: 0.9; }
     .contrib-row  { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
     .contrib-avatar { font-size: 1.3rem; flex-shrink: 0; }
     .contrib-name   { font-size: 0.85rem; font-weight: 600; width: 55px; flex-shrink: 0; }
@@ -619,9 +619,9 @@
     .history-info { flex: 1; }
     .history-title { font-weight: 600; font-size: 0.9rem; }
     .history-date  { font-size: 0.75rem; color: var(--muted); }
-    .history-pts   { font-weight: 700; font-size: 0.9rem; }
-    .history-pts.pos { color: var(--green); }
-    .history-pts.neg { color: #EF4444; }
+    .history-dmds   { font-weight: 700; font-size: 0.9rem; }
+    .history-dmds.pos { color: var(--green); }
+    .history-dmds.neg { color: #EF4444; }
 
     /* ══════════════════════════════════════════
        ACTIVITY ITEMS
@@ -682,7 +682,7 @@
     .member-info   { flex: 1; }
     .member-name   { font-weight: 700; }
     .member-stats  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
-    .member-pts    { font-weight: 800; font-size: 1.1rem; color: var(--purple); }
+    .member-dmds    { font-weight: 800; font-size: 1.1rem; color: var(--purple); }
 
     /* ══════════════════════════════════════════
        MODAL
@@ -879,7 +879,7 @@
     .chore-checkbox-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--purple); cursor: pointer; }
     .chore-checkbox-icon { font-size: 1.5rem; }
     .chore-checkbox-label { flex: 1; font-weight: 600; font-size: 0.9rem; }
-    .chore-checkbox-pts   { font-size: 0.78rem; color: var(--muted); }
+    .chore-checkbox-dmds   { font-size: 0.78rem; color: var(--muted); }
     .schedule-help {
       font-size: 0.78rem;
       color: var(--muted);
@@ -947,7 +947,7 @@
     .cel-icon    { font-size: 5rem; line-height: 1; }
     .cel-title   { font-size: 1.7rem; font-weight: 800; margin: 14px 0 6px; }
     .cel-sub     { color: var(--muted); margin-bottom: 20px; }
-    .cel-points  {
+    .cel-diamonds  {
       font-size: 2rem; font-weight: 800;
       color: var(--purple);
       background: #EDE9FE;
@@ -985,8 +985,8 @@
       100% { transform: translateY(110vh) rotate(720deg);  opacity: 0; }
     }
 
-    /* Points burst float */
-    .pts-burst {
+    /* Diamonds burst float */
+    .dmds-burst {
       position: fixed;
       font-size: 1.4rem;
       font-weight: 900;
@@ -994,9 +994,9 @@
       text-shadow: 0 2px 8px rgba(0,0,0,0.3);
       pointer-events: none;
       z-index: 998;
-      animation: ptsFloat 1.6s forwards;
+      animation: dmdsFloat 1.6s forwards;
     }
-    @keyframes ptsFloat {
+    @keyframes dmdsFloat {
       0%   { transform: translateY(0) scale(1); opacity: 1; }
       100% { transform: translateY(-110px) scale(1.4); opacity: 0; }
     }
@@ -1268,12 +1268,12 @@
     .mode-opt.sel { border-color: var(--purple); background: #EDE9FE; color: var(--purple); }
     .mode-opt-icon { font-size: 1.4rem; display: block; margin-bottom: 3px; }
 
-    /* Star shimmer for tiny mode */
-    @keyframes starShimmer {
+    /* Diamond shimmer for tiny mode */
+    @keyframes diamondShimmer {
       0%, 100% { transform: scale(1) rotate(0deg); }
       50%       { transform: scale(1.2) rotate(10deg); }
     }
-    .star-shimmer { animation: starShimmer 1.5s infinite; display: inline-block; }
+    .diamond-shimmer { animation: diamondShimmer 1.5s infinite; display: inline-block; }
 
     /* Pulse for pending items that need attention */
     @keyframes pulseBorder {
@@ -1466,7 +1466,7 @@
     .nl-title  { color: #fff; font-size: 1.3rem; font-weight: 800; margin-bottom: 8px; text-align: center; }
     .nl-timer  { color: #EF4444; font-size: 5rem; font-weight: 900; font-variant-numeric: tabular-nums;
       line-height: 1; margin-bottom: 8px; text-shadow: 0 0 20px rgba(239,68,68,0.6); }
-    .nl-pts-lost { color: #FCA5A5; font-size: 1.1rem; font-weight: 700; margin-bottom: 24px; min-height: 1.6rem; }
+    .nl-dmds-lost { color: #FCA5A5; font-size: 1.1rem; font-weight: 700; margin-bottom: 24px; min-height: 1.6rem; }
     .nl-kids   { display: flex; gap: 12px; margin-bottom: 28px; flex-wrap: wrap; justify-content: center; }
     .nl-kid-chip {
       padding: 8px 18px; border-radius: 99px; border: 2.5px solid #6B7280; background: #1F2937;
@@ -1607,7 +1607,7 @@ function showAppPin() {
   S.pinBuffer = '';
   S.pinMode   = 'app';
   document.getElementById('pin-content').innerHTML = `
-    <div class="pin-avatar">⭐</div>
+    <div class="pin-avatar">💎</div>
     <div class="pin-title">Family Hub</div>
     <div class="pin-sub">Enter parent PIN to continue</div>
     <div class="pin-dots" id="pin-dots">
@@ -1770,7 +1770,7 @@ const EMOJI_MAP = [
   {e:'🎨',k:'art craft paint create make'},
   // Achievements
   {e:'🏆',k:'trophy win award achievement champ'},
-  {e:'⭐',k:'star award achievement great job'},
+  {e:'💎',k:'star award achievement great job'},
   {e:'🥇',k:'gold first place win achievement'},
   {e:'🎖️',k:'medal award badge honor'},
   {e:'👑',k:'crown royal best champion'},
@@ -1794,16 +1794,16 @@ const PRIZE_ICONS = ['🎬','📱','🌙','🍕','🎁','🍦','🎮','🎡','�
                      '🧩','🪁','🚲','🏊','🎤','🎯','⛸️','🏄'];
 
 const DEFAULT_CHORES = [
-  { title:'Make My Bed',       icon:'🛏️', points:10, frequency:'daily'  },
-  { title:'Brush Teeth',       icon:'🦷', points:5,  frequency:'daily'  },
-  { title:'Put Toys Away',     icon:'🧸', points:10, frequency:'daily'  },
-  { title:'Set the Table',     icon:'🍽️', points:10, frequency:'daily'  },
-  { title:'Clear the Table',   icon:'🧹', points:10, frequency:'daily'  },
-  { title:'Take Out Trash',    icon:'🗑️', points:15, frequency:'weekly' },
-  { title:'Do Homework',       icon:'📚', points:20, frequency:'daily'  },
-  { title:'Put Clothes Away',  icon:'👕', points:10, frequency:'daily'  },
-  { title:'Feed the Pet',      icon:'🐾', points:15, frequency:'daily'  },
-  { title:'Help with Laundry', icon:'🧺', points:20, frequency:'weekly' },
+  { title:'Make My Bed',       icon:'🛏️', diamonds:10, frequency:'daily'  },
+  { title:'Brush Teeth',       icon:'🦷', diamonds:5,  frequency:'daily'  },
+  { title:'Put Toys Away',     icon:'🧸', diamonds:10, frequency:'daily'  },
+  { title:'Set the Table',     icon:'🍽️', diamonds:10, frequency:'daily'  },
+  { title:'Clear the Table',   icon:'🧹', diamonds:10, frequency:'daily'  },
+  { title:'Take Out Trash',    icon:'🗑️', diamonds:15, frequency:'weekly' },
+  { title:'Do Homework',       icon:'📚', diamonds:20, frequency:'daily'  },
+  { title:'Put Clothes Away',  icon:'👕', diamonds:10, frequency:'daily'  },
+  { title:'Feed the Pet',      icon:'🐾', diamonds:15, frequency:'daily'  },
+  { title:'Help with Laundry', icon:'🧺', diamonds:20, frequency:'weekly' },
 ];
 
 const DEFAULT_PRIZES = [
@@ -1854,7 +1854,7 @@ function defaultData() {
     settings: {
       parentPin:        '',
       autoApprove:      false,
-      pointsPerDollar:  10,
+      diamondsPerDollar:  10,
       currency:         '$',
       lastSync:         null,
       // Leveling / streaks
@@ -1922,7 +1922,7 @@ function getPendingEntryKeys(data, memberId) {
 }
 
 function checkForApprovalCelebration(prevPendingKeys, member) {
-  let totalNewPoints = 0;
+  let totalNewDiamonds = 0;
   const approvedChores = [];
   let anyBeforeApproved = false;
   D.chores.forEach(chore => {
@@ -1932,19 +1932,19 @@ function checkForApprovalCelebration(prevPendingKeys, member) {
         anyBeforeApproved = true; // will show a softer toast, not confetti
       }
       if (e.entryType !== 'before' && e.status === 'done') {
-        totalNewPoints += chore.points;
+        totalNewDiamonds += chore.diamonds;
         if (!approvedChores.find(c => c.id === chore.id)) approvedChores.push(chore);
       }
     });
   });
-  // Soft notification when a before-photo gets the green light (no points yet)
-  if (anyBeforeApproved && totalNewPoints === 0) {
+  // Soft notification when a before-photo gets the green light (no diamonds yet)
+  if (anyBeforeApproved && totalNewDiamonds === 0) {
     toast("🟢 Parent approved — time to do the chore!");
     renderKidChores();
     return;
   }
-  if (totalNewPoints <= 0) return;
-  // Update S.currentUser points from fresh data
+  if (totalNewDiamonds <= 0) return;
+  // Update S.currentUser diamonds from fresh data
   const fresh = getMember(member.id);
   if (fresh) S.currentUser = fresh;
   const tiny = isTiny(member);
@@ -1952,11 +1952,11 @@ function checkForApprovalCelebration(prevPendingKeys, member) {
     ? `"${approvedChores[0].title}" approved!`
     : `${approvedChores.length} chores approved!`;
   showCelebration({
-    icon:   approvedChores[0]?.icon || '⭐',
+    icon:   approvedChores[0]?.icon || '💎',
     title:  tiny ? '🎉 Your parent said YES!' : '✅ Chore Approved!',
     sub:    subLine,
-    points: totalNewPoints,
-    tts:    tiny ? `Amazing! Your parent approved your chore! You earned ${totalNewPoints} stars!` : null,
+    diamonds: totalNewDiamonds,
+    tts:    tiny ? `Amazing! Your parent approved your chore! You earned ${totalNewDiamonds} diamonds!` : null,
     onClose: () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
   });
 }
@@ -2147,9 +2147,16 @@ function normalizeChore(chore) {
 
 function normalizeMember(m) {
   if (!m || typeof m !== 'object') return m;
+  // Migrate legacy 'points' property → 'diamonds'
+  if (typeof m.diamonds === 'undefined' && typeof m.points !== 'undefined') {
+    m.diamonds = m.points;
+    delete m.points;
+  }
   if (!m.streak) m.streak = { current: 0, best: 0, lastDate: null };
   if (!m.comboStreak) m.comboStreak = { current: 0, best: 0, lastDate: null };
   if (!Array.isArray(m.badges)) m.badges = [];
+  // Migrate legacy badge IDs
+  m.badges = m.badges.map(b => b === 'pts_50' ? 'dmds_50' : b === 'pts_200' ? 'dmds_200' : b === 'pts_500' ? 'dmds_500' : b === 'pts_1000' ? 'dmds_1000' : b);
   if (typeof m.xp === 'undefined') m.xp = m.totalEarned || 0;
   if (typeof m.comboBonusDate === 'undefined') m.comboBonusDate = null;
   if (typeof m.nlTodaySecs === 'undefined') m.nlTodaySecs = 0;
@@ -2165,7 +2172,14 @@ function normalizeData(data) {
   normalized.family.members = Array.isArray(normalized.family.members)
     ? normalized.family.members.map(normalizeMember)
     : [];
-  normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(normalizeChore) : [];
+  normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(c => {
+    // Migrate legacy 'points' property → 'diamonds' on chores
+    if (typeof c.diamonds === 'undefined' && typeof c.points !== 'undefined') {
+      c = { ...c, diamonds: c.points };
+      delete c.points;
+    }
+    return normalizeChore(c);
+  }) : [];
   normalized.prizes = Array.isArray(normalized.prizes) ? normalized.prizes : [];
   normalized.activities = Array.isArray(normalized.activities) ? normalized.activities : [];
   normalized.history = Array.isArray(normalized.history) ? normalized.history : [];
@@ -2191,6 +2205,14 @@ function normalizeData(data) {
   normalized.history = (normalized.history || []).map(h =>
     h.type === 'chore' && h.title?.includes('Combo Bonus') ? { ...h, type: 'bonus' } : h
   );
+  // Migrate legacy 'points' property → 'diamonds' on history entries
+  normalized.history = normalized.history.map(h => {
+    if (typeof h.diamonds === 'undefined' && typeof h.points !== 'undefined') {
+      const { points, ...rest } = h;
+      return { ...rest, diamonds: points };
+    }
+    return h;
+  });
   normalized.v = 3;
   return normalized;
 }
@@ -2358,7 +2380,7 @@ function fmtDate(str) {
   return `${months[+m-1]} ${+d}`;
 }
 
-function fmtPts(n) { return n === 1 ? '1 pt' : `${n} pts`; }
+function fmtDmds(n) { return `${n} 💎`; }
 
 function getMember(id) {
   return D.family.members.find(m => m.id === id);
@@ -2488,15 +2510,15 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
   };
   chore.completions[memberId].push(completion);
 
-  // Points only awarded for completion (after/null) entries, not before-photo requests
+  // Diamonds only awarded for completion (after/null) entries, not before-photo requests
   if (autoApprove) {
-    member.points      = (member.points      || 0) + chore.points;
-    member.totalEarned = (member.totalEarned || 0) + chore.points;
-    addHistory('chore', memberId, chore.title, chore.points);
-    checkAfterPointsAwarded(member, chore.points);
+    member.diamonds      = (member.diamonds      || 0) + chore.diamonds;
+    member.totalEarned = (member.totalEarned || 0) + chore.diamonds;
+    addHistory('chore', memberId, chore.title, chore.diamonds);
+    checkAfterDiamondsAwarded(member, chore.diamonds);
     checkChoreBadges(chore, memberId);
     saveData();
-    return { approved: true, points: chore.points };
+    return { approved: true, diamonds: chore.diamonds };
   } else {
     saveData();
     return { approved: false, isBefore };
@@ -2512,15 +2534,15 @@ function doApproveChore(choreId, memberId, entryId) {
   if (!entry) return;
 
   if (entry.entryType === 'before') {
-    // Approving a "before" photo just unlocks the chore — no points yet
+    // Approving a "before" photo just unlocks the chore — no diamonds yet
     entry.status = 'approved';
   } else {
-    // Approving a completion ("after" or legacy null) — award points
+    // Approving a completion ("after" or legacy null) — award diamonds
     entry.status = 'done';
-    member.points      = (member.points      || 0) + chore.points;
-    member.totalEarned = (member.totalEarned || 0) + chore.points;
-    addHistory('chore', memberId, chore.title, chore.points);
-    checkAfterPointsAwarded(member, chore.points);
+    member.diamonds      = (member.diamonds      || 0) + chore.diamonds;
+    member.totalEarned = (member.totalEarned || 0) + chore.diamonds;
+    addHistory('chore', memberId, chore.title, chore.diamonds);
+    checkAfterDiamondsAwarded(member, chore.diamonds);
     checkChoreBadges(chore, memberId);
   }
   saveData();
@@ -2539,8 +2561,8 @@ function doRedeemPrize(prizeId, memberId) {
   const prize  = D.prizes.find(p => p.id === prizeId);
   const member = getMember(memberId);
   if (!prize || !member) return false;
-  if ((member.points||0) < prize.cost) return false;
-  member.points -= prize.cost;
+  if ((member.diamonds||0) < prize.cost) return false;
+  member.diamonds -= prize.cost;
   addHistory('prize', memberId, prize.title, -prize.cost);
   if (!prize.redemptions) prize.redemptions = [];
   prize.redemptions.push({ memberId, date:today() });
@@ -2554,30 +2576,30 @@ function goalTotal(goal) {
   return Object.values(goal.contributions||{}).reduce((a,b)=>a+b,0);
 }
 
-function doContributeToGoal(memberId, goalId, points) {
+function doContributeToGoal(memberId, goalId, diamonds) {
   const member = getMember(memberId);
   const goal = D.teamGoals?.find(g => g.id === goalId);
   if (!member || !goal) return false;
-  if ((member.points||0) < points || points <= 0) return false;
-  member.points -= points;
+  if ((member.diamonds||0) < diamonds || diamonds <= 0) return false;
+  member.diamonds -= diamonds;
   goal.contributions = goal.contributions || {};
-  goal.contributions[memberId] = (goal.contributions[memberId]||0) + points;
-  addHistory('goal', memberId, goal.title, -points);
+  goal.contributions[memberId] = (goal.contributions[memberId]||0) + diamonds;
+  addHistory('goal', memberId, goal.title, -diamonds);
   saveData();
   return true;
 }
 
 // ── HISTORY ───────────────────────────────────────────────────
-function addHistory(type, memberId, title, points) {
-  D.history.unshift({ id:genId(), type, memberId, title, points, date:today() });
+function addHistory(type, memberId, title, diamonds) {
+  D.history.unshift({ id:genId(), type, memberId, title, diamonds, date:today() });
   if (D.history.length > 80) D.history.pop();
 }
 
 // ── LEVELS & BADGES ──────────────────────────────────────────
 const DEFAULT_LEVELS = [
   { level:1, name:'Rookie',  icon:'🌱', minXp:0    },
-  { level:2, name:'Helper',  icon:'⭐', minXp:50   },
-  { level:3, name:'Star',    icon:'🌟', minXp:150  },
+  { level:2, name:'Helper',  icon:'💎', minXp:50   },
+  { level:3, name:'Diamond', icon:'💎', minXp:150  },
   { level:4, name:'Champ',   icon:'🏆', minXp:300  },
   { level:5, name:'Legend',  icon:'🔥', minXp:500  },
   { level:6, name:'Hero',    icon:'🦸', minXp:800  },
@@ -2606,10 +2628,10 @@ const BADGE_DEFS = [
   { id:'streak_7',     icon:'🌊', name:'Week Warrior',   desc:'7-day streak' },
   { id:'streak_14',    icon:'💪', name:'Unstoppable',    desc:'14-day streak' },
   { id:'streak_30',    icon:'🏅', name:'Monthly Hero',   desc:'30-day streak' },
-  { id:'pts_50',       icon:'⭐', name:'Point Collector', desc:'Earn 50 points total' },
-  { id:'pts_200',      icon:'🌟', name:'Point Hoarder',  desc:'Earn 200 points total' },
-  { id:'pts_500',      icon:'💰', name:'Point Mogul',    desc:'Earn 500 points total' },
-  { id:'pts_1000',     icon:'💎', name:'Diamond Club',   desc:'Earn 1000 points total' },
+  { id:'dmds_50',       icon:'💎', name:'Diamond Collector', desc:'Earn 50 diamonds total' },
+  { id:'dmds_200',     icon:'💎', name:'Diamond Hoarder', desc:'Earn 200 diamonds total' },
+  { id:'dmds_500',      icon:'💰', name:'Diamond Mogul',  desc:'Earn 500 diamonds total' },
+  { id:'dmds_1000',     icon:'💎', name:'Diamond Club',   desc:'Earn 1000 diamonds total' },
   { id:'level_up',     icon:'🚀', name:'Level Up!',      desc:'Reach level 2 or higher' },
   { id:'level_master', icon:'👑', name:'Master Level',   desc:'Reach level 7 (Master)' },
 ];
@@ -2637,12 +2659,12 @@ function awardBadgeIfNew(member, badgeId) {
   return true;
 }
 
-function checkPointBadges(member) {
+function checkDiamondBadges(member) {
   const xp = member.xp || member.totalEarned || 0;
-  if (xp >= 50)   awardBadgeIfNew(member, 'pts_50');
-  if (xp >= 200)  awardBadgeIfNew(member, 'pts_200');
-  if (xp >= 500)  awardBadgeIfNew(member, 'pts_500');
-  if (xp >= 1000) awardBadgeIfNew(member, 'pts_1000');
+  if (xp >= 50)   awardBadgeIfNew(member, 'dmds_50');
+  if (xp >= 200)  awardBadgeIfNew(member, 'dmds_200');
+  if (xp >= 500)  awardBadgeIfNew(member, 'dmds_500');
+  if (xp >= 1000) awardBadgeIfNew(member, 'dmds_1000');
 }
 
 function checkChoreBadges(chore, memberId) {
@@ -2716,8 +2738,8 @@ function getStreakBonus(streakCount) {
   return 0;
 }
 
-function checkAfterPointsAwarded(member, pts) {
-  // Called after points are added to member. Updates XP, level, streak, badges.
+function checkAfterDiamondsAwarded(member, 💎) {
+  // Called after diamonds are added to member. Updates XP, level, streak, badges.
   if (!member) return;
   normalizeMember(member);
   const s = D.settings;
@@ -2725,7 +2747,7 @@ function checkAfterPointsAwarded(member, pts) {
 
   // Update XP
   if (s.levelingEnabled) {
-    member.xp = (member.xp || 0) + pts;
+    member.xp = (member.xp || 0) + 💎;
   }
 
   // Streak
@@ -2733,17 +2755,17 @@ function checkAfterPointsAwarded(member, pts) {
   if (s.streakEnabled) {
     streakBonus = updateStreak(member);
     if (streakBonus > 0) {
-      member.points      = (member.points      || 0) + streakBonus;
+      member.diamonds      = (member.diamonds      || 0) + streakBonus;
       member.totalEarned = (member.totalEarned || 0) + streakBonus;
       member.xp          = (member.xp          || 0) + streakBonus;
       addHistory('chore', member.id, `🔥 Streak bonus (${member.streak.current} days)`, streakBonus);
-      toast(`🔥 ${member.streak.current}-day streak! +${streakBonus} bonus pts`);
+      toast(`🔥 ${member.streak.current}-day streak! +${streakBonus} bonus 💎`);
     }
   }
 
   // First chore badge
   awardBadgeIfNew(member, 'first_chore');
-  checkPointBadges(member);
+  checkDiamondBadges(member);
   if (s.levelingEnabled) checkLevelUp(member, prevLevel);
   // Check if daily combo is now complete
   checkComboBonus(member.id);
@@ -2825,9 +2847,9 @@ function checkComboBonus(memberId) {
   member.comboBonusDate = today();
   const bonusPts = combo.reduce((sum, id) => {
     const chore = D.chores.find(c => c.id === id);
-    return sum + (chore?.points || 0);
+    return sum + (chore?.diamonds || 0);
   }, 0);
-  member.points      = (member.points      || 0) + bonusPts;
+  member.diamonds      = (member.diamonds      || 0) + bonusPts;
   member.totalEarned = (member.totalEarned || 0) + bonusPts;
   if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
   addHistory('bonus', memberId, '⚡ Daily Combo Bonus!', bonusPts);
@@ -2848,19 +2870,19 @@ function checkComboBonus(memberId) {
   setTimeout(() => {
     launchConfetti(120);
     const streakMsg = cs.current > 1 ? ` 🔥 ${cs.current} day combo streak!` : '';
-    toast(`⚡ COMBO COMPLETE! +${bonusPts} bonus pts!${streakMsg}`);
+    toast(`⚡ COMBO COMPLETE! +${bonusPts} bonus 💎!${streakMsg}`);
   }, 300);
 }
 
 // ── NOT LISTENING ─────────────────────────────────────────────
 let _nlState = {
-  isHolding: false, holdStart: null, accumulated: 0, pointsLost: 0,
+  isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
   selectedKids: [], rafId: null,
 };
 
 function showNotListening() {
   const kids = D.family.members.filter(m => m.role === 'kid');
-  _nlState = { isHolding: false, holdStart: null, accumulated: 0, pointsLost: 0,
+  _nlState = { isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
     selectedKids: kids.length === 1 ? [kids[0].id] : [], rafId: null };
 
   const root = document.getElementById('nl-root');
@@ -2879,7 +2901,7 @@ function _renderNL() {
   document.getElementById('nl-root').innerHTML = `
     <div class="nl-title">🔇 You're Not Listening</div>
     <div class="nl-timer" id="nl-timer">${mins}:${secs}</div>
-    <div class="nl-pts-lost" id="nl-pts">${st.pointsLost > 0 ? `−${st.pointsLost} pts so far` : 'Hold the button to deduct points'}</div>
+    <div class="nl-dmds-lost" id="nl-dmds">${st.diamondsLost > 0 ? `−${st.diamondsLost} 💎 so far` : 'Hold the button to deduct diamonds'}</div>
     <div class="nl-kids">
       ${kids.map(k => {
         const t = today();
@@ -2988,27 +3010,27 @@ function _nlUpdateDisplay() {
   const totalSecs = Math.floor(elapsed / 1000);
   const mins = String(Math.floor(totalSecs / 60)).padStart(2,'0');
   const secs = String(totalSecs % 60).padStart(2,'0');
-  _nlState.pointsLost = Math.floor(elapsed / 1000 / secsPerPt);
+  _nlState.diamondsLost = Math.floor(elapsed / 1000 / secsPerPt);
 
   const timerEl = document.getElementById('nl-timer');
-  const ptsEl   = document.getElementById('nl-pts');
+  const ptsEl   = document.getElementById('nl-dmds');
   if (timerEl) timerEl.textContent = `${mins}:${secs}`;
-  if (ptsEl) ptsEl.textContent = _nlState.pointsLost > 0
-    ? `−${_nlState.pointsLost} pts so far`
-    : 'Hold the button to deduct points';
+  if (ptsEl) ptsEl.textContent = _nlState.diamondsLost > 0
+    ? `−${_nlState.diamondsLost} 💎 so far`
+    : 'Hold the button to deduct diamonds';
 }
 
 function _nlCancel() {
   _nlAlarmStop();
   if (_nlState.rafId) cancelAnimationFrame(_nlState.rafId);
-  _nlState = { isHolding:false, holdStart:null, accumulated:0, pointsLost:0, selectedKids:[], rafId:null };
+  _nlState = { isHolding:false, holdStart:null, accumulated:0, diamondsLost:0, selectedKids:[], rafId:null };
   document.getElementById('nl-root').classList.remove('open');
   document.getElementById('nl-root').innerHTML = '';
 }
 
 function _nlDone() {
   if (_nlState.isHolding) _nlHoldEnd();
-  const pts = _nlState.pointsLost;
+  const 💎 = _nlState.diamondsLost;
   const sessionSecs = Math.floor(_nlState.accumulated / 1000);
   const t = today();
   if (_nlState.selectedKids.length > 0) {
@@ -3020,15 +3042,15 @@ function _nlDone() {
       if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
       m.nlTodaySecs = (m.nlTodaySecs || 0) + sessionSecs;
       m.nlLifetimeSecs = (m.nlLifetimeSecs || 0) + sessionSecs;
-      if (pts > 0) {
-        m.points = Math.max(0, (m.points || 0) - pts);
-        addHistory('penalty', kidId, `🔇 Not listening penalty`, -pts);
+      if (💎 > 0) {
+        m.diamonds = Math.max(0, (m.diamonds || 0) - 💎);
+        addHistory('penalty', kidId, `🔇 Not listening penalty`, -💎);
       }
     });
     saveData();
-    if (pts > 0) {
+    if (💎 > 0) {
       const names = _nlState.selectedKids.map(id => getMember(id)?.name).filter(Boolean).join(' & ');
-      toast(`🔇 Deducted ${pts} pts from ${names}`);
+      toast(`🔇 Deducted ${💎} 💎 from ${names}`);
     }
     renderParentHome();
     renderParentHeader();
@@ -3060,10 +3082,10 @@ function toast(msg) {
 }
 
 // ── POINTS BURST ──────────────────────────────────────────────
-function pointsBurst(x, y, points) {
+function diamondsBurst(x, y, diamonds) {
   const el = document.createElement('div');
-  el.className = 'pts-burst';
-  el.textContent = `+${points} ⭐`;
+  el.className = 'dmds-burst';
+  el.textContent = `+${diamonds} 💎`;
   el.style.left = `${x}px`;
   el.style.top  = `${y}px`;
   document.body.appendChild(el);
@@ -3096,9 +3118,9 @@ function launchConfetti(count = 60) {
 }
 
 // ── CELEBRATION OVERLAY ───────────────────────────────────────
-function showCelebration({ icon='⭐', title='Great job!', sub='', points=null, tts=null, onClose=null }) {
+function showCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, tts=null, onClose=null }) {
   const root = document.getElementById('celebration-root');
-  const ptsHtml = points !== null ? `<div class="cel-points">+${points} ⭐</div>` : '';
+  const ptsHtml = diamonds !== null ? `<div class="cel-diamonds">+${diamonds} 💎</div>` : '';
 
   root.innerHTML = `
     <div class="celebration-overlay" id="cel-overlay">
@@ -3207,7 +3229,7 @@ function renderHome() {
                     : 'Kid';
     const ptsLabel = m.role === 'parent' ? '⚙️ Admin'
                    : mode === 'elder'    ? '👁️ View'
-                   : `⭐ ${m.points||0} pts`;
+                   : `💎 ${m.diamonds||0} 💎`;
     return `
       <button class="profile-card${bday?' bday-card':''}" style="--member-color:${m.color||'#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
@@ -3215,7 +3237,7 @@ function renderHome() {
         <span class="profile-avatar">${m.avatar||'🙂'}</span>
         <span class="profile-name">${esc(m.name)}</span>
         <span class="profile-role">${modeLabel}</span>
-        <span class="profile-points">${ptsLabel}</span>
+        <span class="profile-diamonds">${ptsLabel}</span>
       </button>`;
   }).join('');
   const anyBday = members.some(m => m.role !== 'parent' && isBirthday(m));
@@ -3224,7 +3246,7 @@ function renderHome() {
 
   document.getElementById('home-content').innerHTML = `
     <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100vh;display:flex;flex-direction:column">
-      <div class="home-logo">⭐</div>
+      <div class="home-logo">💎</div>
       <div class="home-title">Family Hub</div>
       <div class="home-family-name">${esc(D.family.name)}</div>
       <div class="profile-grid">${cards}</div>
@@ -3235,7 +3257,7 @@ function renderHome() {
   const root = document.getElementById('screen-home');
   root.innerHTML = `
     ${bdayBanner}
-    <div class="home-logo" style="color:#fff;font-size:3.5rem;margin-top:20px">⭐</div>
+    <div class="home-logo" style="color:#fff;font-size:3.5rem;margin-top:20px">💎</div>
     <div class="home-title">Family Hub</div>
     <div class="home-family-name">${esc(D.family.name)}</div>
     <div class="profile-grid" style="max-width:980px;width:100%;padding:0 24px">${cards}</div>
@@ -3402,7 +3424,7 @@ function renderSetupStep() {
             <input type="checkbox" id="sc${i}" ${D.setup&&D.chores.find(x=>x.title===c.title)?'checked':!D.setup?'checked':''}>
             <span class="chore-checkbox-icon">${c.icon}</span>
             <span class="chore-checkbox-label">${c.title}</span>
-            <span class="chore-checkbox-pts">${fmtPts(c.points)} · ${c.frequency}</span>
+            <span class="chore-checkbox-dmds">${fmtDmds(c.diamonds)} · ${c.frequency}</span>
           </label>`).join('')}
       </div>
       <div class="flex gap-10 mt-8">
@@ -3423,7 +3445,7 @@ function renderSetupStep() {
             <input type="checkbox" id="sp${i}" ${D.setup&&D.prizes.find(x=>x.title===p.title)?'checked':!D.setup?'checked':''}>
             <span class="chore-checkbox-icon">${p.icon}</span>
             <span class="chore-checkbox-label">${p.title}</span>
-            <span class="chore-checkbox-pts">${p.cost} pts · ${p.type}</span>
+            <span class="chore-checkbox-dmds">${p.cost} 💎 · ${p.type}</span>
           </label>`).join('')}
       </div>
       <div class="flex gap-10 mt-8">
@@ -3448,7 +3470,7 @@ function renderSetupStep() {
       <div class="toggle-row">
         <div>
           <div class="toggle-label">Auto-approve chores</div>
-          <div class="toggle-sub">Kids earn points instantly without parent approval</div>
+          <div class="toggle-sub">Kids earn diamonds instantly without parent approval</div>
         </div>
         <label class="toggle">
           <input type="checkbox" id="setup-auto-approve" ${D.settings.autoApprove?'checked':''}>
@@ -3558,7 +3580,7 @@ function addMemberCard() {
     avatar: defaults[i % defaults.length],
     color:  COLORS[i % COLORS.length],
     displayMode: 'regular', role:'kid',
-    points:0, savings:0, totalEarned:0, birthday:'',
+    diamonds:0, savings:0, totalEarned:0, birthday:'',
   });
   renderSetupStep();
 }
@@ -3607,7 +3629,7 @@ function setupNext() {
           id: genId(),
           title: c.title,
           icon:  c.icon,
-          points: c.points,
+          diamonds: c.diamonds,
           frequency: c.frequency === 'weekly' ? 'week' : c.frequency === 'once' ? 'once' : 'day',
           repeatCount: 1,
           schedule: {
@@ -3651,9 +3673,9 @@ function setupBack() {
 
 function finishSetup() {
   const parent = D.family.members.find(m=>m.role==='parent') ||
-                 { id:genId(), name:'Parent', avatar:'🧑', color:'#6C63FF', role:'parent', points:0, savings:0, totalEarned:0 };
+                 { id:genId(), name:'Parent', avatar:'🧑', color:'#6C63FF', role:'parent', diamonds:0, savings:0, totalEarned:0 };
 
-  // Derive role from displayMode, preserve existing points/savings
+  // Derive role from displayMode, preserve existing diamonds/savings
   const mergedMembers = S.setupMembers.map(m => {
     const existing = D.family.members.find(x=>x.id===m.id) || {};
     const role = m.displayMode === 'elder' ? 'viewer' : 'kid';
@@ -3708,7 +3730,7 @@ function renderKidView() {
 function renderKidHeader() {
   const m = S.currentUser;
   if (!m) return;
-  const pts = m.points || 0;
+  const 💎 = m.diamonds || 0;
   normalizeMember(m);
   const { current: lvl } = getMemberLevel(m);
   const streak      = m.streak?.current || 0;
@@ -3730,7 +3752,7 @@ function renderKidHeader() {
       </div>
     </div>
     <div class="header-actions">
-      <div class="header-badge">⭐ ${pts}</div>
+      <div class="header-badge">💎 ${💎}</div>
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
     </div>`;
 }
@@ -3738,7 +3760,7 @@ function renderKidHeader() {
 function renderKidNav() {
   const tabs = [
     ['chores','📋','Chores'],
-    ['points','⭐','Points'],
+    ['diamonds','💎','Diamonds'],
     ['shop','🛍️','Shop'],
     ['team','🏆','Team'],
     ['stats','📊','Stats'],
@@ -3758,7 +3780,7 @@ function switchKidTab(tab) {
 function renderKidTab() {
   switch(S.kidTab) {
     case 'chores': renderKidChores(); break;
-    case 'points': renderKidPoints(); break;
+    case 'diamonds': renderKidDiamonds(); break;
     case 'shop':   renderKidShop();   break;
     case 'team':   renderKidTeam();   break;
     case 'stats':  renderStatsPage(document.getElementById('kid-content')); break;
@@ -3788,8 +3810,8 @@ function renderKidChores() {
 
   const totalUnits  = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.targetCount || 0), 0);
   const doneUnits   = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.doneCount || 0), 0);
-  const totalPts    = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.targetCount || 0) * chore.points), 0);
-  const earnedPts   = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.doneCount || 0) * chore.points), 0);
+  const totalPts    = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.targetCount || 0) * chore.diamonds), 0);
+  const earnedPts   = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.doneCount || 0) * chore.diamonds), 0);
   const pct      = totalPts>0 ? Math.round(earnedPts/totalPts*100) : 0;
 
   // Daily combo
@@ -3805,25 +3827,25 @@ function renderKidChores() {
           <div style="font-size:1.6rem;font-weight:800">${doneUnits} / ${totalUnits || myChores.length}</div>
           <div style="opacity:0.85;font-size:0.85rem">completions finished right now</div>
         </div>
-        <div style="font-size:${isTiny(m)?'3rem':'2rem'}">${pct===100?'🏆':m.avatar||'⭐'}</div>
+        <div style="font-size:${isTiny(m)?'3rem':'2rem'}">${pct===100?'🏆':m.avatar||'💎'}</div>
       </div>
       <div style="background:rgba(255,255,255,0.3);border-radius:999px;height:10px;overflow:hidden">
         <div style="width:${pct}%;height:100%;border-radius:999px;background:#FFD93D;transition:width 0.5s"></div>
       </div>
-      <div style="font-size:0.8rem;opacity:0.85;margin-top:6px;text-align:right">+${earnedPts} pts earned today</div>
+      <div style="font-size:0.8rem;opacity:0.85;margin-top:6px;text-align:right">+${earnedPts} 💎 earned today</div>
     </div>`;
 
   // Combo banner
   if (comboChores.length >= 3) {
-    const bonusPts = comboChores.reduce((s, c) => s + c.points, 0);
+    const bonusPts = comboChores.reduce((s, c) => s + c.diamonds, 0);
     html += `
       <div class="combo-banner">
         <div class="combo-banner-header">
           <div>
             <div class="combo-banner-title"><i class="combo-sparkle">⚡</i> Daily Combo ${comboBonusAlreadyAwarded ? '— Complete! 🎉' : ''}</div>
             <div class="combo-banner-sub">${comboBonusAlreadyAwarded
-              ? `You earned +${bonusPts} bonus pts today!`
-              : `Complete all 3 for +${bonusPts} bonus pts (2× those chores!)`}</div>
+              ? `You earned +${bonusPts} bonus 💎 today!`
+              : `Complete all 3 for +${bonusPts} bonus 💎 (2× those chores!)`}</div>
           </div>
           <div class="combo-progress-badge ${comboCompleted >= 3 ? 'complete' : ''}">${comboCompleted}/3</div>
         </div>
@@ -3833,7 +3855,7 @@ function renderKidChores() {
             return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
               <span class="combo-chore-item-check">${isDone ? '✅' : '⬜'}</span>
               <span>${c.icon} ${esc(c.title)}</span>
-              <span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.points}×2</span>
+              <span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>
             </div>`;
           }).join('')}
         </div>
@@ -3898,7 +3920,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
   const sparkle = isCombo ? `<i class="combo-sparkle" style="position:absolute;top:-6px;right:-2px;font-size:0.9rem;pointer-events:none">⚡</i>` : '';
   const comboClass = isCombo ? ' combo-chore' : '';
   const tiny = isTiny(member);
-  const ttsText = `${chore.title}. Worth ${chore.points} stars!`;
+  const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
   const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
 
   // Slot mode: show per-slot rows inside the card
@@ -3923,7 +3945,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
         <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
         <div class="chore-info">
           <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
-          <div class="chore-meta">${fmtPts(chore.points)} per slot</div>
+          <div class="chore-meta">${fmtDmds(chore.diamonds)} per slot</div>
           <div class="chore-slots">${slotsHtml}</div>
         </div>
       </div>`;
@@ -3954,7 +3976,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
       <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
-        <div class="chore-meta">${fmtPts(chore.points)} · ${esc(choreScheduleSummary(chore))}</div>
+        <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
         ${target>0?`<div class="chore-meta">${submitted}/${target} submitted${progress?.availabilityText?` · ${esc(progress.availabilityText)}`:''}</div>`:progress?.availabilityText?`<div class="chore-meta">${esc(progress.availabilityText)}</div>`:''}
       </div>
       <div class="chore-action">${btnHtml}</div>
@@ -3966,7 +3988,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   const sparkle = isCombo ? `<i class="combo-sparkle" style="position:absolute;top:-6px;right:-2px;font-size:0.9rem;pointer-events:none">⚡</i>` : '';
   const comboClass = isCombo ? ' combo-chore' : '';
   const tiny = isTiny(member);
-  const ttsText = `${chore.title}. Worth ${chore.points} stars!`;
+  const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
   const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
   const { phase } = photoPhase;
   let statusClass = 'none';
@@ -4000,7 +4022,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
       <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
-        <div class="chore-meta">${fmtPts(chore.points)} · ${esc(choreScheduleSummary(chore))}</div>
+        <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
         ${hintHtml}
       </div>
       <div class="chore-action">${btnHtml}</div>
@@ -4047,19 +4069,19 @@ function choreCompleteReact(chore, m, result, evt) {
   } else {
     if (tiny) {
       showCelebration({
-        icon: chore?.icon||'⭐',
+        icon: chore?.icon||'💎',
         title: 'Amazing job! 🎉',
         sub:   esc(chore?.title||'Chore'),
-        points: chore?.points||0,
-        tts: `Wow! You finished ${chore?.title}! You earned ${chore?.points} stars! You are amazing!`,
+        diamonds: chore?.diamonds||0,
+        tts: `Wow! You finished ${chore?.title}! You earned ${chore?.diamonds} diamonds! You are amazing!`,
         onClose: () => { renderKidChores(); renderKidHeader(); }
       });
     } else {
       if (evt) {
         const rect = evt.target.getBoundingClientRect();
-        pointsBurst(rect.left + rect.width/2, rect.top, chore?.points||0);
+        diamondsBurst(rect.left + rect.width/2, rect.top, chore?.diamonds||0);
       }
-      toast(`+${chore?.points} pts! Great work! ⭐`);
+      toast(`+${chore?.diamonds} 💎! Great work! 💎`);
       renderKidChores(); renderKidHeader();
     }
     renderKidNav();
@@ -4176,24 +4198,24 @@ function viewPhoto(url) {
 }
 
 // ── POINTS TAB (8yo) ──────────────────────────────────────────
-function renderKidPoints() {
+function renderKidDiamonds() {
   const m   = S.currentUser;
-  const pts = m.points || 0;
+  const 💎 = m.diamonds || 0;
   const tot = m.totalEarned || 0;
   const sav = m.savings || 0;
   normalizeMember(m);
 
   // Cheapest prize they can afford
   const nextPrize = D.prizes
-    .filter(p=>p.type==='individual' && p.cost > pts)
+    .filter(p=>p.type==='individual' && p.cost > 💎)
     .sort((a,b)=>a.cost-b.cost)[0];
-  const pctToNext = nextPrize ? Math.min(100,Math.round(pts/nextPrize.cost*100)) : 100;
+  const pctToNext = nextPrize ? Math.min(100,Math.round(💎/nextPrize.cost*100)) : 100;
 
   const myHistory = D.history.filter(h=>h.memberId===m.id).slice(0,15);
 
   let html = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-val">${pts}</div><div class="stat-label">⭐ Points</div></div>
+      <div class="stat-card"><div class="stat-val">${💎}</div><div class="stat-label">💎 Diamonds</div></div>
       <div class="stat-card"><div class="stat-val">${tot}</div><div class="stat-label">🏆 All Time</div></div>
       <div class="stat-card"><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label">💰 Savings</div></div>
     </div>`;
@@ -4252,9 +4274,9 @@ function renderKidPoints() {
           <span style="font-size:2rem">${nextPrize.icon}</span>
           <div style="flex:1">
             <div style="font-weight:700">${esc(nextPrize.title)}</div>
-            <div style="font-size:0.8rem;color:var(--muted)">${pts} / ${nextPrize.cost} pts</div>
+            <div style="font-size:0.8rem;color:var(--muted)">${💎} / ${nextPrize.cost} 💎</div>
           </div>
-          <div style="font-weight:800;color:var(--purple)">${nextPrize.cost-pts} to go!</div>
+          <div style="font-weight:800;color:var(--purple)">${nextPrize.cost-💎} to go!</div>
         </div>
         <div class="progress-wrap"><div class="progress-fill" style="width:${pctToNext}%"></div></div>
       </div>`;
@@ -4275,7 +4297,7 @@ function renderKidPoints() {
   if (myHistory.length > 0) {
     html += `<div class="card"><div class="card-title">📜 Recent Activity</div>`;
     myHistory.forEach(h => {
-      const pos = h.points > 0;
+      const pos = h.diamonds > 0;
       html += `
         <div class="history-item">
           <span class="history-icon">${h.type==='chore'?'✅':h.type==='prize'?'🎁':h.type==='penalty'?'🔇':'🎯'}</span>
@@ -4283,12 +4305,12 @@ function renderKidPoints() {
             <div class="history-title">${esc(h.title)}</div>
             <div class="history-date">${fmtDate(h.date)}</div>
           </div>
-          <div class="history-pts ${pos?'pos':'neg'}">${pos?'+':''}${h.points}</div>
+          <div class="history-dmds ${pos?'pos':'neg'}">${pos?'+':''}${h.diamonds}</div>
         </div>`;
     });
     html += `</div>`;
   } else {
-    html += `<div class="empty-state"><div class="empty-icon">📜</div><div class="empty-text">Complete chores to earn points!</div></div>`;
+    html += `<div class="empty-state"><div class="empty-icon">📜</div><div class="empty-text">Complete chores to earn diamonds!</div></div>`;
   }
 
   document.getElementById('kid-content').innerHTML = html;
@@ -4297,37 +4319,37 @@ function renderKidPoints() {
 function showSavingsModal(memberId) {
   const m = getMember(memberId);
   if (!m) return;
-  const rate = D.settings.pointsPerDollar || 10;
+  const rate = D.settings.diamondsPerDollar || 10;
   showModal(`
     <div class="modal-title">💰 Savings Jar</div>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">
-      Convert points to savings (${rate} pts = ${D.settings.currency||'$'}1.00) or ask a parent to add money directly.
+      Convert diamonds to savings (${rate} 💎 = ${D.settings.currency||'$'}1.00) or ask a parent to add money directly.
     </p>
     <div class="form-group">
-      <label class="form-label">Points to convert <span class="form-label-hint">(you have ${m.points||0})</span></label>
-      <input type="number" id="save-pts" min="0" max="${m.points||0}" step="${rate}" placeholder="${rate}">
+      <label class="form-label">Diamonds to convert <span class="form-label-hint">(you have ${m.diamonds||0})</span></label>
+      <input type="number" id="save-dmds" min="0" max="${m.diamonds||0}" step="${rate}" placeholder="${rate}">
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-teal" onclick="doSavePoints('${memberId}')">Convert ✓</button>
+      <button class="btn btn-teal" onclick="doSaveDiamonds('${memberId}')">Convert ✓</button>
     </div>`);
 }
 
-function doSavePoints(memberId) {
+function doSaveDiamonds(memberId) {
   const m    = getMember(memberId);
-  const pts  = parseInt(document.getElementById('save-pts')?.value)||0;
-  const rate = D.settings.pointsPerDollar || 10;
-  if (!m || pts <= 0 || pts > (m.points||0) || pts % rate !== 0) {
-    toast(`Must be a multiple of ${rate} pts`); return;
+  const 💎  = parseInt(document.getElementById('save-dmds')?.value)||0;
+  const rate = D.settings.diamondsPerDollar || 10;
+  if (!m || 💎 <= 0 || 💎 > (m.diamonds||0) || 💎 % rate !== 0) {
+    toast(`Must be a multiple of ${rate} 💎`); return;
   }
-  const dollars = pts / rate;
-  m.points  -= pts;
+  const dollars = 💎 / rate;
+  m.diamonds  -= 💎;
   m.savings  = (m.savings||0) + dollars;
-  addHistory('savings', memberId, `Converted ${pts} pts to savings`, -pts);
+  addHistory('savings', memberId, `Converted ${💎} 💎 to savings`, -💎);
   saveData();
   closeModal();
   toast(`+${D.settings.currency||'$'}${dollars.toFixed(2)} saved! 💰`);
-  renderKidPoints();
+  renderKidDiamonds();
   renderKidHeader();
 }
 
@@ -4335,7 +4357,7 @@ function doSavePoints(memberId) {
 function renderKidShop() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
-  const pts  = m.points || 0;
+  const 💎  = m.diamonds || 0;
   const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||0)-(b.cost||0) : ()=>0;
   const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
 
@@ -4349,24 +4371,24 @@ function renderKidShop() {
   }
 
   const renderPrizeCard = (p) => {
-    const canAfford = pts >= p.cost;
+    const canAfford = 💎 >= p.cost;
     const cls = canAfford ? 'can-afford' : '';
-    const tts  = `${p.title}. Costs ${p.cost} points.${canAfford?' You can get this!':` You need ${p.cost-pts} more points.`}`;
+    const tts  = `${p.title}. Costs ${p.cost} diamonds.${canAfford?' You can get this!':` You need ${p.cost-💎} more diamonds.`}`;
     return `
       <div class="prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
         <span class="prize-icon">${p.icon}</span>
         <div class="prize-name">${esc(p.title)}</div>
-        <div class="prize-cost">⭐ ${p.cost}</div>
-        ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-pts} more pts needed</div>`:''}
+        <div class="prize-cost">💎 ${p.cost}</div>
+        ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-💎} more 💎 needed</div>`:''}
       </div>`;
   };
 
   let html = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
-        <div style="font-size:1.5rem;font-weight:800">⭐ ${pts}</div>
-        <div style="font-size:0.8rem;color:var(--muted)">your points</div>
+        <div style="font-size:1.5rem;font-weight:800">💎 ${💎}</div>
+        <div style="font-size:0.8rem;color:var(--muted)">your diamonds</div>
       </div>
       ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
     </div>
@@ -4382,17 +4404,17 @@ function kidRedeemPrize(prizeId, evt) {
   const prize = D.prizes.find(p=>p.id===prizeId);
   if (!m || !prize) return;
 
-  const pts = m.points||0;
-  if (pts < prize.cost) {
-    const need = prize.cost - pts;
-    if (isTiny(m)) speak(`You need ${need} more stars for this prize!`);
-    else toast(`Need ${need} more pts for "${prize.title}"`);
+  const 💎 = m.diamonds||0;
+  if (💎 < prize.cost) {
+    const need = prize.cost - 💎;
+    if (isTiny(m)) speak(`You need ${need} more diamonds for this prize!`);
+    else toast(`Need ${need} more 💎 for "${prize.title}"`);
     return;
   }
 
   showModal(`
     <div class="modal-title">${prize.icon} Redeem Prize?</div>
-    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for ${prize.cost} of your ⭐ ${pts} points?</p>
+    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for ${prize.cost} of your 💎 ${💎} diamonds?</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
       <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! 🎉</button>
@@ -4405,7 +4427,7 @@ function confirmRedeem(prizeId) {
   closeModal();
   if (!prize) { toast('Prize no longer available'); return; }
   const ok = doRedeemPrize(prizeId, m?.id);
-  if (!ok) { toast('Could not redeem — not enough points'); return; }
+  if (!ok) { toast('Could not redeem — not enough diamonds'); return; }
 
   showCelebration({
     icon:   prize.icon,
@@ -4420,7 +4442,7 @@ function confirmRedeem(prizeId) {
 function renderKidTeam() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
-  const pts  = m.points || 0;
+  const 💎  = m.diamonds || 0;
   const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.targetPoints||0)-(b.targetPoints||0) : ()=>0;
   const goals = (D.teamGoals || []).slice().sort(sortFn);
   const kids  = D.family.members.filter(k=>k.role==='kid');
@@ -4455,17 +4477,17 @@ function renderKidTeam() {
       <div class="goal-card" style="margin-bottom:14px">
         <span class="goal-icon">${g.icon||'🏆'}</span>
         <div class="goal-title">${esc(g.title)}</div>
-        <div class="goal-sub">${total} / ${target} pts</div>
+        <div class="goal-sub">${total} / ${target} 💎</div>
         <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-pts">${pct}% there! ${reached?'🏆 Goal reached!':''}</div>
+        <div class="goal-💎">${pct}% there! ${reached?'🏆 Goal reached!':''}</div>
         ${kids.length>1?`<div style="height:14px"></div>${contribs}`:''}
         ${!reached?`
           <div style="margin-top:14px">
-            ${pts > 0
+            ${💎 > 0
               ? `<button class="btn btn-primary btn-full" onclick="showContributeModal('${m.id}','${g.id}')">
-                   ${tiny?'Give Stars! ⭐':'Contribute Points ⭐'}
+                   ${tiny?'Give Diamonds! 💎':'Contribute Diamonds 💎'}
                  </button>`
-              : `<div style="text-align:center;font-size:0.85rem;opacity:0.8">Complete chores to earn points first!</div>`}
+              : `<div style="text-align:center;font-size:0.85rem;opacity:0.8">Complete chores to earn diamonds first!</div>`}
           </div>`
         : `<div style="text-align:center;margin-top:12px;font-size:0.85rem;opacity:0.9">Tell a parent to collect the reward! 🎉</div>`}
       </div>`;
@@ -4474,8 +4496,8 @@ function renderKidTeam() {
   document.getElementById('kid-content').innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
-        <div style="font-size:1.5rem;font-weight:800">⭐ ${pts}</div>
-        <div style="font-size:0.8rem;color:var(--muted)">your points</div>
+        <div style="font-size:1.5rem;font-weight:800">💎 ${💎}</div>
+        <div style="font-size:0.8rem;color:var(--muted)">your diamonds</div>
       </div>
       ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
     </div>
@@ -4490,28 +4512,28 @@ function showContributeModal(memberId, goalId) {
   showModal(`
     <div class="modal-title">🏆 ${esc(goal.title)}</div>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">
-      You have <strong>${m.points||0} pts</strong>. How many do you want to contribute?
+      You have <strong>${m.diamonds||0} 💎</strong>. How many do you want to contribute?
     </p>
     <div class="form-group">
-      <label class="form-label">Points to contribute</label>
-      <input type="number" id="contrib-pts" min="1" max="${m.points||0}" placeholder="e.g. 50">
+      <label class="form-label">Diamonds to contribute</label>
+      <input type="number" id="contrib-💎" min="1" max="${m.diamonds||0}" placeholder="e.g. 50">
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="doContrib('${memberId}','${goalId}')">Contribute! ⭐</button>
+      <button class="btn btn-primary" onclick="doContrib('${memberId}','${goalId}')">Contribute! 💎</button>
     </div>`);
 }
 
 function doContrib(memberId, goalId) {
-  const pts  = parseInt(document.getElementById('contrib-pts')?.value)||0;
+  const 💎  = parseInt(document.getElementById('contrib-💎')?.value)||0;
   const goal = D.teamGoals?.find(g => g.id === goalId);
-  if (pts <= 0) { toast('Enter points to contribute'); return; }
-  const ok = doContributeToGoal(memberId, goalId, pts);
+  if (💎 <= 0) { toast('Enter diamonds to contribute'); return; }
+  const ok = doContributeToGoal(memberId, goalId, 💎);
   closeModal();
-  if (!ok) { toast('Not enough points!'); return; }
-  toast(`+${pts} pts contributed to "${goal?.title}"! 🏆`);
+  if (!ok) { toast('Not enough diamonds!'); return; }
+  toast(`+${💎} 💎 contributed to "${goal?.title}"! 🏆`);
   const m = getMember(memberId);
-  if (isTiny(m)) speak(`You gave ${pts} stars to the team! Amazing!`);
+  if (isTiny(m)) speak(`You gave ${💎} diamonds to the team! Amazing!`);
   renderKidTeam();
   renderKidHeader();
 }
@@ -4619,7 +4641,7 @@ function buildMemberStats(member) {
 
   // Most productive date
   const ptsByDate = {};
-  choreHist.forEach(h => { ptsByDate[h.date] = (ptsByDate[h.date]||0) + (h.points||0); });
+  choreHist.forEach(h => { ptsByDate[h.date] = (ptsByDate[h.date]||0) + (h.diamonds||0); });
   const bestDate = Object.entries(ptsByDate).sort((a,b)=>b[1]-a[1])[0];
 
   // Favorite chore
@@ -4634,11 +4656,11 @@ function buildMemberStats(member) {
 
   return {
     choreDone:        choreHist.length,
-    starsEarned:      choreHist.reduce((s,h) => s + (h.points||0), 0),
+    diamondsEarned:      choreHist.reduce((s,h) => s + (h.diamonds||0), 0),
     rewardCount:      prizeHist.length,
-    pointsSpent:      prizeHist.reduce((s,h) => s + Math.abs(h.points||0), 0),
+    diamondsSpent:      prizeHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
     penaltyCount:     penaltyHist.length,
-    penaltyAmount:    penaltyHist.reduce((s,h) => s + Math.abs(h.points||0), 0),
+    penaltyAmount:    penaltyHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
     nlLifetimeSecs:   nlSecs,
     nlFmt,
     totalXP:          member.xp || member.totalEarned || 0,
@@ -4649,16 +4671,16 @@ function buildMemberStats(member) {
     currentComboStreak: member.comboStreak?.current || 0,
     savings:          member.savings || 0,
     comboCount:       bonusHist.length,
-    comboStars:       bonusHist.reduce((s,h) => s + Math.abs(h.points||0), 0),
+    comboDiamonds:       bonusHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
     levelUps:         Math.max(levelHist.length, lvlInfo.current.level - 1),
     currentLevel:     lvlInfo.current,
     daysActive,
-    bestDate:         bestDate ? { date: bestDate[0], pts: bestDate[1] } : null,
+    bestDate:         bestDate ? { date: bestDate[0], 💎: bestDate[1] } : null,
     favChore,
     avgChoresPerDay:  daysActive > 0 ? (choreHist.length / daysActive).toFixed(1) : '—',
     choreBreakdown,
     prizeBreakdown,
-    totalPoints:      member.points || 0,
+    totalPoints:      member.diamonds || 0,
     totalEarned:      member.totalEarned || 0,
   };
 }
@@ -4696,9 +4718,9 @@ function renderMemberStatsCard(member) {
   const s = buildMemberStats(member);
   const color = member.color || '#6C63FF';
 
-  const choresSection = _statSection('⭐ Chores & Points',
+  const choresSection = _statSection('💎 Chores & Diamonds',
     _statTile('✅','Chores Done', s.choreDone, '#166534') +
-    _statTile('⭐','Stars Earned', s.starsEarned, '#92400e') +
+    _statTile('💎','Diamonds Earned', s.diamondsEarned, '#92400e') +
     _statTile('🔮','Total XP', s.totalXP, '#4c1d95')
   );
 
@@ -4711,8 +4733,8 @@ function renderMemberStatsCard(member) {
 
   const rewardSection = _statSection('🎁 Rewards & Combos',
     _statTile('🎁','Prizes Won', s.rewardCount, '#1e40af') +
-    _statTile('⚡','Combos Hit', s.comboCount, '#b45309', `+${s.comboStars} bonus pts`) +
-    _statTile('💰','Saved Up', `${s.savings}★`, '#166534')
+    _statTile('⚡','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`) +
+    _statTile('💰','Saved Up', `${s.savings}💎`, '#166534')
   );
 
   // Build chore badge display
@@ -4741,16 +4763,16 @@ function renderMemberStatsCard(member) {
 
   const penaltySection = _statSection('🔇 Penalties',
     _statTile('🔇','Penalties', s.penaltyCount, '#991b1b') +
-    _statTile('💸','Pts Lost', s.penaltyAmount, '#991b1b') +
+    _statTile('💸','💎 Lost', s.penaltyAmount, '#991b1b') +
     _statTile('⏱️','NL Time', s.nlFmt, '#b45309', 'lifetime')
   );
 
-  const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.pts} pts` : 'No data yet';
+  const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.💎} 💎` : 'No data yet';
   const favChoreSub = s.favChore ? `${s.favChore[1]}× completed` : 'No chores yet';
-  const extraSection = _statSection('🌟 Fun Facts',
-    _statTile('🗓️','Best Day', s.bestDate ? `${s.bestDate.pts}★` : '—', '#d97706', bestDaySub) +
+  const extraSection = _statSection('💎 Fun Facts',
+    _statTile('🗓️','Best Day', s.bestDate ? `${s.bestDate.💎}💎` : '—', '#d97706', bestDaySub) +
     _statTile('❤️','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub) +
-    _statTile('💵','Pts Spent', s.pointsSpent, '#374151', 'on prizes')
+    _statTile('💵','💎 Spent', s.diamondsSpent, '#374151', 'on prizes')
   );
 
   // Chore breakdown table
@@ -4786,7 +4808,7 @@ function renderMemberStatsCard(member) {
         <span style="font-size:2.5rem">${member.avatar||'🙂'}</span>
         <div>
           <div style="font-size:1.3rem;font-weight:800">${esc(member.name)}</div>
-          <div style="font-size:0.85rem;color:#6b7280">${s.currentLevel.icon} ${s.currentLevel.name} · ${s.totalEarned} total stars earned</div>
+          <div style="font-size:0.85rem;color:#6b7280">${s.currentLevel.icon} ${s.currentLevel.name} · ${s.totalEarned} total diamonds earned</div>
         </div>
       </div>
       ${choresSection}
@@ -4852,7 +4874,7 @@ function renderParentHome() {
         : entry.entryType === 'after'
         ? `<span style="background:#DCFCE7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">DONE</span>`
         : '';
-      const ptsLabel = isBefore ? 'Approve to let them start (no pts yet)' : `+${chore.points} pts`;
+      const ptsLabel = isBefore ? 'Approve to let them start (no 💎 yet)' : `+${chore.diamonds} 💎`;
       const photoHtml = entry.photoUrl
         ? `<img src="${entry.photoUrl}" class="photo-approval-thumb" onclick="viewPhoto('${entry.photoUrl}')" alt="Photo" title="Click to view full size">`
         : '';
@@ -4930,14 +4952,14 @@ function renderParentHome() {
           } else {
             actionBtn = isDone
               ? `<button class="btn-icon-sm btn-icon-delete" style="margin-left:6px;flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')">↩</button>`
-              : `<button class="btn-icon-sm btn-icon-approve" style="margin-left:6px;flex-shrink:0" title="Mark done (award points)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')">✓</button>`;
+              : `<button class="btn-icon-sm btn-icon-approve" style="margin-left:6px;flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')">✓</button>`;
           }
 
           return `
             <div class="kid-overview-item" style="${isCombo ? 'background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B;' : ''}${isExpanded ? 'flex-wrap:wrap;' : ''}">
               <div style="flex:1;min-width:0">
                 <div style="font-weight:700">${chore.icon} ${esc(chore.title)}${isCombo ? ' <span style="font-size:0.65rem;font-weight:800;color:#D97706;vertical-align:middle">⚡</span>' : ''}</div>
-                <div style="font-size:0.82rem;color:var(--muted)">${fmtPts(chore.points)} · ${esc(choreScheduleSummary(chore))}</div>
+                <div style="font-size:0.82rem;color:var(--muted)">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
               </div>
               <span class="kid-overview-status ${statusClass}">${statusLabel}</span>
               ${actionBtn}
@@ -4950,12 +4972,12 @@ function renderParentHome() {
           <span class="member-avatar">${kid.avatar||'🙂'}</span>
           <div class="member-info">
             <div class="member-name">${esc(kid.name)}</div>
-            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtPts(kid.points||0)}</div>
+            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtDmds(kid.diamonds||0)}</div>
             <div class="progress-wrap" style="height:8px;margin:6px 0 0">
               <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
             </div>
           </div>
-          <div class="member-pts">${kid.points||0}</div>
+          <div class="member-dmds">${kid.diamonds||0}</div>
         </div>
         ${choreRows}
       </div>`;
@@ -5012,15 +5034,15 @@ function renderParentHome() {
       const icon = typeIcon[h.type] || '📝';
       const color = typeColor[h.type] || '#374151';
       const bg    = typeBg[h.type]   || '#f9fafb';
-      const ptsStr = h.points > 0 ? `+${h.points}` : `${h.points}`;
-      const ptsColor = h.points >= 0 ? '#166534' : '#991b1b';
+      const ptsStr = h.diamonds > 0 ? `+${h.diamonds}` : `${h.diamonds}`;
+      const ptsColor = h.diamonds >= 0 ? '#166534' : '#991b1b';
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6">
         <span style="background:${bg};color:${color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.title)}</div>
           <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : ''} · ${fmtDate(h.date)}</div>
         </div>
-        <span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr} pts</span>
+        <span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr} 💎</span>
       </div>`;
     }).join('');
     html += `
@@ -5040,7 +5062,7 @@ function approveChore(choreId, memberId, entryId) {
   doApproveChore(choreId, memberId, entryId);
   const m = getMember(memberId);
   const c = D.chores.find(x=>x.id===choreId);
-  toast(`✅ Approved "${c?.title}" for ${m?.name} (+${c?.points} pts)`);
+  toast(`✅ Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5083,23 +5105,23 @@ function parentMarkChoreDone(choreId, memberId) {
         id: genId(), status: 'done', date: today(), createdAt: Date.now(),
         slotId: slot.id, photoUrl: null, entryType: null,
       });
-      totalPts += chore.points;
+      totalPts += chore.diamonds;
     });
   } else {
     chore.completions[memberId].push({
       id: genId(), status: 'done', date: today(), createdAt: Date.now(),
       slotId: null, photoUrl: null, entryType: null,
     });
-    totalPts = chore.points;
+    totalPts = chore.diamonds;
   }
 
-  member.points      = (member.points      || 0) + totalPts;
+  member.diamonds      = (member.diamonds      || 0) + totalPts;
   member.totalEarned = (member.totalEarned || 0) + totalPts;
   addHistory('chore', memberId, chore.title, totalPts);
-  checkAfterPointsAwarded(member, totalPts);
+  checkAfterDiamondsAwarded(member, totalPts);
   checkChoreBadges(chore, memberId);
   saveData();
-  toast(`✅ Marked "${chore.title}" done for ${member.name} (+${totalPts} pts)`);
+  toast(`✅ Marked "${chore.title}" done for ${member.name} (+${totalPts} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5120,14 +5142,14 @@ function parentUnmarkChoreDone(choreId, memberId) {
   if (entries.length === 0) delete chore.completions[memberId];
   else chore.completions[memberId] = entries;
 
-  // Reverse the points
-  const deduct = Math.min(chore.points, member.points || 0);
-  member.points      = (member.points      || 0) - deduct;
-  member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.points);
-  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.points);
+  // Reverse the diamonds
+  const deduct = Math.min(chore.diamonds, member.diamonds || 0);
+  member.diamonds      = (member.diamonds      || 0) - deduct;
+  member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.diamonds);
+  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.diamonds);
   addHistory('penalty', memberId, `↩ Removed: ${chore.title}`, -deduct);
   saveData();
-  toast(`↩ Removed "${chore.title}" completion for ${member.name} (−${deduct} pts)`);
+  toast(`↩ Removed "${chore.title}" completion for ${member.name} (−${deduct} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5148,13 +5170,13 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
     id: genId(), status: 'done', date: today(), createdAt: Date.now(),
     slotId, photoUrl: null, entryType: null,
   });
-  member.points      = (member.points      || 0) + chore.points;
-  member.totalEarned = (member.totalEarned || 0) + chore.points;
-  addHistory('chore', memberId, chore.title, chore.points);
-  checkAfterPointsAwarded(member, chore.points);
+  member.diamonds      = (member.diamonds      || 0) + chore.diamonds;
+  member.totalEarned = (member.totalEarned || 0) + chore.diamonds;
+  addHistory('chore', memberId, chore.title, chore.diamonds);
+  checkAfterDiamondsAwarded(member, chore.diamonds);
   checkChoreBadges(chore, memberId);
   saveData();
-  toast(`✅ ${chore.icon} ${slotStatus.slot.label || 'Slot'} done for ${member.name} (+${chore.points} pts)`);
+  toast(`✅ ${chore.icon} ${slotStatus.slot.label || 'Slot'} done for ${member.name} (+${chore.diamonds} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5171,13 +5193,13 @@ function parentUnmarkSlotDone(choreId, memberId, slotId) {
   entries.splice(idx, 1);
   if (entries.length === 0) delete chore.completions[memberId];
   else chore.completions[memberId] = entries;
-  const deduct = Math.min(chore.points, member.points || 0);
-  member.points      = (member.points      || 0) - deduct;
-  member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.points);
-  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.points);
+  const deduct = Math.min(chore.diamonds, member.diamonds || 0);
+  member.diamonds      = (member.diamonds      || 0) - deduct;
+  member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.diamonds);
+  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.diamonds);
   addHistory('penalty', memberId, `↩ Removed: ${chore.title} (${slot?.label || 'slot'})`, -deduct);
   saveData();
-  toast(`↩ Removed ${chore.icon} ${slot?.label || 'slot'} for ${member.name} (−${deduct} pts)`);
+  toast(`↩ Removed ${chore.icon} ${slot?.label || 'slot'} for ${member.name} (−${deduct} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -5296,7 +5318,7 @@ function renderParentChores() {
         <span class="admin-icon">${chore.icon}</span>
         <div class="admin-info">
           <div class="admin-name">${esc(chore.title)}</div>
-          <div class="admin-meta">${fmtPts(chore.points)} · ${esc(choreScheduleSummary(chore))} · ${assignedKids||'no one'}</div>
+          <div class="admin-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))} · ${assignedKids||'no one'}</div>
         </div>
         <div class="admin-actions">
           <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')">✏️</button>
@@ -5318,7 +5340,7 @@ function showChoreModal(choreId) {
   const kids  = D.family.members.filter(m=>m.role==='kid');
   const chore = choreId ? D.chores.find(c=>c.id===choreId) : null;
   const c     = normalizeChore(chore || {
-    title:'', icon:'🛏️', points:10, frequency:'day', repeatCount:1,
+    title:'', icon:'🛏️', diamonds:10, frequency:'day', repeatCount:1,
     schedule: { period:'day', targetCount:1, daysOfWeek:ALL_DAYS.slice(), windows:{}, slots:null },
     assignedTo:kids.map(k=>k.id), description:'', completions:{}
   });
@@ -5371,8 +5393,8 @@ function showChoreModal(choreId) {
     </div>
     <div class="input-row">
       <div class="form-group mb-0">
-        <label class="form-label">Points <span class="form-label-hint">${hasSlots?'per slot':'total'}</span></label>
-        <input type="number" id="cm-points" min="1" max="500" value="${c.points}">
+        <label class="form-label">Diamonds <span class="form-label-hint">${hasSlots?'per slot':'total'}</span></label>
+        <input type="number" id="cm-diamonds" min="1" max="500" value="${c.diamonds}">
       </div>
       <div class="form-group mb-0">
         <label class="form-label">Frequency</label>
@@ -5390,7 +5412,7 @@ function showChoreModal(choreId) {
           <button class="mode-opt${!hasSlots?' sel':''}" id="cm-style-simple" onclick="setChoreStyle('simple')"><span class="mode-opt-icon">🔢</span>Simple count</button>
           <button class="mode-opt${hasSlots?' sel':''}"  id="cm-style-slots"  onclick="setChoreStyle('slots')"><span class="mode-opt-icon">⏰</span>Timed slots</button>
         </div>
-        <div class="schedule-help" style="margin-top:6px" id="cm-style-help">${hasSlots?'Each slot earns points independently when completed during its window.':'Kids must complete the chore a set number of times. All must be done before points are awarded.'}</div>
+        <div class="schedule-help" style="margin-top:6px" id="cm-style-help">${hasSlots?'Each slot earns diamonds independently when completed during its window.':'Kids must complete the chore a set number of times. All must be done before diamonds are awarded.'}</div>
       </div>
       <div id="cm-simple-fields" style="display:${hasSlots?'none':'block'}">
         <div class="form-group">
@@ -5416,7 +5438,7 @@ function showChoreModal(choreId) {
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Time slots <span class="form-label-hint">each earns ${c.points} pts</span></label>
+          <label class="form-label">Time slots <span class="form-label-hint">each earns ${c.diamonds} 💎</span></label>
           <div class="slot-editor" id="cm-slot-editor"></div>
           <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="addChoreSlot()">+ Add slot</button>
         </div>
@@ -5431,7 +5453,7 @@ function showChoreModal(choreId) {
         <option value="before_after" ${c.photoMode==='before_after'?'selected':''}>Before + after photos (verify it needs doing)</option>
       </select>
       <div class="schedule-help" style="margin-top:6px">
-        "Before + after" makes the kid photograph the dirty room/full trash <em>before</em> you approve the start, then photograph the finished result for points.
+        "Before + after" makes the kid photograph the dirty room/full trash <em>before</em> you approve the start, then photograph the finished result for diamonds.
       </div>
     </div>
     <div class="form-group">
@@ -5523,8 +5545,8 @@ function setChoreStyle(style) {
   document.getElementById('cm-simple-fields').style.display = isSlots ? 'none' : 'block';
   document.getElementById('cm-slots-fields').style.display  = isSlots ? 'block' : 'none';
   document.getElementById('cm-style-help').textContent = isSlots
-    ? 'Each slot earns points independently when completed during its window.'
-    : 'Kids must complete the chore a set number of times. All must be done before points are awarded.';
+    ? 'Each slot earns diamonds independently when completed during its window.'
+    : 'Kids must complete the chore a set number of times. All must be done before diamonds are awarded.';
   if (isSlots && _editSlots.length === 0) {
     _editSlots = [
       { id: genId(), label: 'Morning', start: '06:00', end: '09:00' },
@@ -5612,7 +5634,7 @@ function toggleChoreDayRow(dayIndex) {
 function saveChore(choreId) {
   const title  = document.getElementById('cm-title')?.value.trim();
   const icon   = document.getElementById('cm-icon')?.value || '📋';
-  const points = parseInt(document.getElementById('cm-points')?.value)||10;
+  const diamonds = parseInt(document.getElementById('cm-diamonds')?.value)||10;
   const freq   = document.getElementById('cm-freq')?.value || 'day';
   const photoMode = document.getElementById('cm-photo')?.value || 'none';
   const desc   = document.getElementById('cm-desc')?.value.trim();
@@ -5647,7 +5669,7 @@ function saveChore(choreId) {
   const badges = document.getElementById('cm-badges-on')?.checked
     ? _editBadges.filter(b => b.name && b.count > 0).map(b => ({ ...b, id: b.id || genId() }))
     : [];
-  const choreData = { title, icon, points, photoMode, frequency: freq,
+  const choreData = { title, icon, diamonds, photoMode, frequency: freq,
     repeatCount: scheduleObj.targetCount, assignedTo: assigned, description: desc, schedule: scheduleObj, badges };
 
   if (choreId) {
@@ -5690,7 +5712,7 @@ function renderParentPrizes() {
         <span class="admin-icon">${p.icon}</span>
         <div class="admin-info">
           <div class="admin-name">${esc(p.title)}</div>
-          <div class="admin-meta">${p.cost} pts</div>
+          <div class="admin-meta">${p.cost} 💎</div>
         </div>
         <div class="admin-actions">
           <button class="btn-icon-sm btn-icon-edit"   onclick="showPrizeModal('${p.id}')">✏️</button>
@@ -5719,7 +5741,7 @@ function renderParentPrizes() {
         <span class="admin-icon">${g.icon||'🏆'}</span>
         <div class="admin-info">
           <div class="admin-name">${esc(g.title)}</div>
-          <div class="admin-meta">${total} / ${g.targetPoints} pts · ${pct}%</div>
+          <div class="admin-meta">${total} / ${g.targetPoints} 💎 · ${pct}%</div>
           <div class="progress-wrap" style="height:8px;margin-top:6px">
             <div class="progress-fill teal" style="width:${pct}%"></div>
           </div>
@@ -5755,7 +5777,7 @@ function showPrizeModal(prizeId) {
       <input type="text" id="pm-title" placeholder="e.g. Movie Night Pick" value="${esc(p.title)}">
     </div>
     <div class="form-group">
-      <label class="form-label">Points cost</label>
+      <label class="form-label">Diamonds cost</label>
       <input type="number" id="pm-cost" min="1" value="${p.cost}">
     </div>
     <div class="modal-actions">
@@ -5838,7 +5860,7 @@ function showGoalModal(goalId) {
       <input type="text" id="gm-title" placeholder="e.g. Disney Trip!" value="${esc(g.title)}">
     </div>
     <div class="form-group">
-      <label class="form-label">Points target</label>
+      <label class="form-label">Diamonds target</label>
       <input type="number" id="gm-target" min="1" value="${g.targetPoints||500}">
     </div>
     <div class="modal-actions">
@@ -6273,7 +6295,7 @@ function _advRender() {
       _advField('Role',         `<select class="adv-field-input" onchange="advSetMember('${m.id}','role',this.value)">
         ${['parent','kid','viewer'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}
       </select>`),
-      _advField('Points ⭐',    _advInput('number', m.points||0,       `advSetMember('${m.id}','points',+this.value)`)),
+      _advField('Diamonds 💎',    _advInput('number', m.diamonds||0,       `advSetMember('${m.id}','diamonds',+this.value)`)),
       _advField('Total Earned', _advInput('number', m.totalEarned||0,  `advSetMember('${m.id}','totalEarned',+this.value)`)),
       _advField('Savings 💰',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
       _advField('XP 🔮',        _advInput('number', m.xp||0,           `advSetMember('${m.id}','xp',+this.value)`)),
@@ -6321,9 +6343,9 @@ function _advRender() {
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'📋'}</span>
             <span style="flex:1;font-size:0.85rem;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.title)}">${esc(c.title)}</span>
-            <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">pts</label>
-            <input type="number" class="adv-field-input" style="width:70px" value="${c.points||0}"
-              onchange="advSetChore('${c.id}','points',+this.value)">
+            <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">💎</label>
+            <input type="number" class="adv-field-input" style="width:70px" value="${c.diamonds||0}"
+              onchange="advSetChore('${c.id}','diamonds',+this.value)">
             <input type="text" class="adv-field-input" style="width:70px" value="${esc(c.icon||'')}" placeholder="icon"
               onchange="advSetChore('${c.id}','icon',this.value)">
             <input type="text" class="adv-field-input" style="flex:1;min-width:80px" value="${esc(c.title||'')}" placeholder="title"
@@ -6350,10 +6372,10 @@ function _advRender() {
 
   // ── Settings section ──
   const SETTING_LABELS = {
-    autoApprove:'Auto-approve chores', pointsPerDollar:'Points per dollar', parentPin:'Parent PIN',
+    autoApprove:'Auto-approve chores', diamondsPerDollar:'Diamonds per dollar', parentPin:'Parent PIN',
     levelingEnabled:'Leveling enabled', streakEnabled:'Streaks enabled',
     streakBonus3:'Streak bonus (3d)', streakBonus7:'Streak bonus (7d)', streakBonus14:'Streak bonus (14d)', streakBonus30:'Streak bonus (30d)',
-    notListeningSecs:'NL secs per point', currency:'Currency symbol', familyName:'Family name',
+    notListeningSecs:'NL secs per diamond', currency:'Currency symbol', familyName:'Family name',
     lastSync:'Last sync (auto)', comboEnabled:'Combo bonus enabled', sortPrizesByValue:'Sort prizes by value',
   };
   const settingsHtml = Object.entries(D.settings).map(([k, v]) => {
@@ -6376,8 +6398,8 @@ function _advRender() {
     ? '<div style="color:#9ca3af;font-size:0.85rem">No history yet</div>'
     : histItems.map(h => {
         const mem = getMember(h.memberId);
-        const ptsStr = (h.points||0) >= 0 ? `+${h.points}` : `${h.points}`;
-        const ptsCol = (h.points||0) >= 0 ? '#166534' : '#991b1b';
+        const ptsStr = (h.diamonds||0) >= 0 ? `+${h.diamonds}` : `${h.diamonds}`;
+        const ptsCol = (h.diamonds||0) >= 0 ? '#166534' : '#991b1b';
         return `<div class="adv-hist-row" data-hist-id="${h.id}">
           <span style="width:20px;text-align:center">${typeIcon[h.type]||'📝'}</span>
           <span style="width:24px">${mem?.avatar||''}</span>
@@ -6396,8 +6418,8 @@ function _advRender() {
       <div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
         ${_advField('Title',      _advInput('text',   g.title||'',       `D.teamGoals[${i}].title=this.value;saveData();_advRefreshStatus('Saved')`))}
         ${_advField('Icon',       _advInput('text',   g.icon||'',        `D.teamGoals[${i}].icon=this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Target Pts', _advInput('number', g.targetPoints||0, `D.teamGoals[${i}].targetPoints=+this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Saved So Far', `<span style="font-size:0.85rem;font-weight:700;color:var(--teal)">${goalTotal(g)} pts</span>`)}
+        ${_advField('Target 💎', _advInput('number', g.targetPoints||0, `D.teamGoals[${i}].targetPoints=+this.value;saveData();_advRefreshStatus('Saved')`))}
+        ${_advField('Saved So Far', `<span style="font-size:0.85rem;font-weight:700;color:var(--teal)">${goalTotal(g)} 💎</span>`)}
         <div style="margin-top:6px"><button class="adv-danger-btn" style="font-size:0.78rem;padding:5px 12px"
           onclick="if(confirm('Remove this team prize?')){D.teamGoals.splice(${i},1);saveData();_advRender();}">Remove</button></div>
       </div>`).join('');
@@ -6417,7 +6439,7 @@ function _advRender() {
       </div>
 
       <div class="adv-section">
-        <div class="adv-section-heading">📋 Chores (${D.chores.length}) — icon · title · points</div>
+        <div class="adv-section-heading">📋 Chores (${D.chores.length}) — icon · title · diamonds</div>
         <div class="adv-section-body">${choresHtml}</div>
       </div>
 
@@ -6473,7 +6495,7 @@ function renderParentSettings() {
       <div class="card-title">⚙️ General</div>
       <div class="toggle-row">
         <div><div class="toggle-label">Auto-approve chores</div>
-          <div class="toggle-sub">Kids earn points instantly</div></div>
+          <div class="toggle-sub">Kids earn diamonds instantly</div></div>
         <label class="toggle">
           <input type="checkbox" id="s-auto" ${s.autoApprove?'checked':''} onchange="saveSetting('autoApprove',this.checked)">
           <span class="toggle-track"></span>
@@ -6488,9 +6510,9 @@ function renderParentSettings() {
         </label>
       </div>
       <div class="form-group">
-        <label class="form-label">Points per dollar (savings conversion)</label>
-        <input type="number" id="s-ppdollar" value="${s.pointsPerDollar||10}" min="1"
-               onchange="saveSetting('pointsPerDollar',parseInt(this.value)||10)">
+        <label class="form-label">Diamonds per dollar (savings conversion)</label>
+        <input type="number" id="s-ppdollar" value="${s.diamondsPerDollar||10}" min="1"
+               onchange="saveSetting('diamondsPerDollar',parseInt(this.value)||10)">
       </div>
       <div class="form-group">
         <label class="form-label">Parent PIN <span class="form-label-hint">(leave blank = no PIN)</span></label>
@@ -6518,10 +6540,10 @@ function renderParentSettings() {
           <span class="member-avatar">${k.avatar}</span>
           <div class="member-info">
             <div class="member-name">${esc(k.name)}</div>
-            <div class="member-stats">Age ${k.age||'?'} · ⭐ ${k.points||0} pts · 💰 ${D.settings.currency||'$'}${(k.savings||0).toFixed(2)}</div>
+            <div class="member-stats">Age ${k.age||'?'} · 💎 ${k.diamonds||0} 💎 · 💰 ${D.settings.currency||'$'}${(k.savings||0).toFixed(2)}</div>
           </div>
           <div style="display:flex;gap:6px">
-            <button class="btn-icon-sm btn-icon-edit" onclick="showAddPointsModal('${k.id}')">⭐</button>
+            <button class="btn-icon-sm btn-icon-edit" onclick="showAddPointsModal('${k.id}')">💎</button>
           </div>
         </div>`).join('')}
       <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="goSetup()">Edit Family Setup</button>
@@ -6539,13 +6561,13 @@ function renderParentSettings() {
       </div>
       <div class="toggle-row">
         <div><div class="toggle-label">Enable streak bonuses</div>
-          <div class="toggle-sub">Consecutive days earn bonus points</div></div>
+          <div class="toggle-sub">Consecutive days earn bonus diamonds</div></div>
         <label class="toggle">
           <input type="checkbox" id="s-streak" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked)">
           <span class="toggle-track"></span>
         </label>
       </div>
-      <div style="margin-top:12px;font-size:0.82rem;color:var(--muted);font-weight:600;margin-bottom:6px">Streak bonus points</div>
+      <div style="margin-top:12px;font-size:0.82rem;color:var(--muted);font-weight:600;margin-bottom:6px">Streak bonus diamonds</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div class="form-group mb-0">
           <label class="form-label">3-day bonus</label>
@@ -6581,7 +6603,7 @@ function renderParentSettings() {
     <div class="card" style="border:2px solid #1f2937">
       <div class="card-title" style="color:#1f2937">🔧 Advanced</div>
       <p style="font-size:0.82rem;color:var(--muted);margin-bottom:14px">
-        Edit every value in the database directly — member stats, chore points, prize costs, settings, history, and raw JSON.
+        Edit every value in the database directly — member stats, chore diamonds, prize costs, settings, history, and raw JSON.
       </p>
       <button class="btn btn-sm" style="width:100%;background:#1f2937;color:#fff;font-size:0.95rem;padding:12px"
               onclick="showAdvancedEditor()">🔧 Open Advanced Editor</button>
@@ -6605,11 +6627,11 @@ function showAddPointsModal(memberId) {
   const m = getMember(memberId);
   if (!m) return;
   showModal(`
-    <div class="modal-title">⭐ Adjust Points — ${esc(m.name)}</div>
-    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.points||0} pts</strong></p>
+    <div class="modal-title">💎 Adjust Diamonds — ${esc(m.name)}</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.diamonds||0} 💎</strong></p>
     <div class="form-group">
-      <label class="form-label">Points to add (use negative to remove)</label>
-      <input type="number" id="adj-pts" placeholder="e.g. 25 or -10">
+      <label class="form-label">Diamonds to add (use negative to remove)</label>
+      <input type="number" id="adj-💎" placeholder="e.g. 25 or -10">
     </div>
     <div class="form-group">
       <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
@@ -6623,15 +6645,15 @@ function showAddPointsModal(memberId) {
 
 function doAdjustPoints(memberId) {
   const m      = getMember(memberId);
-  const pts    = parseInt(document.getElementById('adj-pts')?.value)||0;
+  const 💎    = parseInt(document.getElementById('adj-💎')?.value)||0;
   const reason = document.getElementById('adj-reason')?.value.trim() || 'Manual adjustment';
-  if (!m || pts===0) { toast('Enter a non-zero amount'); return; }
-  m.points      = Math.max(0, (m.points||0) + pts);
-  m.totalEarned = pts>0 ? (m.totalEarned||0)+pts : m.totalEarned;
-  addHistory('bonus', memberId, reason, pts);
+  if (!m || 💎===0) { toast('Enter a non-zero amount'); return; }
+  m.diamonds      = Math.max(0, (m.diamonds||0) + 💎);
+  m.totalEarned = 💎>0 ? (m.totalEarned||0)+💎 : m.totalEarned;
+  addHistory('bonus', memberId, reason, 💎);
   saveData();
   closeModal();
-  toast(`${pts>0?'+':''}${pts} pts for ${m.name}`);
+  toast(`${💎>0?'+':''}${💎} 💎 for ${m.name}`);
   renderParentSettings();
 }
 
@@ -6731,7 +6753,7 @@ function renderGrandmaToday() {
   }
 
   // Kids chore summary
-  html += `<div class="card"><div class="card-title" style="font-size:1.3rem">⭐ Kids' Chores Today</div>`;
+  html += `<div class="card"><div class="card-title" style="font-size:1.3rem">💎 Kids' Chores Today</div>`;
   if (kids.length === 0) {
     html += `<div style="color:var(--muted)">No kids in the family yet.</div>`;
   }
@@ -6745,7 +6767,7 @@ function renderGrandmaToday() {
           <span style="font-size:2.2rem">${kid.avatar||'🙂'}</span>
           <div>
             <div style="font-size:1.3rem;font-weight:700">${esc(kid.name)}</div>
-            <div style="color:var(--muted)">${doneCount} of ${myChores.length} chores done · ⭐ ${kid.points||0} points</div>
+            <div style="color:var(--muted)">${doneCount} of ${myChores.length} chores done · 💎 ${kid.diamonds||0} diamonds</div>
           </div>
         </div>
         <div class="progress-wrap" style="height:14px">
@@ -6778,8 +6800,8 @@ function renderGrandmaFamily() {
             <div style="color:var(--muted)">Age ${kid.age||'?'}</div>
           </div>
           <div style="margin-left:auto;text-align:right">
-            <div style="font-size:2rem;font-weight:800;color:${kid.color||'var(--purple)'}">⭐ ${kid.points||0}</div>
-            <div style="font-size:0.85rem;color:var(--muted)">points</div>
+            <div style="font-size:2rem;font-weight:800;color:${kid.color||'var(--purple)'}">💎 ${kid.diamonds||0}</div>
+            <div style="font-size:0.85rem;color:var(--muted)">diamonds</div>
           </div>
         </div>`;
 
@@ -6789,7 +6811,7 @@ function renderGrandmaFamily() {
         html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6">
           <span style="font-size:1.8rem">${c.icon}</span>
           <span style="font-size:1.1rem">${esc(c.title)}</span>
-          <span style="margin-left:auto;color:var(--green);font-weight:700">+${c.points}</span>
+          <span style="margin-left:auto;color:var(--green);font-weight:700">+${c.diamonds}</span>
         </div>`;
       });
     }
@@ -6814,7 +6836,7 @@ function renderGrandmaFamily() {
     html += `
       <div class="card" style="background:linear-gradient(135deg,var(--purple),var(--pink));color:#fff;border-radius:18px">
         <div style="font-size:1.3rem;font-weight:800;margin-bottom:4px">🏆 Team Prize: ${esc(g.title)}</div>
-        <div style="margin-bottom:12px;opacity:0.85">${total} of ${target} points saved · ${pct}%</div>
+        <div style="margin-bottom:12px;opacity:0.85">${total} of ${target} diamonds saved · ${pct}%</div>
         <div style="background:rgba(255,255,255,0.3);border-radius:999px;height:14px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:var(--yellow);border-radius:999px;transition:width 0.5s"></div>
         </div>
@@ -6870,7 +6892,7 @@ function showLoading() {
   const el = document.getElementById('screen-auth');
   el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center';
   el.innerHTML = `
-    <div style="font-size:3.5rem">⭐</div>
+    <div style="font-size:3.5rem">💎</div>
     <div style="color:#fff;font-size:1.8rem;font-weight:800">Family Hub</div>
     <div style="color:rgba(255,255,255,0.8);font-size:1rem">⏳ Loading...</div>`;
 }

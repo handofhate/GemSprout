@@ -6,7 +6,9 @@
       "Bash(mv \"c:\\\\Users\\\\Ty\\\\Documents\\\\Family Hub\\\\Family Hub\\\\.gitattributes\" \"c:\\\\Users\\\\Ty\\\\Documents\\\\Family Hub\\\\.gitattributes\")",
       "Bash(rmdir \"c:\\\\Users\\\\Ty\\\\Documents\\\\Family Hub\\\\Family Hub\")",
       "Bash(wc -l __/auth/*.js)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(python rename_diamonds.py)",
+      "Bash(python -c \":*)"
     ]
   }
 }
