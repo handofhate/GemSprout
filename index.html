@@ -3897,7 +3897,7 @@ function renderSetupStep() {
         ${DEFAULT_CHORES.map((c,i) => `
           <label class="chore-checkbox-row">
             <input type="checkbox" id="sc${i}" ${D.setup&&D.chores.find(x=>x.title===c.title)?'checked':!D.setup?'checked':''}>
-            <span class="chore-checkbox-icon">${c.icon}</span>
+            <span class="chore-checkbox-icon">${renderIcon(c.icon, c.iconColor, 'font-size:1.4rem')}</span>
             <span class="chore-checkbox-label">${c.title}</span>
             <span class="chore-checkbox-dmds">${fmtDmds(c.diamonds)} · ${c.frequency}</span>
           </label>`).join('')}
@@ -4330,7 +4330,7 @@ function renderKidChores() {
             const isDone = progressMap.get(c.id)?.status === 'done';
             return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
               <span class="combo-chore-item-check">${isDone ? '✅' : '⬜'}</span>
-              <span>${c.icon} ${esc(c.title)}</span>
+              <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} ${esc(c.title)}</span>
               <span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>
             </div>`;
           }).join('')}
@@ -4449,7 +4449,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
   return `
     <div class="chore-item ${status}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
       <span class="drag-handle">⠿</span>
-      <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
+      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}${sparkle}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
         <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
@@ -4495,7 +4495,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   return `
     <div class="chore-item ${statusClass}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
       <span class="drag-handle">⠿</span>
-      <span class="chore-icon" style="position:relative">${chore.icon}${sparkle}</span>
+      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}${sparkle}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
         <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
@@ -7304,7 +7304,7 @@ function renderGrandmaFamily() {
       html += `<div style="font-weight:700;margin-bottom:8px;color:var(--green)">✅ Completed today:</div>`;
       done.forEach(c => {
         html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6">
-          <span style="font-size:1.8rem">${c.icon}</span>
+          <span style="font-size:1.8rem">${renderIcon(c.icon, c.iconColor, 'font-size:1.8rem')}</span>
           <span style="font-size:1.1rem">${esc(c.title)}</span>
           <span style="margin-left:auto;color:var(--green);font-weight:700">+${c.diamonds}</span>
         </div>`;
@@ -7315,7 +7315,7 @@ function renderGrandmaFamily() {
       html += `<div style="font-weight:700;margin:10px 0 8px;color:var(--muted)">📋 Still to do:</div>`;
       todo.forEach(c => {
         html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6;opacity:0.65">
-          <span style="font-size:1.8rem">${c.icon}</span>
+          <span style="font-size:1.8rem">${renderIcon(c.icon, c.iconColor, 'font-size:1.8rem')}</span>
           <span style="font-size:1.1rem">${esc(c.title)}</span>
         </div>`;
       });
