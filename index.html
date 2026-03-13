@@ -2608,13 +2608,13 @@ function addHistory(type, memberId, title, diamonds) {
 
 // ── LEVELS & BADGES ──────────────────────────────────────────
 const DEFAULT_LEVELS = [
-  { level:1, name:'Rookie',  icon:'🌱', minXp:0    },
-  { level:2, name:'Helper',  icon:'💎', minXp:50   },
-  { level:3, name:'Diamond', icon:'💎', minXp:150  },
-  { level:4, name:'Champ',   icon:'🏆', minXp:300  },
-  { level:5, name:'Legend',  icon:'🔥', minXp:500  },
-  { level:6, name:'Hero',    icon:'🦸', minXp:800  },
-  { level:7, name:'Master',  icon:'👑', minXp:1200 },
+  { level:1, name:'Rookie',  icon:'<i class="ph-duotone ph-leaf" style="color:#22C55E"></i>',         minXp:0    },
+  { level:2, name:'Helper',  icon:'<i class="ph-duotone ph-diamond" style="color:#3B82F6"></i>',       minXp:50   },
+  { level:3, name:'Diamond', icon:'<i class="ph-duotone ph-diamond" style="color:#7C3AED"></i>',       minXp:150  },
+  { level:4, name:'Champ',   icon:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>',        minXp:300  },
+  { level:5, name:'Legend',  icon:'<i class="ph-duotone ph-fire" style="color:#EF4444"></i>',          minXp:500  },
+  { level:6, name:'Hero',    icon:'<i class="ph-duotone ph-shield-star" style="color:#6C63FF"></i>',   minXp:800  },
+  { level:7, name:'Master',  icon:'<i class="ph-duotone ph-crown" style="color:#D97706"></i>',         minXp:1200 },
 ];
 
 const CHORE_BADGE_PRESETS = {
@@ -2634,17 +2634,17 @@ const CHORE_BADGE_PRESETS = {
 };
 
 const BADGE_DEFS = [
-  { id:'first_chore',  icon:'✅', name:'First Chore',    desc:'Complete your very first chore' },
-  { id:'streak_3',     icon:'🔥', name:'On a Roll',      desc:'3-day streak' },
-  { id:'streak_7',     icon:'🌊', name:'Week Warrior',   desc:'7-day streak' },
-  { id:'streak_14',    icon:'💪', name:'Unstoppable',    desc:'14-day streak' },
-  { id:'streak_30',    icon:'🏅', name:'Monthly Hero',   desc:'30-day streak' },
-  { id:'dmds_50',       icon:'💎', name:'Diamond Collector', desc:'Earn 50 diamonds total' },
-  { id:'dmds_200',     icon:'💎', name:'Diamond Hoarder', desc:'Earn 200 diamonds total' },
-  { id:'dmds_500',      icon:'💰', name:'Diamond Mogul',  desc:'Earn 500 diamonds total' },
-  { id:'dmds_1000',     icon:'💎', name:'Diamond Club',   desc:'Earn 1000 diamonds total' },
-  { id:'level_up',     icon:'🚀', name:'Level Up!',      desc:'Reach level 2 or higher' },
-  { id:'level_master', icon:'👑', name:'Master Level',   desc:'Reach level 7 (Master)' },
+  { id:'first_chore',  icon:'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>',  name:'First Chore',       desc:'Complete your very first chore' },
+  { id:'streak_3',     icon:'<i class="ph-duotone ph-fire" style="color:#F97316"></i>',           name:'On a Roll',         desc:'3-day streak' },
+  { id:'streak_7',     icon:'<i class="ph-duotone ph-waves" style="color:#3B82F6"></i>',          name:'Week Warrior',      desc:'7-day streak' },
+  { id:'streak_14',    icon:'<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>',      name:'Unstoppable',       desc:'14-day streak' },
+  { id:'streak_30',    icon:'<i class="ph-duotone ph-medal" style="color:#D97706"></i>',          name:'Monthly Hero',      desc:'30-day streak' },
+  { id:'dmds_50',      icon:'<i class="ph-duotone ph-diamond" style="color:#3B82F6"></i>',        name:'Diamond Collector', desc:'Earn 50 diamonds total' },
+  { id:'dmds_200',     icon:'<i class="ph-duotone ph-diamonds-four" style="color:#7C3AED"></i>',  name:'Diamond Hoarder',   desc:'Earn 200 diamonds total' },
+  { id:'dmds_500',     icon:'<i class="ph-duotone ph-piggy-bank" style="color:#10B981"></i>',     name:'Diamond Mogul',     desc:'Earn 500 diamonds total' },
+  { id:'dmds_1000',    icon:'<i class="ph-duotone ph-crown" style="color:#D97706"></i>',          name:'Diamond Club',      desc:'Earn 1000 diamonds total' },
+  { id:'level_up',     icon:'<i class="ph-duotone ph-rocket-launch" style="color:#6C63FF"></i>',  name:'Level Up!',         desc:'Reach level 2 or higher' },
+  { id:'level_master', icon:'<i class="ph-duotone ph-crown-simple" style="color:#D97706"></i>',   name:'Master Level',      desc:'Reach level 7 (Master)' },
 ];
 
 function getMemberLevel(member) {
@@ -4228,7 +4228,7 @@ function renderKidHeader() {
     </div>
     <div class="header-actions">
       <div class="header-badge">💎 ${dmds}</div>
-      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
+      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
     </div>`;
 }
 
@@ -4384,11 +4384,6 @@ function renderKidChores() {
 
   document.getElementById('kid-content').innerHTML = html;
 
-  // Wire up sortable on each section (shares the same D.chores array)
-  ['sort-todo','sort-pending','sort-done','sort-unavail'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) initSortable(el, ids => applyChoreReorder(ids));
-  });
 }
 
 function normalChoreCard(chore, member, progress, comboIds = null) {
@@ -4416,8 +4411,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
       return `<div class="chore-slot-row"><span class="chore-slot-label">${esc(label)}</span>${slotBtn}</div>`;
     }).join('');
     return `
-      <div class="chore-item ${progress.status}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
-        <span class="drag-handle">⠿</span>
+      <div class="chore-item ${progress.status}${comboClass}"${ttsAttr}>
         <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}${sparkle}</span>
         <div class="chore-info">
           <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
@@ -4447,8 +4441,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
     btnHtml = `<span class="chore-btn chore-btn-done">✅ Done</span>`;
   }
   return `
-    <div class="chore-item ${status}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
-      <span class="drag-handle">⠿</span>
+    <div class="chore-item ${status}${comboClass}"${ttsAttr}>
       <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}${sparkle}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
@@ -4493,8 +4486,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   }
 
   return `
-    <div class="chore-item ${statusClass}${comboClass}" data-drag-id="${chore.id}"${ttsAttr}>
-      <span class="drag-handle">⠿</span>
+    <div class="chore-item ${statusClass}${comboClass}"${ttsAttr}>
       <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}${sparkle}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
@@ -5037,7 +5029,6 @@ function renderParentHeader() {
   const inProgress = inProgressChores().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
-      <span class="header-avatar">${m?.avatar||'🧑'}</span>
       <div>
         <div class="header-name">${esc(D.family.name)}</div>
         <div class="header-sub">Parent Dashboard</div>
@@ -5046,7 +5037,7 @@ function renderParentHeader() {
     <div class="header-actions">
       ${pending>0    ? `<span class="header-badge" style="background:#EF4444;color:#fff" title="Needs approval">⏳ ${pending}</span>` : ''}
       ${inProgress>0 ? `<span class="header-badge" style="background:#3B82F6;color:#fff" title="Kid actively working">🔨 ${inProgress}</span>` : ''}
-      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
+      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
     </div>`;
 }
 
@@ -5194,23 +5185,23 @@ function renderMemberStatsCard(member) {
   const s = buildMemberStats(member);
   const color = member.color || '#6C63FF';
 
-  const choresSection = _statSection('💎 Chores & Diamonds',
-    _statTile('✅','Chores Done', s.choreDone, '#166534') +
-    _statTile('💎','Diamonds Earned', s.diamondsEarned, '#92400e') +
-    _statTile('🔮','Total XP', s.totalXP, '#4c1d95')
+  const choresSection = _statSection('Chores & Diamonds',
+    _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>','Chores Done', s.choreDone, '#166534') +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>','Diamonds Earned', s.diamondsEarned, '#92400e') +
+    _statTile('<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>','Total XP', s.totalXP, '#4c1d95')
   );
 
-  const levelSection = _statSection('🏆 Level & Streaks',
-    _statTile('🏆','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name) +
-    _statTile('🔥','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '') +
-    _statTile('⚡','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '') +
-    _statTile('📅','Days Active', s.daysActive, '#0e7490')
+  const levelSection = _statSection('Level & Streaks',
+    _statTile('<i class="ph-duotone ph-trophy" style="color:#D97706"></i>','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name) +
+    _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '') +
+    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '') +
+    _statTile('<i class="ph-duotone ph-calendar-check" style="color:#0E7490"></i>','Days Active', s.daysActive, '#0e7490')
   );
 
-  const rewardSection = _statSection('🎁 Rewards & Combos',
-    _statTile('🎁','Prizes Won', s.rewardCount, '#1e40af') +
-    _statTile('⚡','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`) +
-    _statTile('💰','Saved Up', `${s.savings}💎`, '#166534')
+  const rewardSection = _statSection('Rewards & Combos',
+    _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af') +
+    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`) +
+    _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${s.savings}💎`, '#166534')
   );
 
   // Build chore badge display
@@ -5231,24 +5222,24 @@ function renderMemberStatsCard(member) {
       </div>
     </div>`;
 
-  const badgeSection = _statSection('🎖️ Achievements',
-    _statTile('🎖️','Badges', s.badgeCount, '#7c3aed') +
-    _statTile('📈','Level-Ups', s.levelUps, '#0f766e') +
-    _statTile('📊','Avg/Day', s.avgChoresPerDay, '#374151', 'chores per active day')
+  const badgeSection = _statSection('Achievements',
+    _statTile('<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>','Badges', s.badgeCount, '#7c3aed') +
+    _statTile('<i class="ph-duotone ph-trend-up" style="color:#0F766E"></i>','Level-Ups', s.levelUps, '#0f766e') +
+    _statTile('<i class="ph-duotone ph-chart-bar" style="color:#374151"></i>','Avg/Day', s.avgChoresPerDay, '#374151', 'chores per active day')
   );
 
-  const penaltySection = _statSection('🔇 Penalties',
-    _statTile('🔇','Penalties', s.penaltyCount, '#991b1b') +
-    _statTile('💸','💎 Lost', s.penaltyAmount, '#991b1b') +
-    _statTile('⏱️','NL Time', s.nlFmt, '#b45309', 'lifetime')
+  const penaltySection = _statSection('Penalties',
+    _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b') +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Lost', s.penaltyAmount, '#991b1b') +
+    _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime')
   );
 
   const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.dmds} 💎` : 'No data yet';
   const favChoreSub = s.favChore ? `${s.favChore[1]}× completed` : 'No chores yet';
-  const extraSection = _statSection('💎 Fun Facts',
-    _statTile('🗓️','Best Day', s.bestDate ? `${s.bestDate.dmds} 💎` : '—', '#d97706', bestDaySub) +
-    _statTile('❤️','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub) +
-    _statTile('💵','💎 Spent', s.diamondsSpent, '#374151', 'on prizes')
+  const extraSection = _statSection('Fun Facts',
+    _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>','Best Day', s.bestDate ? `${s.bestDate.dmds} 💎` : '—', '#d97706', bestDaySub) +
+    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub) +
+    _statTile('<i class="ph-duotone ph-shopping-cart" style="color:#374151"></i>','💎 Spent', s.diamondsSpent, '#374151', 'on prizes')
   );
 
   // Chore breakdown table
@@ -5363,7 +5354,7 @@ function renderParentHome() {
             ${photoHtml}
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')">✓</button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject"  onclick="rejectChore('${chore.id}','${memberId}','${entry.id}')">✕</button>
           </div>
         </div>`;
@@ -5403,20 +5394,20 @@ function renderParentHome() {
           let actionBtn, slotExpandSection = '';
           if (progress.isSlotMode) {
             // Expand/collapse toggle button
-            actionBtn = `<button class="btn-icon-sm" style="margin-left:6px;flex-shrink:0;background:#EDE9FE;color:var(--purple);font-size:0.75rem" title="Show slots" onclick="toggleSlotExpand('${expandKey}')">${isExpanded ? '▲' : '▼'}</button>`;
+            actionBtn = `<button class="btn-icon-sm" style="margin-left:6px;flex-shrink:0;background:#EDE9FE" title="Show slots" onclick="toggleSlotExpand('${expandKey}')"><i class="ph-duotone ph-caret-${isExpanded ? 'up' : 'down'}" style="color:var(--purple);font-size:1rem"></i></button>`;
             if (isExpanded) {
               const slotRows = (progress.slotStatuses || []).map(({ slot, status: ss }) => {
                 const slotLabel = slot.label || (slot.start ? `${slot.start}–${slot.end}` : 'Slot');
                 let slotPill, slotBtn;
                 if (ss === 'done') {
                   slotPill = `<span class="kid-overview-status done" style="font-size:0.7rem;padding:2px 6px">Done</span>`;
-                  slotBtn  = `<button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;font-size:0.8rem;flex-shrink:0" title="Undo" onclick="parentUnmarkSlotDone('${chore.id}','${kid.id}','${slot.id}')">↩</button>`;
+                  slotBtn  = `<button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;flex-shrink:0" title="Undo" onclick="parentUnmarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:0.9rem"></i></button>`;
                 } else if (ss === 'pending') {
                   slotPill = `<span class="kid-overview-status pending" style="font-size:0.7rem;padding:2px 6px">Waiting</span>`;
                   slotBtn  = '';
                 } else {
                   slotPill = `<span class="kid-overview-status todo" style="font-size:0.7rem;padding:2px 6px">${ss === 'waiting' ? 'Later' : 'To do'}</span>`;
-                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;font-size:0.8rem;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')">✓</button>`;
+                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:0.9rem"></i></button>`;
                 }
                 return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#f9fafb;border-radius:8px">
                   <span style="flex:1;font-size:0.82rem;color:#374151">${esc(slotLabel)}</span>
@@ -5427,8 +5418,8 @@ function renderParentHome() {
             }
           } else {
             actionBtn = isDone
-              ? `<button class="btn-icon-sm btn-icon-delete" style="margin-left:6px;flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')">↩</button>`
-              : `<button class="btn-icon-sm btn-icon-approve" style="margin-left:6px;flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')">✓</button>`;
+              ? `<button class="btn-icon-sm btn-icon-delete" style="margin-left:6px;flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:1rem"></i></button>`
+              : `<button class="btn-icon-sm btn-icon-approve" style="margin-left:6px;flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>`;
           }
 
           return `
@@ -7190,7 +7181,7 @@ function renderGrandmaHeader() {
       </div>
     </div>
     <div class="header-actions">
-      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
+      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
     </div>`;
 }
 
