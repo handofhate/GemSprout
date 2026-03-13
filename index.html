@@ -2827,7 +2827,7 @@ function showSplitHouseholdModal(memberId) {
   S.shMemberId = memberId;
   const sh = member.splitHousehold;
   const enabled = sh.enabled;
-  const cycle = [...sh.cycle];
+  const cycle = sh.cycle;
   const ref = sh.referenceMonday || getMostRecentMonday();
 
   const weekGrid = (weekIdx) => DAY_LABELS.map((lbl, i) => {
@@ -2845,72 +2845,63 @@ function showSplitHouseholdModal(memberId) {
         <button class="btn-icon-sm" onclick="removeShOverride('${date}')">✕</button>
       </div>`).join('');
 
-  const html = `
-    <div class="modal-backdrop" id="split-household-modal" onclick="if(event.target===this)closeSplitHouseholdModal()">
-      <div class="modal" style="max-width:420px;max-height:90vh;overflow-y:auto">
-        <div class="modal-header">
-          <span class="modal-title">🏠 Split Household — ${esc(member.name)}</span>
-          <button class="btn-icon" onclick="closeSplitHouseholdModal()">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="toggle-row" style="margin-bottom:16px">
-            <div>
-              <div class="toggle-label">Enable Split Household</div>
-              <div class="toggle-sub">Streaks skip days they're at the other household</div>
-            </div>
-            <label class="toggle">
-              <input type="checkbox" id="sh-enabled" ${enabled ? 'checked' : ''} onchange="toggleShConfig()">
-              <span class="toggle-track"></span>
-            </label>
+  showModal(`
+    <div class="modal-title">🏠 Split Household — ${esc(member.name)}</div>
+
+    <div class="toggle-row" style="margin-bottom:16px">
+      <div>
+        <div class="toggle-label">Enable Split Household</div>
+        <div class="toggle-sub">Streaks skip days they're at the other household</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="sh-enabled" ${enabled ? 'checked' : ''} onchange="toggleShConfig()">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+
+    <div id="sh-config" style="${enabled ? '' : 'display:none'}">
+      <div class="form-group">
+        <label class="form-label">Week 1 starts on <span class="form-label-hint">pick any Monday</span></label>
+        <input type="date" id="sh-ref-monday" value="${ref}">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Schedule — tap a day to toggle here / away</label>
+        <div class="sh-section">
+          <div class="sh-week-block">
+            <div class="sh-week-label">Week 1</div>
+            <div class="sh-days-row">${weekGrid(0)}</div>
           </div>
-
-          <div id="sh-config" style="${enabled ? '' : 'display:none'}">
-            <div class="form-group">
-              <label class="form-label">Week 1 starts on <span class="form-label-hint">pick any Monday</span></label>
-              <input type="date" id="sh-ref-monday" value="${ref}" onchange="refreshShGrid()">
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Schedule — tap a day to toggle here / away</label>
-              <div class="sh-section">
-                <div class="sh-week-block">
-                  <div class="sh-week-label">Week 1</div>
-                  <div class="sh-days-row" id="sh-week1-row">${weekGrid(0)}</div>
-                </div>
-                <div class="sh-week-block">
-                  <div class="sh-week-label">Week 2</div>
-                  <div class="sh-days-row" id="sh-week2-row">${weekGrid(1)}</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">One-off exceptions</label>
-              <div class="sh-overrides-list" id="sh-overrides-list">${overrideRows || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>'}</div>
-              <div class="sh-add-row">
-                <input type="date" id="sh-ov-date" value="${today()}">
-                <select id="sh-ov-type">
-                  <option value="true">Here</option>
-                  <option value="false">Away</option>
-                </select>
-                <button class="btn btn-secondary btn-sm" onclick="addShOverride()">Add</button>
-              </div>
-            </div>
-
-            <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
-              💡 If they complete a chore on a scheduled away day, it automatically marks them as here for that day.
-              At 6 pm on scheduled here-days with no chore activity, you'll get a prompt asking if they're actually home.
-            </p>
+          <div class="sh-week-block">
+            <div class="sh-week-label">Week 2</div>
+            <div class="sh-days-row">${weekGrid(1)}</div>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="closeSplitHouseholdModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="saveSplitHousehold()">Save</button>
         </div>
       </div>
-    </div>`;
 
-  document.body.insertAdjacentHTML('beforeend', html);
+      <div class="form-group">
+        <label class="form-label">One-off exceptions</label>
+        <div class="sh-overrides-list" id="sh-overrides-list">${overrideRows || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>'}</div>
+        <div class="sh-add-row">
+          <input type="date" id="sh-ov-date" value="${today()}">
+          <select id="sh-ov-type">
+            <option value="true">Here</option>
+            <option value="false">Away</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="addShOverride()">Add</button>
+        </div>
+      </div>
+
+      <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
+        💡 Completing a chore on a scheduled away day automatically marks them as here.
+        At 6 pm on here-days with no chore activity, you'll get a prompt asking if they're actually home.
+      </p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSplitHousehold()">Save</button>
+    </div>`);
 
   // Request notification permission when enabling
   if (enabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -2920,7 +2911,8 @@ function showSplitHouseholdModal(memberId) {
 
 function toggleShConfig() {
   const on = document.getElementById('sh-enabled')?.checked;
-  document.getElementById('sh-config').style.display = on ? '' : 'none';
+  const cfg = document.getElementById('sh-config');
+  if (cfg) cfg.style.display = on ? '' : 'none';
   if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
@@ -2988,13 +2980,9 @@ function saveSplitHousehold() {
   member.splitHousehold.cycle = _getShCycle();
   // overrides were already mutated live by addShOverride / removeShOverride
   saveData();
-  closeSplitHouseholdModal();
+  closeModal();
   toast('Split Household schedule saved');
   renderParentSettings();
-}
-
-function closeSplitHouseholdModal() {
-  document.getElementById('split-household-modal')?.remove();
 }
 
 // ── Here-Check Modal (6 pm prompt) ────────────────────────────────────────
@@ -3010,38 +2998,29 @@ function showHereCheckModal(members) {
       </div>
     </div>`).join('');
 
-  const html = `
-    <div class="modal-backdrop" id="here-check-modal">
-      <div class="modal" style="max-width:380px">
-        <div class="modal-header">
-          <span class="modal-title">🏠 Are they home?</span>
-        </div>
-        <div class="modal-body">
-          <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:12px">
-            It's past 6 pm and these kids haven't done any chores today. Are they actually at your house?
-          </p>
-          <div>${rows}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="document.getElementById('here-check-modal')?.remove()">Dismiss</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.insertAdjacentHTML('beforeend', html);
+  showModal(`
+    <div class="modal-title">🏠 Are they home?</div>
+    <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:12px">
+      It's past 6 pm and these kids haven't done any chores today. Are they actually at your house?
+    </p>
+    ${rows}
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Dismiss</button>
+    </div>`);
 }
 
 function markHereToday(memberId) {
   const member = getMember(memberId);
   if (member?.splitHousehold) member.splitHousehold.overrides[today()] = true;
   saveData();
-  document.getElementById('here-check-modal')?.remove();
+  closeModal();
 }
 
 function markAwayToday(memberId) {
   const member = getMember(memberId);
   if (member?.splitHousehold) member.splitHousehold.overrides[today()] = false;
   saveData();
-  document.getElementById('here-check-modal')?.remove();
+  closeModal();
 }
 
 function getStreakBonus(streakCount) {
@@ -5153,7 +5132,7 @@ function buildMemberStats(member) {
 
   return {
     choreDone:        choreHist.length,
-    diamondsEarned:      choreHist.reduce((s,h) => s + (h.diamonds||0), 0),
+    diamondsEarned:      [...choreHist, ...bonusHist].reduce((s,h) => s + (h.diamonds||0), 0),
     rewardCount:      prizeHist.length,
     diamondsSpent:      prizeHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
     penaltyCount:     penaltyHist.length,
