@@ -2275,6 +2275,36 @@ function choreScheduleSummary(chore) {
   return `${countLabel} · ${daysLabel} · ${timeLabel}`;
 }
 
+function choreMetaChips(chore) {
+  const schedule = getChoreSchedule(chore);
+  const chip = (text, bg, color) =>
+    `<span style="display:inline-flex;align-items:center;background:${bg};color:${color};border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">${text}</span>`;
+  const chips = [];
+  chips.push(chip(`💎 ${chore.diamonds}`, '#FEF9C3', '#92400E'));
+  if (schedule.period === 'once') {
+    chips.push(chip('one-time', '#F3F4F6', '#4B5563'));
+    return chips.join('');
+  }
+  const freq = schedule.period === 'week'
+    ? `${schedule.targetCount}×/wk`
+    : `${schedule.targetCount}×/day`;
+  chips.push(chip(freq, '#EFF6FF', '#1D4ED8'));
+  chips.push(chip(formatDaysOfWeek(schedule.daysOfWeek), '#F3F4F6', '#374151'));
+  if (schedule.slots && schedule.slots.length > 0) {
+    schedule.slots.forEach(s => {
+      const label = s.label || formatTimeWindow({start:s.start, end:s.end});
+      if (label && label !== 'any time') chips.push(chip(esc(label), '#F0FDF4', '#166534'));
+    });
+  } else {
+    const uniqueWindows = schedule.daysOfWeek
+      .map(day => formatTimeWindow(getChoreTimeWindow(chore, day)))
+      .filter((v, i, a) => a.indexOf(v) === i);
+    const timeLabel = uniqueWindows.length === 1 ? uniqueWindows[0] : 'custom hours';
+    if (timeLabel !== 'any time') chips.push(chip(esc(timeLabel), '#F0FDF4', '#166534'));
+  }
+  return chips.join('');
+}
+
 function getRelevantCompletionEntries(chore, memberId, dateStr = today()) {
   const entries = normalizeCompletionEntries(chore?.completions?.[memberId]);
   const schedule = getChoreSchedule(chore);
@@ -5394,7 +5424,7 @@ function renderParentHome() {
           let actionBtn, slotExpandSection = '';
           if (progress.isSlotMode) {
             // Expand/collapse toggle button
-            actionBtn = `<button class="btn-icon-sm" style="margin-left:6px;flex-shrink:0;background:#EDE9FE" title="Show slots" onclick="toggleSlotExpand('${expandKey}')"><i class="ph-duotone ph-caret-${isExpanded ? 'up' : 'down'}" style="color:var(--purple);font-size:1rem"></i></button>`;
+            actionBtn = `<button class="btn-icon-sm" style="flex-shrink:0;background:#EDE9FE" title="Show slots" onclick="toggleSlotExpand('${expandKey}')"><i class="ph-duotone ph-caret-${isExpanded ? 'up' : 'down'}" style="color:var(--purple);font-size:1rem"></i></button>`;
             if (isExpanded) {
               const slotRows = (progress.slotStatuses || []).map(({ slot, status: ss }) => {
                 const slotLabel = slot.label || (slot.start ? `${slot.start}–${slot.end}` : 'Slot');
@@ -5418,19 +5448,21 @@ function renderParentHome() {
             }
           } else {
             actionBtn = isDone
-              ? `<button class="btn-icon-sm btn-icon-delete" style="margin-left:6px;flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:1rem"></i></button>`
-              : `<button class="btn-icon-sm btn-icon-approve" style="margin-left:6px;flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>`;
+              ? `<button class="btn-icon-sm btn-icon-delete" style="flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:1rem"></i></button>`
+              : `<button class="btn-icon-sm btn-icon-approve" style="flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>`;
           }
 
           return `
-            <div class="kid-overview-item" style="${isCombo ? 'background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B;' : ''}${isExpanded ? 'flex-wrap:wrap;' : ''}">
-              <div style="flex:1;min-width:0">
-                <div style="font-weight:700">${renderIcon(chore.icon,chore.iconColor,'font-size:1.1rem;vertical-align:middle')} ${esc(chore.title)}${isCombo ? ' <i class="ph-duotone ph-lightning" style="font-size:0.75rem;color:#D97706;vertical-align:middle"></i>' : ''}</div>
-                <div style="font-size:0.82rem;color:var(--muted)">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
+            <div class="kid-overview-item" style="${isCombo ? 'background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B;' : ''}${isExpanded ? 'flex-wrap:wrap;' : ''}align-items:flex-start">
+              <div style="flex:1;min-width:0;padding-top:2px">
+                <div style="font-weight:700;line-height:1.3">${renderIcon(chore.icon,chore.iconColor,'font-size:1.1rem;vertical-align:middle')} ${esc(chore.title)}${isCombo ? ' <i class="ph-duotone ph-lightning" style="font-size:0.75rem;color:#D97706;vertical-align:middle"></i>' : ''}</div>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${choreMetaChips(chore)}</div>
               </div>
-              <span class="kid-overview-status ${statusClass}">${statusLabel}</span>
-              ${actionBtn}
-              ${slotExpandSection ? `<div style="width:100%;margin-top:0">${slotExpandSection}</div>` : ''}
+              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:3px">
+                <span class="kid-overview-status ${statusClass}">${statusLabel}</span>
+                ${actionBtn}
+              </div>
+              ${slotExpandSection ? `<div style="width:100%;margin-top:6px">${slotExpandSection}</div>` : ''}
             </div>`;
         }).join('')}</div>`;
     kidsHtml += `
@@ -5779,13 +5811,16 @@ function renderParentChores() {
   html += `<div id="chore-sort-list">`;
   D.chores.forEach(chore => {
     const assignedKids = (chore.assignedTo||[]).map(id=>getMember(id)?.avatar||'').join(' ');
+    const assigneeChip = assignedKids
+      ? `<span style="display:inline-flex;align-items:center;background:#F5F3FF;color:#4C1D95;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">${assignedKids}</span>`
+      : `<span style="display:inline-flex;align-items:center;background:#F3F4F6;color:#9CA3AF;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:600;white-space:nowrap">unassigned</span>`;
     html += `
       <div class="admin-card" data-drag-id="${chore.id}">
         <span class="drag-handle" title="Drag to reorder">⠿</span>
         <span class="admin-icon">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
         <div class="admin-info">
           <div class="admin-name">${esc(chore.title)}</div>
-          <div class="admin-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))} · ${assignedKids||'no one'}</div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:5px">${choreMetaChips(chore)} ${assigneeChip}</div>
         </div>
         <div class="admin-actions">
           <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
