@@ -522,7 +522,7 @@
     .goal-sub     { text-align: center; opacity: 0.85; font-size: 0.9rem; margin-bottom: 14px; }
     .goal-bar-bg  { background: rgba(255,255,255,0.3); border-radius: 999px; height: 14px; overflow: hidden; }
     .goal-bar-fill{ height: 100%; border-radius: 999px; background: var(--yellow); transition: width 0.6s; }
-    .goal-💎     { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.9rem; opacity: 0.9; }
+    .goal-dmds   { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.9rem; opacity: 0.9; }
     .contrib-row  { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
     .contrib-avatar { font-size: 1.3rem; flex-shrink: 0; }
     .contrib-name   { font-size: 0.85rem; font-weight: 600; width: 55px; flex-shrink: 0; }
@@ -2738,7 +2738,7 @@ function getStreakBonus(streakCount) {
   return 0;
 }
 
-function checkAfterDiamondsAwarded(member, 💎) {
+function checkAfterDiamondsAwarded(member, dmds) {
   // Called after diamonds are added to member. Updates XP, level, streak, badges.
   if (!member) return;
   normalizeMember(member);
@@ -2747,7 +2747,7 @@ function checkAfterDiamondsAwarded(member, 💎) {
 
   // Update XP
   if (s.levelingEnabled) {
-    member.xp = (member.xp || 0) + 💎;
+    member.xp = (member.xp || 0) + dmds;
   }
 
   // Streak
@@ -3030,7 +3030,7 @@ function _nlCancel() {
 
 function _nlDone() {
   if (_nlState.isHolding) _nlHoldEnd();
-  const 💎 = _nlState.diamondsLost;
+  const dmds = _nlState.diamondsLost;
   const sessionSecs = Math.floor(_nlState.accumulated / 1000);
   const t = today();
   if (_nlState.selectedKids.length > 0) {
@@ -3042,15 +3042,15 @@ function _nlDone() {
       if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
       m.nlTodaySecs = (m.nlTodaySecs || 0) + sessionSecs;
       m.nlLifetimeSecs = (m.nlLifetimeSecs || 0) + sessionSecs;
-      if (💎 > 0) {
-        m.diamonds = Math.max(0, (m.diamonds || 0) - 💎);
-        addHistory('penalty', kidId, `🔇 Not listening penalty`, -💎);
+      if (dmds > 0) {
+        m.diamonds = Math.max(0, (m.diamonds || 0) - dmds);
+        addHistory('penalty', kidId, `🔇 Not listening penalty`, -dmds);
       }
     });
     saveData();
-    if (💎 > 0) {
+    if (dmds > 0) {
       const names = _nlState.selectedKids.map(id => getMember(id)?.name).filter(Boolean).join(' & ');
-      toast(`🔇 Deducted ${💎} 💎 from ${names}`);
+      toast(`🔇 Deducted ${dmds} 💎 from ${names}`);
     }
     renderParentHome();
     renderParentHeader();
@@ -3730,7 +3730,7 @@ function renderKidView() {
 function renderKidHeader() {
   const m = S.currentUser;
   if (!m) return;
-  const 💎 = m.diamonds || 0;
+  const dmds = m.diamonds || 0;
   normalizeMember(m);
   const { current: lvl } = getMemberLevel(m);
   const streak      = m.streak?.current || 0;
@@ -3752,7 +3752,7 @@ function renderKidHeader() {
       </div>
     </div>
     <div class="header-actions">
-      <div class="header-badge">💎 ${💎}</div>
+      <div class="header-badge">💎 ${dmds}</div>
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings">⚙️</button>
     </div>`;
 }
@@ -4200,22 +4200,22 @@ function viewPhoto(url) {
 // ── POINTS TAB (8yo) ──────────────────────────────────────────
 function renderKidDiamonds() {
   const m   = S.currentUser;
-  const 💎 = m.diamonds || 0;
+  const dmds = m.diamonds || 0;
   const tot = m.totalEarned || 0;
   const sav = m.savings || 0;
   normalizeMember(m);
 
   // Cheapest prize they can afford
   const nextPrize = D.prizes
-    .filter(p=>p.type==='individual' && p.cost > 💎)
+    .filter(p=>p.type==='individual' && p.cost > dmds)
     .sort((a,b)=>a.cost-b.cost)[0];
-  const pctToNext = nextPrize ? Math.min(100,Math.round(💎/nextPrize.cost*100)) : 100;
+  const pctToNext = nextPrize ? Math.min(100,Math.round(dmds/nextPrize.cost*100)) : 100;
 
   const myHistory = D.history.filter(h=>h.memberId===m.id).slice(0,15);
 
   let html = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-val">${💎}</div><div class="stat-label">💎 Diamonds</div></div>
+      <div class="stat-card"><div class="stat-val">${dmds}</div><div class="stat-label">💎 Diamonds</div></div>
       <div class="stat-card"><div class="stat-val">${tot}</div><div class="stat-label">🏆 All Time</div></div>
       <div class="stat-card"><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label">💰 Savings</div></div>
     </div>`;
@@ -4274,9 +4274,9 @@ function renderKidDiamonds() {
           <span style="font-size:2rem">${nextPrize.icon}</span>
           <div style="flex:1">
             <div style="font-weight:700">${esc(nextPrize.title)}</div>
-            <div style="font-size:0.8rem;color:var(--muted)">${💎} / ${nextPrize.cost} 💎</div>
+            <div style="font-size:0.8rem;color:var(--muted)">${dmds} / ${nextPrize.cost} 💎</div>
           </div>
-          <div style="font-weight:800;color:var(--purple)">${nextPrize.cost-💎} to go!</div>
+          <div style="font-weight:800;color:var(--purple)">${nextPrize.cost-dmds} to go!</div>
         </div>
         <div class="progress-wrap"><div class="progress-fill" style="width:${pctToNext}%"></div></div>
       </div>`;
@@ -4337,15 +4337,15 @@ function showSavingsModal(memberId) {
 
 function doSaveDiamonds(memberId) {
   const m    = getMember(memberId);
-  const 💎  = parseInt(document.getElementById('save-dmds')?.value)||0;
+  const dmds  = parseInt(document.getElementById('save-dmds')?.value)||0;
   const rate = D.settings.diamondsPerDollar || 10;
-  if (!m || 💎 <= 0 || 💎 > (m.diamonds||0) || 💎 % rate !== 0) {
+  if (!m || dmds <= 0 || dmds > (m.diamonds||0) || dmds % rate !== 0) {
     toast(`Must be a multiple of ${rate} 💎`); return;
   }
-  const dollars = 💎 / rate;
-  m.diamonds  -= 💎;
+  const dollars = dmds / rate;
+  m.diamonds  -= dmds;
   m.savings  = (m.savings||0) + dollars;
-  addHistory('savings', memberId, `Converted ${💎} 💎 to savings`, -💎);
+  addHistory('savings', memberId, `Converted ${dmds} 💎 to savings`, -dmds);
   saveData();
   closeModal();
   toast(`+${D.settings.currency||'$'}${dollars.toFixed(2)} saved! 💰`);
@@ -4357,7 +4357,7 @@ function doSaveDiamonds(memberId) {
 function renderKidShop() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
-  const 💎  = m.diamonds || 0;
+  const dmds  = m.diamonds || 0;
   const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||0)-(b.cost||0) : ()=>0;
   const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
 
@@ -4371,23 +4371,23 @@ function renderKidShop() {
   }
 
   const renderPrizeCard = (p) => {
-    const canAfford = 💎 >= p.cost;
+    const canAfford = dmds >= p.cost;
     const cls = canAfford ? 'can-afford' : '';
-    const tts  = `${p.title}. Costs ${p.cost} diamonds.${canAfford?' You can get this!':` You need ${p.cost-💎} more diamonds.`}`;
+    const tts  = `${p.title}. Costs ${p.cost} diamonds.${canAfford?' You can get this!':` You need ${p.cost-dmds} more diamonds.`}`;
     return `
       <div class="prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
         <span class="prize-icon">${p.icon}</span>
         <div class="prize-name">${esc(p.title)}</div>
         <div class="prize-cost">💎 ${p.cost}</div>
-        ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-💎} more 💎 needed</div>`:''}
+        ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-dmds} more 💎 needed</div>`:''}
       </div>`;
   };
 
   let html = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
-        <div style="font-size:1.5rem;font-weight:800">💎 ${💎}</div>
+        <div style="font-size:1.5rem;font-weight:800">💎 ${dmds}</div>
         <div style="font-size:0.8rem;color:var(--muted)">your diamonds</div>
       </div>
       ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
@@ -4404,9 +4404,9 @@ function kidRedeemPrize(prizeId, evt) {
   const prize = D.prizes.find(p=>p.id===prizeId);
   if (!m || !prize) return;
 
-  const 💎 = m.diamonds||0;
-  if (💎 < prize.cost) {
-    const need = prize.cost - 💎;
+  const dmds = m.diamonds||0;
+  if (dmds < prize.cost) {
+    const need = prize.cost - dmds;
     if (isTiny(m)) speak(`You need ${need} more diamonds for this prize!`);
     else toast(`Need ${need} more 💎 for "${prize.title}"`);
     return;
@@ -4414,7 +4414,7 @@ function kidRedeemPrize(prizeId, evt) {
 
   showModal(`
     <div class="modal-title">${prize.icon} Redeem Prize?</div>
-    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for ${prize.cost} of your 💎 ${💎} diamonds?</p>
+    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.icon)} ${esc(prize.title)}</strong> for ${prize.cost} of your 💎 ${dmds} diamonds?</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
       <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! 🎉</button>
@@ -4442,7 +4442,7 @@ function confirmRedeem(prizeId) {
 function renderKidTeam() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
-  const 💎  = m.diamonds || 0;
+  const dmds  = m.diamonds || 0;
   const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.targetPoints||0)-(b.targetPoints||0) : ()=>0;
   const goals = (D.teamGoals || []).slice().sort(sortFn);
   const kids  = D.family.members.filter(k=>k.role==='kid');
@@ -4479,11 +4479,11 @@ function renderKidTeam() {
         <div class="goal-title">${esc(g.title)}</div>
         <div class="goal-sub">${total} / ${target} 💎</div>
         <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-💎">${pct}% there! ${reached?'🏆 Goal reached!':''}</div>
+        <div class="goal-dmds">${pct}% there! ${reached?'🏆 Goal reached!':''}</div>
         ${kids.length>1?`<div style="height:14px"></div>${contribs}`:''}
         ${!reached?`
           <div style="margin-top:14px">
-            ${💎 > 0
+            ${dmds > 0
               ? `<button class="btn btn-primary btn-full" onclick="showContributeModal('${m.id}','${g.id}')">
                    ${tiny?'Give Diamonds! 💎':'Contribute Diamonds 💎'}
                  </button>`
@@ -4496,7 +4496,7 @@ function renderKidTeam() {
   document.getElementById('kid-content').innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div>
-        <div style="font-size:1.5rem;font-weight:800">💎 ${💎}</div>
+        <div style="font-size:1.5rem;font-weight:800">💎 ${dmds}</div>
         <div style="font-size:0.8rem;color:var(--muted)">your diamonds</div>
       </div>
       ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
@@ -4516,7 +4516,7 @@ function showContributeModal(memberId, goalId) {
     </p>
     <div class="form-group">
       <label class="form-label">Diamonds to contribute</label>
-      <input type="number" id="contrib-💎" min="1" max="${m.diamonds||0}" placeholder="e.g. 50">
+      <input type="number" id="contrib-dmds" min="1" max="${m.diamonds||0}" placeholder="e.g. 50">
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -4525,15 +4525,15 @@ function showContributeModal(memberId, goalId) {
 }
 
 function doContrib(memberId, goalId) {
-  const 💎  = parseInt(document.getElementById('contrib-💎')?.value)||0;
+  const dmds  = parseInt(document.getElementById('contrib-dmds')?.value)||0;
   const goal = D.teamGoals?.find(g => g.id === goalId);
-  if (💎 <= 0) { toast('Enter diamonds to contribute'); return; }
-  const ok = doContributeToGoal(memberId, goalId, 💎);
+  if (dmds <= 0) { toast('Enter diamonds to contribute'); return; }
+  const ok = doContributeToGoal(memberId, goalId, dmds);
   closeModal();
   if (!ok) { toast('Not enough diamonds!'); return; }
-  toast(`+${💎} 💎 contributed to "${goal?.title}"! 🏆`);
+  toast(`+${dmds} 💎 contributed to "${goal?.title}"! 🏆`);
   const m = getMember(memberId);
-  if (isTiny(m)) speak(`You gave ${💎} diamonds to the team! Amazing!`);
+  if (isTiny(m)) speak(`You gave ${dmds} diamonds to the team! Amazing!`);
   renderKidTeam();
   renderKidHeader();
 }
@@ -6631,7 +6631,7 @@ function showAddPointsModal(memberId) {
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.diamonds||0} 💎</strong></p>
     <div class="form-group">
       <label class="form-label">Diamonds to add (use negative to remove)</label>
-      <input type="number" id="adj-💎" placeholder="e.g. 25 or -10">
+      <input type="number" id="adj-dmds" placeholder="e.g. 25 or -10">
     </div>
     <div class="form-group">
       <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
@@ -6645,15 +6645,15 @@ function showAddPointsModal(memberId) {
 
 function doAdjustPoints(memberId) {
   const m      = getMember(memberId);
-  const 💎    = parseInt(document.getElementById('adj-💎')?.value)||0;
+  const dmds    = parseInt(document.getElementById('adj-dmds')?.value)||0;
   const reason = document.getElementById('adj-reason')?.value.trim() || 'Manual adjustment';
-  if (!m || 💎===0) { toast('Enter a non-zero amount'); return; }
-  m.diamonds      = Math.max(0, (m.diamonds||0) + 💎);
-  m.totalEarned = 💎>0 ? (m.totalEarned||0)+💎 : m.totalEarned;
-  addHistory('bonus', memberId, reason, 💎);
+  if (!m || dmds===0) { toast('Enter a non-zero amount'); return; }
+  m.diamonds      = Math.max(0, (m.diamonds||0) + dmds);
+  m.totalEarned = dmds>0 ? (m.totalEarned||0)+dmds : m.totalEarned;
+  addHistory('bonus', memberId, reason, dmds);
   saveData();
   closeModal();
-  toast(`${💎>0?'+':''}${💎} 💎 for ${m.name}`);
+  toast(`${dmds>0?'+':''}${dmds} 💎 for ${m.name}`);
   renderParentSettings();
 }
 
