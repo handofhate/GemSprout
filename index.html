@@ -5666,10 +5666,16 @@ function renderStatsPage(container) {
 const _expandedSlots     = new Set(); // 'choreId_kidId'
 const _expandedKids      = new Set(); // kidId (home tab)
 const _expandedStatsKids = new Set(); // kidId (stats tab)
+const _expandedChores    = new Set(); // choreId (chores tab)
 function toggleSlotExpand(key) {
   if (_expandedSlots.has(key)) _expandedSlots.delete(key);
   else _expandedSlots.add(key);
   renderParentHome();
+}
+function toggleChoreExpand(id) {
+  if (_expandedChores.has(id)) _expandedChores.delete(id);
+  else _expandedChores.add(id);
+  renderParentChores();
 }
 function toggleKidSection(kidId) {
   if (_expandedKids.has(kidId)) _expandedKids.delete(kidId);
@@ -6138,22 +6144,31 @@ function renderParentChores() {
 
   html += `<div id="chore-sort-list">`;
   D.chores.forEach(chore => {
+    const isExpanded = _expandedChores.has(chore.id);
     const assignedKids = (chore.assignedTo||[]).map(id=>getMember(id)?.avatar||'').join(' ');
     const assigneeChip = assignedKids
       ? `<span style="display:inline-flex;align-items:center;background:#F5F3FF;color:#4C1D95;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">${assignedKids}</span>`
       : `<span style="display:inline-flex;align-items:center;background:#F3F4F6;color:#9CA3AF;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:600;white-space:nowrap">unassigned</span>`;
+    const diamondChip = `<span style="display:inline-flex;align-items:center;background:#FEF9C3;color:#92400E;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">💎 ${chore.diamonds}</span>`;
     html += `
-      <div class="admin-card" data-drag-id="${chore.id}">
-        <span class="drag-handle" title="Drag to reorder">⠿</span>
-        <span class="admin-icon">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
-        <div class="admin-info">
-          <div class="admin-name">${esc(chore.title)}</div>
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:5px">${choreMetaChips(chore)} ${assigneeChip}</div>
+      <div class="admin-card" data-drag-id="${chore.id}" style="flex-direction:column;align-items:stretch;gap:0;padding:12px 14px">
+        <div onclick="toggleChoreExpand('${chore.id}')" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <span class="admin-icon" style="font-size:1.6rem;flex-shrink:0">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
+          <div class="admin-info">
+            <div class="admin-name">${esc(chore.title)}</div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${diamondChip} ${assigneeChip}</div>
+          </div>
+          <span style="color:#9CA3AF;font-size:1.2rem;flex-shrink:0">${isExpanded ? '▾' : '▸'}</span>
         </div>
-        <div class="admin-actions">
-          <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
-          <button class="btn-icon-sm btn-icon-delete" onclick="deleteChore('${chore.id}')"><i class="ph-duotone ph-trash" style="color:#EF4444;font-size:1rem"></i></button>
-        </div>
+        ${isExpanded ? `
+        <div style="border-top:1px solid #F3F4F6;margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:8px">
+          <span class="drag-handle" title="Drag to reorder">⠿</span>
+          <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${choreMetaChips(chore)}</div>
+          <div class="admin-actions">
+            <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-delete" onclick="deleteChore('${chore.id}')"><i class="ph-duotone ph-trash" style="color:#EF4444;font-size:1rem"></i></button>
+          </div>
+        </div>` : ''}
       </div>`;
   });
   html += `</div>`;
@@ -6494,6 +6509,7 @@ function deleteChore(choreId) {
   for (const key of _expandedSlots) {
     if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
   }
+  _expandedChores.delete(choreId);
   saveData();
   toast('Chore deleted');
   renderParentChores();
