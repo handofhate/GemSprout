@@ -3514,6 +3514,16 @@ function closeCelebration() {
   }
 }
 
+function testWhileAwayModal() {
+  showCelebration({
+    icon:     '💌',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
+    diamonds: 5,
+    onClose:  () => {},
+  });
+}
+
 // ── MODAL ─────────────────────────────────────────────────────
 function showModal(html) {
   const root = document.getElementById('modal-root');
@@ -3813,7 +3823,7 @@ function renderSettings() {
         </div>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchConfetti(60)">💎 Test Diamond Rain</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchMixedRain()">⚡ Test Combo Rain</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="showCelebration({icon:'💌',title:'<i class=\'ph-duotone ph-moon-stars\' style=\'color:#7C3AED\'></i> While you were away...',sub:'Your parent approved Brush Your Teeth and you earned diamonds!',diamonds:5,onClose:()=>{}})">💌 Test While You Were Away</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testWhileAwayModal()">💌 Test While You Were Away</button>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>
 
