@@ -1856,6 +1856,52 @@ function clearPendingSnapshot(memberId) {
   try { localStorage.removeItem(`_pend_${memberId}`); } catch(e) {}
 }
 
+function markBonusesSeen(memberId) {
+  const ids = (D.history || [])
+    .filter(h => h.memberId === memberId && h.type === 'bonus')
+    .map(h => h.id);
+  try { localStorage.setItem(`_seenBonus_${memberId}`, JSON.stringify(ids)); } catch(e) {}
+}
+
+function getSeenBonusIds(memberId) {
+  try {
+    const raw = localStorage.getItem(`_seenBonus_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function checkForNewBonuses(member, isWhileAway = false) {
+  const seenIds = getSeenBonusIds(member.id);
+  // Exclude combo bonuses — those fire locally with their own celebration
+  const newBonuses = (D.history || []).filter(h =>
+    h.memberId === member.id &&
+    h.type === 'bonus' &&
+    h.title !== 'Daily Combo Bonus!' &&
+    !seenIds.has(h.id) &&
+    (h.diamonds || 0) > 0
+  );
+  if (newBonuses.length === 0) return;
+  markBonusesSeen(member.id);
+  const fresh = getMember(member.id);
+  if (fresh) S.currentUser = fresh;
+  const tiny = isTiny(member);
+  const total = newBonuses.reduce((s, b) => s + (b.diamonds || 0), 0);
+  const titleHtml = isWhileAway
+    ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...'
+    : '<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i> Bonus Diamonds!';
+  const subText = newBonuses.length === 1
+    ? newBonuses[0].title
+    : `${newBonuses.length} bonuses: ${newBonuses.map(b => b.title).join(', ')}`;
+  showCelebration({
+    icon:     '⭐',
+    title:    titleHtml,
+    sub:      subText,
+    diamonds: total,
+    tts:      tiny ? `You got ${total} bonus diamonds! ${subText}` : null,
+    onClose:  () => { renderKidDiamonds(); renderKidHeader(); renderKidNav(); },
+  });
+}
+
 function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = false) {
   let totalNewDiamonds = 0;
   const approvedChores = [];
@@ -1926,6 +1972,10 @@ function subscribeToFirestore(onFirstLoad) {
         if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
           checkForApprovalCelebration(prevPending, S.currentUser);
         }
+        // Trigger celebration for new manual bonus diamonds
+        if (!firstSnapshot && S.currentUser?.role === 'kid') {
+          checkForNewBonuses(S.currentUser, false);
+        }
       }
     }
     S.syncStatus = 'ok';
@@ -1937,7 +1987,8 @@ function subscribeToFirestore(onFirstLoad) {
         const savedKeys = loadPendingSnapshot(S.currentUser.id);
         if (savedKeys.size > 0) checkForApprovalCelebration(savedKeys, S.currentUser, true);
         clearPendingSnapshot(S.currentUser.id);
-        savePendingSnapshot(S.currentUser.id); // refresh with current state
+        savePendingSnapshot(S.currentUser.id);
+        checkForNewBonuses(S.currentUser, true); // check for manual bonuses while away
       }
       if (typeof onFirstLoad === 'function') onFirstLoad();
     } else {
@@ -3132,6 +3183,7 @@ function checkComboBonus(memberId) {
   member.totalEarned = (member.totalEarned || 0) + bonusPts;
   if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
   addHistory('bonus', memberId, 'Daily Combo Bonus!', bonusPts);
+  markBonusesSeen(memberId); // prevent Firestore echo from re-triggering
 
   // Update combo streak
   normalizeMember(member);
@@ -3485,9 +3537,24 @@ function launchMixedRain(count = 120) {
 }
 
 // ── CELEBRATION OVERLAY ───────────────────────────────────────
-function showCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, tts=null, onClose=null }) {
+const _celebQueue = [];
+
+function showCelebration(opts) {
+  const root = document.getElementById('celebration-root');
+  if (root.innerHTML.trim()) {
+    _celebQueue.push(opts);
+    return;
+  }
+  _renderCelebration(opts);
+}
+
+function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, tts=null, onClose=null }) {
   const root = document.getElementById('celebration-root');
   const ptsHtml = diamonds !== null ? `<div class="cel-diamonds">+${diamonds} 💎</div>` : '';
+  const queuedCount = _celebQueue.length;
+  const moreHtml = queuedCount > 0
+    ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${queuedCount} more notification${queuedCount > 1 ? 's' : ''} waiting...</div>`
+    : '';
 
   root.innerHTML = `
     <div class="celebration-overlay" id="cel-overlay">
@@ -3496,13 +3563,13 @@ function showCelebration({ icon='💎', title='Great job!', sub='', diamonds=nul
         <div class="cel-title">${title}</div>
         ${sub ? `<div class="cel-sub">${sub}</div>` : ''}
         ${ptsHtml}
+        ${moreHtml}
         <button class="btn btn-primary btn-full" onclick="closeCelebration()">Yay! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></button>
       </div>
     </div>`;
 
   launchConfetti();
   if (tts) speak(tts);
-
   window._celebOnClose = onClose;
 }
 
@@ -3512,6 +3579,9 @@ function closeCelebration() {
     window._celebOnClose();
     window._celebOnClose = null;
   }
+  if (_celebQueue.length > 0) {
+    setTimeout(() => _renderCelebration(_celebQueue.shift()), 300);
+  }
 }
 
 function testWhileAwayModal() {
@@ -3520,6 +3590,30 @@ function testWhileAwayModal() {
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
     diamonds: 5,
+    onClose:  () => {},
+  });
+}
+
+function testQueuedCelebrations() {
+  showCelebration({
+    icon:     '💌',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
+    diamonds: 5,
+    onClose:  () => {},
+  });
+  showCelebration({
+    icon:     '⭐',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Great job on your homework!',
+    diamonds: 10,
+    onClose:  () => {},
+  });
+  showCelebration({
+    icon:     '💌',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Your parent approved "Clean Your Room" and you earned diamonds!',
+    diamonds: 8,
     onClose:  () => {},
   });
 }
@@ -3823,7 +3917,8 @@ function renderSettings() {
         </div>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchConfetti(60)">💎 Test Diamond Rain</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchMixedRain()">⚡ Test Combo Rain</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testWhileAwayModal()">💌 Test While You Were Away</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()">💌 Test While You Were Away</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testQueuedCelebrations()">📬 Test Queued Notifications (3)</button>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>
 
@@ -7546,7 +7641,10 @@ function init() {
       if (rememberedUser) {
         S.currentUser = rememberedUser;
         routeToView(rememberedUser);
-        if (rememberedUser.role === 'kid') savePendingSnapshot(rememberedUser.id);
+        if (rememberedUser.role === 'kid') {
+          savePendingSnapshot(rememberedUser.id);
+          markBonusesSeen(rememberedUser.id);
+        }
       } else {
         renderHome();
       }
