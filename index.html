@@ -5812,7 +5812,7 @@ function renderMemberStatsCard(member, collapse) {
   const rewardSection = _statSection('Rewards & Combos',
     _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af', '', tts(`You have won ${s.rewardCount} prize${s.rewardCount !== 1 ? 's' : ''}.`)) +
     _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`, tts(`You have hit ${s.comboCount} combo${s.comboCount !== 1 ? 's' : ''}.`)) +
-    (D.settings.savingsEnabled !== false ? _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${s.savings}💎`, '#166534', '', tts(`You have saved up ${s.savings} diamonds.`)) : '')
+    (D.settings.savingsEnabled !== false ? _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${D.settings.currency||'$'}${(s.savings||0).toFixed(2)}`, '#166534', '', tts(`You have saved up ${D.settings.currency||'$'}${(s.savings||0).toFixed(2)}.`)) : '')
   );
 
   // Build chore badge display
