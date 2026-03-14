@@ -4375,7 +4375,7 @@ function setupNext() {
       if (ni) p.name = ni.value.trim();
       setParentBday(i);
     });
-    if (S.setupParents.some(p=>!p.name)) { toast('Every parent needs a name'); return; }
+    if (S.setupParents.some(p=>!p.name)) { toast('Please give each parent a name'); return; }
   }
 
   if (stepName === 'members') {
@@ -4388,7 +4388,7 @@ function setupNext() {
       setMemberBday(i); // flush birthday selects
     });
     if (S.setupMembers.length === 0) { toast('Add at least one family member'); return; }
-    if (S.setupMembers.some(m=>!m.name)) { toast('Every member needs a name'); return; }
+    if (S.setupMembers.some(m=>!m.name)) { toast('Each family member needs a name'); return; }
   }
 
   if (stepName === 'chores') {
@@ -5563,7 +5563,7 @@ function renderMemberStatsCard(member, collapse) {
 
   const penaltySection = _statSection('Penalties',
     _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b', '', tts(`You have had ${s.penaltyCount} penalty${s.penaltyCount !== 1 ? 's' : ''}.`)) +
-    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Lost', s.penaltyAmount, '#991b1b', '', tts(`You have lost ${s.penaltyAmount} diamonds.`)) +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Deducted', s.penaltyAmount, '#991b1b', '', tts(`You have had ${s.penaltyAmount} diamonds deducted.`)) +
     _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime', tts((() => {
       const ns = s.nlLifetimeSecs || 0;
       if (ns === 0) return 'No not-listening time. Great job!';
@@ -5903,7 +5903,7 @@ function approveChore(choreId, memberId, entryId) {
 function rejectChore(choreId, memberId, entryId) {
   doRejectChore(choreId, memberId, entryId);
   const m = getMember(memberId);
-  toast(`Rejected chore for ${m?.name}`);
+  toast(`Chore declined for ${m?.name}`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -6263,7 +6263,7 @@ function showChoreModal(choreId) {
           <button class="mode-opt${!hasSlots?' sel':''}" id="cm-style-simple" onclick="setChoreStyle('simple')"><span class="mode-opt-icon"><i class="ph-duotone ph-list-numbers" style="font-size:1.1rem"></i></span>Simple count</button>
           <button class="mode-opt${hasSlots?' sel':''}"  id="cm-style-slots"  onclick="setChoreStyle('slots')"><span class="mode-opt-icon"><i class="ph-duotone ph-clock" style="font-size:1.1rem"></i></span>Timed slots</button>
         </div>
-        <div class="schedule-help" style="margin-top:6px" id="cm-style-help">${hasSlots?'Each slot earns diamonds independently when completed during its window.':'Kids must complete the chore a set number of times. All must be done before diamonds are awarded.'}</div>
+        <div class="schedule-help" style="margin-top:6px" id="cm-style-help">${hasSlots?'Each slot earns diamonds independently when completed during its window.':'Complete this chore the set number of times to earn diamonds — each completion counts toward the total.'}</div>
       </div>
       <div id="cm-simple-fields" style="display:${hasSlots?'none':'block'}">
         <div class="form-group">
@@ -6301,10 +6301,10 @@ function showChoreModal(choreId) {
       <select id="cm-photo">
         <option value="none"         ${c.photoMode==='none'        ||!c.photoMode?'selected':''}>No photo needed</option>
         <option value="after"        ${c.photoMode==='after'       ?'selected':''}>Completion photo (after only)</option>
-        <option value="before_after" ${c.photoMode==='before_after'?'selected':''}>Before + after photos (verify it needs doing)</option>
+        <option value="before_after" ${c.photoMode==='before_after'?'selected':''}>Before + after photos (shows it needed doing)</option>
       </select>
       <div class="schedule-help" style="margin-top:6px">
-        "Before + after" makes the kid photograph the dirty room/full trash <em>before</em> you approve the start, then photograph the finished result for diamonds.
+        "Before + after" has your child take a photo of the starting state (e.g. the messy room, the full trash) <em>before</em> you approve the start, then a done photo to earn diamonds.
       </div>
     </div>
     <div class="form-group">
@@ -6364,7 +6364,7 @@ function setChoreStyle(style) {
   document.getElementById('cm-slots-fields').style.display  = isSlots ? 'block' : 'none';
   document.getElementById('cm-style-help').textContent = isSlots
     ? 'Each slot earns diamonds independently when completed during its window.'
-    : 'Kids must complete the chore a set number of times. All must be done before diamonds are awarded.';
+    : 'Complete this chore the set number of times to earn diamonds — each completion counts toward the total.';
   if (isSlots && _editSlots.length === 0) {
     _editSlots = [
       { id: genId(), label: 'Morning', start: '06:00', end: '09:00' },
@@ -7250,8 +7250,8 @@ function showAddPointsModal(memberId) {
     <div class="modal-title">💎 Adjust Diamonds — ${esc(m.name)}</div>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.diamonds||0} 💎</strong></p>
     <div class="form-group">
-      <label class="form-label">Diamonds to add (use negative to remove)</label>
-      <input type="number" id="adj-dmds" placeholder="e.g. 25 or -10">
+      <label class="form-label">Amount</label>
+      <input type="number" id="adj-dmds" min="1" placeholder="e.g. 25">
     </div>
     <div class="form-group">
       <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
@@ -7259,16 +7259,18 @@ function showAddPointsModal(memberId) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="doAdjustPoints('${memberId}')">Apply <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      <button class="btn" style="background:#FEE2E2;color:#991B1B;font-weight:700" onclick="doAdjustPoints('${memberId}',-1)">− Remove</button>
+      <button class="btn btn-primary" onclick="doAdjustPoints('${memberId}',1)">+ Add</button>
     </div>`);
 }
 
-function doAdjustPoints(memberId) {
+function doAdjustPoints(memberId, sign) {
   const m      = getMember(memberId);
-  const dmds    = parseInt(document.getElementById('adj-dmds')?.value)||0;
+  const amt    = parseInt(document.getElementById('adj-dmds')?.value)||0;
   const reason = document.getElementById('adj-reason')?.value.trim() || 'Manual adjustment';
-  if (!m || dmds===0) { toast('Enter a non-zero amount'); return; }
-  m.diamonds      = Math.max(0, (m.diamonds||0) + dmds);
+  if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const dmds = sign * amt;
+  m.diamonds    = Math.max(0, (m.diamonds||0) + dmds);
   m.totalEarned = dmds>0 ? (m.totalEarned||0)+dmds : m.totalEarned;
   addHistory('bonus', memberId, reason, dmds);
   saveData();
