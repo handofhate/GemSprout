@@ -4814,7 +4814,6 @@ function renderKidChores() {
 
 function normalChoreCard(chore, member, progress, comboIds = null) {
   const isCombo = comboIds?.has(chore.id) || false;
-  const sparkle = isCombo ? `<i class="combo-sparkle" style="position:absolute;top:-6px;right:-2px;font-size:0.9rem;pointer-events:none">⚡</i>` : '';
   const comboClass = isCombo ? ' combo-chore' : '';
   const tiny = isTiny(member);
   const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
@@ -4828,7 +4827,9 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
       if (ss === 'done')    slotBtn = `<span class="slot-status slot-done"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></span>`;
       else if (ss === 'pending') slotBtn = `<span class="slot-status slot-pending"><i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem"></i></span>`;
       else if (ss === 'available') {
-        const btnLabel = chore.requiresPhoto ? '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo' : 'Done <i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i>';
+        const btnLabel = chore.requiresPhoto
+          ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
+          : (tiny ? '<i class="ph-duotone ph-check" style="font-size:1rem;vertical-align:middle"></i>'  : '<i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i> Done');
         slotBtn = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')">${btnLabel}</button>`;
       } else {
         const timeHint = slot.start ? formatTimeWindow({start:slot.start, end:slot.end}) : '';
@@ -4838,7 +4839,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
     }).join('');
     return `
       <div class="chore-item ${progress.status}${comboClass}"${ttsAttr}>
-        <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}${sparkle}</span>
+        <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}</span>
         <div class="chore-info">
           <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
           <div class="chore-meta">${fmtDmds(chore.diamonds)} per slot</div>
@@ -4858,7 +4859,10 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
   const target = progress?.targetCount || (status === 'done' ? progress?.doneCount || 1 : 0);
   let btnHtml = '';
   if (progress?.canSubmit) {
-    btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)">${submitted > 0 ? 'Add one more <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i>' : 'Done! <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i>'}</button>`;
+    const doneLabel = tiny
+      ? '<i class="ph-duotone ph-check" style="font-size:1rem;vertical-align:middle"></i>'
+      : (submitted > 0 ? '<i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i> One more' : '<i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i> Done!');
+    btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)">${doneLabel}</button>`;
   } else if (status==='pending' || status==='partial') {
     btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Pending</span>`;
   } else if (status==='unavailable') {
@@ -4868,7 +4872,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
   }
   return `
     <div class="chore-item ${status}${comboClass}"${ttsAttr}>
-      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}${sparkle}</span>
+      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
         <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
@@ -4880,7 +4884,6 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
 
 function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = null) {
   const isCombo = comboIds?.has(chore.id) || false;
-  const sparkle = isCombo ? `<i class="combo-sparkle" style="position:absolute;top:-6px;right:-2px;font-size:0.9rem;pointer-events:none">⚡</i>` : '';
   const comboClass = isCombo ? ' combo-chore' : '';
   const tiny = isTiny(member);
   const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
@@ -4893,7 +4896,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   if (phase === 'needs_before') {
     statusClass = 'none';
     hintHtml = `<div class="chore-meta" style="color:var(--purple)"><i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Take a "before" photo to request this chore</div>`;
-    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="${tiny?`speak('Let\\'s take a picture first!');`:''}kidCompleteChore('${chore.id}',event,null,'before')"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request</button>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="${tiny?`speak('Let\\'s take a picture first!');`:''}kidCompleteChore('${chore.id}',event,null,'before')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request'}</button>`;
   } else if (phase === 'before_pending') {
     statusClass = 'pending';
     hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve the start</div>`;
@@ -4901,7 +4904,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   } else if (phase === 'needs_after') {
     statusClass = 'partial';
     hintHtml = `<div class="chore-meta" style="color:var(--green)"><i class="ph-duotone ph-check-circle" style="color:var(--green);font-size:0.9rem;vertical-align:middle"></i> Approved! Do the chore, then submit your done photo.</div>`;
-    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'after')"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Done</button>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'after')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Done'}</button>`;
   } else if (phase === 'after_pending') {
     statusClass = 'pending';
     hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve completion</div>`;
@@ -4913,7 +4916,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
 
   return `
     <div class="chore-item ${statusClass}${comboClass}"${ttsAttr}>
-      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}${sparkle}</span>
+      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}</span>
       <div class="chore-info">
         <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
         <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
