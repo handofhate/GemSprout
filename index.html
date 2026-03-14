@@ -3261,14 +3261,42 @@ function _nlDone() {
 // ── TEXT-TO-SPEECH ────────────────────────────────────────────
 let ttsEnabled = true;
 
-function speak(text) {
+function getEnglishVoices() {
+  return (window.speechSynthesis?.getVoices() || []).filter(v => v.lang.startsWith('en'));
+}
+
+function getBestVoice(name) {
+  const voices = getEnglishVoices();
+  if (!voices.length) return null;
+  if (name) {
+    const match = voices.find(v => v.name === name);
+    if (match) return match;
+  }
+  return voices.find(v => v.name === 'Samantha') || voices[0];
+}
+
+function speak(text, voiceName) {
   if (!ttsEnabled || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const utt  = new SpeechSynthesisUtterance(text);
   utt.rate   = 0.88;
   utt.pitch  = 1.15;
   utt.volume = 1;
+  const voice = getBestVoice(voiceName || S.currentUser?.ttsVoice);
+  if (voice) utt.voice = voice;
   window.speechSynthesis.speak(utt);
+}
+
+function setMemberVoice(i, voiceName) {
+  if (!S.setupMembers[i]) return;
+  S.setupMembers[i].ttsVoice = voiceName;
+  speak(`Hi, I'm ${voiceName}!`, voiceName);
+}
+
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    if (SETUP_STEPS[S.setupStep] === 'members') renderSetupStep();
+  };
 }
 
 // ── ICON RENDERER ─────────────────────────────────────────────
@@ -4199,6 +4227,21 @@ function memberSetupCard(mem, i) {
         <label class="form-label">Display Mode</label>
         <div class="display-mode-row">${modeOpts}</div>
       </div>
+      ${dm === 'tiny' ? (() => {
+        const voices = getEnglishVoices();
+        if (!voices.length) return `
+      <div class="form-group">
+        <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice</label>
+        <button class="btn btn-secondary btn-sm" onclick="window.speechSynthesis?.getVoices();renderSetupStep()">Load voice options</button>
+      </div>`;
+        const current = mem.ttsVoice || 'Samantha';
+        const opts = voices.map(v => `<option value="${esc(v.name)}"${v.name===current?' selected':''}>${esc(v.name)}</option>`).join('');
+        return `
+      <div class="form-group">
+        <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice <span class="form-label-hint">tap a voice to preview</span></label>
+        <select onchange="setMemberVoice(${i},this.value)">${opts}</select>
+      </div>`;
+      })() : ''}
       <div class="form-group mt-8">
         <label class="form-label">Avatar</label>
         <div class="avatar-grid">${avatarOpts}</div>
@@ -4492,8 +4535,11 @@ function switchKidTab(tab) {
   const dmds = m.diamonds || 0;
   if (tab === 'chores') {
     const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
-    const doneCount = myChores.filter(c => getChoreProgress(c, m.id).status === 'done').length;
-    speak(`Let's look at your chores. Today you have completed ${doneCount} out of ${myChores.length}.`);
+    const progressMap = new Map(myChores.map(c => [c.id, getChoreProgress(c, m.id)]));
+    const totalUnits = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.targetCount || 0), 0);
+    const doneUnits  = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.doneCount  || 0), 0);
+    const total = totalUnits || myChores.length;
+    speak(`Let's look at your chores. Today you have completed ${doneUnits} out of ${total}.`);
   } else if (tab === 'diamonds') {
     const { current: lvl } = getMemberLevel(m);
     const streak = m.streak?.current || 0;
