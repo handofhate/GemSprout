@@ -5157,13 +5157,30 @@ function renderKidDiamonds() {
   }
 
   // Savings tracker
-  if (_savOn) html += `
-    <div class="savings-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}>
-      <div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> My Savings Jar</div>
-      <div class="savings-amount">${D.settings.currency||'$'}${sav.toFixed(2)}</div>
-      <div class="savings-label">Keep saving!</div>
-      <button class="btn btn-secondary btn-sm" onclick="showSavingsModal('${m.id}');event.stopPropagation()">+ Add Savings</button>
-    </div>`;
+  if (_savOn) {
+    const cur          = D.settings.currency || '$';
+    const matchOn      = D.settings.savingsMatchingEnabled;
+    const matched      = m.savingsMatched || 0;
+    const selfSaved    = Math.max(0, sav - matched);
+    const matchPct     = D.settings.savingsMatchPercent || 50;
+    const breakdownHtml = matchOn && matched > 0
+      ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:12px;display:flex;gap:12px;justify-content:center">
+           <span>💰 ${cur}${selfSaved.toFixed(2)} yours</span>
+           <span>🤝 ${cur}${matched.toFixed(2)} matched</span>
+         </div>`
+      : matchOn
+        ? `<div style="font-size:0.78rem;opacity:0.75;margin-bottom:12px">🤝 ${matchPct}% parent match active</div>`
+        : '';
+    const _savTts = tiny ? ` onclick="speak('You have ${_savSpeech} in savings.${matchOn && matched > 0 ? ` Your parents have matched ${cur}${matched.toFixed(2)}.` : ''}')"` : '';
+    html += `
+      <div class="savings-card"${_savTts}>
+        <div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> My Savings Jar</div>
+        <div class="savings-amount">${cur}${sav.toFixed(2)}</div>
+        ${breakdownHtml}
+        <div class="savings-label">Keep saving!</div>
+        <button class="btn btn-secondary btn-sm" onclick="showSavingsModal('${m.id}');event.stopPropagation()">+ Add Savings</button>
+      </div>`;
+  }
 
   // History
   if (myHistory.length > 0) {
@@ -5198,36 +5215,79 @@ function renderKidDiamonds() {
 function showSavingsModal(memberId) {
   const m = getMember(memberId);
   if (!m) return;
-  const rate = D.settings.diamondsPerDollar || 10;
+  const rate     = D.settings.diamondsPerDollar || 10;
+  const cur      = D.settings.currency || '$';
+  const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
+  const matchPct = D.settings.savingsMatchPercent || 50;
+  const matchNote = matchOn
+    ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:0.875rem;color:#166534">
+        🤝 <strong>Parent match is on!</strong> For every ${cur}1.00 you save, your parents add ${cur}${(matchPct/100).toFixed(2)} extra (${matchPct}% match).
+       </div>`
+    : '';
   showModal(`
     <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Savings Jar</div>
-    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">
-      Convert diamonds to savings (${rate} 💎 = ${D.settings.currency||'$'}1.00) or ask a parent to add money directly.
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:${matchOn?'10':'16'}px">
+      Convert diamonds to savings (${rate} 💎 = ${cur}1.00).
     </p>
+    ${matchNote}
     <div class="form-group">
       <label class="form-label">Diamonds to convert <span class="form-label-hint">(you have ${m.diamonds||0})</span></label>
-      <input type="number" id="save-dmds" min="0" max="${m.diamonds||0}" step="${rate}" placeholder="${rate}">
+      <input type="number" id="save-dmds" min="0" max="${m.diamonds||0}" step="${rate}" placeholder="${rate}"
+             oninput="updateSavingsPreview('${memberId}',this.value)">
     </div>
+    <div id="savings-preview" style="font-size:0.85rem;color:#166534;min-height:20px;margin-top:-8px;margin-bottom:8px"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-teal" onclick="doSaveDiamonds('${memberId}')">Convert <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
     </div>`);
 }
 
+function updateSavingsPreview(memberId, rawVal) {
+  const el = document.getElementById('savings-preview');
+  if (!el) return;
+  const rate     = D.settings.diamondsPerDollar || 10;
+  const cur      = D.settings.currency || '$';
+  const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
+  const matchPct = D.settings.savingsMatchPercent || 50;
+  const dmds     = parseInt(rawVal) || 0;
+  if (dmds <= 0 || dmds % rate !== 0) { el.textContent = ''; return; }
+  const dollars      = dmds / rate;
+  const matchDollars = matchOn ? parseFloat((dollars * matchPct / 100).toFixed(2)) : 0;
+  const total        = dollars + matchDollars;
+  el.innerHTML = matchOn && matchDollars > 0
+    ? `${cur}${dollars.toFixed(2)} yours + ${cur}${matchDollars.toFixed(2)} parent match = <strong>${cur}${total.toFixed(2)} total</strong>`
+    : `You'll save ${cur}${dollars.toFixed(2)}`;
+}
+
 function doSaveDiamonds(memberId) {
   const m    = getMember(memberId);
-  const dmds  = parseInt(document.getElementById('save-dmds')?.value)||0;
+  const dmds = parseInt(document.getElementById('save-dmds')?.value) || 0;
   const rate = D.settings.diamondsPerDollar || 10;
+  const cur  = D.settings.currency || '$';
   if (!m || dmds <= 0 || dmds > (m.diamonds||0) || dmds % rate !== 0) {
     toast(`Must be a multiple of ${rate} 💎`); return;
   }
   const dollars = dmds / rate;
-  m.diamonds  -= dmds;
-  m.savings  = (m.savings||0) + dollars;
+  m.diamonds -= dmds;
+  m.savings   = (m.savings||0) + dollars;
   addHistory('savings', memberId, `Converted ${dmds} 💎 to savings`, -dmds);
+
+  const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
+  let toastMsg   = `+${cur}${dollars.toFixed(2)} saved! 💰`;
+  if (matchOn) {
+    const matchPct    = D.settings.savingsMatchPercent || 50;
+    const matchDollars = parseFloat((dollars * matchPct / 100).toFixed(2));
+    if (matchDollars > 0) {
+      m.savings        = (m.savings||0) + matchDollars;
+      m.savingsMatched = (m.savingsMatched||0) + matchDollars;
+      addHistory('savings', memberId, `Parent match (${matchPct}%) +${cur}${matchDollars.toFixed(2)}`, 0);
+      toastMsg = `+${cur}${dollars.toFixed(2)} saved + ${cur}${matchDollars.toFixed(2)} parent match! 💰`;
+    }
+  }
+
   saveData();
   closeModal();
-  toast(`+${D.settings.currency||'$'}${dollars.toFixed(2)} saved! 💰`);
+  toast(toastMsg);
   renderKidDiamonds();
   renderKidHeader();
 }
