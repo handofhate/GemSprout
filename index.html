@@ -1412,6 +1412,15 @@
     /* ── ADVANCED EDITOR ── */
     #adv-editor-root { position: fixed; inset: 0; z-index: 3000; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #f8f9fa; }
     #adv-editor-root.open { display: block; }
+    #settings-root { position: fixed; inset: 0; z-index: 2000; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg); }
+    #settings-root.open { display: block; }
+    .settings-header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+    .settings-header-title { font-weight: 800; font-size: 1.1rem; flex: 1; }
+    .settings-body { padding: 16px 16px 80px; max-width: 680px; margin: 0 auto; }
+    .settings-member-actions { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .settings-member-action-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #F9FAFB; border-radius: 12px; }
+    .settings-member-action-label { font-weight: 700; font-size: 0.88rem; }
+    .settings-member-action-sub { font-size: 0.76rem; color: var(--muted); margin-top: 2px; }
     .adv-editor-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #1f2937; color: #fff; }
     .adv-editor-title  { font-size: 1rem; font-weight: 800; flex: 1; }
     .adv-editor-body   { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -1536,6 +1545,7 @@
   <div id="celebration-root"></div>
   <div id="confetti-root"></div>
   <div id="adv-editor-root"></div>
+  <div id="settings-root"></div>
   <div id="nl-root"></div>
 
   <!-- Firebase SDK -->
@@ -1768,6 +1778,7 @@ function defaultData() {
       streakBonus30:    10,
       // Not Listening
       notListeningSecs: 60,
+      notListeningEnabled: true,
       sortPrizesByValue: false,
     },
     family: { name:'Our Family', members:[] },
@@ -2917,7 +2928,7 @@ function saveSplitHousehold() {
   saveData();
   closeModal();
   toast('Split Household schedule saved');
-  renderParentSettings();
+  renderSettings();
 }
 
 // ── Here-Check Modal (6 pm prompt) ────────────────────────────────────────
@@ -3418,16 +3429,23 @@ function closeModalIfBg(e) {
 }
 
 function openUserSettings() {
-  const name = S.currentUser?.name || 'User';
-  showModal(`
-    <div class="modal-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Settings</div>
-    <p style="color:var(--muted);font-size:0.95rem;margin-bottom:16px">
-      Signed in as <strong>${esc(name)}</strong>.
-    </p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-      <button class="btn btn-primary" onclick="switchUserNow()">Switch User</button>
-    </div>`);
+  if (S.currentUser?.role === 'parent') {
+    renderSettings();
+    document.getElementById('settings-root').classList.add('open');
+  } else {
+    const name = S.currentUser?.name || 'User';
+    showModal(`
+      <div class="modal-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Settings</div>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:16px">Signed in as <strong>${esc(name)}</strong>.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+        <button class="btn btn-primary" onclick="switchUserNow()">Switch User</button>
+      </div>`);
+  }
+}
+
+function closeSettings() {
+  document.getElementById('settings-root').classList.remove('open');
 }
 
 function switchUserNow() {
@@ -3435,16 +3453,229 @@ function switchUserNow() {
   goHome();
 }
 
+const _expandedSettingsMembers = new Set();
+function toggleSettingsMember(id) {
+  if (_expandedSettingsMembers.has(id)) _expandedSettingsMembers.delete(id);
+  else _expandedSettingsMembers.add(id);
+  renderSettings();
+}
+
+function showResetPinFlow() {
+  const hasPIN = !!D.settings.parentPin;
+  const hasbio = !!getBiometricCredentialId();
+
+  if (!hasPIN) {
+    // No current PIN — go straight to setting a new one
+    showModal(`
+      <div class="modal-title">Set Parent PIN</div>
+      <div class="form-group">
+        <label class="form-label">New PIN <span class="form-label-hint">up to 4 digits · leave blank to disable</span></label>
+        <input type="password" id="rp-new" maxlength="4" placeholder="4 digits" inputmode="numeric">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="applyNewPin()">Save</button>
+      </div>`);
+    return;
+  }
+
+  showModal(`
+    <div class="modal-title">Reset Parent PIN</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Verify your identity first.</p>
+    ${hasbio ? `<button class="btn btn-secondary btn-full" style="margin-bottom:12px" onclick="verifyBioForPinReset()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Use Face ID</button>` : ''}
+    <div class="form-group">
+      <label class="form-label">Current PIN</label>
+      <input type="password" id="rp-current" maxlength="4" placeholder="4 digits" inputmode="numeric">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="verifyPinForReset()">Continue</button>
+    </div>`);
+}
+
+async function verifyBioForPinReset() {
+  const ok = await authenticateBiometric(() => {});
+  if (ok) showNewPinModal();
+  else toast('Biometric failed — enter your PIN instead');
+}
+
+function verifyPinForReset() {
+  const entered = document.getElementById('rp-current')?.value.trim();
+  if (entered !== D.settings.parentPin) { toast('Incorrect PIN'); return; }
+  closeModal();
+  showNewPinModal();
+}
+
+function showNewPinModal() {
+  showModal(`
+    <div class="modal-title">Set New PIN</div>
+    <div class="form-group">
+      <label class="form-label">New PIN <span class="form-label-hint">up to 4 digits · leave blank to disable</span></label>
+      <input type="password" id="rp-new" maxlength="4" placeholder="4 digits" inputmode="numeric">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="applyNewPin()">Save</button>
+    </div>`);
+}
+
+function applyNewPin() {
+  const val = document.getElementById('rp-new')?.value.trim();
+  D.settings.parentPin = val;
+  saveData();
+  closeModal();
+  toast(val ? 'PIN updated' : 'PIN removed');
+  renderSettings();
+}
+
+function renderSettings() {
+  const s = D.settings;
+  const members = D.family.members.filter(m => m.role !== 'parent');
+
+  const familyHtml = members.map(k => {
+    const isExpanded = _expandedSettingsMembers.has(k.id);
+    const actions = isExpanded ? `
+      <div class="settings-member-actions">
+        <div class="settings-member-action-row">
+          <div style="flex:1">
+            <div class="settings-member-action-label">💎 Adjust Diamonds</div>
+            <div class="settings-member-action-sub">Manually add or remove diamonds — use for bonuses, corrections, or special rewards</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="showAddPointsModal('${k.id}')">Adjust</button>
+        </div>
+        <div class="settings-member-action-row">
+          <div style="flex:1">
+            <div class="settings-member-action-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
+            <div class="settings-member-action-sub">Set which days this kid is here vs. at the other household — streaks skip away days automatically</div>
+          </div>
+          <button class="btn btn-sm" style="background:${k.splitHousehold?.enabled?'var(--green)':'#F3F4F6'};color:${k.splitHousehold?.enabled?'#fff':'var(--text)'}" onclick="showSplitHouseholdModal('${k.id}')">${k.splitHousehold?.enabled?'On':'Set up'}</button>
+        </div>
+      </div>` : '';
+    return `
+      <div style="border-left:4px solid ${k.color||'#6C63FF'};padding-left:12px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="toggleSettingsMember('${k.id}')">
+          <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
+          <div style="flex:1">
+            <div style="font-weight:700">${esc(k.name)}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0} · 💰 ${s.currency||'$'}${(k.savings||0).toFixed(2)}</div>
+          </div>
+          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem"></i>
+        </div>
+        ${actions}
+      </div>`;
+  }).join('');
+
+  const pinLabel = D.settings.parentPin ? 'Reset PIN' : 'Set PIN';
+  const bioBtn = isBiometricSupported() ? (getBiometricCredentialId()
+    ? `<button class="btn btn-secondary btn-sm" onclick="removeBiometric();renderSettings()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Remove Face ID</button>`
+    : `<button class="btn btn-secondary btn-sm" onclick="registerBiometric()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Set Up Face ID</button>`) : '';
+
+  document.getElementById('settings-root').innerHTML = `
+    <div class="settings-header">
+      <button class="btn-back" onclick="closeSettings()">←</button>
+      <span class="settings-header-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Settings</span>
+      <button class="btn btn-secondary btn-sm" onclick="closeSettings();goHome()">Switch User</button>
+    </div>
+    <div class="settings-body">
+
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Auto-approve chores</div>
+            <div class="toggle-sub">Kids earn diamonds instantly without parent review</div></div>
+          <label class="toggle"><input type="checkbox" ${s.autoApprove?'checked':''} onchange="saveSetting('autoApprove',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Hide unavailable chores</div>
+            <div class="toggle-sub">Chores outside their allowed time window won't show on kids' screens</div></div>
+          <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Sort prizes by value</div>
+            <div class="toggle-sub">Shows cheapest prizes first in the shop and team tabs</div></div>
+          <label class="toggle"><input type="checkbox" ${s.sortPrizesByValue?'checked':''} onchange="saveSetting('sortPrizesByValue',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="form-group mt-8">
+          <label class="form-label">Diamonds per dollar <span class="form-label-hint">used for savings conversion</span></label>
+          <input type="number" value="${s.diamondsPerDollar||10}" min="1" onchange="saveSetting('diamondsPerDollar',parseInt(this.value)||10)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Parent PIN &amp; Face ID</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
+            ${bioBtn}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</div>
+        ${familyHtml || '<div class="empty-state"><div class="empty-text">No kids yet</div></div>'}
+        <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="closeSettings();goSetup()">Edit Family Setup</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-trend-up" style="color:#0F766E;font-size:1rem;vertical-align:middle"></i> Levels &amp; Streaks</div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Enable leveling system</div>
+            <div class="toggle-sub">Kids earn XP and unlock level titles as they complete chores</div></div>
+          <label class="toggle"><input type="checkbox" ${s.levelingEnabled!==false?'checked':''} onchange="saveSetting('levelingEnabled',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Enable streak bonuses</div>
+            <div class="toggle-sub">Bonus diamonds for consecutive days of completing all chores</div></div>
+          <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div style="margin-top:12px;font-size:0.82rem;color:var(--muted);font-weight:600;margin-bottom:8px">Streak bonus diamonds</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="form-group mb-0"><label class="form-label">3-day</label><input type="number" value="${s.streakBonus3||1}" min="0" onchange="saveSetting('streakBonus3',parseInt(this.value)||0)"></div>
+          <div class="form-group mb-0"><label class="form-label">7-day</label><input type="number" value="${s.streakBonus7||3}" min="0" onchange="saveSetting('streakBonus7',parseInt(this.value)||0)"></div>
+          <div class="form-group mb-0"><label class="form-label">14-day</label><input type="number" value="${s.streakBonus14||5}" min="0" onchange="saveSetting('streakBonus14',parseInt(this.value)||0)"></div>
+          <div class="form-group mb-0"><label class="form-label">30-day</label><input type="number" value="${s.streakBonus30||10}" min="0" onchange="saveSetting('streakBonus30',parseInt(this.value)||0)"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div class="card-title" style="margin:0"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not Listening</div>
+          <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
+        </div>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
+          Hold the big red button on the dashboard to accumulate time. Seconds convert to diamond deductions when you release. Toggle off to hide the button entirely.
+        </p>
+        <div class="form-group mb-0">
+          <label class="form-label">Seconds per diamond lost</label>
+          <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
+        </div>
+      </div>
+
+      <div class="card" style="border:2px solid #FEE2E2">
+        <div class="card-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</div>
+        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
+      </div>
+
+      <div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
+        <div class="card-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</div>
+        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:14px">Tools for testing and debugging. Not intended for everyday use.</div>
+        <div class="card" style="background:#F0FDF4;border:1.5px solid var(--green);margin-bottom:10px">
+          <div class="card-title" style="font-size:0.9rem"><i class="ph-duotone ph-cloud" style="color:#10B981;font-size:1rem;vertical-align:middle"></i> Cloud Sync</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:0.85rem;color:var(--green);font-weight:600"><i class="ph-duotone ph-check-circle" style="color:var(--green);vertical-align:middle"></i> Automatic</span>
+            <button class="btn btn-secondary btn-sm" onclick="location.reload(true)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload App</button>
+          </div>
+          ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
+        </div>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="launchConfetti(60)">💎 Test Diamond Rain</button>
+        <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
+      </div>
+
+    </div>`;
+}
+
 // ── SCREEN NAVIGATION ─────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  const screen = document.getElementById(id);
-  screen.classList.add('active');
-  // Reset scroll position — also works around a Safari/PWA bug where
-  // position:sticky headers don't paint until a scroll event fires.
-  const scroller = screen.querySelector('.main-content');
-  if (scroller) scroller.scrollTop = 0;
-  window.scrollTo(0, 0);
+  document.getElementById(id).classList.add('active');
 }
 
 function updateSyncBar() {
@@ -3735,7 +3966,7 @@ async function registerBiometric() {
     const id = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
     localStorage.setItem(BIOMETRIC_KEY, id);
     alert('Face ID set up successfully! You can now use it to unlock the app.');
-    renderParentSettings();
+    renderSettings();
   } catch(e) {
     if (e.name !== 'NotAllowedError') alert('Could not set up Face ID: ' + e.message);
   }
@@ -3772,7 +4003,6 @@ async function authenticateBiometric(onSuccess) {
 function removeBiometric() {
   localStorage.removeItem(BIOMETRIC_KEY);
   alert('Face ID removed.');
-  renderParentSettings();
 }
 
 function tryBiometricUnlock() {
@@ -5105,7 +5335,6 @@ function renderParentNav() {
     ['chores',  ICONS.chores,   'Chores'],
     ['prizes',  ICONS.prizes,   'Prizes'],
     ['stats',   ICONS.stats,    'Stats'],
-    ['settings',ICONS.settings, 'Settings'],
   ];
   document.getElementById('parent-nav').innerHTML = tabs.map(([id,icon,label]) => `
     <button class="nav-item${S.parentTab===id?' active':''}" onclick="switchParentTab('${id}')">
@@ -5126,7 +5355,6 @@ function renderParentTab() {
     case 'chores':   renderParentChores();   break;
     case 'prizes':   renderParentPrizes();   break;
     case 'stats':    renderStatsPage(document.getElementById('parent-content')); break;
-    case 'settings': renderParentSettings(); break;
   }
 }
 
@@ -5524,8 +5752,7 @@ function renderParentHome() {
         <button class="btn btn-primary btn-sm" onclick="showChoreModal()">+ Add Chore</button>
         <button class="btn btn-pink   btn-sm" onclick="showPrizeModal()">+ Add Prize</button>
         <button class="btn btn-teal   btn-sm" onclick="showGoalModal()"><i class="ph-duotone ph-target" style="font-size:1rem;vertical-align:middle"></i> Set Goal</button>
-        <button class="btn btn-danger  btn-sm" style="grid-column:span 2;background:#EF4444;color:#fff;font-size:1rem;padding:14px"
-                onclick="showNotListening()"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</button>
+        ${D.settings.notListeningEnabled !== false ? `<button class="btn btn-danger btn-sm" style="grid-column:span 2;background:#EF4444;color:#fff;font-size:1rem;padding:14px" onclick="showNotListening()"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</button>` : ''}
       </div>
     </div>`;
 
@@ -6951,7 +7178,7 @@ function doAdjustPoints(memberId) {
   saveData();
   closeModal();
   toast(`${dmds>0?'+':''}${dmds} 💎 for ${m.name}`);
-  renderParentSettings();
+  renderSettings();
 }
 
 function resetAllData() {
