@@ -3438,7 +3438,13 @@ function switchUserNow() {
 // ── SCREEN NAVIGATION ─────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const screen = document.getElementById(id);
+  screen.classList.add('active');
+  // Reset scroll position — also works around a Safari/PWA bug where
+  // position:sticky headers don't paint until a scroll event fires.
+  const scroller = screen.querySelector('.main-content');
+  if (scroller) scroller.scrollTop = 0;
+  window.scrollTo(0, 0);
 }
 
 function updateSyncBar() {
