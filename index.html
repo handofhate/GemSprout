@@ -1894,7 +1894,7 @@ function checkForNewBonuses(member, isWhileAway = false) {
     ? newBonuses[0].title
     : `${newBonuses.length} bonuses: ${newBonuses.map(b => b.title).join(', ')}`;
   showCelebration({
-    icon:     '⭐',
+    icon:     '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:3rem"></i>',
     title:    titleHtml,
     sub:      subText,
     diamonds: total,
@@ -1982,7 +1982,7 @@ function checkForSavingsRequestOutcomes(member, isWhileAway = false) {
       ? `"${r.reason}" — ${cur}${r.amount.toFixed(2)} approved`
       : `${cur}${r.amount.toFixed(2)} approved`;
     showCelebration({
-      icon:       '🛍️',
+      icon:       '<i class="ph-duotone ph-shopping-bag" style="color:#16A34A;font-size:3rem"></i>',
       title:      isWhileAway
         ? '<i class="ph-duotone ph-moon-stars" style="color:#6C63FF"></i> While you were away...'
         : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Spend Approved!',
@@ -1995,7 +1995,7 @@ function checkForSavingsRequestOutcomes(member, isWhileAway = false) {
   denied.forEach(r => {
     const sub = r.reason ? `"${r.reason}" — ${cur}${r.amount.toFixed(2)}` : `${cur}${r.amount.toFixed(2)}`;
     showCelebration({
-      icon:       '😔',
+      icon:       '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>',
       title:      isWhileAway
         ? '<i class="ph-duotone ph-moon-stars" style="color:#6B7280"></i> While you were away...'
         : '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time',
@@ -2040,7 +2040,7 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
     : `${approvedChores.length} chores approved!`;
   if (isWhileAway) {
     showCelebration({
-      icon:     '💌',
+      icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
       title:    tiny ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...' : '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
       sub:      `Your parent approved ${subLine.replace(' approved!','')} and you earned diamonds!`,
       diamonds: totalNewDiamonds,
@@ -3044,7 +3044,7 @@ function showSplitHouseholdModal(memberId) {
       </div>
 
       <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
-        💡 Completing a chore on a scheduled away day automatically marks them as here.
+        <i class="ph-duotone ph-lightbulb" style="color:#F59E0B;vertical-align:middle"></i> Completing a chore on a scheduled away day automatically marks them as here.
         At 6 pm on here-days with no chore activity, you'll get a prompt asking if they're actually home.
       </p>
     </div>
@@ -3736,7 +3736,7 @@ function closeCelebration() {
 
 function testWhileAwayModal() {
   showCelebration({
-    icon:     '💌',
+    icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
     diamonds: 5,
@@ -3746,21 +3746,21 @@ function testWhileAwayModal() {
 
 function testQueuedCelebrations() {
   showCelebration({
-    icon:     '💌',
+    icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
     diamonds: 5,
     onClose:  () => {},
   });
   showCelebration({
-    icon:     '⭐',
+    icon:     '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Great job on your homework!',
     diamonds: 10,
     onClose:  () => {},
   });
   showCelebration({
-    icon:     '💌',
+    icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Clean Your Room" and you earned diamonds!',
     diamonds: 8,
@@ -3783,7 +3783,7 @@ function testSavingsDeposit() {
 function testSpendApproved() {
   const cur = D.settings.currency || '$';
   showCelebration({
-    icon:        '🛍️',
+    icon:        '<i class="ph-duotone ph-shopping-bag" style="color:#16A34A;font-size:3rem"></i>',
     title:       '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Spend Approved!',
     sub:         '"Lego set" — $15.00 approved. Balance: $32.50',
     noAnimation: true,
@@ -3793,7 +3793,7 @@ function testSpendApproved() {
 
 function testSpendDenied() {
   showCelebration({
-    icon:        '😔',
+    icon:        '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>',
     title:       '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time',
     sub:         'Your spend request for "Video game" — $60.00 wasn\'t approved.',
     noAnimation: true,
@@ -3828,6 +3828,7 @@ function _initModalSwipe() {
   };
   const onMove = (e) => {
     if (!dragging) return;
+    e.preventDefault(); // block background scroll while dragging modal
     currentY = e.touches ? e.touches[0].clientY : e.clientY;
     const dy = Math.max(0, currentY - startY);
     sheet.style.transform = `translateY(${dy}px)`;
@@ -3846,7 +3847,7 @@ function _initModalSwipe() {
     }
   };
   sheet.addEventListener('touchstart', onStart, { passive: true });
-  sheet.addEventListener('touchmove',  onMove,  { passive: true });
+  sheet.addEventListener('touchmove',  onMove,  { passive: false });
   sheet.addEventListener('touchend',   onEnd);
 }
 
@@ -3902,7 +3903,7 @@ function showResetPinFlow() {
   S.pinBuffer = '';
   S.pinMode   = 'pinReset';
   document.getElementById('pin-content').innerHTML = `
-    <div class="pin-avatar">🔐</div>
+    <div class="pin-avatar"><i class="ph-duotone ph-lock-key" style="color:#6C63FF;font-size:2.5rem"></i></div>
     <div class="pin-title">Verify Identity</div>
     <div class="pin-sub">Enter your current PIN to reset it</div>
     <div class="pin-dots" id="pin-dots">
@@ -4148,8 +4149,8 @@ function renderSettings() {
         </div>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchConfetti(60)">💎 Test Diamond Rain</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchMixedRain()">⚡ Test Combo Rain</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()">💌 Test While You Were Away</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()">📬 Test Queued Notifications (3)</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Test While You Were Away</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()"><i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Test Queued Notifications (3)</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()">💰 Test Savings Deposit</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()">🛍️ Test Spend Approved</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
@@ -4341,7 +4342,7 @@ function selectProfile(id) {
       icon:  '🎂',
       title: `Happy Birthday, ${member.name}!`,
       sub:   '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Have an amazing day! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
-      tts:   `Happy Birthday ${member.name}! Wishing you the most wonderful day!`,
+      tts:   isTiny(member) ? `Happy Birthday ${member.name}! Wishing you the most wonderful day!` : null,
       onClose: () => routeToView(member),
     });
     return;
@@ -4366,7 +4367,7 @@ function renderPin() {
   S.pinBuffer = '';
   const m = S.currentUser;
   document.getElementById('pin-content').innerHTML = `
-    <div class="pin-avatar">${m.avatar||'👤'}</div>
+    <div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>
     <div class="pin-title">Welcome back, ${esc(m.name)}!</div>
     <div class="pin-sub">Enter your PIN</div>
     <div class="pin-dots" id="pin-dots">
@@ -5371,7 +5372,7 @@ function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride = null)
 function choreCompleteReact(chore, m, result, evt) {
   const tiny = isTiny(m);
   if (!result.approved) {
-    toast('Chore submitted! Waiting for parent approval ⏳');
+    toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Chore submitted! Waiting for parent approval');
     if (tiny) speak('All done! Waiting for your grown-up to check!');
     renderKidChores(); renderKidHeader(); renderKidNav();
   } else {
@@ -5453,7 +5454,7 @@ async function submitChorePhoto(choreId, slotId, entryType) {
     if (!result) return;
     if (result.error) { toast(result.error); return; }
     if (result.isBefore) {
-      toast('<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Before photo sent! Waiting for parent to approve the start ⏳');
+      toast('<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Before photo sent! Waiting for parent to approve the start <i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i>');
       if (isTiny(m)) speak('Photo sent! Waiting for your grown-up to say yes!');
       renderKidChores(); renderKidHeader(); renderKidNav();
       return;
@@ -5696,7 +5697,7 @@ function submitSpendRequest(memberId) {
   D.savingsRequests.push({ id: genId(), memberId, amount: amt, reason, status: 'pending', date: today(), createdAt: Date.now() });
   saveData();
   closeModal();
-  toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent! Waiting for parent approval ⏳');
+  toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent! Waiting for parent approval');
   if (isTiny(m)) speak('You asked to spend some money! Waiting for your grown-up to say yes!');
   renderKidDiamonds();
 }
@@ -7811,7 +7812,7 @@ function _advRender() {
       return `
         <div style="padding:6px 0;border-bottom:1px solid #f3f4f6">
           <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'📋'}</span>
+            <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'<i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF"></i>'}</span>
             <span style="flex:1;font-size:0.85rem;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.title)}">${esc(c.title)}</span>
             <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">💎</label>
             <input type="number" class="adv-field-input" style="width:70px" value="${c.diamonds||0}"
