@@ -251,6 +251,8 @@
       margin-bottom: 14px;
       box-shadow: var(--shadow);
     }
+    details[open] .activity-caret { transform: rotate(180deg); }
+
     .card-title {
       font-size: 1rem;
       font-weight: 700;
@@ -6171,7 +6173,7 @@ function renderParentHome() {
       <details class="card" style="padding:0">
         <summary style="padding:16px 20px;cursor:pointer;font-weight:700;font-size:1rem;list-style:none;display:flex;align-items:center;gap:8px">
           <span><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span>
-          <span style="font-size:0.75rem;color:var(--muted);font-weight:400;margin-left:auto">tap to expand</span>
+          <i class="ph-duotone ph-caret-down activity-caret" style="color:var(--muted);font-size:1rem;margin-left:auto;transition:transform 0.2s"></i>
         </summary>
         <div style="padding:0 20px 16px">${actRows}</div>
       </details>`;
