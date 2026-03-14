@@ -2059,19 +2059,12 @@ function normalizeChore(chore) {
 
 function normalizeMember(m) {
   if (!m || typeof m !== 'object') return m;
-  // Migrate legacy 'points' property → 'diamonds'
-  if (typeof m.diamonds === 'undefined' && typeof m.points !== 'undefined') {
-    m.diamonds = m.points;
-    delete m.points;
-  }
   if (!m.streak) m.streak = { current: 0, best: 0, lastDate: null };
   if (!m.comboStreak) m.comboStreak = { current: 0, best: 0, lastDate: null };
   if (!m.splitHousehold) m.splitHousehold = { enabled: false, cycle: Array(14).fill(true), referenceMonday: getMostRecentMonday(), overrides: {} };
   if (!m.splitHousehold.overrides) m.splitHousehold.overrides = {};
   if (!Array.isArray(m.splitHousehold.cycle) || m.splitHousehold.cycle.length !== 14) m.splitHousehold.cycle = Array(14).fill(true);
   if (!Array.isArray(m.badges)) m.badges = [];
-  // Migrate legacy badge IDs
-  m.badges = m.badges.map(b => b === 'pts_50' ? 'dmds_50' : b === 'pts_200' ? 'dmds_200' : b === 'pts_500' ? 'dmds_500' : b === 'pts_1000' ? 'dmds_1000' : b);
   if (typeof m.xp === 'undefined') m.xp = m.totalEarned || 0;
   if (typeof m.comboBonusDate === 'undefined') m.comboBonusDate = null;
   if (typeof m.nlTodaySecs === 'undefined') m.nlTodaySecs = 0;
@@ -2087,50 +2080,14 @@ function normalizeData(data) {
   normalized.family.members = Array.isArray(normalized.family.members)
     ? normalized.family.members.map(normalizeMember)
     : [];
-  normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(c => {
-    // Migrate legacy 'points' property → 'diamonds' on chores
-    if (typeof c.diamonds === 'undefined' && typeof c.points !== 'undefined') {
-      c = { ...c, diamonds: c.points };
-      delete c.points;
-    }
-    return normalizeChore(c);
-  }) : [];
+  normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(c => normalizeChore(c)) : [];
   normalized.prizes = Array.isArray(normalized.prizes)
     ? normalized.prizes.map(p => ({ icon:'gift', iconColor:'#FF6584', ...p }))
     : [];
   normalized.history = Array.isArray(normalized.history) ? normalized.history : [];
-  // Migrate old familyGoal → teamGoals[0]
-  if (!normalized.teamGoals) {
-    normalized.teamGoals = normalized.familyGoal
-      ? [{ id: genId(), ...normalized.familyGoal }]
-      : [];
-    delete normalized.familyGoal;
-  }
-  // Migrate family-type prizes → team goals
-  const familyPrizes = normalized.prizes.filter(p => p.type === 'family');
-  if (familyPrizes.length > 0) {
-    normalized.prizes = normalized.prizes.filter(p => p.type !== 'family');
-    for (const p of familyPrizes) {
-      if (!normalized.teamGoals.find(g => g.id === p.id || g.title === p.title)) {
-        normalized.teamGoals.push({ id: p.id, title: p.title, icon: p.icon, targetPoints: p.cost, contributions: {} });
-      }
-    }
-  }
   normalized.teamGoals = Array.isArray(normalized.teamGoals)
     ? normalized.teamGoals.map(g => ({ icon: 'trophy', iconColor: '#FFD93D', ...g }))
     : [];
-  // Migrate old combo bonus history entries that were incorrectly saved as type 'chore'
-  normalized.history = (normalized.history || []).map(h =>
-    h.type === 'chore' && h.title?.includes('Combo Bonus') ? { ...h, type: 'bonus' } : h
-  );
-  // Migrate legacy 'points' property → 'diamonds' on history entries
-  normalized.history = normalized.history.map(h => {
-    if (typeof h.diamonds === 'undefined' && typeof h.points !== 'undefined') {
-      const { points, ...rest } = h;
-      return { ...rest, diamonds: points };
-    }
-    return h;
-  });
   normalized.v = 3;
   return normalized;
 }
@@ -3031,7 +2988,7 @@ function _seededShuffle(arr, seed) {
 let _allCombosCache = { key: null, combos: {} };
 
 function getAllDailyCombos() {
-  const kids = D.family.members.filter(m => m.role === 'kid');
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const cacheKey = today() + '|' + kids.map(m => m.id).sort().join(',');
   if (_allCombosCache.key === cacheKey) return _allCombosCache.combos;
 
@@ -3118,7 +3075,7 @@ let _nlState = {
 };
 
 function showNotListening() {
-  const kids = D.family.members.filter(m => m.role === 'kid');
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   _nlState = { isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
     selectedKids: kids.length === 1 ? [kids[0].id] : [], rafId: null };
 
@@ -3128,7 +3085,7 @@ function showNotListening() {
 }
 
 function _renderNL() {
-  const kids = D.family.members.filter(m => m.role === 'kid');
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const st = _nlState;
   const secsPerPt = D.settings.notListeningSecs || 60;
   const totalSecs = Math.floor(st.accumulated / 1000);
@@ -3527,7 +3484,7 @@ function applyNewPin() {
 
 function renderSettings() {
   const s = D.settings;
-  const members = D.family.members.filter(m => m.role !== 'parent');
+  const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
 
   const familyHtml = members.map(k => {
     const isExpanded = _expandedSettingsMembers.has(k.id);
@@ -4038,7 +3995,7 @@ function goSetup() {
   }
   // All non-parent members in one unified list
   S.setupMembers = D.family.members
-    .filter(m => m.role !== 'parent')
+    .filter(m => m.role !== 'parent' && !m.deleted)
     .map(m => ({...m}));
   showScreen('screen-setup');
   renderSetupStep();
@@ -4433,7 +4390,11 @@ function finishSetup() {
     return { ...existing, ...m, role };
   });
 
-  D.family.members = [...mergedParents, ...mergedMembers];
+  const keptIds = new Set(S.setupMembers.map(m => m.id));
+  const softDeleted = D.family.members
+    .filter(m => m.role === 'kid' && !m.deleted && !keptIds.has(m.id))
+    .map(m => ({ ...m, deleted: true }));
+  D.family.members = [...mergedParents, ...mergedMembers, ...softDeleted];
 
   // Assign orphaned chores to all kid members
   const kidIds = mergedMembers.map(m=>m.id);
@@ -5198,7 +5159,7 @@ function renderKidTeam() {
   const dmds  = m.diamonds || 0;
   const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.targetPoints||0)-(b.targetPoints||0) : ()=>0;
   const goals = (D.teamGoals || []).slice().sort(sortFn);
-  const kids  = D.family.members.filter(k=>k.role==='kid');
+  const kids  = D.family.members.filter(k=>k.role==='kid'&&!k.deleted);
 
   if (goals.length === 0) {
     document.getElementById('kid-content').innerHTML = `
@@ -5588,7 +5549,7 @@ function renderStatsPage(container) {
   if (!container) return;
   const viewer = S.currentUser;
   const isKid  = viewer?.role === 'kid';
-  const kids   = D.family.members.filter(m => m.role === 'kid');
+  const kids   = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
 
   let html = `<div style="padding-bottom:20px"><div style="font-size:1.2rem;font-weight:800;padding:16px 0 12px"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;vertical-align:middle"></i> Lifetime Stats</div>`;
 
@@ -5630,7 +5591,7 @@ function toggleStatsKid(kidId) {
 }
 
 function renderParentHome() {
-  const kids    = D.family.members.filter(m=>m.role==='kid');
+  const kids    = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const pending = pendingApprovals();
   const t       = today();
 
@@ -5779,7 +5740,7 @@ function renderParentHome() {
     </div>`;
 
   // NL time tracker
-  const nlKids = D.family.members.filter(m => m.role === 'kid');
+  const nlKids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const nlRows = nlKids.map(k => {
     normalizeMember(k);
     const secs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0);
@@ -6071,7 +6032,7 @@ function initSortable(containerEl, onReorder) {
 
 // ── PARENT CHORES ─────────────────────────────────────────────
 function renderParentChores() {
-  const kids = D.family.members.filter(m=>m.role==='kid');
+  const kids = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   let html = `
     <div class="section-row">
       <span class="section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> All Chores (${D.chores.length})</span>
@@ -6113,7 +6074,7 @@ let _editSlots = [];
 let _editBadges = [];
 
 function showChoreModal(choreId) {
-  const kids  = D.family.members.filter(m=>m.role==='kid');
+  const kids  = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const chore = choreId ? D.chores.find(c=>c.id===choreId) : null;
   const c     = normalizeChore(chore || {
     title:'', icon:'🛏️', diamonds:10, frequency:'day', repeatCount:1,
@@ -7016,7 +6977,7 @@ function advSetSetting(key, val) {
 // ── PARENT SETTINGS ───────────────────────────────────────────
 function renderParentSettings() {
   const s = D.settings;
-  const kids = D.family.members.filter(m=>m.role==='kid');
+  const kids = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
 
   let html = `
     <div class="card">
