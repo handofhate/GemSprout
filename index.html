@@ -3290,6 +3290,12 @@ function speak(text, voiceName) {
 function setMemberVoice(i, voiceName) {
   if (!S.setupMembers[i]) return;
   S.setupMembers[i].ttsVoice = voiceName;
+}
+
+function previewMemberVoice(i) {
+  const sel = document.getElementById(`voice-sel-${i}`);
+  const voiceName = sel?.value || S.setupMembers[i]?.ttsVoice;
+  if (!voiceName) return;
   speak(`Hi, I'm ${voiceName}!`, voiceName);
 }
 
@@ -4234,12 +4240,15 @@ function memberSetupCard(mem, i) {
         <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice</label>
         <button class="btn btn-secondary btn-sm" onclick="window.speechSynthesis?.getVoices();renderSetupStep()">Load voice options</button>
       </div>`;
-        const current = mem.ttsVoice || 'Samantha';
+        const current = mem.ttsVoice || voices.find(v=>v.name==='Samantha')?.name || voices[0]?.name;
         const opts = voices.map(v => `<option value="${esc(v.name)}"${v.name===current?' selected':''}>${esc(v.name)}</option>`).join('');
         return `
       <div class="form-group">
-        <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice <span class="form-label-hint">tap a voice to preview</span></label>
-        <select onchange="setMemberVoice(${i},this.value)">${opts}</select>
+        <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="voice-sel-${i}" style="flex:1" onchange="setMemberVoice(${i},this.value)">${opts}</select>
+          <button class="btn btn-secondary btn-sm" style="flex-shrink:0" onclick="previewMemberVoice(${i})"><i class="ph-duotone ph-play" style="font-size:0.9rem;vertical-align:middle"></i> Preview</button>
+        </div>
       </div>`;
       })() : ''}
       <div class="form-group mt-8">
@@ -7277,6 +7286,7 @@ function routeAfterLoad() {
 }
 
 function init() {
+  window.speechSynthesis?.getVoices(); // prime async voice loading on iOS
   loadData();
   scheduleHereCheck();
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
