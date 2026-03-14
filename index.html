@@ -3540,20 +3540,24 @@ function launchMixedRain(count = 120) {
 const _celebQueue = [];
 
 function showCelebration(opts) {
+  _celebQueue.push(opts);
+  // Defer so all synchronous calls batch before any rendering,
+  // ensuring the first modal knows the full queue size.
+  if (_celebQueue.length === 1) setTimeout(_showNextCelebration, 0);
+}
+
+function _showNextCelebration() {
   const root = document.getElementById('celebration-root');
-  if (root.innerHTML.trim()) {
-    _celebQueue.push(opts);
-    return;
-  }
-  _renderCelebration(opts);
+  if (root.innerHTML.trim() || _celebQueue.length === 0) return;
+  _renderCelebration(_celebQueue.shift());
 }
 
 function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, tts=null, onClose=null }) {
   const root = document.getElementById('celebration-root');
   const ptsHtml = diamonds !== null ? `<div class="cel-diamonds">+${diamonds} 💎</div>` : '';
-  const queuedCount = _celebQueue.length;
-  const moreHtml = queuedCount > 0
-    ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${queuedCount} more notification${queuedCount > 1 ? 's' : ''} waiting...</div>`
+  const remaining = _celebQueue.length;
+  const moreHtml = remaining > 0
+    ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${remaining} more notification${remaining > 1 ? 's' : ''} waiting...</div>`
     : '';
 
   root.innerHTML = `
@@ -3579,9 +3583,7 @@ function closeCelebration() {
     window._celebOnClose();
     window._celebOnClose = null;
   }
-  if (_celebQueue.length > 0) {
-    setTimeout(() => _renderCelebration(_celebQueue.shift()), 300);
-  }
+  if (_celebQueue.length > 0) setTimeout(_showNextCelebration, 300);
 }
 
 function testWhileAwayModal() {
@@ -7572,7 +7574,7 @@ function showAddPointsModal(memberId) {
 function doAdjustPoints(memberId, sign) {
   const m      = getMember(memberId);
   const amt    = parseInt(document.getElementById('adj-dmds')?.value)||0;
-  const reason = document.getElementById('adj-reason')?.value.trim() || 'Manual adjustment';
+  const reason = document.getElementById('adj-reason')?.value.trim() || 'A special bonus from your parent!';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
   const dmds = sign * amt;
   m.diamonds    = Math.max(0, (m.diamonds||0) + dmds);
