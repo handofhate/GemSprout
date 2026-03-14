@@ -3305,6 +3305,15 @@ if (window.speechSynthesis) {
   };
 }
 
+function fmtCurrencySpeech(amount, symbol) {
+  if ((symbol || '$') !== '$') return `${amount.toFixed(2)} ${symbol}`;
+  const dollars = Math.floor(amount);
+  const cents   = Math.round((amount - dollars) * 100);
+  if (dollars > 0 && cents > 0) return `${dollars} dollar${dollars !== 1 ? 's' : ''} and ${cents} cent${cents !== 1 ? 's' : ''}`;
+  if (dollars > 0) return `${dollars} dollar${dollars !== 1 ? 's' : ''}`;
+  return `${cents} cent${cents !== 1 ? 's' : ''}`;
+}
+
 // ── ICON RENDERER ─────────────────────────────────────────────
 // Renders a Phosphor duotone icon or falls back to raw emoji for legacy data
 function renderIcon(name, color, extraStyle='') {
@@ -4613,14 +4622,16 @@ function renderKidChores() {
   const comboCompleted = comboChores.filter(c => progressMap.get(c.id)?.status === 'done').length;
   const comboBonusAlreadyAwarded = m.comboBonusDate === today();
 
+  const tiny = isTiny(m);
+  const _progressTts = `Today you've done ${doneUnits} out of ${totalUnits || myChores.length} chores.`;
   let html = `
-    <div class="card" style="background:linear-gradient(135deg,${m.color||'#6C63FF'},${m.color||'#6C63FF'}dd);color:#fff;border-radius:18px">
+    <div class="card" style="background:linear-gradient(135deg,${m.color||'#6C63FF'},${m.color||'#6C63FF'}dd);color:#fff;border-radius:18px"${tiny ? ` onclick="speak('${_progressTts.replace(/'/g,"\\'")}')"` : ''}>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div>
           <div style="font-size:1.6rem;font-weight:800">${doneUnits} / ${totalUnits || myChores.length}</div>
           <div style="opacity:0.85;font-size:0.85rem">completions finished right now</div>
         </div>
-        <div style="font-size:${isTiny(m)?'3rem':'2rem'}">${pct===100?'<i class="ph-duotone ph-trophy" style="color:#FFD93D"></i>':m.avatar||'💎'}</div>
+        <div style="font-size:${tiny?'3rem':'2rem'}">${pct===100?'<i class="ph-duotone ph-trophy" style="color:#FFD93D"></i>':m.avatar||'💎'}</div>
       </div>
       <div style="background:rgba(255,255,255,0.3);border-radius:999px;height:10px;overflow:hidden">
         <div style="width:${pct}%;height:100%;border-radius:999px;background:#FFD93D;transition:width 0.5s"></div>
@@ -4631,8 +4642,13 @@ function renderKidChores() {
   // Combo banner
   if (comboChores.length >= 3) {
     const bonusPts = comboChores.reduce((s, c) => s + c.diamonds, 0);
+    const _comboNames = comboChores.map(c => c.title);
+    const _comboNameStr = _comboNames.slice(0,-1).join(', ') + ', and ' + _comboNames[_comboNames.length-1];
+    const _comboTts = comboBonusAlreadyAwarded
+      ? `Amazing! You completed the daily combo and earned bonus diamonds!`
+      : `If you can ${_comboNameStr} today, you will earn double diamonds for all three!`;
     html += `
-      <div class="combo-banner">
+      <div class="combo-banner"${tiny ? ` onclick="speak('${_comboTts.replace(/'/g,"\\'")}')"` : ''}>
         <div class="combo-banner-header">
           <div>
             <div class="combo-banner-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo ${comboBonusAlreadyAwarded ? '— Complete! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i>' : ''}</div>
@@ -4787,7 +4803,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   if (phase === 'needs_before') {
     statusClass = 'none';
     hintHtml = `<div class="chore-meta" style="color:var(--purple)"><i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Take a "before" photo to request this chore</div>`;
-    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'before')"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request</button>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="${tiny?`speak('Let\\'s take a picture first!');`:''}kidCompleteChore('${chore.id}',event,null,'before')"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request</button>`;
   } else if (phase === 'before_pending') {
     statusClass = 'pending';
     hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve the start</div>`;
@@ -4992,27 +5008,26 @@ function renderKidDiamonds() {
   const tot = m.totalEarned || 0;
   const sav = m.savings || 0;
   normalizeMember(m);
-
-  // Cheapest prize they can afford
-  const nextPrize = D.prizes
-    .filter(p=>p.type==='individual' && p.cost > dmds)
-    .sort((a,b)=>a.cost-b.cost)[0];
-  const pctToNext = nextPrize ? Math.min(100,Math.round(dmds/nextPrize.cost*100)) : 100;
+  const tiny = isTiny(m);
+  const _savSpeech = fmtCurrencySpeech(sav, D.settings.currency || '$');
 
   const myHistory = D.history.filter(h=>h.memberId===m.id).slice(0,15);
 
   let html = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-val">${dmds}</div><div class="stat-label">💎 Diamonds</div></div>
-      <div class="stat-card"><div class="stat-val">${tot}</div><div class="stat-label"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.95rem;vertical-align:middle"></i> All Time</div></div>
-      <div class="stat-card"><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>
+      <div class="stat-card"${tiny ? ` onclick="speak('You have ${dmds} diamonds.')"` : ''}><div class="stat-val">${dmds}</div><div class="stat-label">💎 Diamonds</div></div>
+      <div class="stat-card"${tiny ? ` onclick="speak('You\\'ve earned ${tot} diamonds all time.')"` : ''}><div class="stat-val">${tot}</div><div class="stat-label"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.95rem;vertical-align:middle"></i> All Time</div></div>
+      <div class="stat-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>
     </div>`;
 
   // Level progress banner
   if (D.settings.levelingEnabled !== false) {
     const { current: lvl, next, xpIntoLevel, xpNeeded, pct } = getMemberLevel(m);
+    const _lvlTts = next
+      ? `You are currently level ${lvl.level}, and need ${xpNeeded - xpIntoLevel} more X P to level up.`
+      : `You are at the max level! Amazing!`;
     html += `
-      <div class="level-banner">
+      <div class="level-banner"${tiny ? ` onclick="speak('${_lvlTts}')"` : ''}>
         <div class="level-banner-icon">${lvl.icon}</div>
         <div class="level-banner-info">
           <div class="level-banner-name">Level ${lvl.level}: ${lvl.name}</div>
@@ -5029,8 +5044,11 @@ function renderKidDiamonds() {
   if (D.settings.streakEnabled !== false) {
     const streak = m.streak?.current || 0;
     const best   = m.streak?.best    || 0;
+    const _streakTts = streak > 0 && streak >= best
+      ? `You currently have a ${streak} day streak, and this is your best streak so far!`
+      : `You currently have a ${streak} day streak, and your best streak is ${best} days.`;
     html += `
-      <div class="streak-row">
+      <div class="streak-row"${tiny ? ` onclick="speak('${_streakTts}')"` : ''}>
         <div class="streak-flame"><i class="ph-duotone ph-fire" style="color:#F97316"></i></div>
         <div class="streak-info">
           <div class="streak-count">${streak}-day streak</div>
@@ -5047,47 +5065,31 @@ function renderKidDiamonds() {
       <div class="badge-grid">
         ${BADGE_DEFS.map(b => {
           const have = earned.includes(b.id);
-          return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${b.desc}">
+          const badgeTts = tiny ? ` onclick="speak('${b.name.replace(/'/g,"\\'")}')"` : '';
+          return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${b.desc}"${badgeTts}>
             <span class="badge-chip-icon">${b.icon}</span>${b.name}
           </div>`;
         }).join('')}
       </div>
     </div>`;
 
-  if (nextPrize) {
-    html += `
-      <div class="card">
-        <div class="card-title"><i class="ph-duotone ph-target" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Next Prize</div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-          <span style="font-size:2rem">${nextPrize.icon}</span>
-          <div style="flex:1">
-            <div style="font-weight:700">${esc(nextPrize.title)}</div>
-            <div style="font-size:0.8rem;color:var(--muted)">${dmds} / ${nextPrize.cost} 💎</div>
-          </div>
-          <div style="font-weight:800;color:var(--purple)">${nextPrize.cost-dmds} to go!</div>
-        </div>
-        <div class="progress-wrap"><div class="progress-fill" style="width:${pctToNext}%"></div></div>
-      </div>`;
-  } else if (D.prizes.filter(p=>p.type==='individual').length > 0) {
-    html += `<div class="card"><div class="text-center" style="padding:10px 0"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> You can afford all the prizes! Time to redeem!</div></div>`;
-  }
-
   // Savings tracker
   html += `
-    <div class="savings-card">
+    <div class="savings-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}>
       <div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> My Savings Jar</div>
       <div class="savings-amount">${D.settings.currency||'$'}${sav.toFixed(2)}</div>
       <div class="savings-label">Keep saving!</div>
-      <button class="btn btn-secondary btn-sm" onclick="showSavingsModal('${m.id}')">+ Add Savings</button>
+      <button class="btn btn-secondary btn-sm" onclick="showSavingsModal('${m.id}');event.stopPropagation()">+ Add Savings</button>
     </div>`;
 
   // History
   if (myHistory.length > 0) {
-    html += `<div class="card"><div class="card-title"><i class="ph-duotone ph-scroll" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</div>`;
+    html += `<div class="card"><div class="card-title"${tiny ? ` onclick="speak('Here\\'s what you\\'ve been up to recently.')"` : ''}><i class="ph-duotone ph-scroll" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</div>`;
     myHistory.forEach(h => {
       const pos = h.diamonds > 0;
+      const _histTts = tiny ? ` onclick="speak('${(h.title + '. ' + (pos ? 'Plus' : 'Minus') + ' ' + Math.abs(h.diamonds) + ' diamonds.').replace(/'/g,"\\'")}')"` : '';
       html += `
-        <div class="history-item">
+        <div class="history-item"${_histTts}>
           <span class="history-icon">${h.type==='chore'?'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>':h.type==='prize'?'<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>':h.type==='penalty'?'<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>':'<i class="ph-duotone ph-target" style="color:#D97706"></i>'}</span>
           <div class="history-info">
             <div class="history-title">${esc(h.title)}</div>
