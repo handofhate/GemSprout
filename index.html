@@ -1773,6 +1773,13 @@ function defaultData() {
       notListeningSecs: 60,
       notListeningEnabled: true,
       sortPrizesByValue: false,
+      // Savings
+      savingsEnabled:          true,
+      savingsMatchingEnabled:  false,
+      savingsMatchPercent:     50,
+      savingsInterestEnabled:  false,
+      savingsInterestRate:     5,
+      savingsInterestPeriod:   'monthly',
     },
     family: { name:'Our Family', members:[] },
     chores:     [],
@@ -3587,7 +3594,7 @@ function renderSettings() {
           <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
           <div style="flex:1">
             <div style="font-weight:700">${esc(k.name)}</div>
-            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0} · 💰 ${s.currency||'$'}${(k.savings||0).toFixed(2)}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0}${s.savingsEnabled!==false?` · 💰 ${s.currency||'$'}${(k.savings||0).toFixed(2)}`:''}</div>
           </div>
           <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem"></i>
         </div>
@@ -3625,10 +3632,6 @@ function renderSettings() {
             <div class="toggle-sub">Shows cheapest prizes first in the shop and team tabs</div></div>
           <label class="toggle"><input type="checkbox" ${s.sortPrizesByValue?'checked':''} onchange="saveSetting('sortPrizesByValue',this.checked)"><span class="toggle-track"></span></label>
         </div>
-        <div class="form-group mt-8">
-          <label class="form-label">Diamonds per dollar <span class="form-label-hint">used for savings conversion</span></label>
-          <input type="number" value="${s.diamondsPerDollar||10}" min="1" onchange="saveSetting('diamondsPerDollar',parseInt(this.value)||10)">
-        </div>
         <div class="form-group">
           <label class="form-label">Parent PIN &amp; Face ID</label>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -3636,6 +3639,49 @@ function renderSettings() {
             ${bioBtn}
           </div>
         </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div class="card-title" style="margin:0"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Savings Banking</div>
+          <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+        </div>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px;margin-top:4px">Kids can convert diamonds into real savings.</p>
+        ${s.savingsEnabled !== false ? `
+        <div class="form-group">
+          <label class="form-label">Diamonds per dollar <span class="form-label-hint">conversion rate</span></label>
+          <input type="number" value="${s.diamondsPerDollar||10}" min="1" onchange="saveSetting('diamondsPerDollar',parseInt(this.value)||10)">
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Savings matching</div>
+            <div class="toggle-sub">Parents match a percentage of what kids save</div></div>
+          <label class="toggle"><input type="checkbox" ${s.savingsMatchingEnabled?'checked':''} onchange="saveSetting('savingsMatchingEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+        </div>
+        ${s.savingsMatchingEnabled ? `
+        <div class="form-group mt-8">
+          <label class="form-label">Match percentage <span class="form-label-hint">% of amount saved</span></label>
+          <input type="number" value="${s.savingsMatchPercent||50}" min="1" max="200" onchange="saveSetting('savingsMatchPercent',parseInt(this.value)||50)">
+        </div>` : ''}
+        <div class="toggle-row" style="margin-top:${s.savingsMatchingEnabled?'4':'8'}px">
+          <div><div class="toggle-label">Add interest</div>
+            <div class="toggle-sub">Automatically grow savings by a set rate</div></div>
+          <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+        </div>
+        ${s.savingsInterestEnabled ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div class="form-group mb-0">
+            <label class="form-label">Interest rate %</label>
+            <input type="number" value="${s.savingsInterestRate||5}" min="0.1" max="100" step="0.1" onchange="saveSetting('savingsInterestRate',parseFloat(this.value)||5)">
+          </div>
+          <div class="form-group mb-0">
+            <label class="form-label">Period</label>
+            <select onchange="saveSetting('savingsInterestPeriod',this.value)">
+              <option value="weekly"  ${s.savingsInterestPeriod==='weekly' ?'selected':''}>Weekly</option>
+              <option value="monthly" ${(s.savingsInterestPeriod||'monthly')==='monthly'?'selected':''}>Monthly</option>
+            </select>
+          </div>
+        </div>` : ''}
+        ` : ''}
       </div>
 
       <div class="card">
@@ -5047,11 +5093,12 @@ function renderKidDiamonds() {
 
   const myHistory = D.history.filter(h=>h.memberId===m.id).slice(0,15);
 
+  const _savOn = D.settings.savingsEnabled !== false;
   let html = `
-    <div class="stats-grid">
+    <div class="stats-grid" style="grid-template-columns:repeat(${_savOn?3:2},1fr)">
       <div class="stat-card"${tiny ? ` onclick="speak('You have ${dmds} diamonds.')"` : ''}><div class="stat-val">${dmds}</div><div class="stat-label">💎 Diamonds</div></div>
       <div class="stat-card"${tiny ? ` onclick="speak('You\\'ve earned ${tot} diamonds all time.')"` : ''}><div class="stat-val">${tot}</div><div class="stat-label"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.95rem;vertical-align:middle"></i> All Time</div></div>
-      <div class="stat-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>
+      ${_savOn ? `<div class="stat-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>` : ''}
     </div>`;
 
   // Level progress banner
@@ -5110,7 +5157,7 @@ function renderKidDiamonds() {
   }
 
   // Savings tracker
-  html += `
+  if (_savOn) html += `
     <div class="savings-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}>
       <div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> My Savings Jar</div>
       <div class="savings-amount">${D.settings.currency||'$'}${sav.toFixed(2)}</div>
@@ -5655,7 +5702,7 @@ function renderMemberStatsCard(member, collapse) {
   const rewardSection = _statSection('Rewards & Combos',
     _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af', '', tts(`You have won ${s.rewardCount} prize${s.rewardCount !== 1 ? 's' : ''}.`)) +
     _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`, tts(`You have hit ${s.comboCount} combo${s.comboCount !== 1 ? 's' : ''}.`)) +
-    _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${s.savings}💎`, '#166534', '', tts(`You have saved up ${s.savings} diamonds.`))
+    (D.settings.savingsEnabled !== false ? _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${s.savings}💎`, '#166534', '', tts(`You have saved up ${s.savings} diamonds.`)) : '')
   );
 
   // Build chore badge display
