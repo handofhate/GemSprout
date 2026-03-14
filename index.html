@@ -5058,20 +5058,22 @@ function renderKidDiamonds() {
   }
 
   // Badge grid
-  const earned = Array.isArray(m.badges) ? m.badges : [];
-  html += `
-    <div class="card">
-      <div class="card-title"><i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:1rem;vertical-align:middle"></i> Badges</div>
-      <div class="badge-grid">
-        ${BADGE_DEFS.map(b => {
-          const have = earned.includes(b.id);
-          const badgeTts = tiny ? ` onclick="speak('${b.name.replace(/'/g,"\\'")}')"` : '';
-          return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${b.desc}"${badgeTts}>
-            <span class="badge-chip-icon">${b.icon}</span>${b.name}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
+  if (D.settings.levelingEnabled !== false) {
+    const earned = Array.isArray(m.badges) ? m.badges : [];
+    html += `
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:1rem;vertical-align:middle"></i> Badges</div>
+        <div class="badge-grid">
+          ${BADGE_DEFS.map(b => {
+            const have = earned.includes(b.id);
+            const badgeTts = tiny ? ` onclick="speak('${b.name.replace(/'/g,"\\'")}')"` : '';
+            return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${b.desc}"${badgeTts}>
+              <span class="badge-chip-icon">${b.icon}</span>${b.name}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
 
   // Savings tracker
   html += `
@@ -5524,12 +5526,11 @@ function renderMemberStatsCard(member, collapse) {
     _statTile('<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>','Total XP', s.totalXP, '#4c1d95', '', tts(`You have ${s.totalXP} total X P.`))
   );
 
-  const levelSection = _statSection('Level & Streaks',
-    _statTile('<i class="ph-duotone ph-trophy" style="color:#D97706"></i>','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name, tts(`You are level ${s.currentLevel.level}, ${s.currentLevel.name}.`)) +
-    _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '', tts(`Your best streak is ${s.bestStreak} days.${s.currentStreak > 0 ? ` You are on a ${s.currentStreak} day streak right now!` : ''}`)) +
-    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '', tts(`Your best combo streak is ${s.bestComboStreak} days.`)) +
-    _statTile('<i class="ph-duotone ph-calendar-check" style="color:#0E7490"></i>','Days Active', s.daysActive, '#0e7490', '', tts(`You have been active for ${s.daysActive} days.`))
-  );
+  const _levelTiles = (D.settings.levelingEnabled !== false ? _statTile('<i class="ph-duotone ph-trophy" style="color:#D97706"></i>','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name, tts(`You are level ${s.currentLevel.level}, ${s.currentLevel.name}.`)) : '') +
+    (D.settings.streakEnabled !== false ? _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '', tts(`Your best streak is ${s.bestStreak} days.${s.currentStreak > 0 ? ` You are on a ${s.currentStreak} day streak right now!` : ''}`)) : '') +
+    (D.settings.streakEnabled !== false ? _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '', tts(`Your best combo streak is ${s.bestComboStreak} days.`)) : '') +
+    _statTile('<i class="ph-duotone ph-calendar-check" style="color:#0E7490"></i>','Days Active', s.daysActive, '#0e7490', '', tts(`You have been active for ${s.daysActive} days.`));
+  const levelSection = _levelTiles.trim() ? _statSection('Level & Streaks', _levelTiles) : '';
 
   const rewardSection = _statSection('Rewards & Combos',
     _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af', '', tts(`You have won ${s.rewardCount} prize${s.rewardCount !== 1 ? 's' : ''}.`)) +
@@ -5555,11 +5556,11 @@ function renderMemberStatsCard(member, collapse) {
       </div>
     </div>`;
 
-  const badgeSection = _statSection('Achievements',
+  const badgeSection = D.settings.levelingEnabled !== false ? _statSection('Achievements',
     _statTile('<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>','Badges', s.badgeCount, '#7c3aed', '', tts(`You have ${s.badgeCount} badge${s.badgeCount !== 1 ? 's' : ''}.`)) +
     _statTile('<i class="ph-duotone ph-trend-up" style="color:#0F766E"></i>','Level-Ups', s.levelUps, '#0f766e', '', tts(`You have leveled up ${s.levelUps} time${s.levelUps !== 1 ? 's' : ''}.`)) +
     _statTile('<i class="ph-duotone ph-chart-bar" style="color:#374151"></i>','Avg/Day', s.avgChoresPerDay, '#374151', 'chores per active day', tts(`You average ${s.avgChoresPerDay} chores per day.`))
-  );
+  ) : '';
 
   const penaltySection = _statSection('Penalties',
     _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b', '', tts(`You have had ${s.penaltyCount} penalty${s.penaltyCount !== 1 ? 's' : ''}.`)) +
@@ -5619,7 +5620,7 @@ function renderMemberStatsCard(member, collapse) {
         <span style="font-size:2.5rem">${member.avatar||'🙂'}</span>
         <div>
           <div style="font-size:1.3rem;font-weight:800">${esc(member.name)}</div>
-          <div style="font-size:0.85rem;color:#6b7280">${s.currentLevel.icon} ${s.currentLevel.name} · ${s.totalEarned} total diamonds earned</div>
+          <div style="font-size:0.85rem;color:#6b7280">${D.settings.levelingEnabled !== false ? `${s.currentLevel.icon} ${s.currentLevel.name} · ` : ''}${s.totalEarned} total diamonds earned</div>
         </div>
         ${caret}
       </div>
