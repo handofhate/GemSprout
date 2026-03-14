@@ -4828,8 +4828,8 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
       else if (ss === 'pending') slotBtn = `<span class="slot-status slot-pending"><i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem"></i></span>`;
       else if (ss === 'available') {
         const btnLabel = chore.requiresPhoto
-          ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
-          : (tiny ? '<i class="ph-duotone ph-check" style="font-size:1rem;vertical-align:middle"></i>'  : '<i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i> Done');
+          ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
+          : (tiny ? '<i class="ph-duotone ph-check" style="font-size:1.5rem;vertical-align:middle"></i>'  : '<i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i> Done');
         slotBtn = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')">${btnLabel}</button>`;
       } else {
         const timeHint = slot.start ? formatTimeWindow({start:slot.start, end:slot.end}) : '';
@@ -4860,7 +4860,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
   let btnHtml = '';
   if (progress?.canSubmit) {
     const doneLabel = tiny
-      ? '<i class="ph-duotone ph-check" style="font-size:1rem;vertical-align:middle"></i>'
+      ? '<i class="ph-duotone ph-check" style="font-size:1.5rem;vertical-align:middle"></i>'
       : (submitted > 0 ? '<i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i> One more' : '<i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i> Done!');
     btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)">${doneLabel}</button>`;
   } else if (status==='pending' || status==='partial') {
@@ -4896,7 +4896,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   if (phase === 'needs_before') {
     statusClass = 'none';
     hintHtml = `<div class="chore-meta" style="color:var(--purple)"><i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Take a "before" photo to request this chore</div>`;
-    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="${tiny?`speak('Let\\'s take a picture first!');`:''}kidCompleteChore('${chore.id}',event,null,'before')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request'}</button>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="${tiny?`speak('Let\\'s take a picture first!');`:''}kidCompleteChore('${chore.id}',event,null,'before')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request'}</button>`;
   } else if (phase === 'before_pending') {
     statusClass = 'pending';
     hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve the start</div>`;
@@ -4904,7 +4904,7 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   } else if (phase === 'needs_after') {
     statusClass = 'partial';
     hintHtml = `<div class="chore-meta" style="color:var(--green)"><i class="ph-duotone ph-check-circle" style="color:var(--green);font-size:0.9rem;vertical-align:middle"></i> Approved! Do the chore, then submit your done photo.</div>`;
-    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'after')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Done'}</button>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'after')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Done'}</button>`;
   } else if (phase === 'after_pending') {
     statusClass = 'pending';
     hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve completion</div>`;
