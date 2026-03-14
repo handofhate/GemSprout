@@ -5564,7 +5564,15 @@ function renderMemberStatsCard(member, collapse) {
   const penaltySection = _statSection('Penalties',
     _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b', '', tts(`You have had ${s.penaltyCount} penalty${s.penaltyCount !== 1 ? 's' : ''}.`)) +
     _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Lost', s.penaltyAmount, '#991b1b', '', tts(`You have lost ${s.penaltyAmount} diamonds.`)) +
-    _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime')
+    _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime', tts((() => {
+      const ns = s.nlLifetimeSecs || 0;
+      if (ns === 0) return 'No not-listening time. Great job!';
+      const hrs = Math.floor(ns / 3600), mins = Math.floor((ns % 3600) / 60), secs = ns % 60;
+      if (hrs > 0) return `${hrs} hour${hrs!==1?'s':''} and ${mins} minute${mins!==1?'s':''} of not-listening time.`;
+      if (mins > 0 && secs > 0) return `${mins} minute${mins!==1?'s':''} and ${secs} second${secs!==1?'s':''} of not-listening time.`;
+      if (mins > 0) return `${mins} minute${mins!==1?'s':''} of not-listening time.`;
+      return `${secs} second${secs!==1?'s':''} of not-listening time.`;
+    })()))
   );
 
   const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.dmds} 💎` : 'No data yet';
