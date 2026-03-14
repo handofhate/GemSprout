@@ -4287,10 +4287,13 @@ function renderKidChores() {
   }
 
   // Todo chores
-  if (todo.length > 0) {
+  const todoVisible = D.settings.hideUnavailable
+    ? todo.filter(c => progressMap.get(c.id)?.availableNow !== false)
+    : todo;
+  if (todoVisible.length > 0) {
     html += `<div class="card-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> To Do</div>`;
     html += `<div id="sort-todo">`;
-    todo.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    todoVisible.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
     html += `</div>`;
   }
 
