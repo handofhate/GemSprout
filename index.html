@@ -5263,8 +5263,14 @@ function renderKidTeam() {
           <span class="contrib-val">${c}</span>
         </div>`;
     }).join('');
+    const _needed = target - total;
+    const _goalTts = reached
+      ? `${g.title}. Amazing! The team reached this goal!`
+      : total > 0
+        ? `${g.title}. The team needs ${_needed} more diamonds.`
+        : `${g.title}. The team needs ${target} diamonds to reach this goal.`;
     return `
-      <div class="goal-card" style="margin-bottom:14px">
+      <div class="goal-card" style="margin-bottom:14px"${tiny ? ` onclick="speak('${_goalTts.replace(/'/g,"\\'")}')"` : ''}>
         <span class="goal-icon">${renderIcon(g.icon, g.iconColor, 'font-size:3.5rem')}</span>
         <div class="goal-title">${esc(g.title)}</div>
         <div class="goal-sub">${total} / ${target} 💎</div>
@@ -5476,9 +5482,10 @@ function buildMemberStats(member) {
   };
 }
 
-function _statTile(icon, label, value, color, sub) {
+function _statTile(icon, label, value, color, sub, ttsText) {
+  const _ttsAttr = ttsText ? ` onclick="speak('${ttsText.replace(/'/g,"\\'")}')"` : '';
   return `
-    <div style="background:#fff;border-radius:14px;padding:14px 10px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;flex-direction:column;align-items:center;gap:4px">
+    <div style="background:#fff;border-radius:14px;padding:14px 10px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;flex-direction:column;align-items:center;gap:4px"${_ttsAttr}>
       <div style="font-size:1.6rem">${icon}</div>
       <div style="font-size:1.35rem;font-weight:800;color:${color||'#1f2937'};line-height:1.1">${value}</div>
       <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em">${label}</div>
@@ -5509,24 +5516,25 @@ function renderMemberStatsCard(member, collapse) {
   // collapse = { isExpanded: bool, toggleFn: string } | null (null = always expanded, no toggle)
   const s = buildMemberStats(member);
   const color = member.color || '#6C63FF';
+  const tts = isTiny(member) ? (t) => t : () => '';
 
   const choresSection = _statSection('Chores & Diamonds',
-    _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>','Chores Done', s.choreDone, '#166534') +
-    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>','Diamonds Earned', s.diamondsEarned, '#92400e') +
-    _statTile('<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>','Total XP', s.totalXP, '#4c1d95')
+    _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>','Chores Done', s.choreDone, '#166534', '', tts(`${s.choreDone} chores done.`)) +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>','Diamonds Earned', s.diamondsEarned, '#92400e', '', tts(`You have earned ${s.diamondsEarned} diamonds.`)) +
+    _statTile('<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>','Total XP', s.totalXP, '#4c1d95', '', tts(`You have ${s.totalXP} total X P.`))
   );
 
   const levelSection = _statSection('Level & Streaks',
-    _statTile('<i class="ph-duotone ph-trophy" style="color:#D97706"></i>','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name) +
-    _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '') +
-    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '') +
-    _statTile('<i class="ph-duotone ph-calendar-check" style="color:#0E7490"></i>','Days Active', s.daysActive, '#0e7490')
+    _statTile('<i class="ph-duotone ph-trophy" style="color:#D97706"></i>','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name, tts(`You are level ${s.currentLevel.level}, ${s.currentLevel.name}.`)) +
+    _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '', tts(`Your best streak is ${s.bestStreak} days.${s.currentStreak > 0 ? ` You are on a ${s.currentStreak} day streak right now!` : ''}`)) +
+    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '', tts(`Your best combo streak is ${s.bestComboStreak} days.`)) +
+    _statTile('<i class="ph-duotone ph-calendar-check" style="color:#0E7490"></i>','Days Active', s.daysActive, '#0e7490', '', tts(`You have been active for ${s.daysActive} days.`))
   );
 
   const rewardSection = _statSection('Rewards & Combos',
-    _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af') +
-    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`) +
-    _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${s.savings}💎`, '#166534')
+    _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af', '', tts(`You have won ${s.rewardCount} prize${s.rewardCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`, tts(`You have hit ${s.comboCount} combo${s.comboCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>','Saved Up', `${s.savings}💎`, '#166534', '', tts(`You have saved up ${s.savings} diamonds.`))
   );
 
   // Build chore badge display
@@ -5548,23 +5556,23 @@ function renderMemberStatsCard(member, collapse) {
     </div>`;
 
   const badgeSection = _statSection('Achievements',
-    _statTile('<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>','Badges', s.badgeCount, '#7c3aed') +
-    _statTile('<i class="ph-duotone ph-trend-up" style="color:#0F766E"></i>','Level-Ups', s.levelUps, '#0f766e') +
-    _statTile('<i class="ph-duotone ph-chart-bar" style="color:#374151"></i>','Avg/Day', s.avgChoresPerDay, '#374151', 'chores per active day')
+    _statTile('<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>','Badges', s.badgeCount, '#7c3aed', '', tts(`You have ${s.badgeCount} badge${s.badgeCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-trend-up" style="color:#0F766E"></i>','Level-Ups', s.levelUps, '#0f766e', '', tts(`You have leveled up ${s.levelUps} time${s.levelUps !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-chart-bar" style="color:#374151"></i>','Avg/Day', s.avgChoresPerDay, '#374151', 'chores per active day', tts(`You average ${s.avgChoresPerDay} chores per day.`))
   );
 
   const penaltySection = _statSection('Penalties',
-    _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b') +
-    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Lost', s.penaltyAmount, '#991b1b') +
+    _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b', '', tts(`You have had ${s.penaltyCount} penalty${s.penaltyCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Lost', s.penaltyAmount, '#991b1b', '', tts(`You have lost ${s.penaltyAmount} diamonds.`)) +
     _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime')
   );
 
   const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.dmds} 💎` : 'No data yet';
   const favChoreSub = s.favChore ? `${s.favChore[1]}× completed` : 'No chores yet';
   const extraSection = _statSection('Fun Facts',
-    _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>','Best Day', s.bestDate ? `${s.bestDate.dmds} 💎` : '—', '#d97706', bestDaySub) +
-    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub) +
-    _statTile('<i class="ph-duotone ph-shopping-cart" style="color:#374151"></i>','💎 Spent', s.diamondsSpent, '#374151', 'on prizes')
+    _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>','Best Day', s.bestDate ? `${s.bestDate.dmds} 💎` : '—', '#d97706', bestDaySub, tts(s.bestDate ? `Your best day was ${s.bestDate.dmds} diamonds.` : `No best day yet.`)) +
+    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub, tts(s.favChore ? `Your favorite chore is ${s.favChore[0]}.` : `No favorite chore yet.`)) +
+    _statTile('<i class="ph-duotone ph-shopping-cart" style="color:#374151"></i>','💎 Spent', s.diamondsSpent, '#374151', 'on prizes', tts(`You have spent ${s.diamondsSpent} diamonds on prizes.`))
   );
 
   // Chore breakdown table
