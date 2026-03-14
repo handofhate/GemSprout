@@ -3675,11 +3675,17 @@ function renderSettings() {
           </div>
           <div class="form-group mb-0">
             <label class="form-label">Period</label>
-            <select onchange="saveSetting('savingsInterestPeriod',this.value)">
+            <select onchange="saveSetting('savingsInterestPeriod',this.value);renderSettings()">
               <option value="weekly"  ${s.savingsInterestPeriod==='weekly' ?'selected':''}>Weekly</option>
               <option value="monthly" ${(s.savingsInterestPeriod||'monthly')==='monthly'?'selected':''}>Monthly</option>
             </select>
           </div>
+        </div>
+        <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
+          <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px"></i>
+          ${(s.savingsInterestPeriod||'monthly')==='weekly'
+            ? 'Interest is applied every <strong>Monday</strong>.'
+            : 'Interest is applied on the <strong>1st of each month</strong>.'}
         </div>` : ''}
         ` : ''}
       </div>
@@ -5160,13 +5166,17 @@ function renderKidDiamonds() {
   if (_savOn) {
     const cur          = D.settings.currency || '$';
     const matchOn      = D.settings.savingsMatchingEnabled;
+    const interestOn   = D.settings.savingsInterestEnabled;
     const matched      = m.savingsMatched || 0;
-    const selfSaved    = Math.max(0, sav - matched);
+    const interest     = m.savingsInterest || 0;
+    const selfSaved    = Math.max(0, sav - matched - interest);
     const matchPct     = D.settings.savingsMatchPercent || 50;
-    const breakdownHtml = matchOn && matched > 0
-      ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:12px;display:flex;gap:12px;justify-content:center">
+    const hasBreakdown = (matchOn && matched > 0) || (interestOn && interest > 0);
+    const breakdownHtml = hasBreakdown
+      ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:12px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
            <span>💰 ${cur}${selfSaved.toFixed(2)} yours</span>
-           <span>🤝 ${cur}${matched.toFixed(2)} matched</span>
+           ${matched > 0 ? `<span>🤝 ${cur}${matched.toFixed(2)} matched</span>` : ''}
+           ${interest > 0 ? `<span>📈 ${cur}${interest.toFixed(2)} interest</span>` : ''}
          </div>`
       : matchOn
         ? `<div style="font-size:0.78rem;opacity:0.75;margin-bottom:12px">🤝 ${matchPct}% parent match active</div>`
@@ -5219,17 +5229,25 @@ function showSavingsModal(memberId) {
   const cur      = D.settings.currency || '$';
   const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
   const matchPct = D.settings.savingsMatchPercent || 50;
+  const interestOn  = D.settings.savingsInterestEnabled && D.settings.savingsEnabled !== false;
+  const interestRate = D.settings.savingsInterestRate || 5;
+  const interestPeriod = D.settings.savingsInterestPeriod || 'monthly';
   const matchNote = matchOn
-    ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:0.875rem;color:#166534">
+    ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:0.875rem;color:#166534">
         🤝 <strong>Parent match is on!</strong> For every ${cur}1.00 you save, your parents add ${cur}${(matchPct/100).toFixed(2)} extra (${matchPct}% match).
+       </div>`
+    : '';
+  const interestNote = interestOn
+    ? `<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:0.875rem;color:#1E40AF">
+        📈 <strong>Interest is on!</strong> Your savings grow by ${interestRate}% ${interestPeriod === 'weekly' ? 'every Monday' : 'on the 1st of each month'}.
        </div>`
     : '';
   showModal(`
     <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Savings Jar</div>
-    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:${matchOn?'10':'16'}px">
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:${(matchOn||interestOn)?'10':'16'}px">
       Convert diamonds to savings (${rate} 💎 = ${cur}1.00).
     </p>
-    ${matchNote}
+    ${matchNote}${interestNote}
     <div class="form-group">
       <label class="form-label">Diamonds to convert <span class="form-label-hint">(you have ${m.diamonds||0})</span></label>
       <input type="number" id="save-dmds" min="0" max="${m.diamonds||0}" step="${rate}" placeholder="${rate}"
@@ -5290,6 +5308,38 @@ function doSaveDiamonds(memberId) {
   toast(toastMsg);
   renderKidDiamonds();
   renderKidHeader();
+}
+
+// ── SAVINGS INTEREST ──────────────────────────────────────────
+function applyInterestForAllKids() {
+  const s = D.settings;
+  if (!s.savingsEnabled || !s.savingsInterestEnabled) return;
+  const rate   = parseFloat(s.savingsInterestRate) || 5;
+  const period = s.savingsInterestPeriod || 'monthly';
+  const cur    = s.currency || '$';
+  const todayStr = today();
+
+  // Check if today is an interest day
+  const d = parseDateLocal(todayStr);
+  const isInterestDay = period === 'weekly'
+    ? d.getDay() === 1          // Monday
+    : d.getDate() === 1;        // 1st of month
+  if (!isInterestDay) return;
+
+  const kids = getKids();
+  let changed = false;
+  kids.forEach(m => {
+    if ((m.savings || 0) <= 0) return;
+    if (m.savingsInterestLastDate === todayStr) return; // already applied today
+    const interest = parseFloat((m.savings * rate / 100).toFixed(2));
+    if (interest <= 0) return;
+    m.savings             = (m.savings || 0) + interest;
+    m.savingsInterest     = (m.savingsInterest || 0) + interest;
+    m.savingsInterestLastDate = todayStr;
+    addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+    changed = true;
+  });
+  if (changed) saveData();
 }
 
 // ── SHOP TAB ──────────────────────────────────────────────────
@@ -5730,7 +5780,7 @@ function renderFamilyStatsCard(kids) {
   return `
     <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:16px">
       <div onclick="toggleFamilyStats()" style="cursor:pointer;display:flex;align-items:center;gap:10px;margin-bottom:${isExpanded?'18':'0'}px">
-        <span style="font-size:2rem">👨‍👩‍👧‍👦</span>
+        <img src="icon.svg" style="width:2.2rem;height:2.2rem;border-radius:10px;flex-shrink:0">
         <div>
           <div style="font-size:1.1rem;font-weight:800">${esc(D.family.name || 'The Family')}</div>
           <div style="font-size:0.85rem;color:#6b7280">${kids.length} kid${kids.length !== 1 ? 's' : ''} · all-time combined stats</div>
@@ -7556,6 +7606,7 @@ function routeAfterLoad() {
 function init() {
   window.speechSynthesis?.getVoices(); // prime async voice loading on iOS
   loadData();
+  applyInterestForAllKids();
   scheduleHereCheck();
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
 
