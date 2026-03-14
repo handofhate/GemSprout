@@ -4538,12 +4538,18 @@ function switchKidTab(tab) {
 
 
 function renderKidTab() {
+  try {
   switch(S.kidTab) {
     case 'chores': renderKidChores(); break;
     case 'diamonds': renderKidDiamonds(); break;
     case 'shop':   renderKidShop();   break;
     case 'team':   renderKidTeam();   break;
     case 'stats':  renderStatsPage(document.getElementById('kid-content')); break;
+  }
+  } catch(e) {
+    console.error('renderKidTab error:', e);
+    const el = document.getElementById('kid-content');
+    if (el) el.innerHTML = `<div class="card" style="border:2px solid #EF4444;color:#EF4444;padding:1rem">Something went wrong. Please try again or ask a parent.</div>`;
   }
 }
 
@@ -5352,11 +5358,17 @@ function switchParentTab(tab) {
 }
 
 function renderParentTab() {
+  try {
   switch(S.parentTab) {
     case 'home':     renderParentHome();     break;
     case 'chores':   renderParentChores();   break;
     case 'prizes':   renderParentPrizes();   break;
     case 'stats':    renderStatsPage(document.getElementById('parent-content')); break;
+  }
+  } catch(e) {
+    console.error('renderParentTab error:', e);
+    const el = document.getElementById('parent-content');
+    if (el) el.innerHTML = `<div class="card" style="border:2px solid #EF4444;color:#EF4444;padding:1rem">Something went wrong rendering this tab. Check the browser console for details.</div>`;
   }
 }
 
@@ -5955,7 +5967,8 @@ function parentUnmarkSlotDone(choreId, memberId, slotId) {
   const member = getMember(memberId);
   if (!chore || !member) return;
   const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
-  const idx = entries.findIndex(e => e.slotId === slotId && e.status === 'done' && e.date === today() && e.entryType !== 'before');
+  let idx = entries.findIndex(e => e.slotId === slotId && e.date === today() && e.entryType === 'after' && e.status === 'done');
+  if (idx === -1) idx = entries.findIndex(e => e.slotId === slotId && e.date === today() && e.status === 'done' && e.entryType !== 'before');
   if (idx === -1) { toast('No completion found to remove'); return; }
   const slot = D.chores.find(c => c.id === choreId)?.schedule?.slots?.find(s => s.id === slotId);
   entries.splice(idx, 1);
@@ -6432,6 +6445,9 @@ function saveChore(choreId) {
 function deleteChore(choreId) {
   if (!confirm('Delete this chore?')) return;
   D.chores = D.chores.filter(c=>c.id!==choreId);
+  for (const key of _expandedSlots) {
+    if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
+  }
   saveData();
   toast('Chore deleted');
   renderParentChores();
