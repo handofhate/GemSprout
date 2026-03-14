@@ -6486,7 +6486,7 @@ function saveChore(choreId) {
   }
 
   const badges = document.getElementById('cm-badges-on')?.checked
-    ? _editBadges.filter(b => b.name && b.count > 0).map(b => ({ ...b, id: b.id || genId() }))
+    ? _editBadges.filter(b => b.name && b.count > 0).map(b => ({ ...b, id: b.id || genId() })).sort((a,b) => a.count - b.count)
     : [];
   const choreData = { title, icon, iconColor, diamonds, photoMode, frequency: freq,
     repeatCount: scheduleObj.targetCount, assignedTo: assigned, description: desc, schedule: scheduleObj, badges };
