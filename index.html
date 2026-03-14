@@ -5459,7 +5459,8 @@ function _statBreakdownTable(rows, col1, col2) {
   </table>`;
 }
 
-function renderMemberStatsCard(member) {
+function renderMemberStatsCard(member, collapse) {
+  // collapse = { isExpanded: bool, toggleFn: string } | null (null = always expanded, no toggle)
   const s = buildMemberStats(member);
   const color = member.color || '#6C63FF';
 
@@ -5547,15 +5548,20 @@ function renderMemberStatsCard(member) {
       }
     </div>`;
 
+  const caret = collapse ? `<i class="ph-duotone ph-caret-${collapse.isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0;margin-left:auto"></i>` : '';
+  const headerClick = collapse ? `onclick="${collapse.toggleFn}" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${collapse.isExpanded?'18':'0'}px"` : `style="display:flex;align-items:center;gap:12px;margin-bottom:18px"`;
+
   return `
     <div class="card" style="border-top:4px solid ${color};padding:20px">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <div ${headerClick}>
         <span style="font-size:2.5rem">${member.avatar||'🙂'}</span>
         <div>
           <div style="font-size:1.3rem;font-weight:800">${esc(member.name)}</div>
           <div style="font-size:0.85rem;color:#6b7280">${s.currentLevel.icon} ${s.currentLevel.name} · ${s.totalEarned} total diamonds earned</div>
         </div>
+        ${caret}
       </div>
+      ${collapse && !collapse.isExpanded ? '' : `
       ${choresSection}
       ${levelSection}
       ${rewardSection}
@@ -5565,6 +5571,7 @@ function renderMemberStatsCard(member) {
       ${extraSection}
       ${choreTable}
       ${prizeTable}
+      `}
     </div>`;
 }
 
@@ -5582,7 +5589,10 @@ function renderStatsPage(container) {
     if (kids.length === 0) {
       html += `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-smiley" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">No kids added yet</div></div>`;
     } else {
-      kids.forEach(kid => { html += renderMemberStatsCard(kid); });
+      kids.forEach(kid => {
+        const isExpanded = _expandedStatsKids.has(kid.id);
+        html += renderMemberStatsCard(kid, { isExpanded, toggleFn: `toggleStatsKid('${kid.id}')` });
+      });
     }
   }
 
@@ -5591,8 +5601,9 @@ function renderStatsPage(container) {
 }
 
 // ── PARENT HOME (OVERVIEW) ────────────────────────────────────
-const _expandedSlots  = new Set(); // 'choreId_kidId'
-const _expandedKids   = new Set(); // kidId
+const _expandedSlots     = new Set(); // 'choreId_kidId'
+const _expandedKids      = new Set(); // kidId (home tab)
+const _expandedStatsKids = new Set(); // kidId (stats tab)
 function toggleSlotExpand(key) {
   if (_expandedSlots.has(key)) _expandedSlots.delete(key);
   else _expandedSlots.add(key);
@@ -5602,6 +5613,11 @@ function toggleKidSection(kidId) {
   if (_expandedKids.has(kidId)) _expandedKids.delete(kidId);
   else _expandedKids.add(kidId);
   renderParentHome();
+}
+function toggleStatsKid(kidId) {
+  if (_expandedStatsKids.has(kidId)) _expandedStatsKids.delete(kidId);
+  else _expandedStatsKids.add(kidId);
+  renderStatsPage(document.getElementById('parent-content'));
 }
 
 function renderParentHome() {
