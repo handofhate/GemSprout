@@ -2500,6 +2500,45 @@ function addHistory(type, memberId, title, diamonds) {
   D.history.unshift({ id:genId(), type, memberId, title, diamonds, date:today() });
 }
 
+function historyIcon(h) {
+  if (h.type === 'chore') {
+    if ((h.title||'').startsWith('Streak bonus')) return '<i class="ph-duotone ph-fire" style="color:#F97316"></i>';
+    return '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>';
+  }
+  if (h.type === 'prize')   return '<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>';
+  if (h.type === 'penalty') {
+    if ((h.title||'').startsWith('↩')) return '<i class="ph-duotone ph-arrow-counter-clockwise" style="color:#6B7280"></i>';
+    return '<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>';
+  }
+  if (h.type === 'bonus') {
+    if ((h.title||'').includes('Combo')) return '<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>';
+    return '<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>';
+  }
+  if (h.type === 'level')   return '<i class="ph-duotone ph-trophy" style="color:#D97706"></i>';
+  if (h.type === 'goal')    return '<i class="ph-duotone ph-target" style="color:#0E7490"></i>';
+  if (h.type === 'savings') return '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>';
+  if (h.type === 'decline') return '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i>';
+  return '<i class="ph-duotone ph-circle" style="color:#9CA3AF"></i>';
+}
+
+function historyBadge(h) {
+  if (h.type === 'chore') {
+    if ((h.title||'').startsWith('Streak bonus')) return { color:'#c2410c', bg:'#FFF7ED' };
+    return { color:'#166534', bg:'#DCFCE7' };
+  }
+  if (h.type === 'prize')   return { color:'#1e40af', bg:'#DBEAFE' };
+  if (h.type === 'penalty') {
+    if ((h.title||'').startsWith('↩')) return { color:'#374151', bg:'#F3F4F6' };
+    return { color:'#991b1b', bg:'#FEE2E2' };
+  }
+  if (h.type === 'bonus')   return (h.title||'').includes('Combo') ? { color:'#b45309', bg:'#FEF3C7' } : { color:'#4c1d95', bg:'#EDE9FE' };
+  if (h.type === 'level')   return { color:'#4c1d95', bg:'#EDE9FE' };
+  if (h.type === 'goal')    return { color:'#0e7490', bg:'#ECFEFF' };
+  if (h.type === 'savings') return { color:'#166534', bg:'#DCFCE7' };
+  if (h.type === 'decline') return { color:'#6b7280', bg:'#F3F4F6' };
+  return { color:'#374151', bg:'#F9FAFB' };
+}
+
 // ── LEVELS & BADGES ──────────────────────────────────────────
 const DEFAULT_LEVELS = [
   { level:1, name:'Rookie',  icon:'<i class="ph-duotone ph-leaf" style="color:#22C55E"></i>',         minXp:0    },
@@ -5084,15 +5123,21 @@ function renderKidDiamonds() {
     html += `<div class="card"><div class="card-title"${tiny ? ` onclick="speak('Here\\'s what you\\'ve been up to recently.')"` : ''}><i class="ph-duotone ph-scroll" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</div>`;
     myHistory.forEach(h => {
       const pos = h.diamonds > 0;
-      const _histTts = tiny ? ` onclick="speak('${(h.title + '. ' + (pos ? 'Plus' : 'Minus') + ' ' + Math.abs(h.diamonds) + ' diamonds.').replace(/'/g,"\\'")}')"` : '';
+      const _ttsStr = h.diamonds !== 0
+        ? `${h.title}. ${pos ? 'Plus' : 'Minus'} ${Math.abs(h.diamonds)} diamonds.`
+        : h.title;
+      const _histTts = tiny ? ` onclick="speak('${_ttsStr.replace(/'/g,"\\'")}')"` : '';
+      const dmdsDisplay = h.diamonds !== 0
+        ? `<div class="history-dmds ${pos?'pos':'neg'}">${pos?'+':''}${h.diamonds}</div>`
+        : '';
       html += `
         <div class="history-item"${_histTts}>
-          <span class="history-icon">${h.type==='chore'?'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>':h.type==='prize'?'<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>':h.type==='penalty'?'<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>':'<i class="ph-duotone ph-target" style="color:#D97706"></i>'}</span>
+          <span class="history-icon">${historyIcon(h)}</span>
           <div class="history-info">
             <div class="history-title">${esc(h.title)}</div>
             <div class="history-date">${fmtDate(h.date)}</div>
           </div>
-          <div class="history-dmds ${pos?'pos':'neg'}">${pos?'+':''}${h.diamonds}</div>
+          ${dmdsDisplay}
         </div>`;
     });
     html += `</div>`;
@@ -5932,23 +5977,19 @@ function renderParentHome() {
   // Recent Activity
   const recentHistory = (D.history || []).slice(0, 10);
   if (recentHistory.length > 0) {
-    const typeIcon = { chore:'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', prize:'<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>', penalty:'<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>', bonus:'<i class="ph-duotone ph-lightning" style="color:#D97706"></i>', level:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>' };
-    const typeColor = { chore:'#166534', prize:'#1e40af', penalty:'#991b1b', bonus:'#92400e', level:'#4c1d95' };
-    const typeBg    = { chore:'#DCFCE7', prize:'#DBEAFE', penalty:'#FEE2E2', bonus:'#FEF3C7', level:'#EDE9FE' };
     const actRows = recentHistory.map(h => {
       const mem = getMember(h.memberId);
-      const icon = typeIcon[h.type] || '<i class="ph-duotone ph-note" style="color:#9CA3AF"></i>';
-      const color = typeColor[h.type] || '#374151';
-      const bg    = typeBg[h.type]   || '#f9fafb';
-      const ptsStr = h.diamonds > 0 ? `+${h.diamonds}` : `${h.diamonds}`;
+      const badge = historyBadge(h);
+      const icon = historyIcon(h);
       const ptsColor = h.diamonds >= 0 ? '#166534' : '#991b1b';
+      const ptsStr = h.diamonds !== 0 ? (h.diamonds > 0 ? `+${h.diamonds}` : `${h.diamonds}`) + ' 💎' : '';
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6">
-        <span style="background:${bg};color:${color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
+        <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.title)}</div>
-          <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : '<span style="font-style:italic">Deleted member</span>'} · ${fmtDate(h.date)}</div>
+          <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : '<span style="font-style:italic">Former member</span>'} · ${fmtDate(h.date)}</div>
         </div>
-        <span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr} 💎</span>
+        ${ptsStr ? `<span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr}</span>` : ''}
       </div>`;
     }).join('');
     html += `
