@@ -1807,6 +1807,7 @@ function loadData() {
 function saveData() {
   S.lastLocalSave = Date.now();
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+  if (S.currentUser?.role === 'kid') savePendingSnapshot(S.currentUser.id);
   pushToFirestore();
 }
 
@@ -1835,7 +1836,27 @@ function getPendingEntryKeys(data, memberId) {
   return keys;
 }
 
-function checkForApprovalCelebration(prevPendingKeys, member) {
+function savePendingSnapshot(memberId) {
+  if (!memberId) return;
+  const keys = getPendingEntryKeys(D, memberId);
+  try {
+    if (keys.size > 0) localStorage.setItem(`_pend_${memberId}`, JSON.stringify([...keys]));
+    else localStorage.removeItem(`_pend_${memberId}`);
+  } catch(e) {}
+}
+
+function loadPendingSnapshot(memberId) {
+  try {
+    const raw = localStorage.getItem(`_pend_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function clearPendingSnapshot(memberId) {
+  try { localStorage.removeItem(`_pend_${memberId}`); } catch(e) {}
+}
+
+function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = false) {
   let totalNewDiamonds = 0;
   const approvedChores = [];
   let anyBeforeApproved = false;
@@ -1865,14 +1886,25 @@ function checkForApprovalCelebration(prevPendingKeys, member) {
   const subLine = approvedChores.length === 1
     ? `"${approvedChores[0].title}" approved!`
     : `${approvedChores.length} chores approved!`;
-  showCelebration({
-    icon:   approvedChores[0]?.icon || '💎',
-    title:  tiny ? '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Your parent said YES!' : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Chore Approved!',
-    sub:    subLine,
-    diamonds: totalNewDiamonds,
-    tts:    tiny ? `Amazing! Your parent approved your chore! You earned ${totalNewDiamonds} diamonds!` : null,
-    onClose: () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
-  });
+  if (isWhileAway) {
+    showCelebration({
+      icon:     '💌',
+      title:    tiny ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...' : '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+      sub:      `Your parent approved ${subLine.replace(' approved!','')} and you earned diamonds!`,
+      diamonds: totalNewDiamonds,
+      tts:      tiny ? `Welcome back! While you were away, your parent approved your chore and you earned ${totalNewDiamonds} diamonds!` : null,
+      onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
+  } else {
+    showCelebration({
+      icon:     approvedChores[0]?.icon || '💎',
+      title:    tiny ? '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Your parent said YES!' : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Chore Approved!',
+      sub:      subLine,
+      diamonds: totalNewDiamonds,
+      tts:      tiny ? `Amazing! Your parent approved your chore! You earned ${totalNewDiamonds} diamonds!` : null,
+      onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
+  }
 }
 
 function subscribeToFirestore(onFirstLoad) {
@@ -1900,6 +1932,13 @@ function subscribeToFirestore(onFirstLoad) {
     updateSyncBar();
     if (firstSnapshot) {
       firstSnapshot = false;
+      // Check for approvals that happened while the app was closed
+      if (S.currentUser?.role === 'kid') {
+        const savedKeys = loadPendingSnapshot(S.currentUser.id);
+        if (savedKeys.size > 0) checkForApprovalCelebration(savedKeys, S.currentUser, true);
+        clearPendingSnapshot(S.currentUser.id);
+        savePendingSnapshot(S.currentUser.id); // refresh with current state
+      }
       if (typeof onFirstLoad === 'function') onFirstLoad();
     } else {
       renderCurrentView();
@@ -7649,6 +7688,7 @@ function init() {
       if (rememberedUser) {
         S.currentUser = rememberedUser;
         routeToView(rememberedUser);
+        if (rememberedUser.role === 'kid') savePendingSnapshot(rememberedUser.id);
       } else {
         renderHome();
       }
