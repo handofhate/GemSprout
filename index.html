@@ -6158,12 +6158,12 @@ function renderParentChores() {
             <div class="admin-name">${esc(chore.title)}</div>
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${diamondChip} ${assigneeChip}</div>
           </div>
-          <span style="color:#9CA3AF;font-size:1.2rem;flex-shrink:0">${isExpanded ? '▾' : '▸'}</span>
+          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem;flex-shrink:0"></i>
         </div>
         ${isExpanded ? `
         <div style="border-top:1px solid #F3F4F6;margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:8px">
           <span class="drag-handle" title="Drag to reorder">⠿</span>
-          <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${choreMetaChips(chore)}</div>
+          <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${choreMetaChips(chore).replace(/<span[^>]*>💎[^<]*<\/span>\s*/,'')}</div>
           <div class="admin-actions">
             <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-delete" onclick="deleteChore('${chore.id}')"><i class="ph-duotone ph-trash" style="color:#EF4444;font-size:1rem"></i></button>
