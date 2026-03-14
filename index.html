@@ -3498,14 +3498,13 @@ function diamondsBurst(x, y, diamonds) {
 }
 
 // ── DIAMOND RAIN ──────────────────────────────────────────────
-let _rainClearTimer = null;
-
 function _startRain(pieces) {
   const wrap = document.getElementById('confetti-root');
-  if (_rainClearTimer) { clearTimeout(_rainClearTimer); _rainClearTimer = null; }
-  wrap.innerHTML = '';
-  pieces.forEach(el => wrap.appendChild(el));
-  _rainClearTimer = setTimeout(() => { wrap.innerHTML = ''; _rainClearTimer = null; }, 5000);
+  const batchId = Date.now() + Math.random();
+  pieces.forEach(el => { el.dataset.batch = batchId; wrap.appendChild(el); });
+  setTimeout(() => {
+    wrap.querySelectorAll(`[data-batch="${batchId}"]`).forEach(el => el.remove());
+  }, 5000);
 }
 
 function launchConfetti(count = 50, emoji = '💎') {
