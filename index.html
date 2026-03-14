@@ -1939,7 +1939,7 @@ function checkForNewSavingsDeposits(member, isWhileAway = false) {
     ? newDeposits[0].title
     : `${newDeposits.length} deposits: ${newDeposits.map(d => d.title).join(', ')}`;
   showCelebration({
-    icon:    '💵',
+    icon:    '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:3rem"></i>',
     title:   titleHtml,
     sub:     subText,
     dollars: total,
@@ -3698,7 +3698,7 @@ function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=
   const ptsHtml = diamonds !== null
     ? `<div class="cel-diamonds">+${diamonds} 💎</div>`
     : dollars !== null
-      ? `<div class="cel-diamonds" style="color:#16A34A">+${cur}${dollars.toFixed(2)} 💰</div>`
+      ? `<div class="cel-diamonds" style="color:#16A34A">+${cur}${dollars.toFixed(2)}</div>`
       : '';
   const remaining = _celebQueue.length;
   const moreHtml = remaining > 0
@@ -3771,7 +3771,7 @@ function testQueuedCelebrations() {
 function testSavingsDeposit() {
   const cur = D.settings.currency || '$';
   showCelebration({
-    icon:    '💵',
+    icon:    '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:3rem"></i>',
     title:   '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i> Savings Deposit!',
     sub:     'Birthday money from Grandma!',
     dollars: 20,
@@ -3972,7 +3972,7 @@ function renderSettings() {
         ${s.savingsEnabled !== false ? `
         <div class="settings-member-action-row">
           <div style="flex:1">
-            <div class="settings-member-action-label">💰 Adjust Savings</div>
+            <div class="settings-member-action-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Adjust Savings</div>
             <div class="settings-member-action-sub">Deposit or withdraw real dollars — birthday money, allowance, or spending</div>
           </div>
           <div style="display:flex;gap:6px">
@@ -3994,7 +3994,7 @@ function renderSettings() {
           <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
           <div style="flex:1">
             <div style="font-weight:700">${esc(k.name)}</div>
-            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0}${s.savingsEnabled!==false?` · 💰 ${s.currency||'$'}${(k.savings||0).toFixed(2)}`:''}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0}${s.savingsEnabled!==false?` · <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i> ${s.currency||'$'}${(k.savings||0).toFixed(2)}`:''}</div>
           </div>
           <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem"></i>
         </div>
@@ -4151,7 +4151,7 @@ function renderSettings() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchMixedRain()">⚡ Test Combo Rain</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Test While You Were Away</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()"><i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Test Queued Notifications (3)</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()">💰 Test Savings Deposit</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> Test Savings Deposit</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()">🛍️ Test Spend Approved</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
@@ -5596,7 +5596,7 @@ function renderKidDiamonds() {
     const hasBreakdown   = (matchOn && matched > 0) || (interestOn && interest > 0);
     const breakdownHtml  = hasBreakdown
       ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:6px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-           <span>💰 ${cur}${selfSaved.toFixed(2)} yours</span>
+           <span><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i> ${cur}${selfSaved.toFixed(2)} yours</span>
            ${matched > 0 ? `<span>🤝 ${cur}${matched.toFixed(2)} matched</span>` : ''}
            ${interest > 0 ? `<span>📈 ${cur}${interest.toFixed(2)} interest</span>` : ''}
          </div>`
@@ -5844,7 +5844,7 @@ function doSaveDiamonds(memberId) {
   addHistory('savings', memberId, `Converted ${dmds} 💎 to savings`, -dmds);
 
   const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
-  let toastMsg   = `+${cur}${dollars.toFixed(2)} saved! 💰`;
+  let toastMsg   = `+${cur}${dollars.toFixed(2)} saved!`;
   if (matchOn) {
     const matchPct    = D.settings.savingsMatchPercent || 50;
     const matchDollars = parseFloat((dollars * matchPct / 100).toFixed(2));
@@ -5852,7 +5852,7 @@ function doSaveDiamonds(memberId) {
       m.savings        = (m.savings||0) + matchDollars;
       m.savingsMatched = (m.savingsMatched||0) + matchDollars;
       addHistory('savings', memberId, `Parent match (${matchPct}%) +${cur}${matchDollars.toFixed(2)}`, 0);
-      toastMsg = `+${cur}${dollars.toFixed(2)} saved + ${cur}${matchDollars.toFixed(2)} parent match! 💰`;
+      toastMsg = `+${cur}${dollars.toFixed(2)} saved + ${cur}${matchDollars.toFixed(2)} parent match!`;
     }
   }
 
@@ -7768,7 +7768,7 @@ function _advRender() {
       </select>`),
       _advField('Diamonds 💎',    _advInput('number', m.diamonds||0,       `advSetMember('${m.id}','diamonds',+this.value)`)),
       _advField('Total Earned', _advInput('number', m.totalEarned||0,  `advSetMember('${m.id}','totalEarned',+this.value)`)),
-      _advField('Savings 💰',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
+      _advField('Savings',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
       _advField('XP 🔮',        _advInput('number', m.xp||0,           `advSetMember('${m.id}','xp',+this.value)`)),
       _advField('Streak Current',_advInput('number', m.streak?.current||0, `advSetMember('${m.id}','streak.current',+this.value)`)),
       _advField('Streak Best',  _advInput('number', m.streak?.best||0, `advSetMember('${m.id}','streak.best',+this.value)`)),
@@ -8004,7 +8004,7 @@ function showAdjustSavingsModal(memberId) {
   if (!m) return;
   const cur = D.settings.currency || '$';
   showModal(`
-    <div class="modal-title">💰 Adjust Savings — ${esc(m.name)}</div>
+    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Adjust Savings — ${esc(m.name)}</div>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${cur}${(m.savings||0).toFixed(2)}</strong></p>
     <div class="form-group">
       <label class="form-label">Amount (${cur})</label>
