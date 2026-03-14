@@ -57,8 +57,8 @@
     #screen-home {
       background: linear-gradient(145deg, #667eea 0%, #764ba2 100%);
       align-items: center;
-      justify-content: center;
-      padding: 24px;
+      justify-content: flex-start;
+      padding: 0;
       gap: 0;
     }
     .home-logo { font-size: 3.5rem; margin-bottom: 8px; }
@@ -96,19 +96,11 @@
       gap: 8px;
       cursor: pointer;
       border: none;
+      border-top: 5px solid var(--member-color, var(--purple));
       font-family: inherit;
       box-shadow: 0 8px 32px rgba(0,0,0,0.18);
       transition: transform 0.18s, box-shadow 0.18s;
       position: relative;
-      overflow: hidden;
-    }
-    .profile-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 5px;
-      background: var(--member-color, var(--purple));
-      border-radius: 20px 20px 0 0;
     }
     .profile-card:active { transform: scale(0.96); }
     .profile-avatar { font-size: 3rem; line-height: 1; }
@@ -3830,12 +3822,13 @@ function renderHome() {
   const root = document.getElementById('screen-home');
   root.innerHTML = `
     ${bdayBanner}
-    <div class="home-logo" style="color:#fff;font-size:3.5rem;margin-top:20px">💎</div>
-    <div class="home-title">Family Hub</div>
-    <div class="home-family-name">${esc(D.family.name)}</div>
-    <div class="profile-grid" style="max-width:980px;width:100%;padding:0 24px">${cards}</div>
-    <button class="home-setup-btn mt-12" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Edit Family</button>
-    <div style="height:24px"></div>`;
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:24px">
+      <div class="home-logo" style="color:#fff;font-size:3.5rem;margin-top:20px">💎</div>
+      <div class="home-title">Family Hub</div>
+      <div class="home-family-name">${esc(D.family.name)}</div>
+      <div class="profile-grid" style="max-width:980px;width:100%;padding:0">${cards}</div>
+    </div>
+    <button class="home-setup-btn" style="margin-bottom:28px" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Edit Family</button>`;
 }
 
 function selectProfile(id) {
