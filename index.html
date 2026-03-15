@@ -1568,7 +1568,28 @@ const FIREBASE_CONFIG = {
   appId:             "1:280625694071:web:ecedf22458fd9214474d72",
 };
 
-const FAMILY_DOC = 'families/collum';
+const FAMILY_CODE_KEY   = 'gemsprout.familyCode';
+const FAMILY_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/I/1
+
+function genFamilyCode() {
+  let code = '';
+  for (let i = 0; i < 6; i++) code += FAMILY_CODE_CHARS[Math.floor(Math.random() * FAMILY_CODE_CHARS.length)];
+  return code;
+}
+
+function getFamilyCode() {
+  try { return localStorage.getItem(FAMILY_CODE_KEY) || ''; } catch (_) { return ''; }
+}
+
+function setFamilyCode(code) {
+  try { localStorage.setItem(FAMILY_CODE_KEY, code); } catch (_) {}
+}
+
+function getFamilyDoc() {
+  let code = getFamilyCode();
+  if (!code) { code = genFamilyCode(); setFamilyCode(code); }
+  return `families/${code}`;
+}
 
 firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
@@ -1882,7 +1903,7 @@ async function pushToFirestore() {
   try {
     S.syncStatus = 'syncing';
     updateSyncBar();
-    await db.doc(FAMILY_DOC).set(D);
+    await db.doc(getFamilyDoc()).set(D);
     S.syncStatus = 'ok';
     updateSyncBar();
   } catch(e) {
@@ -2170,7 +2191,7 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
 function subscribeToFirestore(onFirstLoad) {
   if (firestoreUnsub) firestoreUnsub();
   let firstSnapshot = true;
-  firestoreUnsub = db.doc(FAMILY_DOC).onSnapshot(snap => {
+  firestoreUnsub = db.doc(getFamilyDoc()).onSnapshot(snap => {
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
@@ -4222,6 +4243,17 @@ function renderSettings() {
     <div class="settings-body">
 
       <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <div style="font-size:1.8rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${getFamilyCode()}</div>
+          <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${getFamilyCode()}').then(()=>toast('Code copied!'))">
+            <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
+          </button>
+        </div>
+        <div style="font-size:0.8rem;color:var(--muted)">Share this code with another device to sync your family's data.</div>
+      </div>
+
+      <div class="card">
         <div class="card-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</div>
         <div class="toggle-row">
           <div><div class="toggle-label">Auto-approve chores</div>
@@ -4415,7 +4447,7 @@ function renderCurrentView() {
       setTimeout(() => { indicator.innerHTML = ''; }, 160);
     };
     try {
-      db.doc(FAMILY_DOC).get({ source: 'server' }).then(snap => {
+      db.doc(getFamilyDoc()).get({ source: 'server' }).then(snap => {
         if (snap.exists) {
           D = normalizeData(snap.data());
           try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
@@ -4703,6 +4735,72 @@ function tryBiometricUnlock() {
 const SETUP_STEPS_NEW  = ['welcome','parents','members','chores','prizes','sync','done'];
 const SETUP_STEPS_EDIT = ['welcome','parents','members','sync','done'];
 let SETUP_STEPS = SETUP_STEPS_NEW;
+
+function renderSetupGate() {
+  document.getElementById('screen-setup').innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:24px;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <img src="gemsproutpadded.png" style="width:120px;height:120px">
+      <div style="color:#fff;font-size:2rem;font-weight:800;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,0.2)">Welcome to GemSprout</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:1rem;text-align:center;max-width:280px">Chores, rewards, and goals for the whole family.</div>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
+        <button class="btn btn-primary" style="font-size:1.05rem;padding:16px;background:#fff;color:#6C63FF;border:none" onclick="startNewFamily()">
+          <i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:6px"></i> Start a New Family
+        </button>
+        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showJoinFamily()">
+          <i class="ph-duotone ph-link" style="vertical-align:middle;margin-right:6px"></i> Join Existing Family
+        </button>
+      </div>
+    </div>`;
+}
+
+function startNewFamily() {
+  setFamilyCode(genFamilyCode());
+  goSetup();
+}
+
+function showJoinFamily() {
+  document.getElementById('screen-setup').innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
+      <div style="font-size:3.5rem"><i class="ph-duotone ph-link" style="color:#6C63FF"></i></div>
+      <div style="font-weight:800;font-size:1.4rem">Join a Family</div>
+      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the 6-character family code shown in the parent's Settings screen.</div>
+      <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
+        style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:280px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
+      <button class="btn btn-primary" style="width:100%;max-width:280px;padding:14px" onclick="joinFamily()">
+        <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
+      </button>
+      <button class="btn-back" style="background:none;border:none;color:var(--muted);font-size:0.95rem;cursor:pointer" onclick="renderSetupGate()">← Back</button>
+    </div>`;
+}
+
+async function joinFamily() {
+  const input = document.getElementById('join-code-input');
+  const code = input?.value.trim().toUpperCase() || '';
+  if (code.length !== 6) { toast('Please enter the full 6-character code'); return; }
+
+  const btn = document.querySelector('#screen-setup .btn-primary');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-duotone ph-hourglass" style="vertical-align:middle"></i> Connecting…'; }
+
+  try {
+    const snap = await db.doc(`families/${code}`).get();
+    if (!snap.exists) {
+      toast('Family code not found — double-check and try again');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family'; }
+      return;
+    }
+    D = normalizeData(snap.data());
+    setFamilyCode(code);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+    auth.signInAnonymously()
+      .then(() => subscribeToFirestore())
+      .catch(() => {});
+    routeAfterLoad();
+  } catch(e) {
+    toast('Connection error — please try again');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family'; }
+  }
+}
 
 function cancelSetup() {
   const user = S.currentUser;
@@ -5655,7 +5753,7 @@ async function submitChorePhoto(choreId, slotId, entryType) {
 
 async function uploadChorePhoto(file) {
   const compressed = await compressImage(file, 800, 0.75);
-  const path = `chore-photos/${FAMILY_DOC.replace('/','_')}/${Date.now()}_${genId()}.jpg`;
+  const path = `chore-photos/${getFamilyCode()}/${Date.now()}_${genId()}.jpg`;
   const ref  = storage.ref(path);
   await ref.put(compressed, { contentType: 'image/jpeg' });
   return ref.getDownloadURL();
@@ -8550,7 +8648,7 @@ function resetAllData() {
   if (!confirm('Last chance — really reset everything?')) return;
   localStorage.removeItem(LS_KEY);
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
-  db.doc(FAMILY_DOC).delete().catch(e => console.warn('Firestore delete error:', e));
+  db.doc(getFamilyDoc()).delete().catch(e => console.warn('Firestore delete error:', e));
   D = defaultData();
   location.reload();
 }
@@ -8577,7 +8675,7 @@ function routeAfterLoad() {
     S.setupMembers = [];
     S.setupStep    = 0;
     showScreen('screen-setup');
-    renderSetupStep();
+    renderSetupGate();
   } else {
     if (isAppUnlocked()) {
       const rememberedUser = getMember(getCurrentUserId());
@@ -8596,6 +8694,10 @@ function init() {
   loadData();
   applyInterestForAllKids();
   scheduleHereCheck();
+
+  // Migration: existing installs pre-date family codes — generate one so they aren't stuck
+  if (!getFamilyCode() && D.setup) setFamilyCode(genFamilyCode());
+
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
 
   if (hasLocalData) {
