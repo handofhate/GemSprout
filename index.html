@@ -3833,20 +3833,23 @@ function showModal(html) {
 }
 
 function _initModalSwipe() {
-  const sheet  = document.getElementById('modal-sheet');
-  const handle = document.getElementById('modal-drag-handle');
+  const sheet = document.getElementById('modal-sheet');
   if (!sheet) return;
   let startY = 0, currentY = 0, dragging = false;
   const onStart = (e) => {
-    startY   = e.touches ? e.touches[0].clientY : e.clientY;
+    // Only arm dismiss gesture if touch originated on the drag handle
+    const handle = document.getElementById('modal-drag-handle');
+    if (!handle || !handle.contains(e.target)) return;
+    startY   = e.touches[0].clientY;
     currentY = startY;
     dragging = true;
     sheet.style.transition = 'none';
   };
   const onMove = (e) => {
     if (!dragging) return;
-    e.preventDefault(); // block background scroll while dragging modal
-    currentY = e.touches ? e.touches[0].clientY : e.clientY;
+    // Safe to preventDefault — we only get here when dragging from the handle
+    e.preventDefault();
+    currentY = e.touches[0].clientY;
     const dy = Math.max(0, currentY - startY);
     sheet.style.transform = `translateY(${dy}px)`;
   };
@@ -5562,18 +5565,31 @@ function renderKidDiamonds() {
   // Badge grid
   if (D.settings.levelingEnabled !== false) {
     const earned = Array.isArray(m.badges) ? m.badges : [];
+    const baseBadgeChips = BADGE_DEFS.map(b => {
+      const def = getBaseBadgeDef(b.id);
+      if (def.disabled) return '';
+      const have = earned.includes(b.id);
+      const badgeTts = tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")}')"` : '';
+      return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(def.desc)}"${badgeTts}>
+        <span class="badge-chip-icon">${def.icon}</span>${esc(def.name)}
+      </div>`;
+    }).join('');
+    // Chore badges: earned always shown, non-secret unearned shown locked, secret unearned hidden
+    const choreBadgeChips = (D.chores || []).flatMap(chore =>
+      (chore.badges || []).map(b => {
+        const key = `cb_${b.id}`;
+        const have = earned.includes(key);
+        if (!have && b.secret) return '';
+        const badgeTts = tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")}')"` : '';
+        return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} × ${b.count}"${badgeTts}>
+          <span class="badge-chip-icon">${b.icon||'🏅'}</span>${esc(b.name||'')}
+        </div>`;
+      })
+    ).join('');
     html += `
       <div class="card">
         <div class="card-title"><i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:1rem;vertical-align:middle"></i> Badges</div>
-        <div class="badge-grid">
-          ${BADGE_DEFS.map(b => {
-            const have = earned.includes(b.id);
-            const badgeTts = tiny ? ` onclick="speak('${b.name.replace(/'/g,"\\'")}')"` : '';
-            return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${b.desc}"${badgeTts}>
-              <span class="badge-chip-icon">${b.icon}</span>${b.name}
-            </div>`;
-          }).join('')}
-        </div>
+        <div class="badge-grid">${baseBadgeChips}${choreBadgeChips}</div>
       </div>`;
   }
 
@@ -6385,21 +6401,25 @@ function renderMemberStatsCard(member, collapse) {
     _statTile('<i class="ph-duotone ph-shopping-bag" style="color:#6C63FF"></i>', 'Total Spent', `${cur}${(s.totalWithdrawn||0).toFixed(2)}`, '#4c1d95', 'from savings')
   ) : '';
 
-  // Build chore badge display
-  const choreBadgeKeys = (member.badges||[]).filter(b => b.startsWith('cb_'));
-  const choreBadgeLookup = {};
+  // Build chore badge display — earned shown normally, non-secret unearned shown locked, secret unearned hidden
+  const earnedBadgeSet = new Set((member.badges||[]).filter(b => b.startsWith('cb_')));
+  const choreBadgeItems = [];
   for (const chore of D.chores) {
-    for (const b of (chore.badges||[])) choreBadgeLookup[`cb_${b.id}`] = { ...b, choreTitle: chore.title };
+    for (const b of (chore.badges||[])) {
+      const key = `cb_${b.id}`;
+      const have = earnedBadgeSet.has(key);
+      if (!have && b.secret) continue;
+      choreBadgeItems.push({ b, chore, have });
+    }
   }
-  const choreBadgeGrid = choreBadgeKeys.length === 0 ? '' : `
+  const choreBadgeGrid = choreBadgeItems.length === 0 ? '' : `
     <div style="margin-bottom:18px">
       <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-medal" style="color:#7C3AED;vertical-align:middle"></i> Chore Badges</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
-        ${choreBadgeKeys.map(key => {
-          const def = choreBadgeLookup[key];
-          return def ? `<div title="${esc(def.choreTitle)} × ${def.count}" style="background:#fff;border-radius:12px;padding:8px 10px;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;align-items:center;gap:6px;font-size:0.82rem;font-weight:600">
-            <span style="font-size:1.3rem">${def.icon}</span>${esc(def.name)}</div>` : '';
-        }).join('')}
+        ${choreBadgeItems.map(({b, chore, have}) =>
+          `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} × ${b.count}">
+            <span class="badge-chip-icon">${b.icon||'🏅'}</span>${esc(b.name||'')}</div>`
+        ).join('')}
       </div>
     </div>`;
 
@@ -7481,9 +7501,9 @@ function renderParentLevels() {
         const badges = Array.isArray(chore.badges) ? chore.badges : [];
         const tierRows = badges.map((b, i) => `
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:6px 8px;background:${b.secret?'#fdf4ff':'#f9fafb'};border-radius:8px;border:1px solid ${b.secret?'#e9d5ff':'#e5e7eb'}">
-            <input type="text" value="${esc(b.icon||'')}" placeholder="🏅"
-              style="width:44px;font-size:1.2rem;text-align:center;border:1px solid #d1d5db;border-radius:6px;padding:4px"
-              onchange="saveChoreBadgeTier('${chore.id}',${i},'icon',this.value)">
+            <button onclick="showChoreBadgeIconPicker('${chore.id}',${i})"
+              title="Pick icon" style="width:44px;height:36px;font-size:1.2rem;background:none;border:1px dashed #d1d5db;border-radius:6px;padding:2px;cursor:pointer;flex-shrink:0;line-height:1">
+              ${b.icon||'🏅'}</button>
             <input type="number" value="${b.count||10}" min="1" placeholder="Count"
               style="width:60px;border:1px solid #d1d5db;border-radius:6px;padding:4px 6px;font-size:0.85rem"
               title="Total completions needed to earn this badge"
@@ -7491,10 +7511,10 @@ function renderParentLevels() {
             <input type="text" value="${esc(b.name||'')}" placeholder="Badge name"
               style="flex:1;border:1px solid #d1d5db;border-radius:6px;padding:4px 6px;font-size:0.85rem"
               onchange="saveChoreBadgeTier('${chore.id}',${i},'name',this.value)">
-            <label title="Secret — hidden until earned"
+            <label title="${b.secret?'Secret ON: hidden from kids until earned':'Secret OFF: shows as faded/locked until earned — toggle to hide it completely'}"
               style="display:flex;align-items:center;gap:3px;font-size:0.72rem;font-weight:600;color:${b.secret?'#7c3aed':'#9ca3af'};cursor:pointer;flex-shrink:0;user-select:none">
-              <input type="checkbox" ${b.secret?'checked':''} onchange="saveChoreBadgeTier('${chore.id}',${i},'secret',this.checked)" style="cursor:pointer">
-              <i class="ph-duotone ph-lock" style="font-size:0.85rem;vertical-align:middle"></i>
+              <input type="checkbox" ${b.secret?'checked':''} onchange="saveChoreBadgeTier('${chore.id}',${i},'secret',this.checked);renderParentLevels()" style="cursor:pointer">
+              <i class="ph-duotone ph-eye-slash" style="font-size:0.9rem;vertical-align:middle"></i>
             </label>
             <button onclick="removeChoreBadgeTier('${chore.id}',${i})"
               style="background:#FEE2E2;color:#991b1b;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:0.8rem;flex-shrink:0">
@@ -7677,6 +7697,61 @@ function removeChoreBadgeTier(choreId, tierIdx) {
   if (!chore || !chore.badges) return;
   chore.badges.splice(tierIdx, 1);
   saveData();
+  renderParentLevels();
+}
+
+// ── CHORE BADGE ICON PICKER ───────────────────────────────────
+let _bip = { choreId: null, tierIdx: null, color: '#6BCB77' };
+
+function showChoreBadgeIconPicker(choreId, tierIdx) {
+  const chore = D.chores.find(c => c.id === choreId);
+  const badge = chore?.badges?.[tierIdx];
+  const curIcon = badge?.icon || '';
+  const colorMatch = /color:(#[0-9a-fA-F]{3,6})/.exec(curIcon);
+  _bip = { choreId, tierIdx, color: colorMatch?.[1] || COLORS[0] };
+  const curName = /ph-duotone ph-([\w-]+)/.exec(curIcon)?.[1] || '';
+
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===_bip.color?' sel':''}" style="background:${col}" onclick="selBadgeIconColor(this,'${col}')"></div>`
+  ).join('');
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===curName?' sel':''}" onclick="selBadgeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">Badge Icon</div>
+    <div class="icon-color-row">${colorSwatches}</div>
+    <input type="text" class="icon-search-input" placeholder="Search icons (e.g. trophy, star, fire)..." oninput="filterBadgeIcons(this.value,'${choreId}',${tierIdx})">
+    <div class="icon-picker" id="badge-icon-picker-grid" style="color:${_bip.color}">${iconOpts}</div>
+  `);
+}
+
+function selBadgeIconColor(el, color) {
+  _bip.color = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('badge-icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
+function filterBadgeIcons(query, choreId, tierIdx) {
+  const q = query.toLowerCase().trim();
+  const chore = D.chores.find(c => c.id === choreId);
+  const curName = /ph-duotone ph-([\w-]+)/.exec(chore?.badges?.[tierIdx]?.icon || '')?.[1] || '';
+  const grid = document.getElementById('badge-icon-picker-grid');
+  if (!grid) return;
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
+  grid.innerHTML = matches.length === 0
+    ? `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`
+    : matches.map(({n}) =>
+        `<div class="icon-opt${n===curName?' sel':''}" onclick="selBadgeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+      ).join('');
+}
+
+function selBadgeIcon(el, name) {
+  const icon = `<i class="ph-duotone ph-${name}" style="color:${_bip.color};font-size:1em"></i>`;
+  saveChoreBadgeTier(_bip.choreId, _bip.tierIdx, 'icon', icon);
+  closeModal();
   renderParentLevels();
 }
 
