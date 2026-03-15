@@ -16,7 +16,8 @@
       "Read(//tmp/**)",
       "Bash(perl -ne 'if \\(/[🔒✕✏️⌫🟢❌⚙️📜👶📋]/\\) { print \"\"$.: $_\"\" }' \"c:/Users/Ty/Documents/Family Hub/index.html\")",
       "Bash(perl -ne 'print \"\"$.: $_\"\" if /button.*[✕✏️⌫🔒⚙️]|[✕✏️⌫🔒⚙️].*button/' \"c:/Users/Ty/Documents/Family Hub/index.html\")",
-      "Bash(node -e \"const fs=require\\(''fs''\\);const p=''c:/Users/Ty/Documents/Family Hub/index.html'';const lines=fs.readFileSync\\(p,''utf8''\\).split\\(''\\\\n''\\);lines.splice\\(7438,155\\);fs.writeFileSync\\(p,lines.join\\(''\\\\n''\\),''utf8''\\);console.log\\(''Done, total lines now:'',lines.length\\);\")"
+      "Bash(node -e \"const fs=require\\(''fs''\\);const p=''c:/Users/Ty/Documents/Family Hub/index.html'';const lines=fs.readFileSync\\(p,''utf8''\\).split\\(''\\\\n''\\);lines.splice\\(7438,155\\);fs.writeFileSync\\(p,lines.join\\(''\\\\n''\\),''utf8''\\);console.log\\(''Done, total lines now:'',lines.length\\);\")",
+      "WebSearch"
     ]
   }
 }
