@@ -50,6 +50,11 @@
     ══════════════════════════════════════════ */
     .screen { display: none; min-height: 100vh; flex-direction: column; }
     .screen.active { display: flex; }
+    #screen-auth.loading { position: fixed; inset: 0; z-index: 9999; overflow: hidden; }
+    @keyframes loading-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    @keyframes loading-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+    .loading-img { animation: loading-float 2.4s ease-in-out infinite; }
+    .loading-text { animation: loading-pulse 1.6s ease-in-out infinite; }
 
     /* ══════════════════════════════════════════
        HOME SCREEN
@@ -8513,11 +8518,14 @@ function resetAllData() {
 function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center';
+  el.className = 'screen active loading';
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center';
   el.innerHTML = `
-    <img src="gemsproutpadded.png" style="width:90px;height:90px">
-    <div style="color:#fff;font-size:1.8rem;font-weight:800">GemSprout</div>
-    <div style="color:rgba(255,255,255,0.8);font-size:1rem"><i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Loading...</div>`;
+    <img src="gemsproutpadded.png" class="loading-img" style="width:160px;height:160px">
+    <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.01em">GemSprout</div>
+    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:7px">
+      <i class="ph-duotone ph-hourglass" style="font-size:1.1rem"></i> Loading...
+    </div>`;
 }
 
 function routeAfterLoad() {
