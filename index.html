@@ -3894,6 +3894,9 @@ function showModal(html) {
   document.body.style.top      = `-${scrollY}px`;
   document.body.style.width    = '100%';
   document.body.dataset.scrollY = scrollY;
+  // Also lock the main-content scroller (has its own overflow-y: auto)
+  const mc = document.querySelector('.main-content');
+  if (mc) { mc.dataset.prevOverflow = mc.style.overflowY; mc.style.overflowY = 'hidden'; }
 
   const root = document.getElementById('modal-root');
   root.innerHTML = `
@@ -3911,9 +3914,10 @@ function _initModalSwipe() {
   if (!sheet) return;
   let startY = 0, currentY = 0, dragging = false;
   const onStart = (e) => {
-    // Only arm dismiss gesture if touch originated on the drag handle
-    const handle = document.getElementById('modal-drag-handle');
-    if (!handle || !handle.contains(e.target)) return;
+    // Arm dismiss gesture if touch is in the top 56px of the sheet (generous handle zone)
+    const sheetRect = sheet.getBoundingClientRect();
+    const touchY = e.touches[0].clientY;
+    if (touchY > sheetRect.top + 56) return;
     startY   = e.touches[0].clientY;
     currentY = startY;
     dragging = true;
@@ -3954,6 +3958,9 @@ function closeModal() {
   document.body.style.width    = '';
   delete document.body.dataset.scrollY;
   window.scrollTo(0, savedY);
+  // Restore main-content scroller
+  const mc = document.querySelector('.main-content');
+  if (mc) { mc.style.overflowY = mc.dataset.prevOverflow || ''; delete mc.dataset.prevOverflow; }
 }
 
 function closeModalIfBg(e) {
