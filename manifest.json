@@ -1,15 +1,15 @@
 {
-  "name": "Family Hub",
-  "short_name": "Family Hub",
+  "name": "GemSprout",
+  "short_name": "GemSprout",
   "description": "Chores, rewards, and goals for the whole family",
-  "start_url": "/Family-Hub/",
+  "start_url": "/GemSprout/",
   "display": "standalone",
   "background_color": "#F0F4FF",
   "theme_color": "#6C63FF",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/Family-Hub/gemsproutpadded.png",
+      "src": "/GemSprout/gemsproutpadded.png",
       "sizes": "700x700",
       "type": "image/png",
       "purpose": "any maskable"
