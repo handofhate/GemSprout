@@ -1,0 +1,58 @@
+workflows:
+  ios-release:
+    name: GemSprout iOS Release
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      # ── Signing ────────────────────────────────────────────────────────────
+      # Set these up in Codemagic Dashboard → Teams → Integrations:
+      #   1. Add your App Store Connect API key (key ID, issuer ID, .p8 file)
+      #   2. Add your iOS Distribution certificate + provisioning profile
+      #      OR enable Automatic Signing in Xcode and let Codemagic manage it
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.gemsprout.app
+      # ── App Store Connect API ──────────────────────────────────────────────
+      # Add an App Store Connect API integration in Codemagic Dashboard.
+      # This allows Codemagic to upload builds to TestFlight automatically.
+      integrations:
+        app_store_connect: GemSprout ASC Key   # name this in the dashboard
+      # ── Node / Xcode versions ─────────────────────────────────────────────
+      node: 20.x
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Install npm dependencies
+        script: npm install
+
+      - name: Sync Capacitor to iOS
+        script: npx cap sync ios
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+
+      - name: Increment build number
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID")
+          agvtool new-version -all $(($LATEST + 1))
+        working_directory: ios/App
+
+      - name: Build iOS IPA
+        script: |
+          xcode-project build-ipa \
+            --project "ios/App/App.xcodeproj" \
+            --scheme "App"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # Set to true when ready for full App Store submission:
+        submit_to_app_store: false
