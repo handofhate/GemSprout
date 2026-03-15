@@ -4365,6 +4365,10 @@ function renderSettings() {
 
       <div class="card" style="border:2px solid #FEE2E2">
         <div class="card-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</div>
+        <button class="btn btn-danger btn-sm" onclick="switchFamily()" style="width:100%;margin-bottom:8px">
+          <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and lets you connect to a different family using their code. Does not delete any family's data from the cloud.</div>
         <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
       </div>
 
@@ -8688,6 +8692,16 @@ function doAdjustSavings(memberId, sign) {
   closeModal();
   toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${m.name}`);
   renderSettings();
+}
+
+function switchFamily() {
+  if (!confirm('This will disconnect this device from your current family. Your family\'s data stays safe in the cloud — you\'ll just need the family code to rejoin. Continue?')) return;
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(FAMILY_CODE_KEY);
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  D = defaultData();
+  showScreen('screen-setup');
+  renderSetupGate();
 }
 
 function resetAllData() {
