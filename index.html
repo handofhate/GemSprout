@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Family Hub">
+  <meta name="apple-mobile-web-app-title" content="GemSprout">
   <meta name="theme-color" content="#6C63FF">
-  <title>Family Hub</title>
+  <title>GemSprout</title>
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="manifest" href="manifest.json">
@@ -1569,8 +1569,8 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
-const APP_UNLOCK_KEY = 'familyHub.appUnlocked';
-const CURRENT_USER_KEY = 'familyHub.currentUserId';
+const APP_UNLOCK_KEY = 'gemsprout.appUnlocked';
+const CURRENT_USER_KEY = 'gemsprout.currentUserId';
 
 function setAppUnlocked(v) {
   try { localStorage.setItem(APP_UNLOCK_KEY, v ? '1' : '0'); } catch (_) {}
@@ -1606,7 +1606,7 @@ function showAppPin() {
   S.pinMode   = 'app';
   document.getElementById('pin-content').innerHTML = `
     <div class="pin-avatar">💎</div>
-    <div class="pin-title">Family Hub</div>
+    <div class="pin-title">GemSprout</div>
     <div class="pin-sub">Enter parent PIN to continue</div>
     <div class="pin-dots" id="pin-dots">
       <div class="pin-dot" id="pd0"></div>
@@ -1793,7 +1793,7 @@ function defaultData() {
 }
 
 // ── DATA LAYER (Firestore + localStorage cache) ───────────────
-const LS_KEY = 'familyHub_v2';
+const LS_KEY = 'gemsprout_v2';
 let firestoreUnsub = null;
 
 function loadData() {
@@ -2962,7 +2962,7 @@ function runHereCheck() {
   // Browser notification (works when PWA is open; on installed PWA may work in bg)
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     const names = missing.map(m => m.name).join(', ');
-    new Notification('Family Hub', {
+    new Notification('GemSprout', {
       body: `${names} hasn't done any chores today — are they actually home?`,
     });
   }
@@ -4310,7 +4310,7 @@ function renderHome() {
   document.getElementById('home-content').innerHTML = `
     <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100vh;display:flex;flex-direction:column">
       <div class="home-logo">💎</div>
-      <div class="home-title">Family Hub</div>
+      <div class="home-title">GemSprout</div>
       <div class="home-family-name">${esc(D.family.name)}</div>
       <div class="profile-grid">${cards}</div>
       <button class="home-setup-btn" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Edit Family</button>
@@ -4322,7 +4322,7 @@ function renderHome() {
     ${bdayBanner}
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:24px">
       <div class="home-logo" style="color:#fff;font-size:3.5rem;margin-top:20px">💎</div>
-      <div class="home-title">Family Hub</div>
+      <div class="home-title">GemSprout</div>
       <div class="home-family-name">${esc(D.family.name)}</div>
       <div class="profile-grid" style="max-width:980px;width:100%;padding:0">${cards}</div>
     </div>
@@ -4426,7 +4426,7 @@ function pinKey(k) {
 }
 
 // ── BIOMETRIC / FACE ID ───────────────────────────────────────
-const BIOMETRIC_KEY = 'familyhub_biometric_id';
+const BIOMETRIC_KEY = 'gemsprout_biometric_id';
 
 function isBiometricSupported() {
   return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
@@ -4443,7 +4443,7 @@ async function registerBiometric() {
     const cred = await navigator.credentials.create({
       publicKey: {
         challenge,
-        rp: { name: 'Family Hub' },
+        rp: { name: 'GemSprout' },
         user: { id: new Uint8Array(16), name: 'parent', displayName: 'Parent' },
         pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
         authenticatorSelection: {
@@ -4556,7 +4556,7 @@ function renderSetupStep() {
       <div class="setup-top">
         <div class="setup-emoji"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:3rem"></i></div>
         <div class="setup-title">${D.setup ? 'Edit Family' : 'Welcome!'}</div>
-        <div class="setup-sub">${D.setup ? 'Update your family settings.' : "Let's set up your Family Hub in just a few steps."}</div>
+        <div class="setup-sub">${D.setup ? 'Update your family settings.' : "Let's set up your GemSprout in just a few steps."}</div>
       </div>
       <div class="form-group">
         <label class="form-label">Family name</label>
@@ -4648,7 +4648,7 @@ function renderSetupStep() {
       <div class="card" style="background:#F0FDF4;border:2px solid var(--green);margin-bottom:14px">
         <div class="card-title"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Sync is enabled</div>
         <p style="font-size:0.88rem;line-height:1.6;color:var(--muted)">
-          Family Hub uses Google Firestore to keep all devices in sync in real time.
+          GemSprout uses Google Firestore to keep all devices in sync in real time.
           Any change made on one device will appear on all others instantly.
         </p>
       </div>
@@ -4676,7 +4676,7 @@ function renderSetupStep() {
       <div style="text-align:center;padding:40px 20px">
         <div style="font-size:5rem"><i class="ph-duotone ph-confetti" style="color:#F97316"></i></div>
         <div class="setup-title mt-12">You're all set!</div>
-        <div class="setup-sub mt-8" style="margin-bottom:28px">Your Family Hub is ready. Have fun!</div>
+        <div class="setup-sub mt-8" style="margin-bottom:28px">Your GemSprout is ready. Have fun!</div>
         <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go! →</button>
       </div>`;
       break;
@@ -8062,7 +8062,7 @@ function showLoading() {
   el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center';
   el.innerHTML = `
     <div style="font-size:3.5rem">💎</div>
-    <div style="color:#fff;font-size:1.8rem;font-weight:800">Family Hub</div>
+    <div style="color:#fff;font-size:1.8rem;font-weight:800">GemSprout</div>
     <div style="color:rgba(255,255,255,0.8);font-size:1rem"><i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Loading...</div>`;
 }
 
@@ -8132,7 +8132,7 @@ if (document.readyState === 'loading') {
   init();
 }
 
-console.log('✅ Family Hub fully loaded!');
+console.log('✅ GemSprout fully loaded!');
   </script>
 </body>
 </html>
