@@ -8756,8 +8756,9 @@ function init() {
   applyInterestForAllKids();
   scheduleHereCheck();
 
-  // Migration: existing installs pre-date family codes — generate one so they aren't stuck
-  if (!getFamilyCode() && D.setup) setFamilyCode(genFamilyCode());
+  // Migration: existing installs pre-date family codes — generate one and push immediately
+  const _needsMigrationPush = !getFamilyCode() && D.setup;
+  if (_needsMigrationPush) setFamilyCode(genFamilyCode());
 
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
 
@@ -8779,7 +8780,10 @@ function init() {
       }
     } else showAppPin();
     auth.signInAnonymously()
-      .then(() => subscribeToFirestore())
+      .then(() => {
+        subscribeToFirestore();
+        if (_needsMigrationPush) pushToFirestore();
+      })
       .catch(err => console.warn('Firestore sync unavailable:', err));
   } else {
     // Slow path: no local data (fresh install or standalone PWA first launch)
