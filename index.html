@@ -1515,6 +1515,7 @@
 
   <!-- ═══════════ SCREEN: SETUP WIZARD ═══════════ -->
   <div id="screen-setup" class="screen">
+    <div id="setup-gate" style="flex:1;display:none;flex-direction:column"></div>
     <div class="setup-wrap" id="setup-content"></div>
   </div>
 
@@ -4737,7 +4738,11 @@ const SETUP_STEPS_EDIT = ['welcome','parents','members','sync','done'];
 let SETUP_STEPS = SETUP_STEPS_NEW;
 
 function renderSetupGate() {
-  document.getElementById('screen-setup').innerHTML = `
+  const gate = document.getElementById('setup-gate');
+  const content = document.getElementById('setup-content');
+  gate.style.display = 'flex';
+  content.style.display = 'none';
+  gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:24px;background:linear-gradient(145deg,#667eea,#764ba2)">
       <img src="gemsproutpadded.png" style="width:120px;height:120px">
       <div style="color:#fff;font-size:2rem;font-weight:800;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,0.2)">Welcome to GemSprout</div>
@@ -4755,11 +4760,14 @@ function renderSetupGate() {
 
 function startNewFamily() {
   setFamilyCode(genFamilyCode());
+  document.getElementById('setup-gate').style.display = 'none';
+  document.getElementById('setup-content').style.display = '';
   goSetup();
 }
 
 function showJoinFamily() {
-  document.getElementById('screen-setup').innerHTML = `
+  const gate = document.getElementById('setup-gate');
+  gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
       <div style="font-size:3.5rem"><i class="ph-duotone ph-link" style="color:#6C63FF"></i></div>
       <div style="font-weight:800;font-size:1.4rem">Join a Family</div>
@@ -5115,7 +5123,15 @@ function removeMemberCard(i) { if (!confirm('Remove this family member?')) retur
 
 function setMemberField(i, field, value, rerender=false) {
   if (S.setupMembers[i]) S.setupMembers[i][field] = value;
-  if (rerender) renderSetupStep();
+  if (rerender) {
+    S.setupMembers.forEach((_, j) => {
+      const ni = document.getElementById(`mname-${j}`);
+      const ai = document.getElementById(`mage-${j}`);
+      if (ni) S.setupMembers[j].name = ni.value;
+      if (ai) S.setupMembers[j].age = ai.value ? parseInt(ai.value) : '';
+    });
+    renderSetupStep();
+  }
 }
 
 function setMemberBday(i) {
@@ -5136,7 +5152,13 @@ function removeParentCard(i) { if (!confirm('Remove this parent?')) return; S.se
 
 function setParentField(i, field, value, rerender=false) {
   if (S.setupParents[i]) S.setupParents[i][field] = value;
-  if (rerender) renderSetupStep();
+  if (rerender) {
+    S.setupParents.forEach((_, j) => {
+      const ni = document.getElementById(`pname-${j}`);
+      if (ni) S.setupParents[j].name = ni.value;
+    });
+    renderSetupStep();
+  }
 }
 
 function setParentBday(i) {
