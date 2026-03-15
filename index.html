@@ -3771,6 +3771,37 @@ function launchBadgeRain(iconHtml, count = 55) {
   _startRain(pieces);
 }
 
+let _eggTaps = 0, _eggTimer = null;
+function easterEggTap() {
+  _eggTaps++;
+  const el = document.getElementById('egg-gem');
+  if (el) {
+    el.style.transform = 'scale(1.4)';
+    el.style.opacity = Math.min(0.25 + _eggTaps * 0.15, 1);
+    setTimeout(() => { if (el) el.style.transform = 'scale(1)'; }, 120);
+  }
+  clearTimeout(_eggTimer);
+  if (_eggTaps >= 5) {
+    _eggTaps = 0;
+    launchGemsproutRain();
+    return;
+  }
+  _eggTimer = setTimeout(() => { _eggTaps = 0; if (el) el.style.opacity = '0.25'; }, 2000);
+}
+
+function launchGemsproutRain(count = 40) {
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('img');
+    el.src = 'gemsproutpadded.png';
+    el.className = 'diamond-rain-piece';
+    const size = 32 + Math.random() * 36;
+    el.style.cssText = `left:${Math.random()*110 - 5}%;width:${size}px;height:${size}px;animation-duration:${1.8 + Math.random()*2}s;animation-delay:${Math.random()*1.8}s;opacity:${0.75 + Math.random()*0.25};`;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
 function launchConfetti(count = 50, emoji = '💎') {
   const pieces = [];
   for (let i = 0; i < count; i++) {
@@ -6512,7 +6543,7 @@ function renderFamilyStatsCard(kids) {
   return `
     <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:16px">
       <div onclick="toggleFamilyStats()" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${isExpanded?'18':'0'}px">
-        <img src="icon.svg" style="width:2.5rem;height:2.5rem;border-radius:10px;flex-shrink:0">
+        <img src="gemsproutpadded.png" style="width:2.5rem;height:2.5rem;border-radius:10px;flex-shrink:0">
         <div>
           <div style="font-size:1.1rem;font-weight:800">${esc(D.family.name || 'The Family')}</div>
           <div style="font-size:0.85rem;color:#6b7280">${kids.length} kid${kids.length !== 1 ? 's' : ''} · all-time combined stats</div>
@@ -6681,7 +6712,11 @@ function renderStatsPage(container) {
     }
   }
 
-  html += `</div>`;
+  html += `
+    <div style="text-align:center;padding:24px 0 8px">
+      <img src="gemsproutpadded.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
+    </div>
+  </div>`;
   container.innerHTML = html;
 }
 
