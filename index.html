@@ -1852,9 +1852,11 @@ function defaultData() {
       diamondsPerDollar:  10,
       currency:         '$',
       lastSync:         null,
+      familyTimezone:   '',
       // Leveling / streaks
       levelingEnabled:  true,
       streakEnabled:    true,
+      comboEnabled:     true,
       streakBonus3:     1,
       streakBonus7:     3,
       streakBonus14:    5,
@@ -2257,6 +2259,8 @@ function genId() {
 }
 
 function today() {
+  const tz = D?.settings?.familyTimezone;
+  if (tz) return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
   return formatDateLocal(new Date());
 }
 
@@ -3429,6 +3433,7 @@ function getDailyCombo(memberId) {
 }
 
 function checkComboBonus(memberId) {
+  if (D.settings.comboEnabled === false) return;
   const member = getMember(memberId);
   if (!member) return;
   const combo = getDailyCombo(memberId);
@@ -4270,6 +4275,15 @@ function renderSettings() {
           <div><div class="toggle-label">Sort prizes by value</div>
             <div class="toggle-sub">Shows cheapest prizes first in the shop and team tabs</div></div>
           <label class="toggle"><input type="checkbox" ${s.sortPrizesByValue?'checked':''} onchange="saveSetting('sortPrizesByValue',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="form-group">
+          <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family Timezone</label>
+          <select onchange="saveSetting('familyTimezone',this.value)" style="width:100%">
+            ${(Intl.supportedValuesOf?.('timeZone') ?? [s.familyTimezone]).map(tz =>
+              `<option value="${tz}" ${tz === (s.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) ? 'selected' : ''}>${tz.replace(/_/g,' ')}</option>`
+            ).join('')}
+          </select>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones.</div>
         </div>
         <div class="form-group">
           <label class="form-label">Parent PIN &amp; Face ID</label>
@@ -5270,6 +5284,9 @@ function finishSetup() {
     if (!c.assignedTo || c.assignedTo.length === 0) c.assignedTo = kidIds;
   });
 
+  if (!D.settings.familyTimezone) {
+    D.settings.familyTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  }
   D.setup = true;
   saveData();
   renderHome();
@@ -5424,7 +5441,7 @@ function renderKidChores() {
   const pct      = totalPts>0 ? Math.round(earnedPts/totalPts*100) : 0;
 
   // Daily combo
-  const comboIds  = new Set(getDailyCombo(m.id));
+  const comboIds  = D.settings.comboEnabled !== false ? new Set(getDailyCombo(m.id)) : new Set();
   const comboChores = [...comboIds].map(id => D.chores.find(c => c.id === id)).filter(Boolean);
   const comboCompleted = comboChores.filter(c => progressMap.get(c.id)?.status === 'done').length;
   const comboBonusAlreadyAwarded = m.comboBonusDate === today();
@@ -5447,7 +5464,7 @@ function renderKidChores() {
     </div>`;
 
   // Combo banner
-  if (comboChores.length >= 3) {
+  if (D.settings.comboEnabled !== false && comboChores.length >= 3) {
     const bonusPts = comboChores.reduce((s, c) => s + c.diamonds, 0);
     const _comboNames = comboChores.map(c => c.title);
     const _comboNameStr = _comboNames.slice(0,-1).join(', ') + ', and ' + _comboNames[_comboNames.length-1];
@@ -6956,7 +6973,7 @@ function renderParentHome() {
     const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
     const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
     const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
-    const kidCombo  = new Set(getDailyCombo(kid.id));
+    const kidCombo  = D.settings.comboEnabled !== false ? new Set(getDailyCombo(kid.id)) : new Set();
     const choreRows = myChores.length === 0
       ? `<div class="empty-state" style="padding:16px 8px"><div class="empty-text">No chores assigned</div></div>`
       : `<div class="kid-overview-list">${myChores.map(chore => {
@@ -7876,6 +7893,14 @@ function renderParentLevels() {
         <div class="form-group mb-0"><label class="form-label">14-day streak</label><input type="number" value="${s.streakBonus14||5}" min="0" onchange="saveSetting('streakBonus14',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
         <div class="form-group mb-0"><label class="form-label">30-day streak</label><input type="number" value="${s.streakBonus30||10}" min="0" onchange="saveSetting('streakBonus30',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin:0"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</div>
+        <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+      </div>
+      <p style="font-size:0.83rem;color:var(--muted)">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores. ${s.comboEnabled!==false?'':'<b>Currently disabled.</b>'}</p>
     </div>
 
     <div class="card">
