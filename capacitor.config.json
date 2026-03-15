@@ -1,5 +1,14 @@
 {
   "appId": "com.gemsprout.app",
   "appName": "GemSprout",
-  "webDir": "."
+  "webDir": ".",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  },
+  "ios": {
+    "scheme": "GemSprout",
+    "contentInset": "always"
+  }
 }
