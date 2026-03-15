@@ -28,7 +28,12 @@ workflows:
         script: npm install
 
       - name: Sync Capacitor to iOS
-        script: npx cap sync ios
+        script: |
+          mkdir -p www
+          cp index.html www/
+          cp manifest.json www/
+          cp *.png www/
+          npx cap sync ios
 
       - name: Set up code signing
         script: xcode-project use-profiles
