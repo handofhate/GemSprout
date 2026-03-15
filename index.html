@@ -2009,6 +2009,48 @@ function checkForSavingsRequestOutcomes(member, isWhileAway = false) {
   });
 }
 
+function markBadgesSeen(memberId) {
+  const ids = (D.history || [])
+    .filter(h => h.memberId === memberId && h.type === 'badge')
+    .map(h => h.id);
+  try { localStorage.setItem(`_seenBadge_${memberId}`, JSON.stringify(ids)); } catch(e) {}
+}
+
+function getSeenBadgeIds(memberId) {
+  try {
+    const raw = localStorage.getItem(`_seenBadge_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function checkForNewBadges(member, isWhileAway = false) {
+  const seenIds = getSeenBadgeIds(member.id);
+  const newBadges = (D.history || []).filter(h =>
+    h.memberId === member.id &&
+    h.type === 'badge' &&
+    !seenIds.has(h.id)
+  );
+  if (newBadges.length === 0) return;
+  markBadgesSeen(member.id);
+  const tiny = isTiny(member);
+  const titleHtml = isWhileAway
+    ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...'
+    : '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i> New Badge!';
+  newBadges.forEach(h => {
+    const rawIcon = h.badgeIcon || '🏅';
+    const displayIcon = rawIcon.includes('<')
+      ? rawIcon.replace(/font-size:[^;'"]+/g, 'font-size:3rem')
+      : `<span style="font-size:3rem">${rawIcon}</span>`;
+    showCelebration({
+      icon:      displayIcon,
+      title:     titleHtml,
+      sub:       h.title + (h.choreTitle ? ` · ${h.choreTitle}` : ''),
+      badgeIcon: rawIcon,
+      tts:       tiny ? `You earned a new badge! ${h.title}!` : null,
+    });
+  });
+}
+
 function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = false) {
   let totalNewDiamonds = 0;
   const approvedChores = [];
@@ -2100,10 +2142,12 @@ function subscribeToFirestore(onFirstLoad) {
         checkForNewBonuses(S.currentUser, true); // check for manual bonuses while away
         checkForNewSavingsDeposits(S.currentUser, true); // check for savings deposits while away
         checkForSavingsRequestOutcomes(S.currentUser, true); // check for spend request outcomes while away
+        checkForNewBadges(S.currentUser, true); // check for badge awards while away
       }
       if (typeof onFirstLoad === 'function') onFirstLoad();
     } else {
       renderCurrentView();
+      if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
     }
   }, err => {
     S.syncStatus = 'error';
@@ -2835,8 +2879,7 @@ function awardBadgeIfNew(member, badgeId) {
   const def = getBaseBadgeDef(badgeId);
   if (!def || def.disabled) return false;
   member.badges.push(badgeId);
-  addHistory('badge', member.id, `${def.icon} ${def.name}`, 0);
-  toast(`${def.icon} Badge unlocked: ${def.name}!`);
+  addHistory('badge', member.id, def.name, 0, { badgeIcon: def.icon });
   return true;
 }
 
@@ -2860,8 +2903,7 @@ function checkChoreBadges(chore, memberId) {
     const key = `cb_${badge.id}`;
     if (doneCount >= badge.count && !member.badges.includes(key)) {
       member.badges.push(key);
-      addHistory('badge', member.id, `${badge.icon||'🏅'} ${badge.name}`, 0, { choreTitle: chore.title });
-      toast(`${badge.icon||'🏅'} New badge: ${badge.name}! (${chore.title} × ${badge.count})`);
+      addHistory('badge', member.id, badge.name || 'Badge', 0, { badgeIcon: badge.icon || '🏅', choreTitle: chore.title });
     }
   }
 }
@@ -3643,6 +3685,26 @@ function _startRain(pieces) {
   }, 5000);
 }
 
+function launchBadgeRain(iconHtml, count = 55) {
+  const isHtml = iconHtml.includes('<');
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'diamond-rain-piece';
+    if (isHtml) el.innerHTML = iconHtml;
+    else el.textContent = iconHtml;
+    el.style.cssText = `
+      left:${Math.random()*110 - 5}%;
+      font-size:${1.0 + Math.random()*1.4}rem;
+      animation-duration:${1.5 + Math.random()*2}s;
+      animation-delay:${Math.random()*1.6}s;
+      opacity:${0.7 + Math.random()*0.3};
+    `;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
 function launchConfetti(count = 50, emoji = '💎') {
   const pieces = [];
   for (let i = 0; i < count; i++) {
@@ -3714,7 +3776,7 @@ function _showNextCelebration() {
   _renderCelebration(_celebQueue.shift());
 }
 
-function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, dollars=null, cur='$', noAnimation=false, btnLabel=null, tts=null, onClose=null }) {
+function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, dollars=null, cur='$', noAnimation=false, badgeIcon=null, btnLabel=null, tts=null, onClose=null }) {
   const root = document.getElementById('celebration-root');
   const ptsHtml = diamonds !== null
     ? `<div class="cel-diamonds">+${diamonds} 💎</div>`
@@ -3739,7 +3801,8 @@ function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=
     </div>`;
 
   if (!noAnimation) {
-    if (dollars !== null) launchDollarRain();
+    if (badgeIcon !== null) launchBadgeRain(badgeIcon);
+    else if (dollars !== null) launchDollarRain();
     else launchConfetti();
   }
   if (tts) speak(tts);
