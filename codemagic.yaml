@@ -4,21 +4,13 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
 
+    integrations:
+      app_store_connect: GemSprout ASC Key
+
     environment:
-      # ── Signing ────────────────────────────────────────────────────────────
-      # Set these up in Codemagic Dashboard → Teams → Integrations:
-      #   1. Add your App Store Connect API key (key ID, issuer ID, .p8 file)
-      #   2. Add your iOS Distribution certificate + provisioning profile
-      #      OR enable Automatic Signing in Xcode and let Codemagic manage it
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.gemsprout.app
-      # ── App Store Connect API ──────────────────────────────────────────────
-      # Add an App Store Connect API integration in Codemagic Dashboard.
-      # This allows Codemagic to upload builds to TestFlight automatically.
-      integrations:
-        app_store_connect: GemSprout ASC Key   # name this in the dashboard
-      # ── Node / Xcode versions ─────────────────────────────────────────────
+        bundle_identifier: com.gemsprout.ios
       node: 20.x
       xcode: latest
       cocoapods: default
