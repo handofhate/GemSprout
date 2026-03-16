@@ -5795,11 +5795,13 @@ async function submitChorePhoto(choreId, slotId, entryType) {
 }
 
 async function uploadChorePhoto(file) {
-  const compressed = await compressImage(file, 800, 0.75);
-  const path = `chore-photos/${getFamilyCode()}/${Date.now()}_${genId()}.jpg`;
-  const ref  = storage.ref(path);
-  await ref.put(compressed, { contentType: 'image/jpeg' });
-  return ref.getDownloadURL();
+  const compressed = await compressImage(file, 600, 0.65);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(compressed);
+  });
 }
 
 function compressImage(file, maxPx, quality) {

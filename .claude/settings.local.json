@@ -19,7 +19,13 @@
       "Bash(node -e \"const fs=require\\(''fs''\\);const p=''c:/Users/Ty/Documents/Family Hub/index.html'';const lines=fs.readFileSync\\(p,''utf8''\\).split\\(''\\\\n''\\);lines.splice\\(7438,155\\);fs.writeFileSync\\(p,lines.join\\(''\\\\n''\\),''utf8''\\);console.log\\(''Done, total lines now:'',lines.length\\);\")",
       "WebSearch",
       "Bash(python3 -c \":*)",
-      "Bash(npm init:*)"
+      "Bash(npm init:*)",
+      "Bash(mv \"8.PNG\" \"9.PNG\")",
+      "Bash(mv \"7.PNG\" \"8.PNG\")",
+      "Bash(mv \"6.PNG\" \"7.PNG\")",
+      "Bash(mv \"5.PNG\" \"6.PNG\")",
+      "Bash(mv \"9.png\" \"5.PNG\")",
+      "Bash(\"c:/Users/Ty/Documents/gemsprout-site/CNAME\")"
     ]
   }
 }
