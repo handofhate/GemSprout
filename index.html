@@ -1414,14 +1414,14 @@
     #adv-editor-root.open { display: block; }
     #settings-root { position: fixed; inset: 0; z-index: 2000; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg); }
     #settings-root.open { display: block; }
-    .settings-header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+    .settings-header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--border); padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px; display: flex; align-items: center; gap: 12px; }
     .settings-header-title { font-weight: 800; font-size: 1.1rem; flex: 1; }
     .settings-body { padding: 16px 16px 80px; max-width: 680px; margin: 0 auto; }
     .settings-member-actions { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
     .settings-member-action-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #F9FAFB; border-radius: 12px; }
     .settings-member-action-label { font-weight: 700; font-size: 0.88rem; }
     .settings-member-action-sub { font-size: 0.76rem; color: var(--muted); margin-top: 2px; }
-    .adv-editor-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #1f2937; color: #fff; }
+    .adv-editor-header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px; background: #1f2937; color: #fff; }
     .adv-editor-title  { font-size: 1rem; font-weight: 800; flex: 1; }
     .adv-editor-body   { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
     .adv-section       { background: #fff; border-radius: 10px; border: 1px solid #d1d5db; }
