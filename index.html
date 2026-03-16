@@ -418,7 +418,7 @@
       transition: all 0.2s;
     }
     .chore-item.done    { background: #F0FDF4; border-color: var(--green); }
-    .chore-item.pending { background: #FFFBEB; border-color: var(--yellow); }
+    .chore-item.pending { background: #F5F3FF; border-color: var(--purple); }
     .chore-icon  { font-size: 2rem; flex-shrink: 0; }
     .chore-info  { flex: 1; min-width: 0; }
     .chore-name  { font-weight: 600; font-size: 0.95rem; }
@@ -437,7 +437,7 @@
     }
     .chore-btn:active { opacity: 0.7; }
     .chore-btn-do      { background: var(--purple); color: #fff; }
-    .chore-btn-pending { background: var(--yellow); color: var(--text); cursor: default; }
+    .chore-btn-pending { background: #EDE9FE; color: #7C3AED; cursor: default; }
     .chore-btn-done    { background: var(--green); color: #fff; cursor: default; }
 
     /* ══════════════════════════════════════════
@@ -1857,6 +1857,7 @@ function defaultData() {
       levelingEnabled:  true,
       streakEnabled:    true,
       comboEnabled:     true,
+      comboOverrides:   {},
       streakBonus3:     1,
       streakBonus7:     3,
       streakBonus14:    5,
@@ -1879,6 +1880,7 @@ function defaultData() {
     teamGoals:       [],
     history:         [],
     savingsRequests: [],
+    declineNotifications: [],
   };
 }
 
@@ -2140,6 +2142,28 @@ function checkForNewBadges(member, isWhileAway = false) {
   });
 }
 
+function checkForDeclineNotifications(member, isWhileAway = false) {
+  if (!D.declineNotifications) return;
+  const pending = D.declineNotifications.filter(n => n.memberId === member.id && !n.seen);
+  if (pending.length === 0) return;
+  pending.forEach(n => { n.seen = true; });
+  saveData();
+  const tiny = isTiny(member);
+  pending.forEach(n => {
+    const titleHtml = isWhileAway
+      ? '<i class="ph-duotone ph-moon-stars" style="color:#EF4444"></i> While you were away...'
+      : '<i class="ph-duotone ph-x-circle" style="color:#EF4444"></i> Chore Declined';
+    showCelebration({
+      icon:        renderIcon(n.choreIcon, n.choreIconColor, 'font-size:3rem') || '<i class="ph-duotone ph-x-circle" style="color:#EF4444;font-size:3rem"></i>',
+      title:       titleHtml,
+      sub:         n.reason ? `"${esc(n.choreTitle)}" was declined: ${esc(n.reason)}` : `"${esc(n.choreTitle)}" was declined`,
+      noAnimation: true,
+      tts:         tiny ? `Your chore was declined.${n.reason ? ' Reason: ' + n.reason : ''}` : null,
+      onClose:     () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
+  });
+}
+
 function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = false) {
   let totalNewDiamonds = 0;
   const approvedChores = [];
@@ -2181,7 +2205,7 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
     });
   } else {
     showCelebration({
-      icon:     approvedChores[0]?.icon || '💎',
+      icon:     renderIcon(approvedChores[0]?.icon, approvedChores[0]?.iconColor, 'font-size:3rem') || '💎',
       title:    tiny ? '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Your parent said YES!' : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Chore Approved!',
       sub:      subLine,
       diamonds: totalNewDiamonds,
@@ -2210,11 +2234,12 @@ function subscribeToFirestore(onFirstLoad) {
         if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
           checkForApprovalCelebration(prevPending, S.currentUser);
         }
-        // Trigger celebration for new manual bonus diamonds, savings deposits, or spend outcomes
+        // Trigger celebration for new manual bonus diamonds, savings deposits, spend outcomes, or declines
         if (!firstSnapshot && S.currentUser?.role === 'kid') {
           checkForNewBonuses(S.currentUser, false);
           checkForNewSavingsDeposits(S.currentUser, false);
           checkForSavingsRequestOutcomes(S.currentUser, false);
+          checkForDeclineNotifications(S.currentUser, false);
         }
       }
     }
@@ -2232,6 +2257,7 @@ function subscribeToFirestore(onFirstLoad) {
         checkForNewSavingsDeposits(S.currentUser, true); // check for savings deposits while away
         checkForSavingsRequestOutcomes(S.currentUser, true); // check for spend request outcomes while away
         checkForNewBadges(S.currentUser, true); // check for badge awards while away
+        checkForDeclineNotifications(S.currentUser, true); // check for declines while away
       }
       if (typeof onFirstLoad === 'function') onFirstLoad();
     } else {
@@ -2807,12 +2833,23 @@ function doApproveChore(choreId, memberId, entryId) {
   saveData();
 }
 
-function doRejectChore(choreId, memberId, entryId) {
+function doRejectChore(choreId, memberId, entryId, reason = '') {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore) return;
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]).filter(entry => entry.id !== entryId);
   if (!chore.completions[memberId].length) delete chore.completions[memberId];
   addHistory('decline', memberId, chore.title, 0);
+  if (!D.declineNotifications) D.declineNotifications = [];
+  D.declineNotifications.push({
+    id: genId(),
+    memberId,
+    choreTitle: chore.title,
+    choreIcon: chore.icon || '',
+    choreIconColor: chore.iconColor || '',
+    reason: reason || '',
+    date: today(),
+    seen: false,
+  });
   saveData();
 }
 
@@ -3429,7 +3466,28 @@ function getAllDailyCombos() {
 }
 
 function getDailyCombo(memberId) {
+  const override = D.settings.comboOverrides?.[memberId];
+  if (override && override.date === today()) return override.ids;
   return getAllDailyCombos()[memberId] || [];
+}
+
+function setComboOverride(memberId, slotIndex, choreId) {
+  if (!D.settings.comboOverrides) D.settings.comboOverrides = {};
+  const current = D.settings.comboOverrides[memberId];
+  const existingIds = (current?.date === today()) ? [...current.ids] : getDailyCombo(memberId).slice(0, 3);
+  existingIds[slotIndex] = choreId;
+  D.settings.comboOverrides[memberId] = { date: today(), ids: existingIds };
+  _allCombosCache = { key: null, combos: {} };
+  saveData();
+  renderParentLevels();
+}
+
+function clearComboOverride(memberId) {
+  if (!D.settings.comboOverrides) return;
+  delete D.settings.comboOverrides[memberId];
+  _allCombosCache = { key: null, combos: {} };
+  saveData();
+  renderParentLevels();
 }
 
 function checkComboBonus(memberId) {
@@ -5704,7 +5762,7 @@ function choreCompleteReact(chore, m, result, evt) {
   } else {
     if (tiny) {
       showCelebration({
-        icon: chore?.icon||'💎',
+        icon: renderIcon(chore?.icon, chore?.iconColor, 'font-size:3rem') || '💎',
         title: 'Amazing job! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
         sub:   esc(chore?.title||'Chore'),
         diamonds: chore?.diamonds||0,
@@ -7136,7 +7194,26 @@ function approveChore(choreId, memberId, entryId) {
 }
 
 function rejectChore(choreId, memberId, entryId) {
-  doRejectChore(choreId, memberId, entryId);
+  const m = getMember(memberId);
+  const chore = D.chores.find(c => c.id === choreId);
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-x-circle" style="color:#EF4444;font-size:1.2rem;vertical-align:middle"></i> Decline Chore</div>
+    <p style="margin-bottom:16px;color:var(--muted);font-size:0.9rem">Declining <strong>${esc(chore?.title)}</strong> for ${esc(m?.name)}.</p>
+    <div class="form-group">
+      <label class="form-label">Reason (optional)</label>
+      <input id="decline-reason-input" type="text" placeholder="e.g. Didn't do it properly" style="width:100%">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmRejectChore('${choreId}','${memberId}','${entryId}')">Decline</button>
+    </div>`);
+  setTimeout(() => document.getElementById('decline-reason-input')?.focus(), 100);
+}
+
+function confirmRejectChore(choreId, memberId, entryId) {
+  const reason = document.getElementById('decline-reason-input')?.value?.trim() || '';
+  closeModal();
+  doRejectChore(choreId, memberId, entryId, reason);
   const m = getMember(memberId);
   toast(`Chore declined for ${m?.name}`);
   renderParentHome();
@@ -7906,7 +7983,28 @@ function renderParentLevels() {
         <div class="card-title" style="margin:0"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</div>
         <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
       </div>
-      <p style="font-size:0.83rem;color:var(--muted)">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores. ${s.comboEnabled!==false?'':'<b>Currently disabled.</b>'}</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.comboEnabled!==false?'14px':'0'}">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores. ${s.comboEnabled!==false?'':'<b>Currently disabled.</b>'}</p>
+      ${s.comboEnabled!==false ? (() => {
+        const kids = D.family.members.filter(m => m.role==='kid' && !m.deleted);
+        if (!kids.length) return '';
+        return kids.map(kid => {
+          const combo = getDailyCombo(kid.id);
+          const comboChores = combo.map(id => D.chores.find(c => c.id===id)).filter(Boolean);
+          const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
+          const opts = eligible.map(c => `<option value="${c.id}"${combo.includes(c.id)?'':''} >${esc(c.title)}</option>`).join('');
+          return `<div style="margin-bottom:10px">
+            <div style="font-size:0.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">${esc(kid.name)}'s combo today</div>
+            ${[0,1,2].map(i => `
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <span style="font-size:0.75rem;color:var(--muted);width:16px">${i+1}.</span>
+                <select style="flex:1;font-size:0.82rem;padding:6px 8px;border-radius:8px;border:1px solid var(--border)" onchange="setComboOverride('${kid.id}',${i},this.value)">
+                  ${eligible.map(c => `<option value="${c.id}"${(comboChores[i]?.id===c.id)?'selected':''}>${esc(c.title)}</option>`).join('')}
+                </select>
+              </div>`).join('')}
+            <button class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:4px 10px" onclick="clearComboOverride('${kid.id}')">Reset to Random</button>
+          </div>`;
+        }).join('<hr style="border:none;border-top:1px solid var(--border);margin:10px 0">');
+      })() : ''}
     </div>
 
     <div class="card">
