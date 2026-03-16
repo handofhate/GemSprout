@@ -9,6 +9,9 @@
   },
   "ios": {
     "scheme": "GemSprout",
-    "contentInset": "always"
+    "contentInset": "always",
+    "infoPlist": {
+      "ITSAppUsesNonExemptEncryption": false
+    }
   }
 }
