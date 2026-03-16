@@ -11,7 +11,7 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.gemsprout.ios
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
 
