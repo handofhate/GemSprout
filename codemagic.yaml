@@ -25,6 +25,7 @@ workflows:
           cp index.html www/
           cp manifest.json www/
           cp *.png www/
+          npx cap add ios
           npx cap sync ios
 
       - name: Set up code signing
