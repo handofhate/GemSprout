@@ -6217,7 +6217,7 @@ function applyInterestForAllKids() {
     : d.getDate() === 1;        // 1st of month
   if (!isInterestDay) return;
 
-  const kids = getKids();
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   let changed = false;
   kids.forEach(m => {
     if ((m.savings || 0) <= 0) return;
