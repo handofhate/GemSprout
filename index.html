@@ -191,7 +191,7 @@
       background: #fff;
       display: flex;
       border-top: 1px solid var(--border);
-      padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 12px);
+      padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 6px);
       border-radius: 22px 22px 0 0;
       z-index: 100;
       box-shadow: 0 -4px 20px rgba(0,0,0,0.07);
@@ -201,7 +201,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 10px 6px 16px;
+      padding: 6px 6px 10px;
       cursor: pointer;
       border: none;
       background: none;
@@ -242,11 +242,13 @@
     .main-content {
       flex: 1;
       overflow-y: auto;
-      padding: 16px 16px 100px;
+      padding: 16px 16px 130px;
       width: min(100%, 1180px);
       margin: 0 auto;
       -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
+    .main-content::-webkit-scrollbar { display: none; }
 
     /* ══════════════════════════════════════════
        CARDS
@@ -886,10 +888,16 @@
     .schedule-day-toggle input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--purple); }
     .schedule-day-hours {
       display: grid;
-      grid-template-columns: 1fr auto 1fr;
+      grid-template-columns: 1fr auto 1fr auto;
       gap: 8px;
       align-items: center;
     }
+    .copy-time-btn {
+      background: none; border: none; cursor: pointer; padding: 4px;
+      color: var(--muted); font-size: 0.85rem; border-radius: 6px;
+      line-height: 1; transition: color 0.15s, background 0.15s;
+    }
+    .copy-time-btn:hover { color: var(--purple); background: #EDE9FE; }
     .schedule-day-hours span {
       font-size: 0.78rem;
       color: var(--muted);
@@ -1343,7 +1351,8 @@
       display: flex; align-items: center; gap: 8px;
       font-size: 0.85rem; font-weight: 600; color: #92400E;
     }
-    .combo-chore-item.done { text-decoration: line-through; opacity: 0.55; }
+    .combo-chore-item.done { opacity: 0.7; }
+    .combo-chore-item.done .combo-item-title { text-decoration: line-through; }
     .combo-chore-item-check { font-size: 1rem; width: 20px; text-align: center; }
 
     /* Drag-to-reorder */
@@ -4532,6 +4541,7 @@ function renderCurrentView() {
 
 // ── PULL TO REFRESH ────────────────────────────────────────────
 (function setupPullToRefresh() {
+  return; // Disabled — appears behind iOS notch; manual refresh via Firestore subscription
   const indicator = document.getElementById('ptr-indicator');
   let startY = 0, pulling = false, triggered = false, activeScroller = null;
   let lastScrollTime = 0;
@@ -5504,7 +5514,7 @@ function switchKidTab(tab) {
     const affordable = D.prizes.filter(p => p.type === 'individual' && (p.cost || 0) <= dmds).length;
     speak(`You have ${dmds} diamonds to spend and can afford ${affordable} prize${affordable === 1 ? '' : 's'}.`);
   } else if (tab === 'team') {
-    speak('Spend your diamonds towards team goals.');
+    speak('Spend your diamonds towards team prizes.');
   } else if (tab === 'stats') {
     speak('Good job! Here\'s everything you\'ve accomplished.');
   }
@@ -5601,8 +5611,10 @@ function renderKidChores() {
             const isDone = progressMap.get(c.id)?.status === 'done';
             return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
               <span class="combo-chore-item-check">${isDone ? '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1.1rem"></i>' : '<i class="ph-duotone ph-circle" style="color:#D1D5DB;font-size:1.1rem"></i>'}</span>
-              <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} ${esc(c.title)}</span>
-              <span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>
+              <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} <span class="combo-item-title">${esc(c.title)}</span></span>
+              ${isDone
+                ? `<span style="margin-left:auto;font-size:0.75rem;color:#16A34A;font-weight:700">+${c.diamonds}×2 = ${c.diamonds*2}</span>`
+                : `<span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>`}
             </div>`;
           }).join('')}
         </div>
@@ -5662,7 +5674,8 @@ function renderKidChores() {
 
 function normalChoreCard(chore, member, progress, comboIds = null) {
   const isCombo = comboIds?.has(chore.id) || false;
-  const comboClass = isCombo ? ' combo-chore' : '';
+  const choreStatus = progress?.status || 'none';
+  const comboClass = isCombo && choreStatus !== 'done' ? ' combo-chore' : '';
   const tiny = isTiny(member);
   const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
   const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
@@ -5677,7 +5690,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
       else if (ss === 'available') {
         const btnLabel = chore.requiresPhoto
           ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
-          : (tiny ? '<i class="ph-duotone ph-check" style="font-size:1.5rem;vertical-align:middle"></i>'  : '<i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i> Done');
+          : (tiny ? '<i class="ph-duotone ph-check-circle" style="font-size:1.5rem;vertical-align:middle"></i>'  : '<i class="ph-duotone ph-check-circle" style="font-size:0.9rem;vertical-align:middle"></i> Done');
         slotBtn = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')">${btnLabel}</button>`;
       } else {
         const timeHint = slot.start ? formatTimeWindow({start:slot.start, end:slot.end}) : '';
@@ -5702,21 +5715,21 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
     return normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds);
   }
 
-  const status = progress?.status || 'none';
+  const status = choreStatus;
   const submitted = progress?.completedCount || 0;
   const target = progress?.targetCount || (status === 'done' ? progress?.doneCount || 1 : 0);
   let btnHtml = '';
   if (progress?.canSubmit) {
     const doneLabel = tiny
-      ? '<i class="ph-duotone ph-check" style="font-size:1.5rem;vertical-align:middle"></i>'
-      : (submitted > 0 ? '<i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i> One more' : '<i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i> Done!');
+      ? '<i class="ph-duotone ph-check-circle" style="font-size:1.5rem;vertical-align:middle"></i>'
+      : (submitted > 0 ? '<i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i> One more' : '<i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i> Done');
     btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)">${doneLabel}</button>`;
   } else if (status==='pending' || status==='partial') {
     btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Pending</span>`;
   } else if (status==='unavailable') {
     btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-clock" style="font-size:0.9rem;vertical-align:middle"></i> Later</span>`;
   } else {
-    btnHtml = `<span class="chore-btn chore-btn-done"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Done</span>`;
+    btnHtml = ''; // done — no button needed; section header already says "Done Today"
   }
   return `
     <div class="chore-item ${status}${comboClass}"${ttsAttr}>
@@ -7584,6 +7597,7 @@ function showChoreModal(choreId) {
           <input type="time" id="cm-start-${day.value}" value="${win.start||''}" ${checked?'':'disabled'}>
           <span>to</span>
           <input type="time" id="cm-end-${day.value}" value="${win.end||''}" ${checked?'':'disabled'}>
+          <button class="copy-time-btn" title="Copy this time to all days" onclick="copyDayTimeToAll(${day.value})"><i class="ph-duotone ph-copy" style="font-size:1rem;vertical-align:middle"></i></button>
         </div>
       </div>`;
   }).join('');
@@ -7749,6 +7763,20 @@ function toggleChoreScheduleFields() {
   const wrap = document.getElementById('cm-schedule-fields');
   if (!wrap) return;
   wrap.style.display = freq === 'once' ? 'none' : 'block';
+}
+
+function copyDayTimeToAll(fromDay) {
+  const start = document.getElementById(`cm-start-${fromDay}`)?.value || '';
+  const end   = document.getElementById(`cm-end-${fromDay}`)?.value   || '';
+  WEEKDAY_OPTIONS.forEach(d => {
+    const cb = document.getElementById(`cm-day-${d.value}`);
+    if (!cb?.checked) return;
+    const s = document.getElementById(`cm-start-${d.value}`);
+    const e = document.getElementById(`cm-end-${d.value}`);
+    if (s) s.value = start;
+    if (e) e.value = end;
+  });
+  toast('Time copied to all active days');
 }
 
 function toggleChoreDayRow(dayIndex) {
