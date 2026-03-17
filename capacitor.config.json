@@ -9,7 +9,7 @@
   },
   "ios": {
     "scheme": "GemSprout",
-    "contentInset": "always",
+    "contentInset": "never",
     "infoPlist": {
       "ITSAppUsesNonExemptEncryption": false,
       "NSCameraUsageDescription": "GemSprout uses your camera so kids can take before and after photos of completed chores."
