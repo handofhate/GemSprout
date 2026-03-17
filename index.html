@@ -37,13 +37,19 @@
     html {
       font-size: var(--base-font);
       background: var(--purple);
-      overscroll-behavior: none;
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
       overscroll-behavior: none;
       overflow-x: hidden;
       -webkit-tap-highlight-color: transparent;
@@ -1417,8 +1423,8 @@
     /* ── ADVANCED EDITOR ── */
     #adv-editor-root { position: fixed; inset: 0; z-index: 3000; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #f8f9fa; }
     #adv-editor-root.open { display: block; }
-    #settings-root { position: fixed; inset: 0; z-index: 2000; display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg); }
-    #settings-root.open { display: block; }
+    #settings-root { position: fixed; inset: 0; z-index: 2000; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg); opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
+    #settings-root.open { opacity: 1; pointer-events: auto; }
     .settings-header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--border); padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px; display: flex; align-items: center; gap: 12px; }
     .settings-header-title { font-weight: 800; font-size: 1.1rem; flex: 1; }
     .settings-body { padding: 16px 16px 80px; max-width: 680px; margin: 0 auto; }

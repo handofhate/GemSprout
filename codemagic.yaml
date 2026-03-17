@@ -28,6 +28,11 @@ workflows:
           npx cap add ios
           npx cap sync ios
 
+      - name: Set Info.plist flags
+        script: |
+          plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
+          plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
+
       - name: Set up code signing
         script: xcode-project use-profiles
 
