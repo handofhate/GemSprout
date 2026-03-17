@@ -37,16 +37,12 @@
     html {
       font-size: var(--base-font);
       background: var(--purple);
-      height: 100%;
-      overflow: hidden;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      height: 100%;
-      overflow: hidden;
-      overscroll-behavior: none;
+      min-height: 100vh;
       overflow-x: hidden;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation; /* disable double-tap zoom */
@@ -4076,6 +4072,26 @@ function testSpendDenied() {
   });
 }
 
+function emailDebugLogs() {
+  const html = document.documentElement;
+  const body = document.body;
+  const logs = [
+    `UA: ${navigator.userAgent}`,
+    `window.inner: ${window.innerWidth}x${window.innerHeight}`,
+    `screen: ${screen.width}x${screen.height}`,
+    `devicePixelRatio: ${window.devicePixelRatio}`,
+    `html scrollTop/Height: ${html.scrollTop} / ${html.scrollHeight}`,
+    `html clientHeight: ${html.clientHeight}`,
+    `body scrollTop/Height: ${body.scrollTop} / ${body.scrollHeight}`,
+    `body clientHeight: ${body.clientHeight}`,
+    `body offsetHeight: ${body.offsetHeight}`,
+    `visualViewport: ${window.visualViewport?.width}x${window.visualViewport?.height} offset:${window.visualViewport?.offsetTop}`,
+    `safeAreaTop: ${getComputedStyle(html).getPropertyValue('--sat') || 'check env()'}`,
+    `screens visible: ${[...document.querySelectorAll('.screen')].filter(s => s.style.display !== 'none').map(s => s.id).join(', ')}`,
+  ].join('\n');
+  window.location.href = `mailto:gemsproutapp@gmail.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
+}
+
 function testCameraPermission() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -4185,20 +4201,6 @@ function openUserSettings() {
 function closeSettings() {
   document.getElementById('settings-root').classList.remove('open');
 }
-
-// Prevent WKWebView rubber-band / overscroll bounce on non-scrollable elements
-document.addEventListener('touchmove', function(e) {
-  let node = e.target;
-  while (node && node !== document.documentElement) {
-    const style = window.getComputedStyle(node);
-    const overflowY = style.overflowY;
-    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
-      return; // inside a scrollable container — allow it
-    }
-    node = node.parentNode;
-  }
-  e.preventDefault();
-}, { passive: false });
 
 // Swipe from left edge to close settings (iOS-style back gesture)
 (function() {
@@ -4498,6 +4500,7 @@ function renderSettings() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()">🛍️ Test Spend Approved</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>
 

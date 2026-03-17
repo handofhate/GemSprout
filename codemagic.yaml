@@ -33,6 +33,23 @@ workflows:
           npx cap add ios
           npx cap sync ios
 
+      - name: Disable WKWebView bounce
+        script: |
+          cat > ios/App/App/ViewController.swift << 'SWIFT'
+          import UIKit
+          import Capacitor
+
+          class ViewController: CAPBridgeViewController {
+            override func viewDidLoad() {
+              super.viewDidLoad()
+              self.webView?.scrollView.bounces = false
+              self.webView?.scrollView.alwaysBounceVertical = false
+              self.webView?.scrollView.alwaysBounceHorizontal = false
+            }
+          }
+          SWIFT
+          sed -i '' 's/customClass="CAPBridgeViewController"/customClass="ViewController"/g' ios/App/App/Base.lproj/Main.storyboard
+
       - name: Set Info.plist flags
         script: |
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
