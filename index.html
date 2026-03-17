@@ -4186,6 +4186,20 @@ function closeSettings() {
   document.getElementById('settings-root').classList.remove('open');
 }
 
+// Prevent WKWebView rubber-band / overscroll bounce on non-scrollable elements
+document.addEventListener('touchmove', function(e) {
+  let node = e.target;
+  while (node && node !== document.documentElement) {
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+      return; // inside a scrollable container — allow it
+    }
+    node = node.parentNode;
+  }
+  e.preventDefault();
+}, { passive: false });
+
 // Swipe from left edge to close settings (iOS-style back gesture)
 (function() {
   let startX = 0, startY = 0, tracking = false;
