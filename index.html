@@ -42,10 +42,12 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      overflow-x: hidden;
+      overflow: hidden;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation; /* disable double-tap zoom */
     }
+    * { scrollbar-width: none; }
+    *::-webkit-scrollbar { display: none; }
 
     /* ══════════════════════════════════════════
        SCREEN SYSTEM
@@ -242,7 +244,7 @@
     .main-content {
       flex: 1;
       overflow-y: auto;
-      padding: 16px 16px 130px;
+      padding: 16px 16px 115px;
       width: min(100%, 1180px);
       margin: 0 auto;
       -webkit-overflow-scrolling: touch;
@@ -427,7 +429,8 @@
     .chore-info  { flex: 1; min-width: 0; }
     .chore-name  { font-weight: 600; font-size: 0.95rem; }
     .chore-meta  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
-    .chore-action { flex-shrink: 0; }
+    .chore-action { flex-shrink: 0; width: 90px; display: flex; justify-content: flex-end; }
+    .chore-action .chore-btn { width: 100%; text-align: center; }
     .chore-btn {
       padding: 8px 14px;
       border-radius: 9px;
@@ -5615,7 +5618,7 @@ function renderKidChores() {
               <span class="combo-chore-item-check">${isDone ? '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1.1rem"></i>' : '<i class="ph-duotone ph-circle" style="color:#D1D5DB;font-size:1.1rem"></i>'}</span>
               <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} <span class="combo-item-title">${esc(c.title)}</span></span>
               ${isDone
-                ? `<span style="margin-left:auto;font-size:0.75rem;color:#16A34A;font-weight:700">+${c.diamonds}×2 = ${c.diamonds*2}</span>`
+                ? `<span style="margin-left:auto;font-size:0.75rem;font-weight:700"><span style="color:#D97706">+${c.diamonds}×2 = </span><span style="color:#16A34A">${c.diamonds*2}</span></span>`
                 : `<span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>`}
             </div>`;
           }).join('')}
@@ -5684,7 +5687,36 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
 
   // Slot mode: show per-slot rows inside the card
   if (progress?.isSlotMode) {
-    const slotsHtml = (progress.slotStatuses || []).map(({slot, status: ss}) => {
+    const slotStatuses = progress.slotStatuses || [];
+
+    // Single-slot: render exactly like a simple count card (no slot table)
+    if (slotStatuses.length === 1) {
+      const { slot, status: ss } = slotStatuses[0];
+      const label = slot.label || formatTimeWindow({start:slot.start, end:slot.end});
+      let btnHtml = '';
+      if (ss === 'available') {
+        const btnLabel = chore.requiresPhoto
+          ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
+          : (tiny ? '<i class="ph-duotone ph-check-circle" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i> Done');
+        btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')">${btnLabel}</button>`;
+      } else if (ss === 'pending') {
+        btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Pending</span>`;
+      } else if (ss !== 'done') {
+        btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-clock" style="font-size:0.9rem;vertical-align:middle"></i> Later</span>`;
+      }
+      const cardStatus = ss === 'done' ? 'done' : ss === 'pending' ? 'pending' : ss === 'available' ? 'none' : 'unavailable';
+      return `
+        <div class="chore-item ${cardStatus}${comboClass}"${ttsAttr}>
+          <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}</span>
+          <div class="chore-info">
+            <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
+            <div class="chore-meta">${fmtDmds(chore.diamonds)}${label ? ` · ${esc(label)}` : ''}</div>
+          </div>
+          <div class="chore-action">${btnHtml}</div>
+        </div>`;
+    }
+
+    const slotsHtml = slotStatuses.map(({slot, status: ss}) => {
       const label = slot.label || formatTimeWindow({start:slot.start, end:slot.end});
       let slotBtn;
       if (ss === 'done')    slotBtn = `<span class="slot-status slot-done"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></span>`;
