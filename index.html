@@ -50,7 +50,7 @@
     /* ══════════════════════════════════════════
        SCREEN SYSTEM
     ══════════════════════════════════════════ */
-    .screen { display: none; min-height: 100vh; flex-direction: column; }
+    .screen { display: none; min-height: 100dvh; flex-direction: column; }
     .screen.active { display: flex; }
     #screen-auth.loading { position: fixed; inset: 0; z-index: 9999; overflow: hidden; }
     @keyframes loading-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
@@ -4654,7 +4654,7 @@ function renderHome() {
     ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> It's a birthday today! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
 
   document.getElementById('home-content').innerHTML = `
-    <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100vh;display:flex;flex-direction:column">
+    <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100dvh;display:flex;flex-direction:column">
       <img class="home-logo" src="gemsproutpadded.png">
       <div class="home-title">GemSprout</div>
       <div class="home-family-name">${esc(D.family.name)}</div>
