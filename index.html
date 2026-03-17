@@ -34,12 +34,17 @@
       --base-font: 16px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: var(--base-font); }
+    html {
+      font-size: var(--base-font);
+      background: var(--purple);
+      overscroll-behavior: none;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      overscroll-behavior: none;
       overflow-x: hidden;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation; /* disable double-tap zoom */
@@ -4169,6 +4174,25 @@ function openUserSettings() {
 function closeSettings() {
   document.getElementById('settings-root').classList.remove('open');
 }
+
+// Swipe from left edge to close settings (iOS-style back gesture)
+(function() {
+  let startX = 0, startY = 0, tracking = false;
+  document.addEventListener('touchstart', e => {
+    if (e.touches[0].clientX < 24) { startX = e.touches[0].clientX; startY = e.touches[0].clientY; tracking = true; }
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > 60 && dy < 40) {
+      tracking = false;
+      const sr = document.getElementById('settings-root');
+      if (sr?.classList.contains('open')) closeSettings();
+    }
+  }, { passive: true });
+  document.addEventListener('touchend', () => { tracking = false; }, { passive: true });
+})();
 
 function switchUserNow() {
   closeModal();
