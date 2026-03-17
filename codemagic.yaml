@@ -4,6 +4,11 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
 
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/CocoaPods
+        - $CM_BUILD_DIR/node_modules
+
     integrations:
       app_store_connect: GemSprout ASC Key
 
