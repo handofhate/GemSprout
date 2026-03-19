@@ -2845,6 +2845,9 @@ function doApproveChore(choreId, memberId, entryId) {
   const entry = chore.completions[memberId].find(item => item.id === entryId);
   if (!entry) return;
 
+  // Photo served its purpose — drop it to keep Firestore document size in check
+  entry.photoUrl = null;
+
   if (entry.entryType === 'before') {
     // Approving a "before" photo just unlocks the chore — no diamonds yet
     entry.status = 'approved';
