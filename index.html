@@ -2177,6 +2177,7 @@ function checkForDeclineNotifications(member, isWhileAway = false) {
       title:       titleHtml,
       sub:         n.reason ? `"${esc(n.choreTitle)}" was declined: ${esc(n.reason)}` : `"${esc(n.choreTitle)}" was declined`,
       noAnimation: true,
+      btnLabel:    'OK',
       tts:         tiny ? `Your chore was declined.${n.reason ? ' Reason: ' + n.reason : ''}` : null,
       onClose:     () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
     });
@@ -2704,8 +2705,10 @@ function isBirthday(member) {
 function pendingApprovals() {
   const arr = [];
   for (const chore of D.chores) {
-    for (const [mid, entries] of Object.entries(chore.completions || {})) {
-      normalizeCompletionEntries(entries).forEach(entry => {
+    for (const mid of Object.keys(chore.completions || {})) {
+      // Use getRelevantCompletionEntries so stale pending entries from previous
+      // days/weeks don't surface as ghost approvals for the wrong period.
+      getRelevantCompletionEntries(chore, mid).forEach(entry => {
         if (entry.status === 'pending') arr.push({ chore, memberId: mid, entry });
       });
     }
@@ -3079,7 +3082,7 @@ function checkLevelUp(member, prevLevel) {
     awardBadgeIfNew(member, 'level_up');
     const maxLevel = getLevels().at(-1)?.level;
     if (current.level === maxLevel) awardBadgeIfNew(member, 'level_master');
-    addHistory('level', member.id, `${current.icon} Level Up — ${current.name}!`, 0);
+    addHistory('level', member.id, `Level Up — ${current.name}!`, 0);
     toast(`${current.icon} Level up! ${member.name} is now ${current.name}!`);
   }
 }
@@ -5855,10 +5858,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
 
 function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = null) {
   const isCombo = comboIds?.has(chore.id) || false;
-  const comboClass = isCombo ? ' combo-chore' : '';
   const tiny = isTiny(member);
-  const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
-  const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
   const { phase } = photoPhase;
   let statusClass = 'none';
   let hintHtml = '';
@@ -5884,6 +5884,21 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
     statusClass = 'done';
     btnHtml = `<span class="chore-btn chore-btn-done"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Done</span>`;
   }
+
+  const comboClass = isCombo && statusClass !== 'done' ? ' combo-chore' : '';
+  let ttsText;
+  if (phase === 'needs_before') {
+    ttsText = `${chore.title}. Take a before photo to start this chore!`;
+  } else if (phase === 'before_pending') {
+    ttsText = `${chore.title}. Waiting for your grown-up to say yes!`;
+  } else if (phase === 'needs_after') {
+    ttsText = `${chore.title}. You were approved! Do the chore, then take a done photo.`;
+  } else if (phase === 'after_pending') {
+    ttsText = `${chore.title}. Waiting for your grown-up to check your done photo.`;
+  } else {
+    ttsText = `${chore.title}. Done! You earned ${chore.diamonds} diamonds!`;
+  }
+  const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
 
   return `
     <div class="chore-item ${statusClass}${comboClass}"${ttsAttr}>
@@ -6938,7 +6953,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   // collapse = { isExpanded: bool, toggleFn: string } | null (null = always expanded, no toggle)
   const s = buildMemberStats(member, histIdx);
   const color = member.color || '#6C63FF';
-  const tts = isTiny(member) ? (t) => t : () => '';
+  const tts = (isTiny(member) && S.currentUser?.id === member.id) ? (t) => t : () => '';
 
   const choresSection = _statSection('Chores & Diamonds',
     _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>','Chores Done', s.choreDone, '#166534', '', tts(`${s.choreDone} chores done.`)) +
@@ -7190,7 +7205,7 @@ function renderParentHome() {
         : entry.entryType === 'after'
         ? `<span style="background:#DCFCE7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">DONE</span>`
         : '';
-      const ptsLabel = isBefore ? 'Approve to let them start (no 💎 yet)' : `+${chore.diamonds} 💎`;
+      const ptsLabel = isBefore ? 'Approve to start' : `+${chore.diamonds} 💎`;
       const photoHtml = entry.photoUrl
         ? `<img src="${entry.photoUrl}" class="photo-approval-thumb" onclick="viewPhoto('${entry.photoUrl}')" alt="Photo" title="Click to view full size">`
         : '';
@@ -7365,7 +7380,7 @@ function renderParentHome() {
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6">
         <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((h.title||'').replace(/^⚡\s*/,''))}</div>
+          <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((h.title||'').replace(/^⚡\s*/,'').replace(/<[^>]+>/g,'').trim())}</div>
           <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : '<span style="font-style:italic">Former member</span>'}${h.choreTitle ? ` · ${esc(h.choreTitle)}` : ''} · ${fmtDate(h.date)}</div>
         </div>
         ${ptsStr ? `<span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr}</span>` : ''}
@@ -7386,10 +7401,14 @@ function renderParentHome() {
 }
 
 function approveChore(choreId, memberId, entryId) {
-  doApproveChore(choreId, memberId, entryId);
-  const m = getMember(memberId);
   const c = D.chores.find(x=>x.id===choreId);
-  toast(`Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} 💎)`);
+  const m = getMember(memberId);
+  const entry = c?.completions?.[memberId]?.find(e => e.id === entryId);
+  const isBefore = entry?.entryType === 'before';
+  doApproveChore(choreId, memberId, entryId);
+  toast(isBefore
+    ? `Approved "${c?.title}" for ${m?.name} — they can start!`
+    : `Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} 💎)`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -7437,6 +7456,10 @@ function parentMarkChoreDone(choreId, memberId) {
 
   if (!chore.completions) chore.completions = {};
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+
+  // Remove any orphaned pending entries — the parent manually marking done supersedes them.
+  // (Don't touch 'before' photo entries as they're part of the before_after phase flow.)
+  chore.completions[memberId] = chore.completions[memberId].filter(e => !(e.status === 'pending' && e.entryType !== 'before'));
 
   let totalPts = 0;
 
