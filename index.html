@@ -380,7 +380,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 13px 14px;
+      padding: 13px 0;
       background: #F9FAFB;
       border-radius: 11px;
       margin-bottom: 10px;
@@ -441,6 +441,10 @@
       cursor: pointer;
       transition: opacity 0.15s;
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
     }
     .chore-btn:active { opacity: 0.7; }
     .chore-btn-do      { background: var(--purple); color: #fff; }
@@ -1348,7 +1352,7 @@
       display: flex; align-items: center; justify-content: center;
       border: 2px solid #F59E0B; flex-shrink: 0;
     }
-    .combo-progress-badge.complete { background: #F59E0B; color: #fff; }
+    .combo-progress-badge.complete { background: #D97706; color: #fff; }
     .combo-chore-list { display: flex; flex-direction: column; gap: 6px; }
     .combo-chore-item {
       display: flex; align-items: center; gap: 8px;
@@ -1568,6 +1572,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-remote-config-compat.js"></script>
 
   <script>
 /* ═══════════════════════════════════════════════════════════════
@@ -2490,11 +2495,19 @@ function formatDaysOfWeek(daysOfWeek) {
   return WEEKDAY_OPTIONS.filter(day => daysOfWeek.includes(day.value)).map(day => day.label).join(', ');
 }
 
+function formatTime12(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 function formatTimeWindow(window) {
   if (!window || (!window.start && !window.end)) return 'any time';
-  if (window.start && window.end) return `${window.start} - ${window.end}`;
-  if (window.start) return `after ${window.start}`;
-  return `before ${window.end}`;
+  if (window.start && window.end) return `${formatTime12(window.start)} - ${formatTime12(window.end)}`;
+  if (window.start) return `after ${formatTime12(window.start)}`;
+  return `before ${formatTime12(window.end)}`;
 }
 
 function isWithinTimeWindow(window, minutes) {
@@ -2515,7 +2528,7 @@ function choreScheduleSummary(chore) {
   if (schedule.period === 'once') return 'one-time';
   if (schedule.slots && schedule.slots.length > 0) {
     const countLabel = `${schedule.slots.length}x per day`;
-    const slotLabels = schedule.slots.map(s => s.label || formatTimeWindow({start:s.start, end:s.end})).join(' & ');
+    const slotLabels = schedule.slots.map(s => formatTimeWindow({start:s.start, end:s.end})).join(' & ');
     return `${countLabel} · ${formatDaysOfWeek(schedule.daysOfWeek)} · ${slotLabels}`;
   }
   const countLabel = schedule.period === 'week'
@@ -2843,6 +2856,11 @@ function doApproveChore(choreId, memberId, entryId) {
     addHistory('chore', memberId, chore.title, chore.diamonds);
     checkAfterDiamondsAwarded(member, chore.diamonds);
     checkChoreBadges(chore, memberId);
+    // Auto-here: approving a chore means the kid must be home
+    const _t = today();
+    if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+      member.splitHousehold.overrides[_t] = true;
+    }
   }
   saveData();
 }
@@ -3152,6 +3170,8 @@ function scheduleHereCheck() {
 }
 
 function runHereCheck() {
+  if (S.currentUser?.role !== 'parent') return;
+  if (D.settings?.hereCheckEnabled === false) return;
   S.hereCheckDate = today();
   const t = today();
   const missing = (D.family?.members || []).filter(m => {
@@ -3379,6 +3399,13 @@ function markAwayToday(memberId) {
   if (member?.splitHousehold) member.splitHousehold.overrides[today()] = false;
   saveData();
   closeModal();
+}
+
+function setTodayStatus(memberId, isHere) {
+  const member = getMember(memberId);
+  if (member?.splitHousehold) member.splitHousehold.overrides[today()] = isHere;
+  saveData();
+  renderSettings();
 }
 
 function getStreakBonus(streakCount) {
@@ -4340,6 +4367,19 @@ function renderSettings() {
           </div>
           <button class="btn btn-sm" style="background:${k.splitHousehold?.enabled?'var(--green)':'#F3F4F6'};color:${k.splitHousehold?.enabled?'#fff':'var(--text)'}" onclick="showSplitHouseholdModal('${k.id}')">${k.splitHousehold?.enabled?'On':'Set up'}</button>
         </div>
+        ${k.splitHousehold?.enabled ? (() => {
+          const isHere = isMemberHereOnDate(k, today());
+          return `<div class="settings-member-action-row">
+            <div style="flex:1">
+              <div class="settings-member-action-label">Today's Status</div>
+              <div class="settings-member-action-sub">Is ${esc(k.name)} at your house today?</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" style="background:${isHere?'var(--green)':'#F3F4F6'};color:${isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',true)">Here</button>
+              <button class="btn btn-sm" style="background:${!isHere?'#EF4444':'#F3F4F6'};color:${!isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',false)">Away</button>
+            </div>
+          </div>`;
+        })() : ''}
       </div>` : '';
     return `
       <div style="border-left:4px solid ${k.color||'#6C63FF'};padding-left:12px;margin-bottom:12px">
@@ -4377,6 +4417,10 @@ function renderSettings() {
           </button>
         </div>
         <div style="font-size:0.8rem;color:var(--muted)">Share this code with another device to sync your family's data.</div>
+        ${RC.betaMode ? `<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
+          <span style="color:var(--muted)">Install on other devices: </span>
+          <span style="font-weight:700;color:#6C63FF">${RC.appDownloadUrl}</span>
+        </div>` : ''}
       </div>
 
       <div class="card">
@@ -4467,6 +4511,13 @@ function renderSettings() {
         <div class="card-title" style="margin-bottom:16px"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</div>
         ${familyHtml || '<div class="empty-state"><div class="empty-text">No kids yet</div></div>'}
         <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="closeSettings();goSetup()">Edit Family Setup</button>
+        <div class="toggle-row" style="margin-top:14px">
+          <div>
+            <div class="toggle-label"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> 6 PM Home Check</div>
+            <div class="toggle-sub">Prompts you at 6 PM on days that split-household kids are expected to be home, but have not completed any chores yet.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
+        </div>
       </div>
 
       <div class="card">
@@ -4492,7 +4543,7 @@ function renderSettings() {
         <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
       </div>
 
-      <div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
+      ${RC.betaMode ? `<div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
         <div class="card-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</div>
         <div style="background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:#78350F;line-height:1.5">
           <strong>For testers only.</strong> These settings exist to help us find and fix bugs before launch. They will not be present in the final App Store release.
@@ -4515,7 +4566,7 @@ function renderSettings() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
-      </div>
+      </div>` : ''}
 
     </div>`;
 }
@@ -5618,7 +5669,7 @@ function renderKidChores() {
               <span class="combo-chore-item-check">${isDone ? '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1.1rem"></i>' : '<i class="ph-duotone ph-circle" style="color:#D1D5DB;font-size:1.1rem"></i>'}</span>
               <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} <span class="combo-item-title">${esc(c.title)}</span></span>
               ${isDone
-                ? `<span style="margin-left:auto;font-size:0.75rem;font-weight:700"><span style="color:#D97706">+${c.diamonds}×2 = </span><span style="color:#16A34A">${c.diamonds*2}</span></span>`
+                ? `<span style="margin-left:auto;font-size:0.75rem;font-weight:700"><span style="color:#B45309">+${c.diamonds}×2 = </span><span style="color:#16A34A">${c.diamonds*2}</span></span>`
                 : `<span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>`}
             </div>`;
           }).join('')}
@@ -5710,7 +5761,7 @@ function normalChoreCard(chore, member, progress, comboIds = null) {
           <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}</span>
           <div class="chore-info">
             <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
-            <div class="chore-meta">${fmtDmds(chore.diamonds)}${label ? ` · ${esc(label)}` : ''}</div>
+            <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
           </div>
           <div class="chore-action">${btnHtml}</div>
         </div>`;
@@ -7065,6 +7116,32 @@ function toggleFamilyStats() {
   renderStatsPage(document.getElementById('parent-content'));
 }
 
+// ── BETA WELCOME (remove before App Store launch) ─────────────
+const BETA_WELCOME_KEY = 'gemsprout.betaWelcomeSeen';
+function showBetaWelcomeIfNeeded() {
+  if (!RC.betaMode) return;
+  try { if (localStorage.getItem(BETA_WELCOME_KEY)) return; } catch(_) { return; }
+  try { localStorage.setItem(BETA_WELCOME_KEY, '1'); } catch(_) {}
+  showModal(`
+    <div style="text-align:center;margin-bottom:16px">
+      <img src="gemsproutpadded.png" style="width:72px;height:72px;margin-bottom:8px">
+      <div class="modal-title" style="margin-bottom:6px">Welcome to the GemSprout Beta!</div>
+      <p style="color:var(--muted);font-size:0.88rem;line-height:1.5;margin-bottom:14px">
+        Thank you so much for helping us shape GemSprout. Your feedback during this beta means everything — please don't hesitate to reach out with anything you notice.
+      </p>
+    </div>
+    <div style="background:#F5F3FF;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Installing on other devices (partner and children, usually)</div>
+      <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
+        Open the link below on each device, install TestFlight if prompted, then install GemSprout. Your family code is shown in Settings.
+      </p>
+      <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;word-break:break-all">${RC.appDownloadUrl}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="width:100%" onclick="closeModal()">Got it — let's go!</button>
+    </div>`);
+}
+
 function renderParentHome() {
   const kids        = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const pending     = pendingApprovals();
@@ -7280,6 +7357,7 @@ function renderParentHome() {
   }
 
   document.getElementById('parent-content').innerHTML = html;
+  showBetaWelcomeIfNeeded(); // remove before App Store launch
 }
 
 function approveChore(choreId, memberId, entryId) {
@@ -7363,6 +7441,11 @@ function parentMarkChoreDone(choreId, memberId) {
   addHistory('chore', memberId, chore.title, totalPts);
   checkAfterDiamondsAwarded(member, totalPts);
   checkChoreBadges(chore, memberId);
+  // Auto-here: parent marking a chore done means the kid is home
+  const _t = today();
+  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+    member.splitHousehold.overrides[_t] = true;
+  }
   saveData();
   toast(`Marked "${chore.title}" done for ${member.name} (+${totalPts} 💎)`);
   renderParentHome();
@@ -8909,7 +8992,20 @@ function doAdjustSavings(memberId, sign) {
 }
 
 function switchFamily() {
-  if (!confirm('This will disconnect this device from your current family. Your family\'s data stays safe in the cloud — you\'ll just need the family code to rejoin. Continue?')) return;
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-link-break" style="color:#EF4444;font-size:1.2rem;vertical-align:middle"></i> Join Different Family?</div>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:16px">
+      This will disconnect this device from your current family. Your family's data stays safe in the cloud — you'll just need the family code to rejoin.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="_confirmSwitchFamily()">Continue</button>
+    </div>`);
+}
+
+function _confirmSwitchFamily() {
+  closeModal();
+  closeSettings();
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
@@ -8931,6 +9027,51 @@ function resetAllData() {
 /* ═══════════════════════════════════════════════════════════════
    INIT — bootstrap the app on page load
 ═══════════════════════════════════════════════════════════════ */
+
+function showMaintenanceScreen(title, message, btnText) {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.className = 'screen active loading';
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center;padding:32px';
+  el.innerHTML = `
+    <img src="gemsproutpadded.png" class="loading-img" style="width:120px;height:120px">
+    <div style="color:#fff;font-size:1.6rem;font-weight:800;letter-spacing:-0.01em">${title}</div>
+    <div style="color:rgba(255,255,255,0.85);font-size:1rem;max-width:300px;line-height:1.5">${message}</div>
+    ${btnText ? `<button onclick="window.location.reload()" style="margin-top:8px;padding:12px 28px;border-radius:12px;border:none;background:#fff;color:#6C63FF;font-weight:700;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}`;
+}
+
+// Global Remote Config values — populated on startup, safe to read anywhere after startApp()
+const RC = {
+  maintenanceMode:        false,
+  maintenanceTitle:       'Down for Maintenance',
+  maintenanceMessage:     'GemSprout is currently undergoing maintenance. Please check back soon.',
+  maintenanceButtonText:  'Try Again',
+  betaMode:               true,
+  appDownloadUrl:         'https://gemsprout.com/beta',
+};
+
+async function checkMaintenanceMode() {
+  try {
+    const rc = firebase.remoteConfig();
+    rc.defaultConfig = { ...RC };
+    rc.settings.minimumFetchIntervalMillis = 60000;
+    await rc.fetchAndActivate();
+    // Populate global RC from fetched values
+    RC.maintenanceMode        = rc.getValue('maintenanceMode').asBoolean();
+    RC.maintenanceTitle       = rc.getValue('maintenanceTitle').asString();
+    RC.maintenanceMessage     = rc.getValue('maintenanceMessage').asString();
+    RC.maintenanceButtonText  = rc.getValue('maintenanceButtonText').asString();
+    RC.betaMode               = rc.getValue('betaMode').asBoolean();
+    RC.appDownloadUrl         = rc.getValue('appDownloadUrl').asString();
+    if (RC.maintenanceMode) {
+      showMaintenanceScreen(RC.maintenanceTitle, RC.maintenanceMessage, RC.maintenanceButtonText);
+      return true;
+    }
+  } catch (e) {
+    console.warn('Remote Config unavailable:', e);
+  }
+  return false;
+}
 
 function showLoading() {
   showScreen('screen-auth');
@@ -9013,10 +9154,15 @@ function init() {
 }
 
 // Start on DOM ready
+async function startApp() {
+  const inMaintenance = await checkMaintenanceMode();
+  if (!inMaintenance) init();
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', startApp);
 } else {
-  init();
+  startApp();
 }
 
 console.log('✅ GemSprout fully loaded!');
