@@ -2250,6 +2250,11 @@ function subscribeToFirestore(onFirstLoad) {
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
         D = normalizedIncoming;
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+        // Refresh S.currentUser so renderKidHeader (and all renders) reflect latest diamonds/data
+        if (S.currentUser) {
+          const _freshUser = getMember(S.currentUser.id);
+          if (_freshUser) S.currentUser = _freshUser;
+        }
         // Trigger celebration if kid is viewing and chores got approved
         if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
           checkForApprovalCelebration(prevPending, S.currentUser);
@@ -3530,10 +3535,71 @@ function setComboOverride(memberId, slotIndex, choreId) {
 }
 
 function clearComboOverride(memberId) {
-  if (!D.settings.comboOverrides) return;
+  if (S.pendingComboOverrides) delete S.pendingComboOverrides[memberId];
+  if (!D.settings.comboOverrides) { renderParentLevels(); return; }
   delete D.settings.comboOverrides[memberId];
   _allCombosCache = { key: null, combos: {} };
   saveData();
+  renderParentLevels();
+}
+
+function stagePendingCombo(kidId, slotIndex, choreId) {
+  if (!S.pendingComboOverrides) S.pendingComboOverrides = {};
+  if (!S.pendingComboOverrides[kidId]) S.pendingComboOverrides[kidId] = {};
+  S.pendingComboOverrides[kidId][slotIndex] = choreId;
+  renderParentLevels();
+}
+
+function saveComboOverride(kidId) {
+  if (!S.pendingComboOverrides) S.pendingComboOverrides = {};
+  const pending = S.pendingComboOverrides[kidId] || {};
+  const currentCombo = getDailyCombo(kidId);
+  const finalIds = [0, 1, 2].map(i => pending[i] || currentCombo[i]).filter(Boolean);
+  const member = getMember(kidId);
+  if (!member) return;
+
+  const alreadyAwarded = member.comboBonusDate === today();
+  if (!alreadyAwarded && finalIds.length === 3) {
+    const allDone = finalIds.every(id => {
+      const chore = D.chores.find(c => c.id === id);
+      return chore && getChoreProgress(chore, kidId).status === 'done';
+    });
+    if (allDone) {
+      const bonusPts = finalIds.reduce((sum, id) => {
+        const chore = D.chores.find(c => c.id === id);
+        return sum + (chore?.diamonds || 0);
+      }, 0);
+      S._pendingComboSave = { kidId, finalIds };
+      showModal(`
+        <div class="modal-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;vertical-align:middle"></i> Combo Will Complete!</div>
+        <p style="font-size:0.9rem;color:var(--muted);margin:0 0 16px">
+          Saving this combo for <b>${esc(member.name)}</b> will immediately award the daily combo bonus of <b>+${bonusPts} 💎</b> since all 3 chores are already complete.
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="closeModal()" style="flex:1">Cancel</button>
+          <button class="btn btn-primary" onclick="closeModal();_commitPendingComboSave()" style="flex:1">Save &amp; Award 💎</button>
+        </div>`);
+      return;
+    }
+  }
+  _applyComboSave(kidId, finalIds);
+}
+
+function _commitPendingComboSave() {
+  if (!S._pendingComboSave) return;
+  const { kidId, finalIds } = S._pendingComboSave;
+  S._pendingComboSave = null;
+  _applyComboSave(kidId, finalIds);
+}
+
+function _applyComboSave(kidId, finalIds) {
+  if (!S.pendingComboOverrides) S.pendingComboOverrides = {};
+  delete S.pendingComboOverrides[kidId];
+  if (!D.settings.comboOverrides) D.settings.comboOverrides = {};
+  D.settings.comboOverrides[kidId] = { date: today(), ids: finalIds };
+  _allCombosCache = { key: null, combos: {} };
+  saveData();
+  checkComboBonus(kidId);
   renderParentLevels();
 }
 
@@ -3574,9 +3640,11 @@ function checkComboBonus(memberId) {
   if (cs.current > (cs.best || 0)) cs.best = cs.current;
   cs.lastDate = today();
 
-  // Trigger big celebration
+  // Trigger big celebration — only show rain animation when the combo kid is the active viewer
   setTimeout(() => {
-    launchMixedRain();
+    if (S.currentUser?.role === 'kid' && S.currentUser?.id === memberId) {
+      launchMixedRain();
+    }
     const streakMsg = cs.current > 1 ? ` <i class="ph-duotone ph-fire" style="color:#F97316;font-size:0.9rem;vertical-align:middle"></i> ${cs.current} day combo streak!` : '';
     toast(`<i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> COMBO COMPLETE! +${bonusPts} bonus 💎!${streakMsg}`);
   }, 300);
@@ -8233,20 +8301,21 @@ function renderParentLevels() {
         const kids = D.family.members.filter(m => m.role==='kid' && !m.deleted);
         if (!kids.length) return '';
         return kids.map(kid => {
-          const combo = getDailyCombo(kid.id);
-          const comboChores = combo.map(id => D.chores.find(c => c.id===id)).filter(Boolean);
+          const savedCombo = getDailyCombo(kid.id);
+          const pending = (S.pendingComboOverrides || {})[kid.id] || {};
+          const hasPending = Object.keys(pending).length > 0;
+          const effectiveIds = [0, 1, 2].map(i => pending[i] || savedCombo[i]);
           const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
-          const opts = eligible.map(c => `<option value="${c.id}"${combo.includes(c.id)?'':''} >${esc(c.title)}</option>`).join('');
           return `<div style="margin-bottom:10px">
             <div style="font-size:0.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">${esc(kid.name)}'s combo today</div>
             ${[0,1,2].map(i => `
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
                 <span style="font-size:0.75rem;color:var(--muted);width:16px">${i+1}.</span>
-                <select style="flex:1;font-size:0.82rem;padding:6px 8px;border-radius:8px;border:1px solid var(--border)" onchange="setComboOverride('${kid.id}',${i},this.value)">
-                  ${eligible.map(c => `<option value="${c.id}"${(comboChores[i]?.id===c.id)?'selected':''}>${esc(c.title)}</option>`).join('')}
+                <select style="flex:1;font-size:0.82rem;padding:6px 8px;border-radius:8px;border:1px solid var(--border)" onchange="stagePendingCombo('${kid.id}',${i},this.value)">
+                  ${eligible.map(c => `<option value="${c.id}"${effectiveIds[i]===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}
                 </select>
               </div>`).join('')}
-            <button class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:4px 10px" onclick="clearComboOverride('${kid.id}')">Reset to Random</button>
+            ${hasPending ? `<div style="margin-top:2px"><button class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:4px 10px" onclick="saveComboOverride('${kid.id}')">Save Combo</button></div>` : ''}
           </div>`;
         }).join('<hr style="border:none;border-top:1px solid var(--border);margin:10px 0">');
       })() : ''}
