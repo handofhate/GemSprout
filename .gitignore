@@ -4,3 +4,4 @@ android/
 www/
 Emails/
 .claude/
+*-service-account.json

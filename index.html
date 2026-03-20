@@ -1580,12 +1580,13 @@
 ═══════════════════════════════════════════════════════════════ */
 
 const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyAt-6FAoqpM5IR_XB6AnMcDUTRZwKdosr8",
-  authDomain:        "family-hub-9ad4d.firebaseapp.com",
-  projectId:         "family-hub-9ad4d",
-  storageBucket:     "family-hub-9ad4d.firebasestorage.app",
-  messagingSenderId: "280625694071",
-  appId:             "1:280625694071:web:ecedf22458fd9214474d72",
+  apiKey:            "AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU",
+  authDomain:        "gemsprout1.firebaseapp.com",
+  projectId:         "gemsprout1",
+  storageBucket:     "gemsprout1.firebasestorage.app",
+  messagingSenderId: "493782739457",
+  appId:             "1:493782739457:web:64d2afa5766ee1b481ee00",
+  measurementId:     "G-1WDH5Q2STT",
 };
 
 const FAMILY_CODE_KEY   = 'gemsprout.familyCode';
@@ -3639,6 +3640,7 @@ function checkComboBonus(memberId) {
   }
   if (cs.current > (cs.best || 0)) cs.best = cs.current;
   cs.lastDate = today();
+  saveData();
 
   // Trigger big celebration — only show rain animation when the combo kid is the active viewer
   setTimeout(() => {
@@ -4493,7 +4495,7 @@ function renderSettings() {
         <div style="font-size:0.8rem;color:var(--muted)">Share this code with another device to sync your family's data.</div>
         ${RC.betaMode ? `<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
           <span style="color:var(--muted)">Install on other devices: </span>
-          <span style="font-weight:700;color:#6C63FF">${RC.appDownloadUrl}</span>
+          <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a>
         </div>` : ''}
       </div>
 
@@ -5255,7 +5257,7 @@ function renderSetupStep() {
         <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Adding other devices?</div>
         <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">Install GemSprout on your partner's phone or your kids' tablets, then enter the family code above to sync everyone together.</p>
         <div style="font-size:0.82rem;color:var(--muted);margin-bottom:4px">Get the app at:</div>
-        <div style="font-size:0.9rem;font-weight:700;color:#6C63FF;word-break:break-all">${RC.appDownloadUrl}</div>
+        <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.9rem;font-weight:700;color:#6C63FF;word-break:break-all;text-decoration:none">${RC.appDownloadUrl}</a>
       </div>
 
       <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go! →</button>`;
@@ -7235,15 +7237,22 @@ function showBetaWelcomeIfNeeded() {
       <img src="gemsproutpadded.png" style="width:72px;height:72px;margin-bottom:8px">
       <div class="modal-title" style="margin-bottom:6px">Welcome to the GemSprout Beta!</div>
       <p style="color:var(--muted);font-size:0.88rem;line-height:1.5;margin-bottom:14px">
-        Thank you so much for helping us shape GemSprout. Your feedback during this beta means everything — please don't hesitate to reach out with anything you notice.
+        Thank you so much for helping us shape GemSprout. Your feedback during this beta means everything.
       </p>
     </div>
-    <div style="background:#F5F3FF;border-radius:12px;padding:14px;margin-bottom:14px">
-      <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Installing on other devices (partner and children, usually)</div>
+    <div style="background:#F5F3FF;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Installing on other devices</div>
       <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
         Open the link below on each device, install TestFlight if prompted, then install GemSprout. Your family code is shown in Settings.
       </p>
-      <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;word-break:break-all">${RC.appDownloadUrl}</div>
+      <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.82rem;font-weight:700;color:#6C63FF;word-break:break-all;text-decoration:none">${RC.appDownloadUrl}</a>
+    </div>
+    <div style="background:#F0FDF4;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-chat-text" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Send us feedback</div>
+      <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
+        Found a bug or have a suggestion? We'd love to hear it.
+      </p>
+      <a href="mailto:gemsproutapp@gmail.com" style="font-size:0.82rem;font-weight:700;color:#16A34A;text-decoration:none">gemsproutapp@gmail.com</a>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="width:100%" onclick="closeModal()">Got it — let's go!</button>
@@ -9145,16 +9154,17 @@ function resetAllData() {
    INIT — bootstrap the app on page load
 ═══════════════════════════════════════════════════════════════ */
 
-function showMaintenanceScreen(title, message, btnText) {
+function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
   el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center;padding:32px';
+  const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_blank')` : `window.location.reload()`;
   el.innerHTML = `
     <img src="gemsproutpadded.png" class="loading-img" style="width:120px;height:120px">
     <div style="color:#fff;font-size:1.6rem;font-weight:800;letter-spacing:-0.01em">${title}</div>
     <div style="color:rgba(255,255,255,0.85);font-size:1rem;max-width:300px;line-height:1.5">${message}</div>
-    ${btnText ? `<button onclick="window.location.reload()" style="margin-top:8px;padding:12px 28px;border-radius:12px;border:none;background:#fff;color:#6C63FF;font-weight:700;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}`;
+    ${btnText ? `<button onclick="${btnAction}" style="margin-top:8px;padding:12px 28px;border-radius:12px;border:none;background:#fff;color:#6C63FF;font-weight:700;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}`;
 }
 
 // Global Remote Config values — populated on startup, safe to read anywhere after startApp()
@@ -9163,6 +9173,7 @@ const RC = {
   maintenanceTitle:       'Down for Maintenance',
   maintenanceMessage:     'GemSprout is currently undergoing maintenance. Please check back soon.',
   maintenanceButtonText:  'Try Again',
+  maintenanceButtonUrl:   '',
   betaMode:               true,
   appDownloadUrl:         'https://gemsprout.com/beta',
 };
@@ -9178,10 +9189,11 @@ async function checkMaintenanceMode() {
     RC.maintenanceTitle       = rc.getValue('maintenanceTitle').asString();
     RC.maintenanceMessage     = rc.getValue('maintenanceMessage').asString();
     RC.maintenanceButtonText  = rc.getValue('maintenanceButtonText').asString();
+    RC.maintenanceButtonUrl   = rc.getValue('maintenanceButtonUrl').asString();
     RC.betaMode               = rc.getValue('betaMode').asBoolean();
     RC.appDownloadUrl         = rc.getValue('appDownloadUrl').asString();
     if (RC.maintenanceMode) {
-      showMaintenanceScreen(RC.maintenanceTitle, RC.maintenanceMessage, RC.maintenanceButtonText);
+      showMaintenanceScreen(RC.maintenanceTitle, RC.maintenanceMessage, RC.maintenanceButtonText, RC.maintenanceButtonUrl);
       return true;
     }
   } catch (e) {
