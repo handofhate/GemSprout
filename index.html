@@ -9159,7 +9159,7 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
   el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center;padding:32px';
-  const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_blank')` : `window.location.reload()`;
+  const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
   el.innerHTML = `
     <img src="gemsproutpadded.png" class="loading-img" style="width:120px;height:120px">
     <div style="color:#fff;font-size:1.6rem;font-weight:800;letter-spacing:-0.01em">${title}</div>
