@@ -62,21 +62,17 @@ function isParentSignedIn() {
 
 async function signInWithGoogle() {
   try {
+    const provider = new firebase.auth.GoogleAuthProvider();
     if (isNative()) {
-      const GoogleAuth = Capacitor.registerPlugin('GoogleAuth');
-      const result = await GoogleAuth.signIn();
-      const credential = firebase.auth.GoogleAuthProvider.credential(result.authentication.idToken);
-      await auth.signInWithCredential(credential);
-      return auth.currentUser;
+      await auth.signInWithRedirect(provider);
+      return null; // page navigates away; resolved on next load via getRedirectResult
     } else {
-      const provider = new firebase.auth.GoogleAuthProvider();
       await auth.signInWithPopup(provider);
       return auth.currentUser;
     }
   } catch(e) {
     if (e.code !== 'auth/cancelled-popup-request' && e.message !== 'Sign in cancelled.') {
       console.warn('Google sign-in failed:', e.message);
-      if (isNative()) alert('Google error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -84,36 +80,17 @@ async function signInWithGoogle() {
 
 async function signInWithApple() {
   try {
+    const provider = new firebase.auth.OAuthProvider('apple.com');
     if (isNative()) {
-      const SignInWithApple = Capacitor.registerPlugin('SignInWithApple');
-      // Generate a nonce to prevent replay attacks
-      const rawNonce = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-      const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawNonce));
-      const hashedNonce = Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-      const result = await SignInWithApple.authorize({
-        clientId: 'com.gemsprout.ios',
-        redirectURI: 'https://gemsprout1.firebaseapp.com/__/auth/handler',
-        scopes: 'email name',
-        nonce: hashedNonce,
-      });
-      const provider = new firebase.auth.OAuthProvider('apple.com');
-      const credential = provider.credential({
-        idToken:  result.identityToken,
-        rawNonce,
-      });
-      await auth.signInWithCredential(credential);
-      return auth.currentUser;
+      await auth.signInWithRedirect(provider);
+      return null; // page navigates away; resolved on next load via getRedirectResult
     } else {
-      const provider = new firebase.auth.OAuthProvider('apple.com');
       await auth.signInWithPopup(provider);
       return auth.currentUser;
     }
   } catch(e) {
     if (e.message !== 'Sign in cancelled.') {
       console.warn('Apple sign-in failed:', e.message);
-      if (isNative()) alert('Apple error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -8001,6 +7978,8 @@ function showParentSignIn(memberId, onSuccess) {
 async function handleParentSignIn(provider, memberId) {
   const btns = document.querySelectorAll('#btn-google-signin, #btn-apple-signin');
   btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  // Persist memberId so it survives the redirect on iOS
+  if (isNative()) localStorage.setItem('_pendingAuthMemberId', memberId);
   const firebaseUser = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
   if (!firebaseUser) {
     btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
@@ -8175,6 +8154,26 @@ async function startApp() {
   await checkBiometricAvailability();
   const inMaintenance = await checkMaintenanceMode();
   if (!inMaintenance) init();
+
+  // Handle Firebase OAuth redirect result (iOS sign-in via signInWithRedirect)
+  if (isNative()) {
+    try {
+      const result = await auth.getRedirectResult();
+      if (result && result.user) {
+        const memberId = localStorage.getItem('_pendingAuthMemberId');
+        localStorage.removeItem('_pendingAuthMemberId');
+        if (memberId) {
+          await linkParentAuth(result.user, memberId);
+          await checkAndPromptNewDevice(result.user.uid, memberId);
+        }
+      } else {
+        localStorage.removeItem('_pendingAuthMemberId');
+      }
+    } catch(e) {
+      console.warn('Redirect result error:', e.message);
+      localStorage.removeItem('_pendingAuthMemberId');
+    }
+  }
 }
 
 if (document.readyState === 'loading') {
