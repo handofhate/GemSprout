@@ -370,7 +370,8 @@ let S = {            // UI state (not persisted)
   pinMode:              'app', // 'app' = gate to member picker | 'parent' = gate to parent view
   syncStatus:           'idle', // 'idle' | 'syncing' | 'ok' | 'error'
   lastLocalSave:        0,     // timestamp of last local write — suppresses stale Firestore snapshots
-  _authPromptShown:     false,
+  _authPromptShown:      false,
+  _pinPromptShown:       false,
   _parentSignInCallback: null,
 };
 
@@ -5415,9 +5416,16 @@ function renderParentView() {
   renderParentNav();
   renderParentTab();
   // Prompt existing users (pre-auth update) to link their account — non-blocking
+  // TODO: remove once auth is required (next build after beta migration)
   if (S.currentUser && !S.currentUser.authUid && !S._authPromptShown) {
     S._authPromptShown = true;
     setTimeout(() => showLinkAccountPrompt(S.currentUser.id), 1500);
+  }
+  // Prompt existing users who have no PIN set — non-blocking
+  // TODO: remove once all beta users have been migrated to required PIN
+  if (S.currentUser && !D.settings.parentPin && !S._pinPromptShown) {
+    S._pinPromptShown = true;
+    setTimeout(() => showRequirePinPrompt(), S.currentUser.authUid ? 1500 : 3000);
   }
 }
 
@@ -5482,6 +5490,19 @@ function confirmSignOut() {
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="closeModal();closeSettings();goHome()">Sign Out</button>
+    </div>`);
+}
+
+function showRequirePinPrompt() {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-lock-key" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">PIN Required</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">GemSprout now requires a 4-digit PIN to protect the parent dashboard. Please set one now.</p>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-secondary" onclick="closeModal()">Not Now</button>
+      <button class="btn btn-primary" onclick="closeModal();showNewPinModal()">Set PIN</button>
     </div>`);
 }
 
