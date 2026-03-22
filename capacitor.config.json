@@ -12,7 +12,6 @@
     }
   },
   "ios": {
-    "packageManager": "cocoapods",
     "scheme": "GemSprout",
     "contentInset": "never",
     "infoPlist": {

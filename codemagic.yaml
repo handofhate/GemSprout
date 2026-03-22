@@ -6,7 +6,6 @@ workflows:
 
     cache:
       cache_paths:
-        - $HOME/Library/Caches/CocoaPods
         - $CM_BUILD_DIR/node_modules
 
     integrations:
@@ -51,6 +50,12 @@ workflows:
           plutil -insert FacebookAppID -string "placeholder" ios/App/App/Info.plist || true
           plutil -insert FacebookClientToken -string "placeholder" ios/App/App/Info.plist || true
           plutil -insert FacebookDisplayName -string "GemSprout" ios/App/App/Info.plist || true
+
+      - name: Resolve Swift packages
+        script: |
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme App
 
       - name: Set up code signing
         script: xcode-project use-profiles
