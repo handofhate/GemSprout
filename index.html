@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- Must run before Firebase loads: delete window.cordova so Firebase does not
+       switch to Cordova OAuth mode (which requires Cordova plugins we don't use).
+       Capacitor sets window.cordova as a compatibility shim; Firebase misreads it. -->
+  <script>delete window.cordova;</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -59,11 +63,6 @@
   <div id="adv-editor-root"></div>
   <div id="settings-root"></div>
   <div id="nl-root"></div>
-
-  <!-- Prevent Firebase from detecting Capacitor as a Cordova environment.
-       Capacitor sets window.cordova for plugin compatibility, but Firebase uses it
-       to switch to Cordova OAuth mode which requires Cordova plugins we don't use. -->
-  <script>if (window.Capacitor) delete window.cordova;</script>
 
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
