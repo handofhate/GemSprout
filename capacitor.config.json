@@ -5,7 +5,7 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
-    },
+    }
   },
   "ios": {
     "scheme": "GemSprout",
