@@ -39,8 +39,95 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
-const APP_UNLOCK_KEY = 'gemsprout.appUnlocked';
-const CURRENT_USER_KEY = 'gemsprout.currentUserId';
+const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
+const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
+const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
+
+// ── PARENT AUTH ───────────────────────────────────────────────
+
+function getParentAuthUid() {
+  try { return localStorage.getItem(PARENT_AUTH_KEY) || null; } catch { return null; }
+}
+
+function setParentAuthUid(uid) {
+  try {
+    if (uid) localStorage.setItem(PARENT_AUTH_KEY, uid);
+    else localStorage.removeItem(PARENT_AUTH_KEY);
+  } catch {}
+}
+
+function isParentSignedIn() {
+  return !!getParentAuthUid();
+}
+
+async function signInWithGoogle() {
+  try {
+    if (isNative()) {
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential?.idToken);
+      await auth.signInWithCredential(credential);
+      return auth.currentUser;
+    } else {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await auth.signInWithPopup(provider);
+      return auth.currentUser;
+    }
+  } catch(e) {
+    if (e.code !== 'auth/cancelled-popup-request' && e.message !== 'Sign in cancelled.') {
+      console.warn('Google sign-in failed:', e.message);
+    }
+    return null;
+  }
+}
+
+async function signInWithApple() {
+  try {
+    if (isNative()) {
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      const result = await FirebaseAuthentication.signInWithApple();
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken:   result.credential?.idToken,
+        rawNonce:  result.credential?.nonce,
+      });
+      await auth.signInWithCredential(credential);
+      return auth.currentUser;
+    } else {
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      await auth.signInWithPopup(provider);
+      return auth.currentUser;
+    }
+  } catch(e) {
+    if (e.message !== 'Sign in cancelled.') {
+      console.warn('Apple sign-in failed:', e.message);
+    }
+    return null;
+  }
+}
+
+async function signOutParent() {
+  try {
+    if (isNative()) {
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      await FirebaseAuthentication.signOut();
+    }
+    await auth.signOut();
+  } catch(e) {
+    console.warn('Sign out error:', e.message);
+  } finally {
+    setParentAuthUid(null);
+  }
+}
+
+// Called after a parent successfully signs in — links their Firebase UID to their member record
+async function linkParentAuth(firebaseUser, memberId) {
+  setParentAuthUid(firebaseUser.uid);
+  const member = getMember(memberId);
+  if (!member || member.authUid === firebaseUser.uid) return;
+  member.authUid = firebaseUser.uid;
+  saveData();
+}
 
 function setAppUnlocked(v) {
   try { localStorage.setItem(APP_UNLOCK_KEY, v ? '1' : '0'); } catch (_) {}
@@ -103,9 +190,11 @@ function goHome() {
   const wasParent = S.currentUser?.role === 'parent';
   S.currentUser = null;
   setCurrentUserId('');
-  // Parent is already authenticated — go straight to profile picker.
-  // Kids still require PIN to get back to the picker (protects parent profile).
-  if (wasParent) renderHome();
+  setParentAuthUid(null);
+  if (wasParent) signOutParent().finally(() => {
+    auth.signInAnonymously().catch(() => {});
+    renderHome();
+  });
   else showAppPin();
 }
 
@@ -272,15 +361,17 @@ const ALL_DAYS = WEEKDAY_OPTIONS.map(day => day.value);
 // ── APP STATE ────────────────────────────────────────────────
 let D = {};          // the live data object (mirrors localStorage)
 let S = {            // UI state (not persisted)
-  currentUser:   null,
-  kidTab:        'chores',
-  parentTab:     'home',
-  setupStep:     0,
-  setupMembers:  [],   // unified non-parent members during setup
-  pinBuffer:     '',
-  pinMode:       'app', // 'app' = gate to member picker | 'parent' = gate to parent view
-  syncStatus:    'idle', // 'idle' | 'syncing' | 'ok' | 'error'
-  lastLocalSave: 0,     // timestamp of last local write — suppresses stale Firestore snapshots
+  currentUser:          null,
+  kidTab:               'chores',
+  parentTab:            'home',
+  setupStep:            0,
+  setupMembers:         [],   // unified non-parent members during setup
+  pinBuffer:            '',
+  pinMode:              'app', // 'app' = gate to member picker | 'parent' = gate to parent view
+  syncStatus:           'idle', // 'idle' | 'syncing' | 'ok' | 'error'
+  lastLocalSave:        0,     // timestamp of last local write — suppresses stale Firestore snapshots
+  _authPromptShown:     false,
+  _parentSignInCallback: null,
 };
 
 // ── DEFAULT DATA ──────────────────────────────────────────────
@@ -2723,6 +2814,7 @@ function openUserSettings() {
   if (S.currentUser?.role === 'parent') {
     renderSettings();
     document.getElementById('settings-root').classList.add('open');
+    loadDevicesList();
   } else {
     const name = S.currentUser?.name || 'User';
     showModal(`
@@ -2965,6 +3057,25 @@ function renderSettings() {
             ${bioBtn}
           </div>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</div>
+        ${S.currentUser?.authUid ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <div style="font-size:0.88rem;font-weight:600">${esc(auth.currentUser?.displayName || auth.currentUser?.email || 'Signed in')}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">${esc(auth.currentUser?.email || '')}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="confirmSignOut()">Sign Out</button>
+        </div>` : `
+        <div style="margin-bottom:12px">
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px">Link your account to enable push notifications and secure your profile.</div>
+          <button class="btn btn-secondary btn-sm" onclick="closeSettings();showParentSignIn('${S.currentUser?.id}')">
+            <i class="ph-duotone ph-link" style="font-size:0.9rem;vertical-align:middle"></i> Link Account
+          </button>
+        </div>`}
+        <div id="devices-list"><div style="font-size:0.82rem;color:var(--muted)">Loading devices…</div></div>
       </div>
 
       <div class="card">
@@ -3254,6 +3365,24 @@ function selectProfile(id) {
   const member = getMember(id);
   if (!member) return;
   setCurrentUserId(member.id);
+
+  // Parents require Google/Apple auth
+  if (member.role === 'parent' && !isParentSignedIn()) {
+    showParentSignIn(id, (authedMember) => {
+      if (isBirthday(authedMember)) {
+        S.currentUser = authedMember;
+        launchConfetti(80);
+        showCelebration({
+          icon: '🎂', title: `Happy Birthday, ${authedMember.name}!`,
+          sub: '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Have an amazing day! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
+          tts: null, onClose: () => routeToView(authedMember),
+        });
+      } else {
+        routeToView(authedMember);
+      }
+    });
+    return;
+  }
 
   // Birthday check — trigger before entering any view
   if (isBirthday(member)) {
@@ -3580,7 +3709,7 @@ async function joinFamily() {
     D = normalizeData(snap.data());
     setFamilyCode(code);
     try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
-    auth.signInAnonymously()
+    ensureFirestoreAuth()
       .then(() => subscribeToFirestore())
       .catch(() => {});
     routeAfterLoad();
@@ -5285,6 +5414,88 @@ function renderParentView() {
   renderParentHeader();
   renderParentNav();
   renderParentTab();
+  // Prompt existing users (pre-auth update) to link their account — non-blocking
+  if (S.currentUser && !S.currentUser.authUid && !S._authPromptShown) {
+    S._authPromptShown = true;
+    setTimeout(() => showLinkAccountPrompt(S.currentUser.id), 1500);
+  }
+}
+
+async function loadDevicesList() {
+  const el = document.getElementById('devices-list');
+  if (!el) return;
+  const parentUid = S.currentUser?.authUid;
+  if (!parentUid) { el.innerHTML = ''; return; }
+  try {
+    const snap = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
+    const tokens = snap.exists ? (snap.data().tokens || []) : [];
+    if (tokens.length === 0) {
+      el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">No devices registered for notifications yet.</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div style="font-size:0.8rem;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Notification Devices</div>
+      ${tokens.map((t, i) => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i < tokens.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
+          <div>
+            <div style="font-size:0.88rem;font-weight:600">${esc(t.deviceName || 'Device')}</div>
+            <div style="font-size:0.75rem;color:var(--muted)">${t.registeredAt ? new Date(t.registeredAt).toLocaleDateString() : ''}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="confirmRemoveDevice(${i})">Remove</button>
+        </div>`).join('')}`;
+  } catch {
+    el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">Could not load devices.</div>`;
+  }
+}
+
+function confirmRemoveDevice(index) {
+  showModal(`
+    <div class="modal-title">Remove Device?</div>
+    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This device will no longer receive notifications. You can re-register it by signing in again.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="removeDevice(${index})">Remove</button>
+    </div>`);
+}
+
+async function removeDevice(index) {
+  closeModal();
+  const parentUid = S.currentUser?.authUid;
+  if (!parentUid) return;
+  try {
+    const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
+    const snap = await ref.get();
+    const tokens = snap.exists ? (snap.data().tokens || []) : [];
+    tokens.splice(index, 1);
+    await ref.set({ tokens });
+    toast('Device removed');
+    loadDevicesList();
+  } catch {
+    toast('Could not remove device');
+  }
+}
+
+function confirmSignOut() {
+  showModal(`
+    <div class="modal-title">Sign Out?</div>
+    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">You'll need to sign in again to access the parent dashboard on this device.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="closeModal();closeSettings();goHome()">Sign Out</button>
+    </div>`);
+}
+
+function showLinkAccountPrompt(memberId) {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-shield-check" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">Link Your Account</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Sign in with Google or Apple to enable push notifications and secure your parent profile. Account sign-in will be required in a future update.</p>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-secondary" onclick="closeModal()">Not Now</button>
+      <button class="btn btn-primary" onclick="closeModal();showParentSignIn('${memberId}')">Link Account</button>
+    </div>`);
 }
 
 function renderParentHeader() {
@@ -7733,6 +7944,117 @@ async function checkMaintenanceMode() {
   return false;
 }
 
+function showParentSignIn(memberId, onSuccess) {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.className = 'screen active';
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:40px 28px';
+  const member = getMember(memberId);
+  el.innerHTML = `
+    <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
+    <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back</div>
+    <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+      <button id="btn-google-signin" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('google','${memberId}')">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <button id="btn-apple-signin" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('apple','${memberId}')">
+        <svg width="20" height="20" viewBox="0 0 814 1000"><path fill="#fff" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.1 134.7-316.5 266.9-316.5 101.2 0 184.7 67.4 244.5 67.4 56.7 0 154.5-71.9 270.1-71.9 43.8 0 169.7 4.2 259.1 127.4zm-234.5-181.5c50.7-60.2 87.5-143.7 87.5-227.2 0-11.6-.6-23.3-2.5-33.3-83.1 3.2-186.2 55.5-251.3 128.5-46.8 52.7-92.1 136.2-92.1 221.5 0 13.4 2.5 26.8 3.5 31.1 5.1.9 13.4 1.9 21.6 1.9 74.9 0 171.3-49.9 233.3-122.5z"/></svg>
+        Continue with Apple
+      </button>
+    </div>
+    <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()">← Back</button>`;
+  S._parentSignInCallback = onSuccess || null;
+}
+
+async function handleParentSignIn(provider, memberId) {
+  const btns = document.querySelectorAll('#btn-google-signin, #btn-apple-signin');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  const firebaseUser = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+  if (!firebaseUser) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  await linkParentAuth(firebaseUser, memberId);
+  await checkAndPromptNewDevice(firebaseUser.uid, memberId);
+}
+
+async function checkAndPromptNewDevice(parentUid, memberId) {
+  try {
+    const tokenDoc = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
+    const existingTokens = tokenDoc.exists ? (tokenDoc.data().tokens || []) : [];
+    const cb = S._parentSignInCallback;
+    S._parentSignInCallback = null;
+    if (existingTokens.length === 0) {
+      // First time on any device — register silently, no prompt needed
+      proceedAsParent(memberId, cb);
+    } else {
+      showNewDevicePrompt(parentUid, memberId, cb);
+    }
+  } catch {
+    const cb = S._parentSignInCallback;
+    S._parentSignInCallback = null;
+    proceedAsParent(memberId, cb);
+  }
+}
+
+function showNewDevicePrompt(parentUid, memberId, onComplete) {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-devices" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">New Device Detected</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Where would you like to receive notifications?</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="registerDeviceAndProceed('this','${parentUid}','${memberId}')">Use this device</button>
+      <button class="btn btn-secondary" onclick="registerDeviceAndProceed('both','${parentUid}','${memberId}')">Use both devices</button>
+      <button class="btn btn-secondary" onclick="registerDeviceAndProceed('keep','${parentUid}','${memberId}')">Keep my other device</button>
+    </div>`);
+  S._parentSignInCallback = onComplete || null;
+}
+
+async function registerDeviceAndProceed(choice, parentUid, memberId) {
+  closeModal();
+  if (choice !== 'keep') {
+    await registerDeviceToken(parentUid, choice === 'this');
+  }
+  const cb = S._parentSignInCallback;
+  S._parentSignInCallback = null;
+  proceedAsParent(memberId, cb);
+}
+
+function proceedAsParent(memberId, onComplete) {
+  const member = getMember(memberId);
+  if (!member) { renderHome(); return; }
+  S.currentUser = member;
+  setCurrentUserId(member.id);
+  setAppUnlocked(true);
+  if (onComplete) { onComplete(member); return; }
+  routeToView(member);
+}
+
+async function registerDeviceToken(parentUid, replaceExisting) {
+  // Placeholder — will be populated when push notifications are implemented
+  // For now just records device info so the model is in place
+  try {
+    const deviceName = navigator.userAgent.includes('iPhone') ? 'iPhone'
+                     : navigator.userAgent.includes('iPad')   ? 'iPad'
+                     : 'Device';
+    const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
+    if (replaceExisting) {
+      await ref.set({ tokens: [{ token: null, deviceName, registeredAt: Date.now() }] });
+    } else {
+      const snap = await ref.get();
+      const existing = snap.exists ? (snap.data().tokens || []) : [];
+      existing.push({ token: null, deviceName, registeredAt: Date.now() });
+      await ref.set({ tokens: existing });
+    }
+  } catch(e) {
+    console.warn('Device token registration failed:', e.message);
+  }
+}
+
 function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
@@ -7794,7 +8116,7 @@ function init() {
         renderHome();
       }
     } else showAppPin();
-    auth.signInAnonymously()
+    ensureFirestoreAuth()
       .then(() => {
         subscribeToFirestore();
         if (_needsMigrationPush) pushToFirestore();
@@ -7804,7 +8126,7 @@ function init() {
     // Slow path: no local data (fresh install or standalone PWA first launch)
     // Wait for Firestore before routing so we don't wrongly show setup wizard
     showLoading();
-    auth.signInAnonymously()
+    ensureFirestoreAuth()
       .then(() => subscribeToFirestore(routeAfterLoad))
       .catch(err => {
         console.warn('Firestore unavailable, falling back to local data:', err);
@@ -7814,6 +8136,11 @@ function init() {
 }
 
 // Start on DOM ready
+async function ensureFirestoreAuth() {
+  if (auth.currentUser) return;
+  await auth.signInAnonymously().catch(() => {});
+}
+
 async function startApp() {
   await checkBiometricAvailability();
   const inMaintenance = await checkMaintenanceMode();

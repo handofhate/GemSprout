@@ -40,6 +40,7 @@ workflows:
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
           plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
           plutil -insert NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist || plutil -replace NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist
+          plutil -insert CFBundleURLTypes -json '[{"CFBundleURLSchemes":["com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508"]}]' ios/App/App/Info.plist || true
 
       - name: Set up code signing
         script: xcode-project use-profiles

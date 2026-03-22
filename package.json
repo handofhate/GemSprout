@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/handofhate/Family-Hub#readme",
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.1.0",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
