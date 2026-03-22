@@ -33,6 +33,9 @@ workflows:
           cp manifest.json www/
           cp *.png www/
           npx cap add ios
+          # Replace the default pod with Lite (core + Apple) + Google subspecs only
+          # This excludes the Facebook SDK, which crashes on launch without its own config
+          sed -i '' "s|pod 'CapacitorFirebaseAuthentication'|pod 'CapacitorFirebaseAuthentication/Lite'\n  pod 'CapacitorFirebaseAuthentication/Google'|" ios/App/Podfile
           npx cap sync ios
           cp GoogleService-Info.plist ios/App/App/
 
