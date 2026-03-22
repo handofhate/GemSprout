@@ -63,9 +63,9 @@ function isParentSignedIn() {
 async function signInWithGoogle() {
   try {
     if (isNative()) {
-      const { FirebaseAuthentication } = Capacitor.Plugins;
-      const result = await FirebaseAuthentication.signInWithGoogle();
-      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential?.idToken);
+      const { GoogleAuth } = Capacitor.Plugins;
+      const result = await GoogleAuth.signIn();
+      const credential = firebase.auth.GoogleAuthProvider.credential(result.authentication.idToken);
       await auth.signInWithCredential(credential);
       return auth.currentUser;
     } else {
@@ -84,12 +84,23 @@ async function signInWithGoogle() {
 async function signInWithApple() {
   try {
     if (isNative()) {
-      const { FirebaseAuthentication } = Capacitor.Plugins;
-      const result = await FirebaseAuthentication.signInWithApple();
+      const { SignInWithApple } = Capacitor.Plugins;
+      // Generate a nonce to prevent replay attacks
+      const rawNonce = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+      const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawNonce));
+      const hashedNonce = Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+      const result = await SignInWithApple.authorize({
+        clientId: 'com.gemsprout.ios',
+        redirectURI: 'https://gemsprout1.firebaseapp.com/__/auth/handler',
+        scopes: 'email name',
+        nonce: hashedNonce,
+      });
       const provider = new firebase.auth.OAuthProvider('apple.com');
       const credential = provider.credential({
-        idToken:   result.credential?.idToken,
-        rawNonce:  result.credential?.nonce,
+        idToken:  result.response.identityToken,
+        rawNonce,
       });
       await auth.signInWithCredential(credential);
       return auth.currentUser;
@@ -108,10 +119,6 @@ async function signInWithApple() {
 
 async function signOutParent() {
   try {
-    if (isNative()) {
-      const { FirebaseAuthentication } = Capacitor.Plugins;
-      await FirebaseAuthentication.signOut();
-    }
     await auth.signOut();
   } catch(e) {
     console.warn('Sign out error:', e.message);

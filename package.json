@@ -22,11 +22,11 @@
     "@capacitor/assets": "^3.0.0"
   },
   "dependencies": {
-    "@capacitor-firebase/authentication": "^8.1.0",
+    "@capacitor-community/apple-sign-in": "^1.0.1",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
     "@capgo/capacitor-native-biometric": "^8.0.0",
-    "firebase-admin": "^13.7.0"
+    "@codetrix-studio/capacitor-google-auth": "^3.4.0"
   }
 }

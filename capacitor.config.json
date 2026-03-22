@@ -6,9 +6,9 @@
     "SplashScreen": {
       "launchShowDuration": 0
     },
-    "FirebaseAuthentication": {
-      "skipNativeAuth": false,
-      "providers": ["google.com", "apple.com"]
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "forceCodeForRefreshToken": true
     }
   },
   "ios": {
