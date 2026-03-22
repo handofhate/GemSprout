@@ -36,7 +36,20 @@ function getFamilyDoc() {
 }
 
 firebase.initializeApp(FIREBASE_CONFIG);
-const auth    = firebase.auth();
+// Firebase's compat CDN auto-detects Capacitor WKWebView as a Cordova environment
+// and routes to Cordova auth mode, which requires Cordova plugins we don't have.
+// Fix: call initializeAuth with explicit browserPopupRedirectResolver before
+// firebase.auth() is ever called. The compat wrapper reuses the pre-initialized instance.
+let auth;
+const _authInitPromise = import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js')
+  .then(({ initializeAuth, browserPopupRedirectResolver, indexedDBLocalPersistence }) => {
+    initializeAuth(firebase.app(), {
+      persistence: indexedDBLocalPersistence,
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+    auth = firebase.auth();
+  })
+  .catch(() => { auth = firebase.auth(); });
 const db      = firebase.firestore();
 const storage = firebase.storage();
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
@@ -64,8 +77,6 @@ async function signInWithGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     if (isNative()) {
-      const _cd = window.cordova;
-      alert('[diag] cordova=' + typeof _cd + ' require=' + ((_cd && _cd.require) ? typeof _cd.require : 'none'));
       await auth.signInWithRedirect(provider);
       return null; // page navigates away; resolved on next load via getRedirectResult
     } else {
@@ -8155,6 +8166,7 @@ async function ensureFirestoreAuth() {
 }
 
 async function startApp() {
+  await _authInitPromise;
   await checkBiometricAvailability();
   const inMaintenance = await checkMaintenanceMode();
   if (!inMaintenance) init();
