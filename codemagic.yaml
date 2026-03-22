@@ -33,6 +33,10 @@ workflows:
           cp manifest.json www/
           cp *.png www/
           npx cap add ios
+          # Generate iOS app icons from source image
+          mkdir -p assets
+          cp "GemSprout Icon.png" assets/icon-only.png
+          npx capacitor-assets generate --ios
           # Facebook SDK is bundled by @capacitor-firebase/authentication but requires
           # Info.plist entries to not crash. Add placeholders since we don't use Facebook login.
           npx cap sync ios
