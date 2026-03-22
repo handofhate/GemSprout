@@ -1,0 +1,7829 @@
+/* ═══════════════════════════════════════════════════════════════
+   FIREBASE CONFIG + PIN AUTH
+═══════════════════════════════════════════════════════════════ */
+
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU",
+  authDomain:        "gemsprout1.firebaseapp.com",
+  projectId:         "gemsprout1",
+  storageBucket:     "gemsprout1.firebasestorage.app",
+  messagingSenderId: "493782739457",
+  appId:             "1:493782739457:web:64d2afa5766ee1b481ee00",
+  measurementId:     "G-1WDH5Q2STT",
+};
+
+const FAMILY_CODE_KEY   = 'gemsprout.familyCode';
+const FAMILY_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/I/1
+
+function genFamilyCode() {
+  let code = '';
+  for (let i = 0; i < 6; i++) code += FAMILY_CODE_CHARS[Math.floor(Math.random() * FAMILY_CODE_CHARS.length)];
+  return code;
+}
+
+function getFamilyCode() {
+  try { return localStorage.getItem(FAMILY_CODE_KEY) || ''; } catch (_) { return ''; }
+}
+
+function setFamilyCode(code) {
+  try { localStorage.setItem(FAMILY_CODE_KEY, code); } catch (_) {}
+}
+
+function getFamilyDoc() {
+  let code = getFamilyCode();
+  if (!code) { code = genFamilyCode(); setFamilyCode(code); }
+  return `families/${code}`;
+}
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth    = firebase.auth();
+const db      = firebase.firestore();
+const storage = firebase.storage();
+const APP_UNLOCK_KEY = 'gemsprout.appUnlocked';
+const CURRENT_USER_KEY = 'gemsprout.currentUserId';
+
+function setAppUnlocked(v) {
+  try { localStorage.setItem(APP_UNLOCK_KEY, v ? '1' : '0'); } catch (_) {}
+}
+
+function isAppUnlocked() {
+  try { return localStorage.getItem(APP_UNLOCK_KEY) === '1'; }
+  catch (_) { return false; }
+}
+
+function setCurrentUserId(id) {
+  try {
+    if (id) localStorage.setItem(CURRENT_USER_KEY, id);
+    else localStorage.removeItem(CURRENT_USER_KEY);
+  } catch (_) {}
+}
+
+function getCurrentUserId() {
+  try { return localStorage.getItem(CURRENT_USER_KEY) || ''; }
+  catch (_) { return ''; }
+}
+
+// ── APP-LEVEL PIN GATE ────────────────────────────────────────
+function showAppPin() {
+  if (!D.settings || !D.settings.parentPin) {
+    setAppUnlocked(true);
+    renderHome();
+    return;
+  }
+  setAppUnlocked(false);
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  S.pinMode   = 'app';
+  document.getElementById('pin-content').innerHTML = `
+    <img class="pin-avatar" src="gemsproutpadded.png">
+    <div class="pin-title">GemSprout</div>
+    <div class="pin-sub">Enter parent PIN to continue</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>
+    ${getBiometricCredentialId() ? `<button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="tryBiometricUnlock()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Use ${getBiometricLabel()}</button>` : ''}`;
+  // Auto-trigger biometric once — cancel any previously queued trigger first
+  clearTimeout(S._biometricTimer);
+  if (getBiometricCredentialId()) {
+    S._biometricTimer = setTimeout(() => tryBiometricUnlock(), 400);
+  }
+}
+
+// ── SWITCH USER ───────────────────────────────────────────────
+function goHome() {
+  const wasParent = S.currentUser?.role === 'parent';
+  S.currentUser = null;
+  setCurrentUserId('');
+  // Parent is already authenticated — go straight to profile picker.
+  // Kids still require PIN to get back to the picker (protects parent profile).
+  if (wasParent) renderHome();
+  else showAppPin();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 2 — DATA LAYER · UTILITIES · ANIMATIONS · CLOUD SYNC
+═══════════════════════════════════════════════════════════════ */
+
+'use strict';
+
+// ── CONSTANTS ────────────────────────────────────────────────
+const AVATARS = ['🦁','🐯','🐻','🐼','🦊','🐰','🐸','🐨','🦄','🐱',
+                 '🦋','🌟','🚀','⚡','🌈','🦖','🐉','🌺','🎈','🏆',
+                 '👑','🎀','🎸','🦸','🧙','🐬','🦅','🐝','🌵','🎃'];
+
+const COLORS  = ['#6C63FF','#FF6584','#43D9AD','#FFD93D','#6BCB77',
+                 '#FF9A3C','#4ECDC4','#45B7D1','#E91E63','#9C27B0'];
+
+// ── NAV TAB ICONS (duotone SVGs, sized to 1em so they scale with font-size) ──
+const ICONS = {
+  home:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M14 4L3 13h3v10h6v-6h4v6h6V13h3L14 4z" fill="#6C63FF" fill-opacity=".18" stroke="#6C63FF" stroke-width="1.8" stroke-linejoin="round"/><rect x="11.5" y="17" width="5" height="6" rx="1.2" fill="#6C63FF" opacity=".5"/></svg>`,
+  chores:   `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="6" y="5" width="16" height="20" rx="3" fill="#6BCB77" fill-opacity=".18" stroke="#6BCB77" stroke-width="1.8"/><rect x="10" y="3.5" width="8" height="4" rx="2" fill="#6BCB77"/><line x1="10" y1="12" x2="18" y2="12" stroke="#6BCB77" stroke-width="1.6" stroke-linecap="round"/><line x1="10" y1="16" x2="18" y2="16" stroke="#6BCB77" stroke-width="1.6" stroke-linecap="round"/><polyline points="10,21.5 12.5,24 18,18" stroke="#6BCB77" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
+  diamond:  `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M14 24L4 12l4-8h12l4 8L14 24z" fill="#6C63FF" fill-opacity=".2" stroke="#6C63FF" stroke-width="1.8" stroke-linejoin="round"/><line x1="4" y1="12" x2="24" y2="12" stroke="#6C63FF" stroke-width="1.6"/><line x1="8" y1="4" x2="14" y2="12" stroke="#6C63FF" stroke-width="1.2" opacity=".5" stroke-linecap="round"/><line x1="20" y1="4" x2="14" y2="12" stroke="#6C63FF" stroke-width="1.2" opacity=".5" stroke-linecap="round"/></svg>`,
+  shop:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M6 11h16l-1.5 15H7.5L6 11z" fill="#FFD93D" fill-opacity=".28" stroke="#FF9A3C" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 11V8.5C10 5.9 11.8 4 14 4s4 1.9 4 4.5V11" stroke="#FF9A3C" stroke-width="1.9" stroke-linecap="round" fill="none"/><line x1="9.5" y1="18.5" x2="18.5" y2="18.5" stroke="#FF9A3C" stroke-width="1.5" stroke-linecap="round" opacity=".6"/></svg>`,
+  team:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M9 4h10v12c0 2.8-2.2 5-5 5s-5-2.2-5-5V4z" fill="#FFD93D" fill-opacity=".3" stroke="#FFD93D" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8H5v4c0 2.2 1.8 4 4 4" stroke="#FFD93D" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 8h4v4c0 2.2-1.8 4-4 4" stroke="#FFD93D" stroke-width="1.8" stroke-linecap="round" fill="none"/><line x1="14" y1="21" x2="14" y2="24" stroke="#FFD93D" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="24" x2="18" y2="24" stroke="#FFD93D" stroke-width="2.2" stroke-linecap="round"/></svg>`,
+  stats:    `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="4" y="17" width="5" height="7" rx="1.5" fill="#45B7D1" fill-opacity=".3"/><rect x="11.5" y="12" width="5" height="12" rx="1.5" fill="#45B7D1" fill-opacity=".6"/><rect x="19" y="7" width="5" height="17" rx="1.5" fill="#45B7D1"/><line x1="3" y1="24.5" x2="25" y2="24.5" stroke="#45B7D1" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  prizes:   `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="4" y="13" width="20" height="11" rx="2" fill="#FF6584" fill-opacity=".18" stroke="#FF6584" stroke-width="1.8"/><rect x="4" y="9" width="20" height="5" rx="2" fill="#FF6584" fill-opacity=".3" stroke="#FF6584" stroke-width="1.8"/><line x1="14" y1="9" x2="14" y2="24" stroke="#FF6584" stroke-width="1.8"/><path d="M14 9c-1-2.5-4.5-4-5.5-1.5S11 10.5 14 9z" fill="#FF6584"/><path d="M14 9c1-2.5 4.5-4 5.5-1.5S17 10.5 14 9z" fill="#FF6584"/><circle cx="14" cy="9" r="1.6" fill="#FF6584"/></svg>`,
+  plans:    `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="4" y="7" width="20" height="18" rx="3" fill="#43D9AD" fill-opacity=".18" stroke="#43D9AD" stroke-width="1.8"/><line x1="4" y1="13" x2="24" y2="13" stroke="#43D9AD" stroke-width="1.8"/><line x1="9" y1="4" x2="9" y2="10" stroke="#43D9AD" stroke-width="1.8" stroke-linecap="round"/><line x1="19" y1="4" x2="19" y2="10" stroke="#43D9AD" stroke-width="1.8" stroke-linecap="round"/><rect x="7.5" y="16" width="3.5" height="3.5" rx=".8" fill="#43D9AD" opacity=".8"/><rect x="12.5" y="16" width="3.5" height="3.5" rx=".8" fill="#43D9AD" opacity=".5"/><rect x="17.5" y="16" width="3.5" height="3.5" rx=".8" fill="#43D9AD" opacity=".5"/><rect x="7.5" y="20.5" width="3.5" height="3.5" rx=".8" fill="#43D9AD" opacity=".35"/></svg>`,
+  settings: `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><line x1="4" y1="8" x2="24" y2="8" stroke="#FF9A3C" stroke-width="1.8" stroke-linecap="round" opacity=".35"/><line x1="4" y1="14" x2="24" y2="14" stroke="#FF9A3C" stroke-width="1.8" stroke-linecap="round" opacity=".35"/><line x1="4" y1="20" x2="24" y2="20" stroke="#FF9A3C" stroke-width="1.8" stroke-linecap="round" opacity=".35"/><circle cx="10" cy="8" r="3.2" fill="#FF9A3C"/><circle cx="18" cy="14" r="3.2" fill="#FF9A3C"/><circle cx="10" cy="20" r="3.2" fill="#FF9A3C"/></svg>`,
+  family:   `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><circle cx="9.5" cy="8.5" r="3.5" fill="#FF6584" fill-opacity=".3" stroke="#FF6584" stroke-width="1.7"/><circle cx="18.5" cy="8.5" r="3.5" fill="#FF6584" fill-opacity=".3" stroke="#FF6584" stroke-width="1.7"/><path d="M2 24c0-4.2 3.4-7.5 7.5-7.5" stroke="#FF6584" stroke-width="1.7" stroke-linecap="round" fill="none" opacity=".5"/><path d="M11 24c0-4.2 3.4-7.5 7.5-7.5S26 19.8 26 24" stroke="#FF6584" stroke-width="1.7" stroke-linecap="round" fill="none"/></svg>`,
+  today:    `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="4" y="7" width="20" height="18" rx="3" fill="#43D9AD" fill-opacity=".18" stroke="#43D9AD" stroke-width="1.8"/><line x1="4" y1="13" x2="24" y2="13" stroke="#43D9AD" stroke-width="1.8"/><line x1="9" y1="4" x2="9" y2="10" stroke="#43D9AD" stroke-width="1.8" stroke-linecap="round"/><line x1="19" y1="4" x2="19" y2="10" stroke="#43D9AD" stroke-width="1.8" stroke-linecap="round"/><circle cx="14" cy="19.5" r="4" fill="#43D9AD" opacity=".8"/></svg>`,
+  levels:   `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="3" y="19" width="5" height="6" rx="1.2" fill="#6C63FF" fill-opacity=".25" stroke="#6C63FF" stroke-width="1.6"/><rect x="10" y="14" width="5" height="11" rx="1.2" fill="#6C63FF" fill-opacity=".5" stroke="#6C63FF" stroke-width="1.6"/><rect x="17" y="9" width="5" height="16" rx="1.2" fill="#6C63FF" stroke="#6C63FF" stroke-width="1.6"/><path d="M19.5 3l.9 1.9 2.1.4-1.5 1.4.4 2-1.9-1-1.9 1 .4-2L16.5 5.3l2.1-.4L19.5 3z" fill="#FFD93D" stroke="#D97706" stroke-width=".6" stroke-linejoin="round"/></svg>`,
+};
+
+// Phosphor duotone icon map for chore and prize pickers
+// n = Phosphor icon name, k = search keywords
+// Full Phosphor icon name list — search splits on hyphens automatically
+const _ICON_NAMES = 'acorn,address-book,address-book-tabs,air-traffic-control,airplane,airplane-in-flight,airplane-landing,airplane-takeoff,airplane-taxiing,airplane-tilt,airplay,alarm,alien,align-bottom,align-bottom-simple,align-center-horizontal,align-center-horizontal-simple,align-center-vertical,align-center-vertical-simple,align-left,align-left-simple,align-right,align-right-simple,align-top,align-top-simple,amazon-logo,ambulance,anchor,anchor-simple,android-logo,angle,angular-logo,aperture,app-store-logo,app-window,apple-logo,apple-podcasts-logo,approximate-equals,archive,armchair,arrow-arc-left,arrow-arc-right,arrow-bend-double-up-left,arrow-bend-double-up-right,arrow-bend-down-left,arrow-bend-down-right,arrow-bend-left-down,arrow-bend-left-up,arrow-bend-right-down,arrow-bend-right-up,arrow-bend-up-left,arrow-bend-up-right,arrow-circle-down,arrow-circle-down-left,arrow-circle-down-right,arrow-circle-left,arrow-circle-right,arrow-circle-up,arrow-circle-up-left,arrow-circle-up-right,arrow-clockwise,arrow-counter-clockwise,arrow-down,arrow-down-left,arrow-down-right,arrow-elbow-down-left,arrow-elbow-down-right,arrow-elbow-left,arrow-elbow-left-down,arrow-elbow-left-up,arrow-elbow-right,arrow-elbow-right-down,arrow-elbow-right-up,arrow-elbow-up-left,arrow-elbow-up-right,arrow-fat-down,arrow-fat-left,arrow-fat-line-down,arrow-fat-line-left,arrow-fat-line-right,arrow-fat-line-up,arrow-fat-lines-down,arrow-fat-lines-left,arrow-fat-lines-right,arrow-fat-lines-up,arrow-fat-right,arrow-fat-up,arrow-left,arrow-line-down,arrow-line-down-left,arrow-line-down-right,arrow-line-left,arrow-line-right,arrow-line-up,arrow-line-up-left,arrow-line-up-right,arrow-right,arrow-square-down,arrow-square-down-left,arrow-square-down-right,arrow-square-in,arrow-square-left,arrow-square-out,arrow-square-right,arrow-square-up,arrow-square-up-left,arrow-square-up-right,arrow-u-down-left,arrow-u-down-right,arrow-u-left-down,arrow-u-left-up,arrow-u-right-down,arrow-u-right-up,arrow-u-up-left,arrow-u-up-right,arrow-up,arrow-up-left,arrow-up-right,arrows-clockwise,arrows-counter-clockwise,arrows-down-up,arrows-horizontal,arrows-in,arrows-in-cardinal,arrows-in-line-horizontal,arrows-in-line-vertical,arrows-in-simple,arrows-left-right,arrows-merge,arrows-out,arrows-out-cardinal,arrows-out-line-horizontal,arrows-out-line-vertical,arrows-out-simple,arrows-split,arrows-vertical,article,article-medium,article-ny-times,asclepius,asterisk,asterisk-simple,at,atom,avocado,axe,baby,baby-carriage,backpack,backspace,bag,bag-simple,balloon,bandaids,bank,barbell,barcode,barn,barricade,baseball,baseball-cap,baseball-helmet,basket,basketball,bathtub,battery-charging,battery-charging-vertical,battery-empty,battery-full,battery-high,battery-low,battery-medium,battery-plus,battery-plus-vertical,battery-vertical-empty,battery-vertical-full,battery-vertical-high,battery-vertical-low,battery-vertical-medium,battery-warning,battery-warning-vertical,beach-ball,beanie,bed,beer-bottle,beer-stein,behance-logo,bell,bell-ringing,bell-simple,bell-simple-ringing,bell-simple-slash,bell-simple-z,bell-slash,bell-z,belt,bezier-curve,bicycle,binary,binoculars,biohazard,bird,blueprint,bluetooth,bluetooth-connected,bluetooth-slash,bluetooth-x,boat,bomb,bone,book,book-bookmark,book-open,book-open-text,book-open-user,bookmark,bookmark-simple,bookmarks,bookmarks-simple,books,boot,boules,bounding-box,bowl-food,bowl-steam,bowling-ball,box-arrow-down,box-arrow-up,boxing-glove,brackets-angle,brackets-curly,brackets-round,brackets-square,brain,brandy,bread,bridge,briefcase,briefcase-metal,broadcast,broom,browser,browsers,bug,bug-beetle,bug-droid,building,building-apartment,building-office,buildings,bulldozer,bus,butterfly,cable-car,cactus,cake,calculator,calendar,calendar-blank,calendar-check,calendar-dot,calendar-dots,calendar-heart,calendar-minus,calendar-plus,calendar-slash,calendar-star,calendar-x,call-bell,camera,camera-plus,camera-rotate,camera-slash,campfire,car,car-battery,car-profile,car-simple,cardholder,cards,cards-three,caret-circle-double-down,caret-circle-double-left,caret-circle-double-right,caret-circle-double-up,caret-circle-down,caret-circle-left,caret-circle-right,caret-circle-up,caret-circle-up-down,caret-double-down,caret-double-left,caret-double-right,caret-double-up,caret-down,caret-left,caret-line-down,caret-line-left,caret-line-right,caret-line-up,caret-right,caret-up,caret-up-down,carrot,cash-register,cassette-tape,castle-turret,cat,cell-signal-full,cell-signal-high,cell-signal-low,cell-signal-medium,cell-signal-none,cell-signal-slash,cell-signal-x,cell-tower,certificate,chair,chalkboard,chalkboard-simple,chalkboard-teacher,champagne,charging-station,chart-bar,chart-bar-horizontal,chart-donut,chart-line,chart-line-down,chart-line-up,chart-pie,chart-pie-slice,chart-polar,chart-scatter,chat,chat-centered,chat-centered-dots,chat-centered-slash,chat-centered-text,chat-circle,chat-circle-dots,chat-circle-slash,chat-circle-text,chat-dots,chat-slash,chat-teardrop,chat-teardrop-dots,chat-teardrop-slash,chat-teardrop-text,chat-text,chats,chats-circle,chats-teardrop,check,check-circle,check-fat,check-square,check-square-offset,checkerboard,checks,cheers,cheese,chef-hat,cherries,church,cigarette,cigarette-slash,circle,circle-dashed,circle-half,circle-half-tilt,circle-notch,circles-four,circles-three,circles-three-plus,circuitry,city,clipboard,clipboard-text,clock,clock-afternoon,clock-clockwise,clock-countdown,clock-counter-clockwise,clock-user,closed-captioning,cloud,cloud-arrow-down,cloud-arrow-up,cloud-check,cloud-fog,cloud-lightning,cloud-moon,cloud-rain,cloud-slash,cloud-snow,cloud-sun,cloud-warning,cloud-x,clover,club,coat-hanger,coda-logo,code,code-block,code-simple,codepen-logo,codesandbox-logo,coffee,coffee-bean,coin,coin-vertical,coins,columns,columns-plus-left,columns-plus-right,command,compass,compass-rose,compass-tool,computer-tower,confetti,contactless-payment,control,cookie,cooking-pot,copy,copy-simple,copyleft,copyright,corners-in,corners-out,couch,court-basketball,cow,cowboy-hat,cpu,crane,crane-tower,credit-card,cricket,crop,cross,crosshair,crosshair-simple,crown,crown-cross,crown-simple,cube,cube-focus,cube-transparent,currency-btc,currency-circle-dollar,currency-cny,currency-dollar,currency-dollar-simple,currency-eth,currency-eur,currency-gbp,currency-inr,currency-jpy,currency-krw,currency-kzt,currency-ngn,currency-rub,cursor,cursor-click,cursor-text,cylinder,database,desk,desktop,desktop-tower,detective,dev-to-logo,device-mobile,device-mobile-camera,device-mobile-slash,device-mobile-speaker,device-rotate,device-tablet,device-tablet-camera,device-tablet-speaker,devices,diamond,diamonds-four,dice-five,dice-four,dice-one,dice-six,dice-three,dice-two,disc,disco-ball,discord-logo,divide,dna,dog,door,door-open,dot,dot-outline,dots-nine,dots-six,dots-six-vertical,dots-three,dots-three-circle,dots-three-circle-vertical,dots-three-outline,dots-three-outline-vertical,dots-three-vertical,download,download-simple,dress,dresser,dribbble-logo,drone,drop,drop-half,drop-half-bottom,drop-simple,drop-slash,dropbox-logo,ear,ear-slash,egg,egg-crack,eject,eject-simple,elevator,empty,engine,envelope,envelope-open,envelope-simple,envelope-simple-open,equalizer,equals,eraser,escalator-down,escalator-up,exam,exclamation-mark,exclude,exclude-square,export,eye,eye-closed,eye-slash,eyedropper,eyedropper-sample,eyeglasses,eyes,face-mask,facebook-logo,factory,faders,faders-horizontal,fallout-shelter,fan,farm,fast-forward,fast-forward-circle,feather,fediverse-logo,figma-logo,file,file-archive,file-arrow-down,file-arrow-up,file-audio,file-c,file-c-sharp,file-cloud,file-code,file-cpp,file-css,file-csv,file-dashed,file-doc,file-html,file-image,file-ini,file-jpg,file-js,file-jsx,file-lock,file-magnifying-glass,file-md,file-minus,file-pdf,file-plus,file-png,file-ppt,file-py,file-rs,file-sql,file-svg,file-text,file-ts,file-tsx,file-txt,file-video,file-vue,file-x,file-xls,file-zip,files,film-reel,film-script,film-slate,film-strip,fingerprint,fingerprint-simple,finn-the-human,fire,fire-extinguisher,fire-simple,fire-truck,first-aid,first-aid-kit,fish,fish-simple,flag,flag-banner,flag-banner-fold,flag-checkered,flag-pennant,flame,flashlight,flask,flip-horizontal,flip-vertical,floppy-disk,floppy-disk-back,flow-arrow,flower,flower-lotus,flower-tulip,flying-saucer,folder,folder-dashed,folder-lock,folder-minus,folder-open,folder-plus,folder-simple,folder-simple-dashed,folder-simple-lock,folder-simple-minus,folder-simple-plus,folder-simple-star,folder-simple-user,folder-star,folder-user,folders,football,football-helmet,footprints,fork-knife,four-k,frame-corners,framer-logo,function,funnel,funnel-simple,funnel-simple-x,funnel-x,game-controller,garage,gas-can,gas-pump,gauge,gavel,gear,gear-fine,gear-six,gender-female,gender-intersex,gender-male,gender-neuter,gender-nonbinary,gender-transgender,ghost,gif,gift,git-branch,git-commit,git-diff,git-fork,git-merge,git-pull-request,github-logo,gitlab-logo,gitlab-logo-simple,globe,globe-hemisphere-east,globe-hemisphere-west,globe-simple,globe-simple-x,globe-stand,globe-x,goggles,golf,goodreads-logo,google-cardboard-logo,google-chrome-logo,google-drive-logo,google-logo,google-photos-logo,google-play-logo,google-podcasts-logo,gps,gps-fix,gps-slash,gradient,graduation-cap,grains,grains-slash,graph,graphics-card,greater-than,greater-than-or-equal,grid-four,grid-nine,guitar,hair-dryer,hamburger,hammer,hand,hand-arrow-down,hand-arrow-up,hand-coins,hand-deposit,hand-eye,hand-fist,hand-grabbing,hand-heart,hand-palm,hand-peace,hand-pointing,hand-soap,hand-swipe-left,hand-swipe-right,hand-tap,hand-waving,hand-withdraw,handbag,handbag-simple,hands-clapping,hands-praying,handshake,hard-drive,hard-drives,hard-hat,hash,hash-straight,head-circuit,headlights,headphones,headset,heart,heart-break,heart-half,heart-straight,heart-straight-break,heartbeat,hexagon,high-definition,high-heel,highlighter,highlighter-circle,hockey,hoodie,horse,hospital,hourglass,hourglass-high,hourglass-low,hourglass-medium,hourglass-simple,hourglass-simple-high,hourglass-simple-low,hourglass-simple-medium,house,house-line,house-simple,hurricane,ice-cream,identification-badge,identification-card,image,image-broken,image-square,images,images-square,infinity,info,instagram-logo,intersect,intersect-square,intersect-three,intersection,invoice,island,jar,jar-label,jeep,joystick,kanban,key,key-return,keyboard,keyhole,knife,ladder,ladder-simple,lamp,lamp-pendant,laptop,lasso,lastfm-logo,layout,leaf,lectern,lego,lego-smiley,less-than,less-than-or-equal,letter-circle-h,letter-circle-p,letter-circle-v,lifebuoy,lightbulb,lightbulb-filament,lighthouse,lightning,lightning-a,lightning-slash,line-segment,line-segments,line-vertical,link,link-break,link-simple,link-simple-break,link-simple-horizontal,link-simple-horizontal-break,linkedin-logo,linktree-logo,linux-logo,list,list-bullets,list-checks,list-dashes,list-heart,list-magnifying-glass,list-numbers,list-plus,list-star,lock,lock-key,lock-key-open,lock-laminated,lock-laminated-open,lock-open,lock-simple,lock-simple-open,lockers,log,magic-wand,magnet,magnet-straight,magnifying-glass,magnifying-glass-minus,magnifying-glass-plus,mailbox,map-pin,map-pin-area,map-pin-line,map-pin-plus,map-pin-simple,map-pin-simple-area,map-pin-simple-line,map-trifold,markdown-logo,marker-circle,martini,mask-happy,mask-sad,mastodon-logo,math-operations,matrix-logo,medal,medal-military,medium-logo,megaphone,megaphone-simple,member-of,memory,messenger-logo,meta-logo,meteor,metronome,microphone,microphone-slash,microphone-stage,microscope,microsoft-excel-logo,microsoft-outlook-logo,microsoft-powerpoint-logo,microsoft-teams-logo,microsoft-word-logo,minus,minus-circle,minus-square,money,money-wavy,monitor,monitor-arrow-up,monitor-play,moon,moon-stars,moped,moped-front,mosque,motorcycle,mountains,mouse,mouse-left-click,mouse-middle-click,mouse-right-click,mouse-scroll,mouse-simple,music-note,music-note-simple,music-notes,music-notes-minus,music-notes-plus,music-notes-simple,navigation-arrow,needle,network,network-slash,network-x,newspaper,newspaper-clipping,not-equals,not-member-of,not-subset-of,not-superset-of,notches,note,note-blank,note-pencil,notebook,notepad,notification,notion-logo,nuclear-plant,number-circle-eight,number-circle-five,number-circle-four,number-circle-nine,number-circle-one,number-circle-seven,number-circle-six,number-circle-three,number-circle-two,number-circle-zero,number-eight,number-five,number-four,number-nine,number-one,number-seven,number-six,number-square-eight,number-square-five,number-square-four,number-square-nine,number-square-one,number-square-seven,number-square-six,number-square-three,number-square-two,number-square-zero,number-three,number-two,number-zero,numpad,nut,ny-times-logo,octagon,office-chair,onigiri,open-ai-logo,option,orange,orange-slice,oven,package,paint-brush,paint-brush-broad,paint-brush-household,paint-bucket,paint-roller,palette,panorama,pants,paper-plane,paper-plane-right,paper-plane-tilt,paperclip,paperclip-horizontal,parachute,paragraph,parallelogram,park,password,path,patreon-logo,pause,pause-circle,paw-print,paypal-logo,peace,pen,pen-nib,pen-nib-straight,pencil,pencil-circle,pencil-line,pencil-ruler,pencil-simple,pencil-simple-line,pencil-simple-slash,pencil-slash,pentagon,pentagram,pepper,percent,person,person-arms-spread,person-simple,person-simple-bike,person-simple-circle,person-simple-hike,person-simple-run,person-simple-ski,person-simple-snowboard,person-simple-swim,person-simple-tai-chi,person-simple-throw,person-simple-walk,perspective,phone,phone-call,phone-disconnect,phone-incoming,phone-list,phone-outgoing,phone-pause,phone-plus,phone-slash,phone-transfer,phone-x,phosphor-logo,pi,piano-keys,picnic-table,picture-in-picture,piggy-bank,pill,ping-pong,pint-glass,pinterest-logo,pinwheel,pipe,pipe-wrench,pix-logo,pizza,placeholder,planet,plant,play,play-circle,play-pause,playlist,plug,plug-charging,plugs,plugs-connected,plus,plus-circle,plus-minus,plus-square,poker-chip,police-car,polygon,popcorn,popsicle,potted-plant,power,prescription,presentation,presentation-chart,printer,prohibit,prohibit-inset,projector-screen,projector-screen-chart,pulse,push-pin,push-pin-simple,push-pin-simple-slash,push-pin-slash,puzzle-piece,qr-code,question,question-mark,queue,quotes,rabbit,racquet,radical,radio,radio-button,radioactive,rainbow,rainbow-cloud,ranking,read-cv-logo,receipt,receipt-x,record,rectangle,rectangle-dashed,recycle,reddit-logo,repeat,repeat-once,replit-logo,resize,rewind,rewind-circle,road-horizon,robot,rocket,rocket-launch,rows,rows-plus-bottom,rows-plus-top,rss,rss-simple,rug,ruler,sailboat,scales,scan,scan-smiley,scissors,scooter,screencast,screwdriver,scribble,scribble-loop,scroll,seal,seal-check,seal-percent,seal-question,seal-warning,seat,seatbelt,security-camera,selection,selection-all,selection-background,selection-foreground,selection-inverse,selection-plus,selection-slash,shapes,share,share-fat,share-network,shield,shield-check,shield-checkered,shield-chevron,shield-plus,shield-slash,shield-star,shield-warning,shipping-container,shirt-folded,shooting-star,shopping-bag,shopping-bag-open,shopping-cart,shopping-cart-simple,shovel,shower,shrimp,shuffle,shuffle-angular,shuffle-simple,sidebar,sidebar-simple,sigma,sign-in,sign-out,signature,signpost,sim-card,siren,sketch-logo,skip-back,skip-back-circle,skip-forward,skip-forward-circle,skull,skype-logo,slack-logo,sliders,sliders-horizontal,slideshow,smiley,smiley-angry,smiley-blank,smiley-meh,smiley-melting,smiley-nervous,smiley-sad,smiley-sticker,smiley-wink,smiley-x-eyes,snapchat-logo,sneaker,sneaker-move,snowflake,soccer-ball,sock,solar-panel,solar-roof,sort-ascending,sort-descending,soundcloud-logo,spade,sparkle,speaker-hifi,speaker-high,speaker-low,speaker-none,speaker-simple-high,speaker-simple-low,speaker-simple-none,speaker-simple-slash,speaker-simple-x,speaker-slash,speaker-x,speedometer,sphere,spinner,spinner-ball,spinner-gap,spiral,split-horizontal,split-vertical,spotify-logo,spray-bottle,square,square-half,square-half-bottom,square-logo,square-split-horizontal,square-split-vertical,squares-four,stack,stack-minus,stack-overflow-logo,stack-plus,stack-simple,stairs,stamp,standard-definition,star,star-and-crescent,star-four,star-half,star-of-david,steam-logo,steering-wheel,steps,stethoscope,sticker,stool,stop,stop-circle,storefront,strategy,stripe-logo,student,subset-of,subset-proper-of,subtitles,subtitles-slash,subtract,subtract-square,subway,suitcase,suitcase-rolling,suitcase-simple,sun,sun-dim,sun-horizon,sunglasses,superset-of,superset-proper-of,swap,swatches,swimming-pool,sword,synagogue,syringe,t-shirt,table,tabs,tag,tag-chevron,tag-simple,target,taxi,tea-bag,telegram-logo,television,television-simple,tennis-ball,tent,terminal,terminal-window,test-tube,text-a-underline,text-aa,text-align-center,text-align-justify,text-align-left,text-align-right,text-b,text-columns,text-h,text-h-five,text-h-four,text-h-one,text-h-six,text-h-three,text-h-two,text-indent,text-italic,text-outdent,text-strikethrough,text-subscript,text-superscript,text-t,text-t-slash,text-underline,textbox,thermometer,thermometer-cold,thermometer-hot,thermometer-simple,threads-logo,three-d,thumbs-down,thumbs-up,ticket,tidal-logo,tiktok-logo,tilde,timer,tip-jar,tipi,tire,toggle-left,toggle-right,toilet,toilet-paper,toolbox,tooth,tornado,tote,tote-simple,towel,tractor,trademark,trademark-registered,traffic-cone,traffic-sign,traffic-signal,train,train-regional,train-simple,tram,translate,trash,trash-simple,tray,tray-arrow-down,tray-arrow-up,treasure-chest,tree,tree-evergreen,tree-palm,tree-structure,tree-view,trend-down,trend-up,triangle,triangle-dashed,trolley,trolley-suitcase,trophy,truck,truck-trailer,tumblr-logo,twitch-logo,twitter-logo,umbrella,umbrella-simple,union,unite,unite-square,upload,upload-simple,usb,user,user-check,user-circle,user-circle-check,user-circle-dashed,user-circle-gear,user-circle-minus,user-circle-plus,user-focus,user-gear,user-list,user-minus,user-plus,user-rectangle,user-sound,user-square,user-switch,users,users-four,users-three,van,vault,vector-three,vector-two,vibrate,video,video-camera,video-camera-slash,video-conference,vignette,vinyl-record,virtual-reality,virus,visor,voicemail,volleyball,wall,wallet,warehouse,warning,warning-circle,warning-diamond,warning-octagon,washing-machine,watch,wave-sawtooth,wave-sine,wave-square,wave-triangle,waveform,waveform-slash,waves,webcam,webcam-slash,webhooks-logo,wechat-logo,whatsapp-logo,wheelchair,wheelchair-motion,wifi-high,wifi-low,wifi-medium,wifi-none,wifi-slash,wifi-x,wind,windmill,windows-logo,wine,wrench,x,x-circle,x-logo,x-square,yarn,yin-yang,youtube-logo'.split(',');
+// Featured icons shown by default (before search) — most useful for a family chore/prize app
+const _FEATURED = [
+  // Chores — household
+  'broom','trash','washing-machine','spray-bottle','toilet','bathtub','recycle','shovel',
+  // Chores — kitchen
+  'fork-knife','cooking-pot','egg','orange-slice','hamburger','chef-hat','cookie','bowl-food',
+  // Chores — personal / hygiene
+  'tooth','shower','hand-soap','bed','t-shirt','hoodie','sneaker','coat-hanger',
+  // School / learning
+  'backpack','books','pencil','graduation-cap','calculator','exam','book-open','notebook',
+  // Health / exercise
+  'heartbeat','bicycle','person-simple-run','basketball','soccer-ball','football','barbell','swimming-pool',
+  // Garden / pets
+  'dog','paw-print','plant','flower','leaf','tree','fish','potted-plant',
+  // Home / maintenance
+  'house','wrench','hammer','key','toolbox','paint-roller','plug','lightbulb',
+  // Prizes / achievements
+  'star','trophy','medal','gift','crown','sparkle','confetti','balloon',
+  // Entertainment / fun
+  'game-controller','music-notes','film-strip','ice-cream','pizza','popcorn','guitar','headphones',
+  // General
+  'heart','check-circle','clock','calendar','flag','bell','rocket','users',
+];
+// Extra search synonyms: maps search terms → icon names they should also match
+const _ICON_SYNONYMS = {
+  'water':      ['drop','waves','swimming-pool','fish','anchor','wave-sine','wave-square','bathtub','shower','toilet','washing-machine'],
+  'swim':       ['swimming-pool','person-simple-swim','waves','drop'],
+  'run':        ['person-simple-run','sneaker','sneaker-move','footprints'],
+  'walk':       ['person-simple-walk','footprints','boot'],
+  'bike':       ['bicycle','person-simple-bike','motorcycle','moped'],
+  'sleep':      ['bed','moon','moon-stars','zzz','hourglass'],
+  'eat':        ['fork-knife','hamburger','pizza','bowl-food','cooking-pot','chef-hat','bread','carrot','apple'],
+  'food':       ['fork-knife','hamburger','pizza','bowl-food','cooking-pot','chef-hat','bread','carrot','apple','cherry','cheese','cake','ice-cream'],
+  'drink':      ['cup','beer-stein','wine','coffee','tea-bag','drop','pint-glass','martini'],
+  'clean':      ['broom','shower','washing-machine','spray-bottle','trash','soap','towel','toilet','bucket'],
+  'school':     ['graduation-cap','book','books','pencil','backpack','chalkboard','notebook','ruler'],
+  'study':      ['graduation-cap','book','books','pencil','notebook','brain','lightbulb'],
+  'sport':      ['trophy','medal','basketball','soccer-ball','football','tennis-ball','baseball','ping-pong','golf','volleyball','bowling-ball','swimming-pool','bicycle'],
+  'win':        ['trophy','medal','star','crown','confetti','seal-check','ribbon'],
+  'award':      ['trophy','medal','star','crown','seal-check','certificate','ribbon','gift'],
+  'money':      ['currency-dollar','piggy-bank','coins','coin','wallet','cash-register','bank','hand-coins','tip-jar'],
+  'happy':      ['smiley','confetti','heart','sparkle','star','sun','rainbow'],
+  'sad':        ['smiley-sad','smiley-meh','smiley-nervous','drop','cloud-rain'],
+  'angry':      ['smiley-angry','fire','lightning','warning'],
+  'love':       ['heart','heart-straight','hand-heart','rose','flower'],
+  'flower':     ['flower','flower-lotus','flower-tulip','leaf','plant','potted-plant','tree','park'],
+  'animal':     ['cat','dog','bird','fish','cow','rabbit','paw-print','horse','butterfly','bee'],
+  'pet':        ['cat','dog','paw-print','fish','bird'],
+  'music':      ['music-note','music-notes','headphones','guitar','piano-keys','vinyl-record','speaker-high'],
+  'art':        ['palette','paint-brush','pencil','paint-roller','pen-nib'],
+  'game':       ['game-controller','joystick','chess','puzzle-piece','dice-five','poker-chip'],
+  'phone':      ['device-mobile','phone','chat','chat-circle'],
+  'computer':   ['laptop','desktop','monitor','device-tablet','code'],
+  'home':       ['house','house-line','couch','armchair','bed','lamp','key'],
+  'work':       ['briefcase','desk','office-chair','toolbox','wrench','hammer'],
+  'health':     ['heart','heartbeat','first-aid','first-aid-kit','pill','stethoscope','hospital','shield-check'],
+  'nature':     ['leaf','tree','flower','sun','cloud','rainbow','mountain','park','plant'],
+  'weather':    ['sun','cloud','cloud-rain','cloud-snow','cloud-lightning','snowflake','wind','rainbow','umbrella'],
+  'time':       ['clock','hourglass','calendar','timer','alarm'],
+  'travel':     ['airplane','car','bus','train','boat','map-pin','globe','suitcase'],
+  'clothes':    ['shirt','pants','dress','shoe','sneaker','hoodie','coat-hanger','sock'],
+  'read':       ['book','book-open','newspaper','magazine','bookmark'],
+  'write':      ['pencil','pen','pen-nib','notepad','notebook','note'],
+  'cook':       ['cooking-pot','chef-hat','fork-knife','oven','fire','bowl-food'],
+  'play':       ['game-controller','playground','balloon','confetti','puzzle-piece','music-note'],
+  'outside':    ['sun','tree','park','footprints','bicycle','mountains','leaf','campfire'],
+  'friend':     ['users','users-three','handshake','chat-circle','heart'],
+  'family':     ['users','house','heart','baby','person'],
+  'baby':       ['baby','baby-carriage','pacifier','teddy-bear'],
+  'grow':       ['plant','leaf','tree','flower','trend-up','rocket'],
+  'star':       ['star','star-four','star-half','shooting-star','sparkle','seal'],
+  'fire':       ['fire','fire-simple','flame','campfire','lightning'],
+  'ice':        ['snowflake','ice-cream','thermometer-cold'],
+};
+
+const ICON_MAP = [
+  ..._FEATURED,
+  ..._ICON_NAMES.filter(n => !_FEATURED.includes(n)),
+].map(n => {
+  const base = n.replace(/-/g, ' ');
+  // Collect any extra synonym keywords for this icon
+  const extra = Object.entries(_ICON_SYNONYMS)
+    .filter(([, names]) => names.includes(n))
+    .map(([term]) => term)
+    .join(' ');
+  return { n, k: extra ? `${base} ${extra}` : base };
+});
+// Legacy alias so any remaining EMOJI_MAP references don't crash
+const EMOJI_MAP = ICON_MAP;
+
+const DEFAULT_CHORES = [
+  { title:'Make My Bed',       icon:'bed',          iconColor:'#43D9AD', diamonds:10, frequency:'daily'  },
+  { title:'Brush Teeth',       icon:'tooth',        iconColor:'#45B7D1', diamonds:5,  frequency:'daily'  },
+  { title:'Put Toys Away',     icon:'house',        iconColor:'#6C63FF', diamonds:10, frequency:'daily'  },
+  { title:'Set the Table',     icon:'fork-knife',   iconColor:'#FF9A3C', diamonds:10, frequency:'daily'  },
+  { title:'Clear the Table',   icon:'broom',        iconColor:'#6BCB77', diamonds:10, frequency:'daily'  },
+  { title:'Take Out Trash',    icon:'trash',        iconColor:'#6BCB77', diamonds:15, frequency:'weekly' },
+  { title:'Do Homework',       icon:'books',        iconColor:'#45B7D1', diamonds:20, frequency:'daily'  },
+  { title:'Put Clothes Away',  icon:'t-shirt',      iconColor:'#FF6584', diamonds:10, frequency:'daily'  },
+  { title:'Feed the Pet',      icon:'paw-print',    iconColor:'#FF9A3C', diamonds:15, frequency:'daily'  },
+  { title:'Help with Laundry', icon:'washing-machine',iconColor:'#43D9AD',diamonds:20, frequency:'weekly'},
+];
+
+const DEFAULT_PRIZES = [
+  { title:'Movie Night Pick',        icon:'film-strip',  iconColor:'#6C63FF', cost:100, type:'individual' },
+  { title:'30 min Extra Screen Time',icon:'television',  iconColor:'#45B7D1', cost:50,  type:'individual' },
+  { title:'Stay Up 30 min Late',     icon:'moon',        iconColor:'#6C63FF', cost:75,  type:'individual' },
+  { title:'Choose Dinner',           icon:'pizza-slice', iconColor:'#FF9A3C', cost:75,  type:'individual' },
+  { title:'Small Toy or Book',       icon:'gift',        iconColor:'#FF6584', cost:250, type:'individual' },
+  { title:'Family Ice Cream Night',  icon:'ice-cream',   iconColor:'#FFD93D', cost:400, type:'family'     },
+  { title:'Family Movie Night',      icon:'film-strip',  iconColor:'#6C63FF', cost:500, type:'family'     },
+  { title:'Bowling Night',           icon:'trophy',      iconColor:'#FFD93D', cost:800, type:'family'     },
+];
+
+const WEEKDAY_OPTIONS = [
+  { value:0, label:'Sun' },
+  { value:1, label:'Mon' },
+  { value:2, label:'Tue' },
+  { value:3, label:'Wed' },
+  { value:4, label:'Thu' },
+  { value:5, label:'Fri' },
+  { value:6, label:'Sat' },
+];
+
+const ALL_DAYS = WEEKDAY_OPTIONS.map(day => day.value);
+
+// ── APP STATE ────────────────────────────────────────────────
+let D = {};          // the live data object (mirrors localStorage)
+let S = {            // UI state (not persisted)
+  currentUser:   null,
+  kidTab:        'chores',
+  parentTab:     'home',
+  setupStep:     0,
+  setupMembers:  [],   // unified non-parent members during setup
+  pinBuffer:     '',
+  pinMode:       'app', // 'app' = gate to member picker | 'parent' = gate to parent view
+  syncStatus:    'idle', // 'idle' | 'syncing' | 'ok' | 'error'
+  lastLocalSave: 0,     // timestamp of last local write — suppresses stale Firestore snapshots
+};
+
+// ── DEFAULT DATA ──────────────────────────────────────────────
+function defaultData() {
+  return {
+    v: 3,
+    setup: false,
+    settings: {
+      parentPin:        '',
+      autoApprove:      false,
+      hideUnavailable:  false,
+      diamondsPerDollar:  10,
+      currency:         '$',
+      lastSync:         null,
+      familyTimezone:   '',
+      // Leveling / streaks
+      levelingEnabled:  true,
+      streakEnabled:    true,
+      comboEnabled:     true,
+      comboOverrides:   {},
+      streakBonus3:     1,
+      streakBonus7:     3,
+      streakBonus14:    5,
+      streakBonus30:    10,
+      // Not Listening
+      notListeningSecs: 60,
+      notListeningEnabled: true,
+      sortPrizesByValue: false,
+      // Savings
+      savingsEnabled:          true,
+      savingsMatchingEnabled:  false,
+      savingsMatchPercent:     50,
+      savingsInterestEnabled:  false,
+      savingsInterestRate:     5,
+      savingsInterestPeriod:   'monthly',
+    },
+    family: { name:'Our Family', members:[] },
+    chores:     [],
+    prizes:     [],
+    teamGoals:       [],
+    history:         [],
+    savingsRequests: [],
+    declineNotifications: [],
+  };
+}
+
+// ── DATA LAYER (Firestore + localStorage cache) ───────────────
+const LS_KEY = 'gemsprout_v2';
+let firestoreUnsub = null;
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    D = normalizeData(raw ? JSON.parse(raw) : defaultData());
+  } catch(e) {
+    D = normalizeData(defaultData());
+  }
+}
+
+function saveData() {
+  S.lastLocalSave = Date.now();
+  try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+  if (S.currentUser?.role === 'kid') savePendingSnapshot(S.currentUser.id);
+  pushToFirestore();
+}
+
+async function pushToFirestore() {
+  try {
+    S.syncStatus = 'syncing';
+    updateSyncBar();
+    await db.doc(getFamilyDoc()).set(D);
+    S.syncStatus = 'ok';
+    updateSyncBar();
+  } catch(e) {
+    S.syncStatus = 'error';
+    updateSyncBar();
+    console.warn('Firestore write error:', e);
+  }
+}
+
+function getPendingEntryKeys(data, memberId) {
+  const keys = new Set();
+  if (!memberId || !data?.chores) return keys;
+  data.chores.forEach(chore => {
+    normalizeCompletionEntries(chore.completions?.[memberId]).forEach(e => {
+      if (e.status === 'pending') keys.add(`${chore.id}:${e.id}`);
+    });
+  });
+  return keys;
+}
+
+function savePendingSnapshot(memberId) {
+  if (!memberId) return;
+  const keys = getPendingEntryKeys(D, memberId);
+  try {
+    if (keys.size > 0) localStorage.setItem(`_pend_${memberId}`, JSON.stringify([...keys]));
+    else localStorage.removeItem(`_pend_${memberId}`);
+  } catch(e) {}
+}
+
+function loadPendingSnapshot(memberId) {
+  try {
+    const raw = localStorage.getItem(`_pend_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function clearPendingSnapshot(memberId) {
+  try { localStorage.removeItem(`_pend_${memberId}`); } catch(e) {}
+}
+
+function markBonusesSeen(memberId) {
+  const ids = (D.history || [])
+    .filter(h => h.memberId === memberId && h.type === 'bonus')
+    .map(h => h.id);
+  try { localStorage.setItem(`_seenBonus_${memberId}`, JSON.stringify(ids)); } catch(e) {}
+}
+
+function getSeenBonusIds(memberId) {
+  try {
+    const raw = localStorage.getItem(`_seenBonus_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function checkForNewBonuses(member, isWhileAway = false) {
+  const seenIds = getSeenBonusIds(member.id);
+  // Exclude combo bonuses — those fire locally with their own celebration
+  const newBonuses = (D.history || []).filter(h =>
+    h.memberId === member.id &&
+    h.type === 'bonus' &&
+    h.title !== 'Daily Combo Bonus!' &&
+    !seenIds.has(h.id) &&
+    (h.diamonds || 0) > 0
+  );
+  if (newBonuses.length === 0) return;
+  markBonusesSeen(member.id);
+  const fresh = getMember(member.id);
+  if (fresh) S.currentUser = fresh;
+  const tiny = isTiny(member);
+  const total = newBonuses.reduce((s, b) => s + (b.diamonds || 0), 0);
+  const titleHtml = isWhileAway
+    ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...'
+    : '<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i> Bonus Diamonds!';
+  const subText = newBonuses.length === 1
+    ? newBonuses[0].title
+    : `${newBonuses.length} bonuses: ${newBonuses.map(b => b.title).join(', ')}`;
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:3rem"></i>',
+    title:    titleHtml,
+    sub:      subText,
+    diamonds: total,
+    tts:      tiny ? `You got ${total} bonus diamonds! ${subText}` : null,
+    onClose:  () => { renderKidDiamonds(); renderKidHeader(); renderKidNav(); },
+  });
+}
+
+function markSavingsSeen(memberId) {
+  const ids = (D.history || [])
+    .filter(h => h.memberId === memberId && h.type === 'savings_deposit')
+    .map(h => h.id);
+  try { localStorage.setItem(`_seenSavings_${memberId}`, JSON.stringify(ids)); } catch(e) {}
+}
+
+function getSeenSavingsIds(memberId) {
+  try {
+    const raw = localStorage.getItem(`_seenSavings_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function checkForNewSavingsDeposits(member, isWhileAway = false) {
+  const seenIds = getSeenSavingsIds(member.id);
+  const newDeposits = (D.history || []).filter(h =>
+    h.memberId === member.id &&
+    h.type === 'savings_deposit' &&
+    !seenIds.has(h.id) &&
+    (h.dollars || 0) > 0
+  );
+  if (newDeposits.length === 0) return;
+  markSavingsSeen(member.id);
+  const fresh = getMember(member.id);
+  if (fresh) S.currentUser = fresh;
+  const tiny = isTiny(member);
+  const cur   = D.settings.currency || '$';
+  const total = newDeposits.reduce((s, d) => s + (d.dollars || 0), 0);
+  const titleHtml = isWhileAway
+    ? '<i class="ph-duotone ph-moon-stars" style="color:#16A34A"></i> While you were away...'
+    : '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i> Savings Deposit!';
+  const subText = newDeposits.length === 1
+    ? newDeposits[0].title
+    : `${newDeposits.length} deposits: ${newDeposits.map(d => d.title).join(', ')}`;
+  showCelebration({
+    icon:    '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:3rem"></i>',
+    title:   titleHtml,
+    sub:     subText,
+    dollars: total,
+    cur,
+    tts:     tiny ? `Your savings went up ${cur}${total.toFixed(2)}! ${subText}` : null,
+    onClose: () => { renderKidDiamonds(); renderKidHeader(); renderKidNav(); },
+  });
+}
+
+function markSpendOutcomesSeen(memberId) {
+  const ids = (D.savingsRequests || [])
+    .filter(r => r.memberId === memberId && r.status !== 'pending')
+    .map(r => r.id);
+  try { localStorage.setItem(`_seenSpend_${memberId}`, JSON.stringify(ids)); } catch(e) {}
+}
+
+function getSeenSpendOutcomeIds(memberId) {
+  try {
+    const raw = localStorage.getItem(`_seenSpend_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function checkForSavingsRequestOutcomes(member, isWhileAway = false) {
+  const seenIds = getSeenSpendOutcomeIds(member.id);
+  const unseen  = (D.savingsRequests || []).filter(r =>
+    r.memberId === member.id && r.status !== 'pending' && !seenIds.has(r.id)
+  );
+  if (unseen.length === 0) return;
+  markSpendOutcomesSeen(member.id);
+  const cur     = D.settings.currency || '$';
+  const fresh   = getMember(member.id);
+  if (fresh) S.currentUser = fresh;
+  const tiny    = isTiny(member);
+  const approved = unseen.filter(r => r.status === 'approved');
+  const denied   = unseen.filter(r => r.status === 'denied');
+  approved.forEach(r => {
+    const newBal = getMember(member.id)?.savings || 0;
+    const sub = r.reason
+      ? `"${r.reason}" — ${cur}${r.amount.toFixed(2)} approved`
+      : `${cur}${r.amount.toFixed(2)} approved`;
+    showCelebration({
+      icon:       '<i class="ph-duotone ph-shopping-bag" style="color:#16A34A;font-size:3rem"></i>',
+      title:      isWhileAway
+        ? '<i class="ph-duotone ph-moon-stars" style="color:#6C63FF"></i> While you were away...'
+        : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Spend Approved!',
+      sub:        `${sub}. Balance: ${cur}${newBal.toFixed(2)}`,
+      noAnimation: true,
+      tts:        tiny ? `Your grown-up said yes! You can spend ${cur}${r.amount.toFixed(2)}. You now have ${cur}${newBal.toFixed(2)} left in savings.` : null,
+      onClose:    () => { renderKidDiamonds(); renderKidHeader(); renderKidNav(); },
+    });
+  });
+  denied.forEach(r => {
+    const sub = r.reason ? `"${r.reason}" — ${cur}${r.amount.toFixed(2)}` : `${cur}${r.amount.toFixed(2)}`;
+    showCelebration({
+      icon:       '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>',
+      title:      isWhileAway
+        ? '<i class="ph-duotone ph-moon-stars" style="color:#6B7280"></i> While you were away...'
+        : '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time',
+      sub:        `Your spend request for ${sub} wasn't approved.`,
+      noAnimation: true,
+      btnLabel:   'Okay',
+      tts:        tiny ? `Your grown-up said not right now for spending ${cur}${r.amount.toFixed(2)}.` : null,
+      onClose:    () => {},
+    });
+  });
+}
+
+function markBadgesSeen(memberId) {
+  const ids = (D.history || [])
+    .filter(h => h.memberId === memberId && h.type === 'badge')
+    .map(h => h.id);
+  try { localStorage.setItem(`_seenBadge_${memberId}`, JSON.stringify(ids)); } catch(e) {}
+}
+
+function getSeenBadgeIds(memberId) {
+  try {
+    const raw = localStorage.getItem(`_seenBadge_${memberId}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function checkForNewBadges(member, isWhileAway = false) {
+  const seenIds = getSeenBadgeIds(member.id);
+  const newBadges = (D.history || []).filter(h =>
+    h.memberId === member.id &&
+    h.type === 'badge' &&
+    !seenIds.has(h.id)
+  );
+  if (newBadges.length === 0) return;
+  markBadgesSeen(member.id);
+  const tiny = isTiny(member);
+  const titleHtml = isWhileAway
+    ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...'
+    : '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i> New Badge!';
+  newBadges.forEach(h => {
+    const rawIcon = h.badgeIcon || '🏅';
+    const displayIcon = rawIcon.includes('<')
+      ? rawIcon.replace(/font-size:[^;'"]+/g, 'font-size:3rem')
+      : `<span style="font-size:3rem">${rawIcon}</span>`;
+    showCelebration({
+      icon:      displayIcon,
+      title:     titleHtml,
+      sub:       h.title + (h.choreTitle ? ` · ${h.choreTitle}` : ''),
+      badgeIcon: rawIcon,
+      tts:       tiny ? `You earned a new badge! ${h.title}!` : null,
+    });
+  });
+}
+
+function checkForDeclineNotifications(member, isWhileAway = false) {
+  if (!D.declineNotifications) return;
+  const pending = D.declineNotifications.filter(n => n.memberId === member.id && !n.seen);
+  if (pending.length === 0) return;
+  pending.forEach(n => { n.seen = true; });
+  saveData();
+  const tiny = isTiny(member);
+  pending.forEach(n => {
+    const titleHtml = isWhileAway
+      ? '<i class="ph-duotone ph-moon-stars" style="color:#EF4444"></i> While you were away...'
+      : '<i class="ph-duotone ph-x-circle" style="color:#EF4444"></i> Chore Declined';
+    showCelebration({
+      icon:        renderIcon(n.choreIcon, n.choreIconColor, 'font-size:3rem') || '<i class="ph-duotone ph-x-circle" style="color:#EF4444;font-size:3rem"></i>',
+      title:       titleHtml,
+      sub:         n.reason ? `"${esc(n.choreTitle)}" was declined: ${esc(n.reason)}` : `"${esc(n.choreTitle)}" was declined`,
+      noAnimation: true,
+      btnLabel:    'OK',
+      tts:         tiny ? `Your chore was declined.${n.reason ? ' Reason: ' + n.reason : ''}` : null,
+      onClose:     () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
+  });
+}
+
+function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = false) {
+  let totalNewDiamonds = 0;
+  const approvedChores = [];
+  let anyBeforeApproved = false;
+  D.chores.forEach(chore => {
+    normalizeCompletionEntries(chore.completions?.[member.id]).forEach(e => {
+      if (!prevPendingKeys.has(`${chore.id}:${e.id}`)) return;
+      if (e.entryType === 'before' && e.status === 'approved') {
+        anyBeforeApproved = true; // will show a softer toast, not confetti
+      }
+      if (e.entryType !== 'before' && e.status === 'done') {
+        totalNewDiamonds += chore.diamonds;
+        if (!approvedChores.find(c => c.id === chore.id)) approvedChores.push(chore);
+      }
+    });
+  });
+  // Soft notification when a before-photo gets the green light (no diamonds yet)
+  if (anyBeforeApproved && totalNewDiamonds === 0) {
+    toast("Parent approved — time to do the chore!");
+    renderKidChores();
+    return;
+  }
+  if (totalNewDiamonds <= 0) return;
+  // Update S.currentUser diamonds from fresh data
+  const fresh = getMember(member.id);
+  if (fresh) S.currentUser = fresh;
+  const tiny = isTiny(member);
+  const subLine = approvedChores.length === 1
+    ? `"${approvedChores[0].title}" approved!`
+    : `${approvedChores.length} chores approved!`;
+  if (isWhileAway) {
+    showCelebration({
+      icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
+      title:    tiny ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...' : '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+      sub:      `Your parent approved ${subLine.replace(' approved!','')} and you earned diamonds!`,
+      diamonds: totalNewDiamonds,
+      tts:      tiny ? `Welcome back! While you were away, your grown-up approved your chore and you earned ${totalNewDiamonds} diamonds!` : null,
+      onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
+  } else {
+    showCelebration({
+      icon:     renderIcon(approvedChores[0]?.icon, approvedChores[0]?.iconColor, 'font-size:3rem') || '💎',
+      title:    tiny ? '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Your parent said YES!' : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Chore Approved!',
+      sub:      subLine,
+      diamonds: totalNewDiamonds,
+      tts:      tiny ? `Amazing! Your grown-up approved your chore! You earned ${totalNewDiamonds} diamonds!` : null,
+      onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
+  }
+}
+
+function subscribeToFirestore(onFirstLoad) {
+  if (firestoreUnsub) firestoreUnsub();
+  let firstSnapshot = true;
+  firestoreUnsub = db.doc(getFamilyDoc()).onSnapshot(snap => {
+    if (snap.exists) {
+      const incoming = snap.data();
+      const normalizedIncoming = normalizeData(incoming);
+      // Ignore snapshots arriving within 1500ms of a local save — they may be echoes
+      // of a previous write that arrived after we've already moved on locally.
+      const isStaleEcho = !firstSnapshot && (Date.now() - S.lastLocalSave) < 1500;
+      if (!isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
+        // Capture what was pending before the update (for approval celebration)
+        const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
+        D = normalizedIncoming;
+        try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+        // Refresh S.currentUser so renderKidHeader (and all renders) reflect latest diamonds/data
+        if (S.currentUser) {
+          const _freshUser = getMember(S.currentUser.id);
+          if (_freshUser) S.currentUser = _freshUser;
+        }
+        // Trigger celebration if kid is viewing and chores got approved
+        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
+          checkForApprovalCelebration(prevPending, S.currentUser);
+        }
+        // Trigger celebration for new manual bonus diamonds, savings deposits, spend outcomes, or declines
+        if (!firstSnapshot && S.currentUser?.role === 'kid') {
+          checkForNewBonuses(S.currentUser, false);
+          checkForNewSavingsDeposits(S.currentUser, false);
+          checkForSavingsRequestOutcomes(S.currentUser, false);
+          checkForDeclineNotifications(S.currentUser, false);
+        }
+      }
+    }
+    S.syncStatus = 'ok';
+    updateSyncBar();
+    if (firstSnapshot) {
+      firstSnapshot = false;
+      // Check for approvals that happened while the app was closed
+      if (S.currentUser?.role === 'kid') {
+        const savedKeys = loadPendingSnapshot(S.currentUser.id);
+        if (savedKeys.size > 0) checkForApprovalCelebration(savedKeys, S.currentUser, true);
+        clearPendingSnapshot(S.currentUser.id);
+        savePendingSnapshot(S.currentUser.id);
+        checkForNewBonuses(S.currentUser, true); // check for manual bonuses while away
+        checkForNewSavingsDeposits(S.currentUser, true); // check for savings deposits while away
+        checkForSavingsRequestOutcomes(S.currentUser, true); // check for spend request outcomes while away
+        checkForNewBadges(S.currentUser, true); // check for badge awards while away
+        checkForDeclineNotifications(S.currentUser, true); // check for declines while away
+      }
+      if (typeof onFirstLoad === 'function') onFirstLoad();
+    } else {
+      renderCurrentView();
+      if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
+    }
+  }, err => {
+    S.syncStatus = 'error';
+    updateSyncBar();
+    console.warn('Firestore listener error:', err);
+    if (firstSnapshot) {
+      firstSnapshot = false;
+      if (typeof onFirstLoad === 'function') onFirstLoad();
+    }
+  });
+}
+
+// ── UTILITIES ─────────────────────────────────────────────────
+function todayDisplay() {
+  return new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+}
+
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+
+function today() {
+  const tz = D?.settings?.familyTimezone;
+  if (tz) return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+  return formatDateLocal(new Date());
+}
+
+function parseDateLocal(str) {
+  const [year, month, day] = str.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDate(str, days) {
+  const date = parseDateLocal(str);
+  date.setDate(date.getDate() + days);
+  return formatDateLocal(date);
+}
+
+function addMonthsToDate(str, months) {
+  const date = parseDateLocal(str);
+  date.setMonth(date.getMonth() + months, 1);
+  return formatDateLocal(date);
+}
+
+function startOfWeekDate(str) {
+  const date = parseDateLocal(str);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return formatDateLocal(date);
+}
+
+function weekStart() {
+  const d   = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day===0 ? -6 : 1);
+  d.setDate(diff);
+  return formatDateLocal(d);
+}
+
+function nowMinutes() {
+  const date = new Date();
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function timeToMinutes(value) {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hours, minutes] = value.split(':').map(Number);
+  return (hours * 60) + minutes;
+}
+
+function normalizeCompletionEntry(entry) {
+  const validStatuses = ['pending', 'approved', 'done'];
+  return {
+    id:        entry?.id        || genId(),
+    status:    validStatuses.includes(entry?.status) ? entry.status : 'done',
+    date:      entry?.date      || today(),
+    createdAt: entry?.createdAt || Date.now(),
+    slotId:    entry?.slotId    || null,
+    photoUrl:  entry?.photoUrl  || null,
+    entryType: entry?.entryType === 'before' ? 'before'
+             : entry?.entryType === 'after'  ? 'after'
+             : null,
+  };
+}
+
+function normalizeCompletionEntries(value) {
+  if (Array.isArray(value)) return value.map(normalizeCompletionEntry);
+  if (value && typeof value === 'object' && ('status' in value || 'date' in value)) {
+    return [normalizeCompletionEntry(value)];
+  }
+  return [];
+}
+
+function normalizeSlots(slots) {
+  if (!Array.isArray(slots) || slots.length === 0) return null;
+  return slots.map(s => ({
+    id:    s.id    || genId(),
+    label: s.label || '',
+    start: typeof s.start === 'string' ? s.start : '',
+    end:   typeof s.end   === 'string' ? s.end   : '',
+  }));
+}
+
+function normalizeChore(chore) {
+  const legacyFrequency = chore?.frequency || 'daily';
+  const legacyPeriod = legacyFrequency === 'weekly' ? 'week' : legacyFrequency === 'once' ? 'once' : 'day';
+  const schedule = chore?.schedule || {};
+  const period = ['day','week','once'].includes(schedule.period) ? schedule.period : legacyPeriod;
+  const targetCount = Math.max(1, parseInt(schedule.targetCount ?? chore?.repeatCount ?? 1, 10) || 1);
+  const daysOfWeek = Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length
+    ? schedule.daysOfWeek.map(Number).filter(day => ALL_DAYS.includes(day))
+    : ALL_DAYS.slice();
+  const windows = {};
+  const sourceWindows = schedule.windows && typeof schedule.windows === 'object' ? schedule.windows : {};
+  Object.keys(sourceWindows).forEach(key => {
+    const day = Number(key);
+    if (!ALL_DAYS.includes(day)) return;
+    const start = typeof sourceWindows[key]?.start === 'string' ? sourceWindows[key].start : '';
+    const end = typeof sourceWindows[key]?.end === 'string' ? sourceWindows[key].end : '';
+    if (start || end) windows[day] = { start, end };
+  });
+  const slots = normalizeSlots(schedule.slots);
+
+  const completions = {};
+  Object.entries(chore?.completions || {}).forEach(([memberId, entries]) => {
+    completions[memberId] = normalizeCompletionEntries(entries);
+  });
+
+  const title = chore?.title || '';
+  const choreBadges = Array.isArray(chore?.badges) ? chore.badges :
+    !chore?.id ? (() => { const preset = CHORE_BADGE_PRESETS[title]; return preset ? preset.map(b => ({ id: genId(), ...b })) : []; })() : [];
+
+  return {
+    ...chore,
+    frequency: period,
+    repeatCount: targetCount,
+    icon: chore?.icon || 'broom',
+    iconColor: chore?.iconColor || '#6BCB77',
+    photoMode: (['after','before_after'].includes(chore?.photoMode) ? chore.photoMode
+             : chore?.requiresPhoto === true ? 'after' : 'none'),
+    assignedTo: Array.isArray(chore?.assignedTo) ? chore.assignedTo : [],
+    description: chore?.description || '',
+    completions,
+    badges: choreBadges,
+    schedule: {
+      period,
+      targetCount,
+      daysOfWeek: period === 'once' ? [] : daysOfWeek,
+      windows,
+      slots,
+    },
+  };
+}
+
+function normalizeMember(m) {
+  if (!m || typeof m !== 'object') return m;
+  if (!m.streak) m.streak = { current: 0, best: 0, lastDate: null };
+  if (!m.comboStreak) m.comboStreak = { current: 0, best: 0, lastDate: null };
+  if (!m.splitHousehold) m.splitHousehold = { enabled: false, cycle: Array(14).fill(true), referenceMonday: getMostRecentMonday(), overrides: {} };
+  if (!m.splitHousehold.overrides) m.splitHousehold.overrides = {};
+  if (!Array.isArray(m.splitHousehold.cycle) || m.splitHousehold.cycle.length !== 14) m.splitHousehold.cycle = Array(14).fill(true);
+  if (!Array.isArray(m.badges)) m.badges = [];
+  if (typeof m.xp === 'undefined') m.xp = m.totalEarned || 0;
+  if (typeof m.comboBonusDate === 'undefined') m.comboBonusDate = null;
+  if (typeof m.nlTodaySecs === 'undefined') m.nlTodaySecs = 0;
+  if (typeof m.nlDate === 'undefined') m.nlDate = null;
+  if (typeof m.nlLifetimeSecs === 'undefined') m.nlLifetimeSecs = 0;
+  return m;
+}
+
+function normalizeData(data) {
+  const normalized = data && typeof data === 'object' ? data : defaultData();
+  normalized.settings = { ...defaultData().settings, ...(normalized.settings || {}) };
+  normalized.family = normalized.family || { name:'Our Family', members:[] };
+  normalized.family.members = Array.isArray(normalized.family.members)
+    ? normalized.family.members.map(normalizeMember)
+    : [];
+  normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(c => normalizeChore(c)) : [];
+  normalized.prizes = Array.isArray(normalized.prizes)
+    ? normalized.prizes.map(p => ({ icon:'gift', iconColor:'#FF6584', ...p }))
+    : [];
+  normalized.history         = Array.isArray(normalized.history)         ? normalized.history         : [];
+  normalized.savingsRequests = Array.isArray(normalized.savingsRequests) ? normalized.savingsRequests : [];
+  normalized.teamGoals = Array.isArray(normalized.teamGoals)
+    ? normalized.teamGoals.map(g => ({ icon: 'trophy', iconColor: '#FFD93D', ...g }))
+    : [];
+  normalized.v = 3;
+  return normalized;
+}
+
+function getChoreSchedule(chore) {
+  return chore?.schedule || normalizeChore(chore).schedule;
+}
+
+function getChoreTimeWindow(chore, dayIndex) {
+  const schedule = getChoreSchedule(chore);
+  return schedule.windows?.[dayIndex] || { start:'', end:'' };
+}
+
+function formatDaysOfWeek(daysOfWeek) {
+  if (!Array.isArray(daysOfWeek) || !daysOfWeek.length) return 'no days selected';
+  if (daysOfWeek.length === 7) return 'every day';
+  return WEEKDAY_OPTIONS.filter(day => daysOfWeek.includes(day.value)).map(day => day.label).join(', ');
+}
+
+function formatTime12(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function formatTimeWindow(window) {
+  if (!window || (!window.start && !window.end)) return 'any time';
+  if (window.start && window.end) return `${formatTime12(window.start)} - ${formatTime12(window.end)}`;
+  if (window.start) return `after ${formatTime12(window.start)}`;
+  return `before ${formatTime12(window.end)}`;
+}
+
+function isWithinTimeWindow(window, minutes) {
+  if (!window || (!window.start && !window.end)) return true;
+  const start = timeToMinutes(window.start);
+  const end = timeToMinutes(window.end);
+  if (start == null && end == null) return true;
+  if (start != null && end != null) {
+    if (start <= end) return minutes >= start && minutes <= end;
+    return minutes >= start || minutes <= end;
+  }
+  if (start != null) return minutes >= start;
+  return minutes <= end;
+}
+
+function choreScheduleSummary(chore) {
+  const schedule = getChoreSchedule(chore);
+  if (schedule.period === 'once') return 'one-time';
+  if (schedule.slots && schedule.slots.length > 0) {
+    const countLabel = `${schedule.slots.length}x per day`;
+    const slotLabels = schedule.slots.map(s => formatTimeWindow({start:s.start, end:s.end})).join(' & ');
+    return `${countLabel} · ${formatDaysOfWeek(schedule.daysOfWeek)} · ${slotLabels}`;
+  }
+  const countLabel = schedule.period === 'week'
+    ? `${schedule.targetCount}x per week`
+    : `${schedule.targetCount}x per day`;
+  const daysLabel = formatDaysOfWeek(schedule.daysOfWeek);
+  const uniqueWindows = schedule.daysOfWeek
+    .map(day => formatTimeWindow(getChoreTimeWindow(chore, day)))
+    .filter((label, index, arr) => arr.indexOf(label) === index);
+  const timeLabel = uniqueWindows.length === 1 ? uniqueWindows[0] : 'custom hours';
+  return `${countLabel} · ${daysLabel} · ${timeLabel}`;
+}
+
+function choreMetaChips(chore) {
+  const schedule = getChoreSchedule(chore);
+  const chip = (text, bg, color) =>
+    `<span style="display:inline-flex;align-items:center;background:${bg};color:${color};border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">${text}</span>`;
+  const chips = [];
+  chips.push(chip(`💎 ${chore.diamonds}`, '#FEF9C3', '#92400E'));
+  if (schedule.period === 'once') {
+    chips.push(chip('one-time', '#F3F4F6', '#4B5563'));
+    return chips.join('');
+  }
+  const freq = schedule.period === 'week'
+    ? `${schedule.targetCount}×/wk`
+    : `${schedule.targetCount}×/day`;
+  chips.push(chip(freq, '#EFF6FF', '#1D4ED8'));
+  chips.push(chip(formatDaysOfWeek(schedule.daysOfWeek), '#F3F4F6', '#374151'));
+  if (schedule.slots && schedule.slots.length > 0) {
+    schedule.slots.forEach(s => {
+      const label = s.label || formatTimeWindow({start:s.start, end:s.end});
+      if (label && label !== 'any time') chips.push(chip(esc(label), '#F0FDF4', '#166534'));
+    });
+  } else {
+    const uniqueWindows = schedule.daysOfWeek
+      .map(day => formatTimeWindow(getChoreTimeWindow(chore, day)))
+      .filter((v, i, a) => a.indexOf(v) === i);
+    const timeLabel = uniqueWindows.length === 1 ? uniqueWindows[0] : 'custom hours';
+    if (timeLabel !== 'any time') chips.push(chip(esc(timeLabel), '#F0FDF4', '#166534'));
+  }
+  return chips.join('');
+}
+
+function getRelevantCompletionEntries(chore, memberId, dateStr = today()) {
+  const entries = normalizeCompletionEntries(chore?.completions?.[memberId]);
+  const schedule = getChoreSchedule(chore);
+  if (schedule.period === 'once') return entries;
+  if (schedule.period === 'week') {
+    const start = startOfWeekDate(dateStr);
+    const end = addDaysToDate(start, 6);
+    return entries.filter(entry => entry.date >= start && entry.date <= end);
+  }
+  return entries.filter(entry => entry.date === dateStr);
+}
+
+function getChoreProgress(chore, memberId, dateStr = today()) {
+  const schedule = getChoreSchedule(chore);
+  const allEntries = normalizeCompletionEntries(chore?.completions?.[memberId]);
+  const dayIndex = parseDateLocal(dateStr).getDay();
+  const now = nowMinutes();
+
+  // ── SLOT MODE ──────────────────────────────────────────────
+  if (schedule.slots && schedule.slots.length > 0 && schedule.period !== 'once') {
+    const scheduledToday = schedule.daysOfWeek.includes(dayIndex);
+    if (!scheduledToday) {
+      return {
+        schedule, entries: allEntries, isSlotMode: true,
+        doneCount: 0, pendingCount: 0, completedCount: 0,
+        targetCount: 0, remainingCount: 0,
+        scheduledToday: false, availableNow: false,
+        window: null, status: 'unavailable', availabilityText: `Available on ${formatDaysOfWeek(schedule.daysOfWeek)}`,
+        canSubmit: false, slotStatuses: [],
+      };
+    }
+    const todayEntries = allEntries.filter(e => e.date === dateStr);
+    const slotStatuses = schedule.slots.map(slot => {
+      const entry = todayEntries.find(e => e.slotId === slot.id);
+      const inWindow = isWithinTimeWindow({start: slot.start, end: slot.end}, now);
+      let slotStatus;
+      if (entry?.status === 'done')    slotStatus = 'done';
+      else if (entry?.status === 'pending') slotStatus = 'pending';
+      else if (inWindow)               slotStatus = 'available';
+      else                             slotStatus = 'waiting';
+      return { slot, entry, inWindow, status: slotStatus };
+    });
+    const doneCount      = slotStatuses.filter(s => s.status === 'done').length;
+    const pendingCount   = slotStatuses.filter(s => s.status === 'pending').length;
+    const completedCount = doneCount + pendingCount;
+    const targetCount    = schedule.slots.length;
+    const canSubmit      = slotStatuses.some(s => s.status === 'available');
+    let status = doneCount >= targetCount ? 'done'
+      : pendingCount > 0 && completedCount >= targetCount ? 'pending'
+      : completedCount > 0 ? 'partial'
+      : 'none';
+    return {
+      schedule, entries: allEntries, isSlotMode: true,
+      doneCount, pendingCount, completedCount, targetCount,
+      remainingCount: Math.max(0, targetCount - completedCount),
+      scheduledToday: true, availableNow: canSubmit,
+      window: null, status, availabilityText: '',
+      canSubmit, slotStatuses,
+    };
+  }
+
+  // ── STANDARD MODE ──────────────────────────────────────────
+  const entries = getRelevantCompletionEntries(chore, memberId, dateStr);
+  const doneCount = entries.filter(entry => entry.status === 'done').length;
+  const pendingCount = entries.filter(entry => entry.status === 'pending').length;
+  const completedCount = doneCount + pendingCount;
+  const scheduledToday = schedule.period === 'once' ? true : schedule.daysOfWeek.includes(dayIndex);
+  const window = getChoreTimeWindow(chore, dayIndex);
+  const availableNow = schedule.period === 'once' ? true : scheduledToday && isWithinTimeWindow(window, now);
+  const targetCount = schedule.period === 'once' ? 1 : (scheduledToday ? schedule.targetCount : 0);
+  const remainingCount = Math.max(0, targetCount - completedCount);
+  let status = 'none';
+  let availabilityText = '';
+
+  if (schedule.period === 'once') {
+    if (doneCount > 0) status = 'done';
+    else if (pendingCount > 0) status = 'pending';
+  } else if (!scheduledToday) {
+    status = 'unavailable';
+    availabilityText = `Available on ${formatDaysOfWeek(schedule.daysOfWeek)}`;
+  } else if (doneCount >= targetCount) {
+    status = 'done';
+  } else if (completedCount >= targetCount && pendingCount > 0) {
+    status = 'pending';
+  } else if (completedCount > 0) {
+    status = 'partial';
+  } else {
+    status = 'none';
+  }
+  if (!availabilityText && schedule.period !== 'once' && !availableNow) {
+    availabilityText = `Available ${formatTimeWindow(window)}`;
+  }
+  return {
+    schedule, entries, isSlotMode: false,
+    doneCount, pendingCount, completedCount, targetCount, remainingCount,
+    scheduledToday, availableNow, window, status, availabilityText,
+    canSubmit: schedule.period === 'once'
+      ? completedCount < 1
+      : scheduledToday && availableNow && remainingCount > 0,
+  };
+}
+
+function fmtDate(str) {
+  if (!str) return '';
+  const [y,m,d] = str.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[+m-1]} ${+d}`;
+}
+
+function fmtDmds(n) { return `${n} 💎`; }
+
+function getMember(id) {
+  return D.family.members.find(m => m.id === id);
+}
+
+function isTiny(member) {
+  if (!member) return false;
+  if (member.displayMode) return member.displayMode === 'tiny';
+  // legacy fallback
+  return member.mode === 'tiny' || (member.age != null && member.age <= 6);
+}
+
+function isBirthday(member) {
+  if (!member || !member.birthday) return false;
+  const [mm, dd] = member.birthday.split('-').map(Number);
+  const now = new Date();
+  return now.getMonth() + 1 === mm && now.getDate() === dd;
+}
+
+function pendingApprovals() {
+  const arr = [];
+  for (const chore of D.chores) {
+    for (const mid of Object.keys(chore.completions || {})) {
+      // Use getRelevantCompletionEntries so stale pending entries from previous
+      // days/weeks don't surface as ghost approvals for the wrong period.
+      getRelevantCompletionEntries(chore, mid).forEach(entry => {
+        if (entry.status === 'pending') arr.push({ chore, memberId: mid, entry });
+      });
+    }
+  }
+  return arr;
+}
+
+function pendingSpendRequests() {
+  return (D.savingsRequests || []).filter(r => r.status === 'pending');
+}
+
+function inProgressChores() {
+  // Chores where a before-photo was approved and the kid is actively working (needs_after phase)
+  const arr = [];
+  for (const chore of D.chores) {
+    if (chore.photoMode !== 'before_after') continue;
+    for (const mid of (chore.assignedTo || [])) {
+      const phase = getChorePhotoPhase(chore, mid);
+      if (phase?.phase === 'needs_after') arr.push({ chore, memberId: mid });
+    }
+  }
+  return arr;
+}
+
+// ── CHORE STATUS ──────────────────────────────────────────────
+function choreStatus(chore, memberId) {
+  return getChoreProgress(chore, memberId).status;
+}
+
+// Returns the current before/after photo phase for a chore+member combo.
+// phase values: 'needs_before' | 'before_pending' | 'needs_after' | 'after_pending' | 'complete' | null (no photo mode)
+function getChorePhotoPhase(chore, memberId, dateStr = today()) {
+  const mode = chore?.photoMode;
+  if (!mode || mode === 'none') return null;
+
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId])
+    .filter(e => e.date === dateStr);
+
+  if (mode === 'after') {
+    const afterEntry = entries.find(e => e.entryType === 'after' || e.entryType === null);
+    if (!afterEntry)                        return { phase: 'needs_after',   entryType: 'after', canRequest: false, canComplete: true  };
+    if (afterEntry.status === 'pending')    return { phase: 'after_pending', entryType: 'after', canRequest: false, canComplete: false };
+    if (afterEntry.status === 'done')       return { phase: 'complete',      entryType: 'after', canRequest: false, canComplete: false };
+    return                                         { phase: 'needs_after',   entryType: 'after', canRequest: false, canComplete: true  };
+  }
+
+  // before_after mode
+  const beforeEntry = entries.find(e => e.entryType === 'before');
+  const afterEntry  = entries.find(e => e.entryType === 'after');
+
+  if (!beforeEntry)
+    return { phase: 'needs_before',   entryType: 'before', canRequest: true,  canComplete: false };
+  if (beforeEntry.status === 'pending')
+    return { phase: 'before_pending', entryType: 'before', canRequest: false, canComplete: false,
+             errorMsg: 'Already submitted — waiting for parent to OK the start.' };
+  if (beforeEntry.status === 'approved') {
+    if (!afterEntry)
+      return { phase: 'needs_after',   entryType: 'after',  canRequest: false, canComplete: true  };
+    if (afterEntry.status === 'pending')
+      return { phase: 'after_pending', entryType: 'after',  canRequest: false, canComplete: false };
+    if (afterEntry.status === 'done')
+      return { phase: 'complete',      entryType: 'after',  canRequest: false, canComplete: false };
+    return   { phase: 'needs_after',   entryType: 'after',  canRequest: false, canComplete: true  };
+  }
+  // before was rejected (or unexpected state) — allow re-request
+  return { phase: 'needs_before', entryType: 'before', canRequest: true, canComplete: false };
+}
+
+function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entryType = null) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return null;
+  const progress = getChoreProgress(chore, memberId);
+
+  if (progress.isSlotMode) {
+    const slotStatus = progress.slotStatuses?.find(s => s.slot.id === slotId);
+    if (!slotStatus) return { error: 'Slot not found.' };
+    if (slotStatus.status === 'done')    return { error: 'Already done for this time!' };
+    if (slotStatus.status === 'pending') return { error: 'Already submitted — waiting for approval.' };
+    if (slotStatus.status === 'waiting') return { error: slotStatus.slot.start ? `Available ${formatTimeWindow({start:slotStatus.slot.start, end:slotStatus.slot.end})}` : 'Not available yet.' };
+  } else if (chore.photoMode === 'before_after') {
+    // Validate phase transition
+    const phase = getChorePhotoPhase(chore, memberId);
+    if (entryType === 'before' && phase.phase !== 'needs_before') return { error: phase.errorMsg || 'Already requested.' };
+    if (entryType === 'after'  && phase.phase !== 'needs_after')  return { error: phase.errorMsg || 'Not ready to submit completion yet.' };
+  } else {
+    if (!progress.canSubmit) {
+      return { error: progress.remainingCount === 0 ? 'This chore is already fully submitted for now.' : (progress.availabilityText || 'This chore is not available right now.') };
+    }
+  }
+
+  // Auto-here: if member is scheduled as away today but is completing a chore,
+  // they must actually be home — record a one-off override so streak logic knows.
+  const _todayStr = today();
+  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _todayStr)) {
+    member.splitHousehold.overrides[_todayStr] = true;
+  }
+
+  if (!chore.completions) chore.completions = {};
+  chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+
+  // For 'before' entries, always require parent approval (never auto-approve the start phase)
+  const isBefore = entryType === 'before';
+  const autoApprove = !isBefore && D.settings.autoApprove;
+
+  const completion = {
+    id:        genId(),
+    status:    autoApprove ? 'done' : 'pending',
+    date:      today(),
+    createdAt: Date.now(),
+    slotId:    slotId    || null,
+    photoUrl:  photoUrl  || null,
+    entryType: entryType || null,
+  };
+  chore.completions[memberId].push(completion);
+
+  // Diamonds only awarded for completion (after/null) entries, not before-photo requests
+  if (autoApprove) {
+    member.diamonds      = (member.diamonds      || 0) + chore.diamonds;
+    member.totalEarned = (member.totalEarned || 0) + chore.diamonds;
+    addHistory('chore', memberId, chore.title, chore.diamonds);
+    checkAfterDiamondsAwarded(member, chore.diamonds);
+    checkChoreBadges(chore, memberId);
+    saveData();
+    return { approved: true, diamonds: chore.diamonds };
+  } else {
+    saveData();
+    return { approved: false, isBefore };
+  }
+}
+
+function doApproveChore(choreId, memberId, entryId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+  chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+  const entry = chore.completions[memberId].find(item => item.id === entryId);
+  if (!entry) return;
+
+  // Photo served its purpose — drop it to keep Firestore document size in check
+  entry.photoUrl = null;
+
+  if (entry.entryType === 'before') {
+    // Approving a "before" photo just unlocks the chore — no diamonds yet
+    entry.status = 'approved';
+  } else {
+    // Approving a completion ("after" or legacy null) — award diamonds
+    entry.status = 'done';
+    member.diamonds      = (member.diamonds      || 0) + chore.diamonds;
+    member.totalEarned = (member.totalEarned || 0) + chore.diamonds;
+    addHistory('chore', memberId, chore.title, chore.diamonds);
+    checkAfterDiamondsAwarded(member, chore.diamonds);
+    checkChoreBadges(chore, memberId);
+    // Auto-here: approving a chore means the kid must be home
+    const _t = today();
+    if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+      member.splitHousehold.overrides[_t] = true;
+    }
+  }
+  saveData();
+}
+
+function doRejectChore(choreId, memberId, entryId, reason = '') {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore) return;
+  chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]).filter(entry => entry.id !== entryId);
+  if (!chore.completions[memberId].length) delete chore.completions[memberId];
+  addHistory('decline', memberId, chore.title, 0);
+  if (!D.declineNotifications) D.declineNotifications = [];
+  D.declineNotifications.push({
+    id: genId(),
+    memberId,
+    choreTitle: chore.title,
+    choreIcon: chore.icon || '',
+    choreIconColor: chore.iconColor || '',
+    reason: reason || '',
+    date: today(),
+    seen: false,
+  });
+  saveData();
+}
+
+// ── PRIZE REDEMPTION ──────────────────────────────────────────
+function doRedeemPrize(prizeId, memberId) {
+  const prize  = D.prizes.find(p => p.id === prizeId);
+  const member = getMember(memberId);
+  if (!prize || !member) return false;
+  if ((member.diamonds||0) < prize.cost) return false;
+  member.diamonds -= prize.cost;
+  addHistory('prize', memberId, prize.title, -prize.cost);
+  if (!prize.redemptions) prize.redemptions = [];
+  prize.redemptions.push({ memberId, date:today() });
+  saveData();
+  return true;
+}
+
+// ── TEAM GOALS ────────────────────────────────────────────────
+function goalTotal(goal) {
+  if (!goal) return 0;
+  return Object.values(goal.contributions||{}).reduce((a,b)=>a+b,0);
+}
+
+function doContributeToGoal(memberId, goalId, diamonds) {
+  const member = getMember(memberId);
+  const goal = D.teamGoals?.find(g => g.id === goalId);
+  if (!member || !goal) return false;
+  if ((member.diamonds||0) < diamonds || diamonds <= 0) return false;
+  member.diamonds -= diamonds;
+  goal.contributions = goal.contributions || {};
+  goal.contributions[memberId] = (goal.contributions[memberId]||0) + diamonds;
+  addHistory('goal', memberId, goal.title, -diamonds);
+  saveData();
+  return true;
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+function addHistory(type, memberId, title, diamonds, extra = {}) {
+  D.history.unshift({ id:genId(), type, memberId, title, diamonds, date:today(), ...extra });
+}
+
+function historyIcon(h) {
+  if (h.type === 'chore') {
+    if ((h.title||'').startsWith('Streak bonus')) return '<i class="ph-duotone ph-fire" style="color:#F97316"></i>';
+    return '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>';
+  }
+  if (h.type === 'prize')   return '<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>';
+  if (h.type === 'penalty') {
+    if ((h.title||'').startsWith('↩')) return '<i class="ph-duotone ph-arrow-counter-clockwise" style="color:#6B7280"></i>';
+    return '<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>';
+  }
+  if (h.type === 'bonus') {
+    if ((h.title||'').includes('Combo')) return '<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>';
+    return '<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>';
+  }
+  if (h.type === 'level')   return '<i class="ph-duotone ph-trophy" style="color:#D97706"></i>';
+  if (h.type === 'badge')   return '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>';
+  if (h.type === 'goal')    return '<i class="ph-duotone ph-target" style="color:#0E7490"></i>';
+  if (h.type === 'savings') return '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>';
+  if (h.type === 'decline') return '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i>';
+  return '<i class="ph-duotone ph-circle" style="color:#9CA3AF"></i>';
+}
+
+function historyBadge(h) {
+  if (h.type === 'chore') {
+    if ((h.title||'').startsWith('Streak bonus')) return { color:'#c2410c', bg:'#FFF7ED' };
+    return { color:'#166534', bg:'#DCFCE7' };
+  }
+  if (h.type === 'prize')   return { color:'#1e40af', bg:'#DBEAFE' };
+  if (h.type === 'penalty') {
+    if ((h.title||'').startsWith('↩')) return { color:'#374151', bg:'#F3F4F6' };
+    return { color:'#991b1b', bg:'#FEE2E2' };
+  }
+  if (h.type === 'bonus')   return (h.title||'').includes('Combo') ? { color:'#b45309', bg:'#FEF3C7' } : { color:'#4c1d95', bg:'#EDE9FE' };
+  if (h.type === 'level')   return { color:'#4c1d95', bg:'#EDE9FE' };
+  if (h.type === 'badge')   return { color:'#6b21a8', bg:'#F5F3FF' };
+  if (h.type === 'goal')    return { color:'#0e7490', bg:'#ECFEFF' };
+  if (h.type === 'savings') return { color:'#166534', bg:'#DCFCE7' };
+  if (h.type === 'decline') return { color:'#6b7280', bg:'#F3F4F6' };
+  return { color:'#374151', bg:'#F9FAFB' };
+}
+
+// ── LEVELS & BADGES ──────────────────────────────────────────
+const DEFAULT_LEVELS = [
+  { level:1, name:'Rookie',  icon:'<i class="ph-duotone ph-leaf" style="color:#22C55E"></i>',         minXp:0    },
+  { level:2, name:'Helper',  icon:'<i class="ph-duotone ph-diamond" style="color:#3B82F6"></i>',       minXp:50   },
+  { level:3, name:'Diamond', icon:'<i class="ph-duotone ph-diamond" style="color:#7C3AED"></i>',       minXp:150  },
+  { level:4, name:'Champ',   icon:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>',        minXp:300  },
+  { level:5, name:'Legend',  icon:'<i class="ph-duotone ph-fire" style="color:#EF4444"></i>',          minXp:500  },
+  { level:6, name:'Hero',    icon:'<i class="ph-duotone ph-shield-star" style="color:#6C63FF"></i>',   minXp:800  },
+  { level:7, name:'Master',  icon:'<i class="ph-duotone ph-crown" style="color:#D97706"></i>',         minXp:1200 },
+];
+
+const CHORE_BADGE_PRESETS = {
+  'Brush Your Teeth':      [{ count:10, name:'Junior Dentist', icon:'🦷' }, { count:25, name:'Strong Chomper', icon:'💪' }, { count:50, name:'Dental Surgeon', icon:'⚕️' }],
+  'Take A Shower':         [{ count:10, name:'Getting Soapy',  icon:'🚿' }, { count:25, name:'Bubble Boy',     icon:'🫧' }, { count:50, name:'Scrub Master',   icon:'🧼' }],
+  'Dress Yourself':        [{ count:10, name:'Cool Guy',       icon:'😎' }, { count:25, name:'Style Pro',      icon:'👔' }, { count:50, name:'Fashion God',    icon:'👑' }],
+  'Hug Your Brother':      [{ count:10, name:'Bro-migo',       icon:'🤜' }, { count:25, name:'Bro-chacho',     icon:'🤛' }, { count:50, name:'Bro-tato Chip',  icon:'🥔' }],
+  'Hug Your Grandma':      [{ count:10, name:'OK Fine',        icon:'😒' }, { count:25, name:'Granny Fan',     icon:'💜' }, { count:50, name:'I Love Grandma', icon:'🫶' }],
+  'Set The Table':         [{ count:10, name:'Fork!',          icon:'🍴' }, { count:25, name:'Threek!',        icon:'🥄' }, { count:50, name:'Twok!',          icon:'🍽️' }, { count:100, name:'Onek!', icon:'🏆' }],
+  'Clear The Table':       [{ count:10, name:"That's Beans!",  icon:'🫘' }, { count:25, name:'Dishwasher',     icon:'🫧' }, { count:50, name:'Top Chef',       icon:'👨‍🍳' }],
+  'Help Pack Your Lunch':  [{ count:10, name:'Fruit Snack',    icon:'🍎' }, { count:25, name:'Juice Box',      icon:'🧃' }, { count:50, name:'Uncrustable',    icon:'🥪' }],
+  'Take Out The Trash':    [{ count:10, name:'Stinky',         icon:'🤢' }, { count:25, name:'Janitor',        icon:'🧹' }, { count:50, name:'Garbageman',     icon:'🗑️' }],
+  "Refill The Cats' Food": [{ count:10, name:'Animal Lover',   icon:'🐾' }, { count:25, name:'Cat Guy',        icon:'🐱' }, { count:50, name:'Kitty God',      icon:'😺' }],
+  "Refill The Cats' Water":[{ count:10, name:"Just Sippin'",   icon:'💧' }, { count:25, name:'Gulp Gulp',      icon:'🥤' }, { count:50, name:'Swimmer Kitty',  icon:'🏊' }],
+  'Help With Laundry':     [{ count:10, name:'Sock Collector', icon:'🧦' }, { count:25, name:'Hamper Stacker', icon:'🧺' }, { count:50, name:'Clothing King',  icon:'👗' }],
+  'Clean Your Room':       [{ count:10, name:"Don't Trip!",    icon:'🚧' }, { count:25, name:'Relax Mode',     icon:'😌' }, { count:50, name:'Blanket Boy',    icon:'🛏️' }],
+};
+
+const BADGE_DEFS = [
+  { id:'first_chore',  icon:'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>',  name:'First Chore',       desc:'Complete your very first chore' },
+  { id:'streak_3',     icon:'<i class="ph-duotone ph-fire" style="color:#F97316"></i>',           name:'On a Roll',         desc:'3-day streak' },
+  { id:'streak_7',     icon:'<i class="ph-duotone ph-waves" style="color:#3B82F6"></i>',          name:'Week Warrior',      desc:'7-day streak' },
+  { id:'streak_14',    icon:'<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>',      name:'Unstoppable',       desc:'14-day streak' },
+  { id:'streak_30',    icon:'<i class="ph-duotone ph-medal" style="color:#D97706"></i>',          name:'Monthly Hero',      desc:'30-day streak' },
+  { id:'dmds_50',      icon:'<i class="ph-duotone ph-diamond" style="color:#3B82F6"></i>',        name:'Diamond Collector', desc:'Earn 50 diamonds total' },
+  { id:'dmds_200',     icon:'<i class="ph-duotone ph-diamonds-four" style="color:#7C3AED"></i>',  name:'Diamond Hoarder',   desc:'Earn 200 diamonds total' },
+  { id:'dmds_500',     icon:'<i class="ph-duotone ph-piggy-bank" style="color:#10B981"></i>',     name:'Diamond Mogul',     desc:'Earn 500 diamonds total' },
+  { id:'dmds_1000',    icon:'<i class="ph-duotone ph-crown" style="color:#D97706"></i>',          name:'Diamond Club',      desc:'Earn 1000 diamonds total' },
+  { id:'level_up',     icon:'<i class="ph-duotone ph-rocket-launch" style="color:#6C63FF"></i>',  name:'Level Up!',         desc:'Reach level 2 or higher' },
+  { id:'level_master', icon:'<i class="ph-duotone ph-crown-simple" style="color:#D97706"></i>',   name:'Master Level',      desc:'Reach level 7 (Master)' },
+];
+
+function getLevels() {
+  const custom = D?.settings?.customLevels;
+  if (Array.isArray(custom) && custom.length >= 2) return custom;
+  return DEFAULT_LEVELS;
+}
+
+function getMemberLevel(member) {
+  const levels = getLevels();
+  const xp = member.xp || member.totalEarned || 0;
+  let current = levels[0];
+  for (const lvl of levels) {
+    if (xp >= lvl.minXp) current = lvl;
+  }
+  const nextIdx = levels.findIndex(l => l.level === current.level + 1);
+  const next = nextIdx >= 0 ? levels[nextIdx] : null;
+  const xpIntoLevel = next ? xp - current.minXp : 0;
+  const xpNeeded    = next ? next.minXp - current.minXp : 1;
+  const pct         = next ? Math.min(100, Math.round(xpIntoLevel / xpNeeded * 100)) : 100;
+  return { current, next, xp, xpIntoLevel, xpNeeded, pct };
+}
+
+function getBaseBadgeDef(id) {
+  const base = BADGE_DEFS.find(b => b.id === id);
+  if (!base) return null;
+  const custom = D?.settings?.customBadgeDefs?.[id] || {};
+  return { ...base, ...custom };
+}
+
+function awardBadgeIfNew(member, badgeId) {
+  if (D?.settings?.baseBadgesEnabled === false) return false;
+  if (!Array.isArray(member.badges)) member.badges = [];
+  if (member.badges.includes(badgeId)) return false;
+  const def = getBaseBadgeDef(badgeId);
+  if (!def) return false;
+  member.badges.push(badgeId);
+  addHistory('badge', member.id, def.name, 0, { badgeIcon: def.icon });
+  return true;
+}
+
+function checkDiamondBadges(member) {
+  const xp = member.xp || member.totalEarned || 0;
+  if (xp >= 50)   awardBadgeIfNew(member, 'dmds_50');
+  if (xp >= 200)  awardBadgeIfNew(member, 'dmds_200');
+  if (xp >= 500)  awardBadgeIfNew(member, 'dmds_500');
+  if (xp >= 1000) awardBadgeIfNew(member, 'dmds_1000');
+}
+
+function checkChoreBadges(chore, memberId) {
+  if (!chore?.badges?.length) return;
+  const member = getMember(memberId);
+  if (!member) return;
+  const allEntries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  const doneCount = allEntries.filter(e => e.status === 'done').length;
+  if (!Array.isArray(member.badges)) member.badges = [];
+  for (const badge of chore.badges) {
+    if (!badge?.id || !badge?.count) continue;
+    const key = `cb_${badge.id}`;
+    if (doneCount >= badge.count && !member.badges.includes(key)) {
+      member.badges.push(key);
+      addHistory('badge', member.id, badge.name || 'Badge', 0, { badgeIcon: badge.icon || '🏅', choreTitle: chore.title });
+    }
+  }
+}
+
+function checkLevelUp(member, prevLevel) {
+  if (!D.settings.levelingEnabled) return;
+  const { current } = getMemberLevel(member);
+  if (current.level > prevLevel) {
+    awardBadgeIfNew(member, 'level_up');
+    const maxLevel = getLevels().at(-1)?.level;
+    if (current.level === maxLevel) awardBadgeIfNew(member, 'level_master');
+    addHistory('level', member.id, `Level Up — ${current.name}!`, 0);
+    toast(`${current.icon} Level up! ${member.name} is now ${current.name}!`);
+  }
+}
+
+function updateStreak(member) {
+  if (!D.settings.streakEnabled) return 0;
+  const t = today();
+  const st = member.streak || { current:0, best:0, lastDate:null };
+  let bonus = 0;
+  if (st.lastDate === t) {
+    // Already counted today
+  } else if (st.lastDate && !streakHasGap(member, st.lastDate, t)) {
+    // No missed "here" days between last completion and today — streak continues
+    st.current += 1;
+    st.best = Math.max(st.best, st.current);
+    bonus = getStreakBonus(st.current);
+  } else {
+    // At least one "here" day was skipped — reset streak
+    st.current = 1;
+    st.best = Math.max(st.best, 1);
+  }
+  st.lastDate = t;
+  member.streak = st;
+
+  // Badge checks
+  if (st.current >= 3)  awardBadgeIfNew(member, 'streak_3');
+  if (st.current >= 7)  awardBadgeIfNew(member, 'streak_7');
+  if (st.current >= 14) awardBadgeIfNew(member, 'streak_14');
+  if (st.current >= 30) awardBadgeIfNew(member, 'streak_30');
+  return bonus;
+}
+
+function dateDiffDays(dateStr1, dateStr2) {
+  // Both "YYYY-MM-DD"
+  const d1 = new Date(dateStr1 + 'T00:00:00');
+  const d2 = new Date(dateStr2 + 'T00:00:00');
+  return Math.round((d2 - d1) / 86400000);
+}
+
+// ── SPLIT HOUSEHOLD HELPERS ───────────────────────────────────────────────
+
+function getMostRecentMonday() {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun … 6=Sat
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return formatDateLocal(d);
+}
+
+// Returns true if member is expected to be at THIS household on the given date.
+// Always returns true when split household is disabled.
+function isMemberHereOnDate(member, dateStr) {
+  const sh = member.splitHousehold;
+  if (!sh || !sh.enabled) return true;
+  const overrides = sh.overrides || {};
+  if (dateStr in overrides) return overrides[dateStr];
+  // Map date → position in 14-day cycle (index 0 = Monday of week 1)
+  const ref  = new Date((sh.referenceMonday || getMostRecentMonday()) + 'T00:00:00');
+  const d    = new Date(dateStr + 'T00:00:00');
+  const diff = Math.round((d - ref) / 86400000);
+  const pos  = ((diff % 14) + 14) % 14;
+  return sh.cycle?.[pos] !== false;
+}
+
+// Returns true if there is at least one "here" day between fromDate and toDate
+// that had no recorded chore completion — meaning the streak should break.
+function streakHasGap(member, fromDate, toDate) {
+  const from = new Date(fromDate + 'T00:00:00');
+  const to   = new Date(toDate   + 'T00:00:00');
+  const diff = Math.round((to - from) / 86400000);
+  if (diff <= 1) return false;
+  for (let i = 1; i < diff; i++) {
+    const d   = new Date(from.getTime() + i * 86400000);
+    const ds  = formatDateLocal(d);
+    if (isMemberHereOnDate(member, ds)) return true; // missed a here-day → gap
+  }
+  return false; // all intervening days were away days
+}
+
+// Schedules (or immediately runs) the 6 pm "are they actually here?" check.
+function scheduleHereCheck() {
+  const now   = new Date();
+  const sixPm = new Date(now);
+  sixPm.setHours(18, 0, 0, 0);
+  const ms = sixPm - now;
+  if (ms <= 0) {
+    // Already past 6pm — check now (only once per day)
+    if (S.hereCheckDate !== today()) runHereCheck();
+  } else {
+    setTimeout(() => { if (S.hereCheckDate !== today()) runHereCheck(); }, ms);
+  }
+}
+
+function runHereCheck() {
+  if (S.currentUser?.role !== 'parent') return;
+  if (D.settings?.hereCheckEnabled === false) return;
+  S.hereCheckDate = today();
+  const t = today();
+  const missing = (D.family?.members || []).filter(m => {
+    if (m.role !== 'kid') return false;
+    if (!m.splitHousehold?.enabled) return false;
+    if (!isMemberHereOnDate(m, t)) return false;
+    // Has any chore completion today?
+    return !D.chores.some(c =>
+      c.completions?.[m.id]?.some(e => e.date === t && (e.status === 'done' || e.status === 'pending'))
+    );
+  });
+  if (!missing.length) return;
+  showHereCheckModal(missing);
+  // Browser notification (works when PWA is open; on installed PWA may work in bg)
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    const names = missing.map(m => m.name).join(', ');
+    new Notification('GemSprout', {
+      body: `${names} hasn't done any chores today — are they actually home?`,
+    });
+  }
+}
+
+// ── SPLIT HOUSEHOLD MODAL ─────────────────────────────────────────────────
+
+const DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function showSplitHouseholdModal(memberId) {
+  const member = getMember(memberId);
+  if (!member) return;
+  S.shMemberId = memberId;
+  const sh = member.splitHousehold;
+  const enabled = sh.enabled;
+  const cycle = sh.cycle;
+  const ref = sh.referenceMonday || getMostRecentMonday();
+
+  const weekGrid = (weekIdx) => DAY_LABELS.map((lbl, i) => {
+    const pos = weekIdx * 7 + i;
+    const here = cycle[pos] !== false;
+    return `<button class="sh-day-btn ${here ? 'here' : 'away'}" onclick="toggleShDay(${pos})" id="sh-day-${pos}">${lbl}</button>`;
+  }).join('');
+
+  const overrideRows = Object.entries(sh.overrides || {})
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([date, isHere]) => `
+      <div class="sh-override-row" id="sh-ov-${date}">
+        <span class="sh-override-label">${date}</span>
+        <span class="sh-badge ${isHere ? 'here' : 'away'}">${isHere ? 'Here' : 'Away'}</span>
+        <button class="btn-icon-sm" onclick="removeShOverride('${date}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+      </div>`).join('');
+
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split Household — ${esc(member.name)}</div>
+
+    <div class="toggle-row" style="margin-bottom:16px">
+      <div>
+        <div class="toggle-label">Enable Split Household</div>
+        <div class="toggle-sub">Streaks skip days they're at the other household</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="sh-enabled" ${enabled ? 'checked' : ''} onchange="toggleShConfig()">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+
+    <div id="sh-config" style="${enabled ? '' : 'display:none'}">
+      <div class="form-group">
+        <label class="form-label">Week 1 starts on <span class="form-label-hint">pick any Monday</span></label>
+        <input type="date" id="sh-ref-monday" value="${ref}">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Schedule — tap a day to toggle here / away</label>
+        <div class="sh-section">
+          <div class="sh-week-block">
+            <div class="sh-week-label">Week 1</div>
+            <div class="sh-days-row">${weekGrid(0)}</div>
+          </div>
+          <div class="sh-week-block">
+            <div class="sh-week-label">Week 2</div>
+            <div class="sh-days-row">${weekGrid(1)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">One-off exceptions</label>
+        <div class="sh-overrides-list" id="sh-overrides-list">${overrideRows || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>'}</div>
+        <div class="sh-add-row">
+          <input type="date" id="sh-ov-date" value="${today()}">
+          <select id="sh-ov-type">
+            <option value="true">Here</option>
+            <option value="false">Away</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="addShOverride()">Add</button>
+        </div>
+      </div>
+
+      <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
+        <i class="ph-duotone ph-lightbulb" style="color:#F59E0B;vertical-align:middle"></i> Completing a chore on a scheduled away day automatically marks them as here.
+        At 6 pm on here-days with no chore activity, you'll get a prompt asking if they're actually home.
+      </p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSplitHousehold()">Save</button>
+    </div>`);
+
+  // Request notification permission when enabling
+  if (enabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function toggleShConfig() {
+  const on = document.getElementById('sh-enabled')?.checked;
+  const cfg = document.getElementById('sh-config');
+  if (cfg) cfg.style.display = on ? '' : 'none';
+  if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// Holds temporary cycle state while modal is open
+function _getShCycle() {
+  const btns = document.querySelectorAll('[id^="sh-day-"]');
+  const cycle = Array(14).fill(true);
+  btns.forEach(btn => {
+    const pos = parseInt(btn.id.replace('sh-day-',''));
+    cycle[pos] = btn.classList.contains('here');
+  });
+  return cycle;
+}
+
+function toggleShDay(pos) {
+  const btn = document.getElementById(`sh-day-${pos}`);
+  if (!btn) return;
+  const nowHere = btn.classList.contains('here');
+  btn.classList.toggle('here', !nowHere);
+  btn.classList.toggle('away', nowHere);
+}
+
+function refreshShGrid() {
+  // Re-render cycle preview based on current toggle states (no data change needed)
+}
+
+function addShOverride() {
+  const date = document.getElementById('sh-ov-date')?.value;
+  const type = document.getElementById('sh-ov-type')?.value === 'true';
+  if (!date) return;
+  const member = getMember(S.shMemberId);
+  if (!member) return;
+  member.splitHousehold.overrides[date] = type;
+  // Refresh list
+  const list = document.getElementById('sh-overrides-list');
+  if (!list) return;
+  list.innerHTML = Object.entries(member.splitHousehold.overrides)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([d, isHere]) => `
+      <div class="sh-override-row" id="sh-ov-${d}">
+        <span class="sh-override-label">${d}</span>
+        <span class="sh-badge ${isHere ? 'here' : 'away'}">${isHere ? 'Here' : 'Away'}</span>
+        <button class="btn-icon-sm" onclick="removeShOverride('${d}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+      </div>`).join('') || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>';
+}
+
+function removeShOverride(date) {
+  if (!confirm(`Remove the exception for ${date}?`)) return;
+  const member = getMember(S.shMemberId);
+  if (!member) return;
+  delete member.splitHousehold.overrides[date];
+  document.getElementById(`sh-ov-${date}`)?.remove();
+  if (!Object.keys(member.splitHousehold.overrides).length) {
+    const list = document.getElementById('sh-overrides-list');
+    if (list) list.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>';
+  }
+}
+
+function saveSplitHousehold() {
+  const member = getMember(S.shMemberId);
+  if (!member) return;
+  member.splitHousehold.enabled = document.getElementById('sh-enabled')?.checked || false;
+  member.splitHousehold.referenceMonday = document.getElementById('sh-ref-monday')?.value || getMostRecentMonday();
+  member.splitHousehold.cycle = _getShCycle();
+  // overrides were already mutated live by addShOverride / removeShOverride
+  saveData();
+  closeModal();
+  toast('Split Household schedule saved');
+  renderSettings();
+}
+
+// ── HERE-CHECK MODAL (6 PM PROMPT) ───────────────────────────────────────
+
+function showHereCheckModal(members) {
+  const rows = members.map(m => `
+    <div class="here-check-member-row">
+      <span style="font-size:1.8rem">${m.avatar}</span>
+      <span style="font-weight:600;flex:1">${esc(m.name)}</span>
+      <div class="here-check-btns">
+        <button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="markHereToday('${m.id}')">Here <i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i></button>
+        <button class="btn btn-secondary btn-sm" onclick="markAwayToday('${m.id}')">Away</button>
+      </div>
+    </div>`).join('');
+
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Are they home?</div>
+    <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:12px">
+      It's past 6 pm and these kids haven't done any chores today. Are they actually at your house?
+    </p>
+    ${rows}
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Dismiss</button>
+    </div>`);
+}
+
+function markHereToday(memberId) {
+  const member = getMember(memberId);
+  if (member?.splitHousehold) member.splitHousehold.overrides[today()] = true;
+  saveData();
+  closeModal();
+}
+
+function markAwayToday(memberId) {
+  const member = getMember(memberId);
+  if (member?.splitHousehold) member.splitHousehold.overrides[today()] = false;
+  saveData();
+  closeModal();
+}
+
+function setTodayStatus(memberId, isHere) {
+  const member = getMember(memberId);
+  if (member?.splitHousehold) member.splitHousehold.overrides[today()] = isHere;
+  saveData();
+  renderSettings();
+}
+
+function getStreakBonus(streakCount) {
+  const s = D.settings;
+  if (streakCount >= 30) return s.streakBonus30 || 10;
+  if (streakCount >= 14) return s.streakBonus14 || 5;
+  if (streakCount >= 7)  return s.streakBonus7  || 3;
+  if (streakCount >= 3)  return s.streakBonus3  || 1;
+  return 0;
+}
+
+function checkAfterDiamondsAwarded(member, dmds) {
+  // Called after diamonds are added to member. Updates XP, level, streak, badges.
+  if (!member) return;
+  normalizeMember(member);
+  const s = D.settings;
+  const prevLevel = getMemberLevel(member).current.level;
+
+  // Update XP
+  if (s.levelingEnabled) {
+    member.xp = (member.xp || 0) + dmds;
+  }
+
+  // Streak
+  let streakBonus = 0;
+  if (s.streakEnabled) {
+    streakBonus = updateStreak(member);
+    if (streakBonus > 0) {
+      member.diamonds      = (member.diamonds      || 0) + streakBonus;
+      member.totalEarned = (member.totalEarned || 0) + streakBonus;
+      member.xp          = (member.xp          || 0) + streakBonus;
+      addHistory('chore', member.id, `Streak bonus (${member.streak.current} days)`, streakBonus);
+      toast(`<i class="ph-duotone ph-fire" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> ${member.streak.current}-day streak! +${streakBonus} bonus 💎`);
+    }
+  }
+
+  // First chore badge
+  awardBadgeIfNew(member, 'first_chore');
+  checkDiamondBadges(member);
+  if (s.levelingEnabled) checkLevelUp(member, prevLevel);
+  // Check if daily combo is now complete
+  checkComboBonus(member.id);
+}
+
+// ── DAILY COMBO BONUS ─────────────────────────────────────────
+// Seeded shuffle so the same 3 chores are picked all day per kid
+function _seededShuffle(arr, seed) {
+  let s = seed >>> 0;
+  const rand = () => {
+    s += 0x6D2B79F5; let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Build all kids' combos in one pass so no chore appears in two kids' combos.
+// Kids are processed in stable ID order; first kid gets first pick.
+let _allCombosCache = { key: null, combos: {} };
+
+function getAllDailyCombos() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const cacheKey = today() + '|' + kids.map(m => m.id).sort().join(',');
+  if (_allCombosCache.key === cacheKey) return _allCombosCache.combos;
+
+  const sortedKids = [...kids].sort((a, b) => a.id.localeCompare(b.id));
+  const combos = {};
+  const used   = new Set(); // chore IDs already claimed by an earlier kid
+
+  for (const kid of sortedKids) {
+    const eligible = D.chores.filter(c =>
+      c.assignedTo?.includes(kid.id) &&
+      c.schedule?.period !== 'once'  &&
+      !used.has(c.id)
+    );
+    let ids;
+    if (eligible.length <= 3) {
+      ids = eligible.map(c => c.id);
+    } else {
+      let seed = 0;
+      const str = today() + '|' + kid.id;
+      for (let i = 0; i < str.length; i++) {
+        seed = Math.imul(seed ^ str.charCodeAt(i), 0x9E3779B9);
+      }
+      ids = _seededShuffle(eligible, seed).slice(0, 3).map(c => c.id);
+    }
+    combos[kid.id] = ids;
+    ids.forEach(id => used.add(id));
+  }
+
+  _allCombosCache = { key: cacheKey, combos };
+  return combos;
+}
+
+function getDailyCombo(memberId) {
+  const override = D.settings.comboOverrides?.[memberId];
+  if (override && override.date === today()) return override.ids;
+  return getAllDailyCombos()[memberId] || [];
+}
+
+function setComboOverride(memberId, slotIndex, choreId) {
+  if (!D.settings.comboOverrides) D.settings.comboOverrides = {};
+  const current = D.settings.comboOverrides[memberId];
+  const existingIds = (current?.date === today()) ? [...current.ids] : getDailyCombo(memberId).slice(0, 3);
+  existingIds[slotIndex] = choreId;
+  D.settings.comboOverrides[memberId] = { date: today(), ids: existingIds };
+  _allCombosCache = { key: null, combos: {} };
+  saveData();
+  renderParentLevels();
+}
+
+function clearComboOverride(memberId) {
+  if (S.pendingComboOverrides) delete S.pendingComboOverrides[memberId];
+  if (!D.settings.comboOverrides) { renderParentLevels(); return; }
+  delete D.settings.comboOverrides[memberId];
+  _allCombosCache = { key: null, combos: {} };
+  saveData();
+  renderParentLevels();
+}
+
+function stagePendingCombo(kidId, slotIndex, choreId) {
+  if (!S.pendingComboOverrides) S.pendingComboOverrides = {};
+  if (!S.pendingComboOverrides[kidId]) S.pendingComboOverrides[kidId] = {};
+  S.pendingComboOverrides[kidId][slotIndex] = choreId;
+  renderParentLevels();
+}
+
+function saveComboOverride(kidId) {
+  if (!S.pendingComboOverrides) S.pendingComboOverrides = {};
+  const pending = S.pendingComboOverrides[kidId] || {};
+  const currentCombo = getDailyCombo(kidId);
+  const finalIds = [0, 1, 2].map(i => pending[i] || currentCombo[i]).filter(Boolean);
+  const member = getMember(kidId);
+  if (!member) return;
+
+  const alreadyAwarded = member.comboBonusDate === today();
+  if (!alreadyAwarded && finalIds.length === 3) {
+    const allDone = finalIds.every(id => {
+      const chore = D.chores.find(c => c.id === id);
+      return chore && getChoreProgress(chore, kidId).status === 'done';
+    });
+    if (allDone) {
+      const bonusPts = finalIds.reduce((sum, id) => {
+        const chore = D.chores.find(c => c.id === id);
+        return sum + (chore?.diamonds || 0);
+      }, 0);
+      S._pendingComboSave = { kidId, finalIds };
+      showModal(`
+        <div class="modal-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;vertical-align:middle"></i> Combo Will Complete!</div>
+        <p style="font-size:0.9rem;color:var(--muted);margin:0 0 16px">
+          Saving this combo for <b>${esc(member.name)}</b> will immediately award the daily combo bonus of <b>+${bonusPts} 💎</b> since all 3 chores are already complete.
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="closeModal()" style="flex:1">Cancel</button>
+          <button class="btn btn-primary" onclick="closeModal();_commitPendingComboSave()" style="flex:1">Save &amp; Award 💎</button>
+        </div>`);
+      return;
+    }
+  }
+  _applyComboSave(kidId, finalIds);
+}
+
+function _commitPendingComboSave() {
+  if (!S._pendingComboSave) return;
+  const { kidId, finalIds } = S._pendingComboSave;
+  S._pendingComboSave = null;
+  _applyComboSave(kidId, finalIds);
+}
+
+function _applyComboSave(kidId, finalIds) {
+  if (!S.pendingComboOverrides) S.pendingComboOverrides = {};
+  delete S.pendingComboOverrides[kidId];
+  if (!D.settings.comboOverrides) D.settings.comboOverrides = {};
+  D.settings.comboOverrides[kidId] = { date: today(), ids: finalIds };
+  _allCombosCache = { key: null, combos: {} };
+  saveData();
+  checkComboBonus(kidId);
+  renderParentLevels();
+}
+
+function checkComboBonus(memberId) {
+  if (D.settings.comboEnabled === false) return;
+  const member = getMember(memberId);
+  if (!member) return;
+  const combo = getDailyCombo(memberId);
+  if (combo.length < 3) return;
+  if (member.comboBonusDate === today()) return; // already awarded today
+
+  const allDone = combo.every(id => {
+    const chore = D.chores.find(c => c.id === id);
+    return chore && getChoreProgress(chore, memberId).status === 'done';
+  });
+  if (!allDone) return;
+
+  member.comboBonusDate = today();
+  const bonusPts = combo.reduce((sum, id) => {
+    const chore = D.chores.find(c => c.id === id);
+    return sum + (chore?.diamonds || 0);
+  }, 0);
+  member.diamonds      = (member.diamonds      || 0) + bonusPts;
+  member.totalEarned = (member.totalEarned || 0) + bonusPts;
+  if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
+  addHistory('bonus', memberId, 'Daily Combo Bonus!', bonusPts);
+  markBonusesSeen(memberId); // prevent Firestore echo from re-triggering
+
+  // Update combo streak
+  normalizeMember(member);
+  const cs = member.comboStreak;
+  const yStr = addDaysToDate(today(), -1);
+  if (cs.lastDate === yStr) {
+    cs.current += 1;
+  } else if (cs.lastDate !== today()) {
+    cs.current = 1;
+  }
+  if (cs.current > (cs.best || 0)) cs.best = cs.current;
+  cs.lastDate = today();
+  saveData();
+
+  // Trigger big celebration — only show rain animation when the combo kid is the active viewer
+  setTimeout(() => {
+    if (S.currentUser?.role === 'kid' && S.currentUser?.id === memberId) {
+      launchMixedRain();
+    }
+    const streakMsg = cs.current > 1 ? ` <i class="ph-duotone ph-fire" style="color:#F97316;font-size:0.9rem;vertical-align:middle"></i> ${cs.current} day combo streak!` : '';
+    toast(`<i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> COMBO COMPLETE! +${bonusPts} bonus 💎!${streakMsg}`);
+  }, 300);
+}
+
+// ── NOT LISTENING ─────────────────────────────────────────────
+let _nlState = {
+  isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
+  selectedKids: [], rafId: null,
+};
+
+function showNotListening() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  _nlState = { isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
+    selectedKids: kids.length === 1 ? [kids[0].id] : [], rafId: null };
+
+  const root = document.getElementById('nl-root');
+  root.classList.add('open');
+  _renderNL();
+}
+
+function _renderNL() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const st = _nlState;
+  const secsPerPt = D.settings.notListeningSecs || 60;
+  const totalSecs = Math.floor(st.accumulated / 1000);
+  const mins = String(Math.floor(totalSecs / 60)).padStart(2,'0');
+  const secs = String(totalSecs % 60).padStart(2,'0');
+
+  document.getElementById('nl-root').innerHTML = `
+    <div class="nl-title"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</div>
+    <div class="nl-timer" id="nl-timer">${mins}:${secs}</div>
+    <div class="nl-dmds-lost" id="nl-dmds">${st.diamondsLost > 0 ? `−${st.diamondsLost} 💎 so far` : 'Hold the button to deduct diamonds'}</div>
+    <div class="nl-kids">
+      ${kids.map(k => {
+        const t = today();
+        normalizeMember(k);
+        const todaySecs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0) + (st.selectedKids.includes(k.id) ? Math.floor(st.accumulated / 1000) : 0);
+        const secsLabel = todaySecs > 0 ? ` · ${Math.floor(todaySecs/60)}m${todaySecs%60}s today` : '';
+        return `
+        <div class="nl-kid-chip ${st.selectedKids.includes(k.id)?'selected':''}"
+             onclick="_nlToggleKid('${k.id}')">
+          ${k.avatar||'🙂'} ${esc(k.name)}<br><span style="font-size:0.72rem;opacity:0.8">${secsLabel||'no time today'}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="nl-hold-btn ${st.isHolding?'holding':''}" id="nl-btn"
+      onmousedown="_nlHoldStart()" onmouseup="_nlHoldEnd()" onmouseleave="_nlHoldEnd()"
+      ontouchstart="_nlHoldStart(event)" ontouchend="_nlHoldEnd(event)" ontouchcancel="_nlHoldEnd(event)">
+      <span class="nl-hold-btn-text">${st.isHolding ? 'RUNNING' : 'HOLD'}</span>
+      <span class="nl-hold-hint">${st.isHolding ? 'Release to pause' : 'Hold to penalize'}</span>
+    </button>
+    <div class="nl-actions">
+      <button class="nl-btn-cancel" onclick="_nlCancel()">Cancel</button>
+      <button class="nl-btn-done"   onclick="_nlDone()">Apply & Done</button>
+    </div>`;
+}
+
+function _nlToggleKid(kidId) {
+  const i = _nlState.selectedKids.indexOf(kidId);
+  if (i >= 0) _nlState.selectedKids.splice(i, 1);
+  else _nlState.selectedKids.push(kidId);
+  _renderNL();
+}
+
+// ── NL ALARM (repeating deep bonk) ───────────────────────────
+// Single persistent AudioContext — reused across presses.
+// Each bonk fires a fresh short oscillator (self-disposing).
+let _nlAudioCtx  = null;
+let _nlBonkTimer = null;
+
+function _nlBonk() {
+  try {
+    const ctx = _nlAudioCtx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(0.65, t + 0.018); // fast attack
+    gain.gain.setValueAtTime(0.65, t + 0.15);           // short hold
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.46); // decay
+    gain.connect(ctx.destination);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(85, t + 0.46); // pitch drop = thud
+    osc.connect(gain);
+    osc.start(t);
+    osc.stop(t + 0.5);
+  } catch(e) {}
+}
+
+function _nlAlarmStart() {
+  try {
+    if (!_nlAudioCtx || _nlAudioCtx.state === 'closed') {
+      _nlAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (_nlAudioCtx.state === 'suspended') _nlAudioCtx.resume();
+    _nlBonk();
+    _nlBonkTimer = setInterval(_nlBonk, 700);
+  } catch(e) {}
+}
+
+function _nlAlarmStop() {
+  try {
+    if (_nlBonkTimer) { clearInterval(_nlBonkTimer); _nlBonkTimer = null; }
+    // Keep _nlAudioCtx alive for reuse
+  } catch(e) {}
+}
+
+function _nlHoldStart(evt) {
+  if (evt) evt.preventDefault();
+  if (_nlState.isHolding) return;
+  _nlState.isHolding = true;
+  _nlState.holdStart = Date.now();
+  _nlAlarmStart();
+  _renderNL();
+  _nlTick();
+}
+
+function _nlHoldEnd(evt) {
+  if (evt) evt.preventDefault();
+  if (!_nlState.isHolding) return;
+  _nlState.accumulated += Date.now() - _nlState.holdStart;
+  _nlState.isHolding = false;
+  _nlState.holdStart = null;
+  _nlAlarmStop();
+  if (_nlState.rafId) { cancelAnimationFrame(_nlState.rafId); _nlState.rafId = null; }
+  _nlUpdateDisplay();
+  _renderNL();
+}
+
+function _nlTick() {
+  if (!_nlState.isHolding) return;
+  _nlUpdateDisplay();
+  _nlState.rafId = requestAnimationFrame(_nlTick);
+}
+
+function _nlUpdateDisplay() {
+  const secsPerPt = D.settings.notListeningSecs || 60;
+  const elapsed = _nlState.accumulated + (_nlState.isHolding ? Date.now() - _nlState.holdStart : 0);
+  const totalSecs = Math.floor(elapsed / 1000);
+  const mins = String(Math.floor(totalSecs / 60)).padStart(2,'0');
+  const secs = String(totalSecs % 60).padStart(2,'0');
+  _nlState.diamondsLost = Math.floor(elapsed / 1000 / secsPerPt);
+
+  const timerEl = document.getElementById('nl-timer');
+  const ptsEl   = document.getElementById('nl-dmds');
+  if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+  if (ptsEl) ptsEl.textContent = _nlState.diamondsLost > 0
+    ? `−${_nlState.diamondsLost} 💎 so far`
+    : 'Hold the button to deduct diamonds';
+}
+
+function _nlCancel() {
+  _nlAlarmStop();
+  if (_nlState.rafId) cancelAnimationFrame(_nlState.rafId);
+  _nlState = { isHolding:false, holdStart:null, accumulated:0, diamondsLost:0, selectedKids:[], rafId:null };
+  document.getElementById('nl-root').classList.remove('open');
+  document.getElementById('nl-root').innerHTML = '';
+}
+
+function _nlDone() {
+  if (_nlState.isHolding) _nlHoldEnd();
+  const dmds = _nlState.diamondsLost;
+  const sessionSecs = Math.floor(_nlState.accumulated / 1000);
+  const t = today();
+  if (_nlState.selectedKids.length > 0) {
+    _nlState.selectedKids.forEach(kidId => {
+      const m = getMember(kidId);
+      if (!m) return;
+      normalizeMember(m);
+      // Persist NL seconds for today and lifetime
+      if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
+      m.nlTodaySecs = (m.nlTodaySecs || 0) + sessionSecs;
+      m.nlLifetimeSecs = (m.nlLifetimeSecs || 0) + sessionSecs;
+      if (dmds > 0) {
+        m.diamonds = Math.max(0, (m.diamonds || 0) - dmds);
+        addHistory('penalty', kidId, `Not listening penalty`, -dmds);
+      }
+    });
+    saveData();
+    if (dmds > 0) {
+      const names = _nlState.selectedKids.map(id => getMember(id)?.name).filter(Boolean).join(' & ');
+      toast(`Deducted ${dmds} 💎 from ${names}`);
+    }
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
+  }
+  _nlCancel();
+}
+
+// ── TEXT-TO-SPEECH ────────────────────────────────────────────
+let ttsEnabled = true;
+
+function getEnglishVoices() {
+  return (window.speechSynthesis?.getVoices() || []).filter(v => v.lang.startsWith('en'));
+}
+
+function getBestVoice(name) {
+  const voices = getEnglishVoices();
+  if (!voices.length) return null;
+  if (name) {
+    const match = voices.find(v => v.name === name);
+    if (match) return match;
+  }
+  return voices.find(v => v.name === 'Samantha') || voices[0];
+}
+
+function speak(text, voiceName) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt  = new SpeechSynthesisUtterance(text);
+  utt.rate   = 0.88;
+  utt.pitch  = 1.15;
+  utt.volume = 1;
+  const voice = getBestVoice(voiceName || S.currentUser?.ttsVoice);
+  if (voice) utt.voice = voice;
+  window.speechSynthesis.speak(utt);
+}
+
+function setMemberVoice(i, voiceName) {
+  if (!S.setupMembers[i]) return;
+  S.setupMembers[i].ttsVoice = voiceName;
+}
+
+function previewMemberVoice(i) {
+  const sel = document.getElementById(`voice-sel-${i}`);
+  const voiceName = sel?.value || S.setupMembers[i]?.ttsVoice;
+  if (!voiceName) return;
+  speak(`Hi, I'm ${voiceName}!`, voiceName);
+}
+
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    if (SETUP_STEPS[S.setupStep] === 'members') renderSetupStep();
+  };
+}
+
+function fmtCurrencySpeech(amount, symbol) {
+  if ((symbol || '$') !== '$') return `${amount.toFixed(2)} ${symbol}`;
+  const dollars = Math.floor(amount);
+  const cents   = Math.round((amount - dollars) * 100);
+  if (dollars > 0 && cents > 0) return `${dollars} dollar${dollars !== 1 ? 's' : ''} and ${cents} cent${cents !== 1 ? 's' : ''}`;
+  if (dollars > 0) return `${dollars} dollar${dollars !== 1 ? 's' : ''}`;
+  return `${cents} cent${cents !== 1 ? 's' : ''}`;
+}
+
+// ── ICON RENDERER ─────────────────────────────────────────────
+// Renders a Phosphor duotone icon or falls back to raw emoji for legacy data
+function renderIcon(name, color, extraStyle='') {
+  if (!name) return '';
+  // Legacy emoji: any string with non-ASCII characters
+  if ([...name].some(c => c.codePointAt(0) > 127)) return name;
+  const col = color || '#6C63FF';
+  return `<i class="ph-duotone ph-${name}" style="color:${col};${extraStyle}"></i>`;
+}
+
+function selChoreColor(el, color) {
+  document.getElementById('cm-icon-color').value = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
+function selPrizeColor(el, color) {
+  document.getElementById('pm-icon-color').value = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('prize-icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
+// ── TOAST ─────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2900);
+}
+
+// ── POINTS BURST ──────────────────────────────────────────────
+function diamondsBurst(x, y, diamonds) {
+  const el = document.createElement('div');
+  el.className = 'dmds-burst';
+  el.textContent = `+${diamonds} 💎`;
+  el.style.left = `${x}px`;
+  el.style.top  = `${y}px`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1700);
+}
+
+// ── DIAMOND RAIN ──────────────────────────────────────────────
+function _startRain(pieces) {
+  const wrap = document.getElementById('confetti-root');
+  const batchId = Date.now() + Math.random();
+  pieces.forEach(el => { el.dataset.batch = batchId; wrap.appendChild(el); });
+  setTimeout(() => {
+    wrap.querySelectorAll(`[data-batch="${batchId}"]`).forEach(el => el.remove());
+  }, 5000);
+}
+
+function launchBadgeRain(iconHtml, count = 55) {
+  const isHtml = iconHtml.includes('<');
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'diamond-rain-piece';
+    if (isHtml) el.innerHTML = iconHtml;
+    else el.textContent = iconHtml;
+    el.style.cssText = `
+      left:${Math.random()*110 - 5}%;
+      font-size:${1.0 + Math.random()*1.4}rem;
+      animation-duration:${1.5 + Math.random()*2}s;
+      animation-delay:${Math.random()*1.6}s;
+      opacity:${0.7 + Math.random()*0.3};
+    `;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
+let _eggTaps = 0, _eggTimer = null;
+function easterEggTap() {
+  _eggTaps++;
+  const el = document.getElementById('egg-gem');
+  if (el) {
+    el.style.transform = 'scale(1.4)';
+    el.style.opacity = Math.min(0.25 + _eggTaps * 0.15, 1);
+    setTimeout(() => { if (el) el.style.transform = 'scale(1)'; }, 120);
+  }
+  clearTimeout(_eggTimer);
+  if (_eggTaps >= 5) {
+    _eggTaps = 0;
+    launchGemsproutRain();
+    return;
+  }
+  _eggTimer = setTimeout(() => { _eggTaps = 0; if (el) el.style.opacity = '0.25'; }, 2000);
+}
+
+function launchGemsproutRain(count = 40) {
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('img');
+    el.src = 'gemsproutpadded.png';
+    el.className = 'diamond-rain-piece';
+    const size = 32 + Math.random() * 36;
+    el.style.cssText = `left:${Math.random()*110 - 5}%;width:${size}px;height:${size}px;animation-duration:${1.8 + Math.random()*2}s;animation-delay:${Math.random()*1.8}s;opacity:${0.75 + Math.random()*0.25};`;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
+function launchConfetti(count = 50, emoji = '💎') {
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'diamond-rain-piece';
+    el.textContent = emoji;
+    el.style.cssText = `
+      left:${Math.random()*110 - 5}%;
+      font-size:${1.0 + Math.random()*1.6}rem;
+      animation-duration:${1.4 + Math.random()*2}s;
+      animation-delay:${Math.random()*1.4}s;
+      opacity:${0.7 + Math.random()*0.3};
+    `;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
+function launchMixedRain(count = 120) {
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'diamond-rain-piece';
+    el.textContent = i % 3 === 0 ? '⚡' : '💎';
+    el.style.cssText = `
+      left:${Math.random()*110 - 5}%;
+      font-size:${1.0 + Math.random()*1.6}rem;
+      animation-duration:${1.4 + Math.random()*2}s;
+      animation-delay:${Math.random()*1.4}s;
+      opacity:${0.7 + Math.random()*0.3};
+    `;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
+function launchDollarRain(count = 80) {
+  const bills = ['💵','💵','💵','💰','💵'];
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'diamond-rain-piece';
+    el.textContent = bills[i % bills.length];
+    el.style.cssText = `
+      left:${Math.random()*110 - 5}%;
+      font-size:${1.0 + Math.random()*1.6}rem;
+      animation-duration:${1.4 + Math.random()*2}s;
+      animation-delay:${Math.random()*1.4}s;
+      opacity:${0.7 + Math.random()*0.3};
+    `;
+    pieces.push(el);
+  }
+  _startRain(pieces);
+}
+
+// ── CELEBRATION OVERLAY ───────────────────────────────────────
+const _celebQueue = [];
+
+function showCelebration(opts) {
+  _celebQueue.push(opts);
+  // Defer so all synchronous calls batch before any rendering,
+  // ensuring the first modal knows the full queue size.
+  if (_celebQueue.length === 1) setTimeout(_showNextCelebration, 0);
+}
+
+function _showNextCelebration() {
+  const root = document.getElementById('celebration-root');
+  if (root.innerHTML.trim() || _celebQueue.length === 0) return;
+  _renderCelebration(_celebQueue.shift());
+}
+
+function _renderCelebration({ icon='💎', title='Great job!', sub='', diamonds=null, dollars=null, cur='$', noAnimation=false, badgeIcon=null, btnLabel=null, tts=null, onClose=null }) {
+  const root = document.getElementById('celebration-root');
+  const ptsHtml = diamonds !== null
+    ? `<div class="cel-diamonds">+${diamonds} 💎</div>`
+    : dollars !== null
+      ? `<div class="cel-diamonds" style="color:#16A34A">+${cur}${dollars.toFixed(2)}</div>`
+      : '';
+  const remaining = _celebQueue.length;
+  const moreHtml = remaining > 0
+    ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${remaining} more notification${remaining > 1 ? 's' : ''} waiting...</div>`
+    : '';
+
+  root.innerHTML = `
+    <div class="celebration-overlay" id="cel-overlay">
+      <div class="celebration-box">
+        <div class="cel-icon">${icon}</div>
+        <div class="cel-title">${title}</div>
+        ${sub ? `<div class="cel-sub">${sub}</div>` : ''}
+        ${ptsHtml}
+        ${moreHtml}
+        <button class="btn btn-primary btn-full" onclick="closeCelebration()">${btnLabel ?? 'Yay! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i>'}</button>
+      </div>
+    </div>`;
+
+  if (!noAnimation) {
+    if (badgeIcon !== null) launchBadgeRain(badgeIcon);
+    else if (dollars !== null) launchDollarRain();
+    else launchConfetti();
+  }
+  if (tts) speak(tts);
+  window._celebOnClose = onClose;
+}
+
+function closeCelebration() {
+  document.getElementById('celebration-root').innerHTML = '';
+  if (typeof window._celebOnClose === 'function') {
+    window._celebOnClose();
+    window._celebOnClose = null;
+  }
+  if (_celebQueue.length > 0) setTimeout(_showNextCelebration, 300);
+}
+
+function testWhileAwayModal() {
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
+    diamonds: 5,
+    onClose:  () => {},
+  });
+}
+
+function testQueuedCelebrations() {
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Your parent approved "Brush Your Teeth" and you earned diamonds!',
+    diamonds: 5,
+    onClose:  () => {},
+  });
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:3rem"></i>',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Great job on your homework!',
+    diamonds: 10,
+    onClose:  () => {},
+  });
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
+    title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
+    sub:      'Your parent approved "Clean Your Room" and you earned diamonds!',
+    diamonds: 8,
+    onClose:  () => {},
+  });
+}
+
+function testSavingsDeposit() {
+  const cur = D.settings.currency || '$';
+  showCelebration({
+    icon:    '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:3rem"></i>',
+    title:   '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i> Savings Deposit!',
+    sub:     'Birthday money from Grandma!',
+    dollars: 20,
+    cur,
+    onClose: () => {},
+  });
+}
+
+function testSpendApproved() {
+  const cur = D.settings.currency || '$';
+  showCelebration({
+    icon:        '<i class="ph-duotone ph-shopping-bag" style="color:#16A34A;font-size:3rem"></i>',
+    title:       '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Spend Approved!',
+    sub:         '"Lego set" — $15.00 approved. Balance: $32.50',
+    noAnimation: true,
+    onClose:     () => {},
+  });
+}
+
+function testSpendDenied() {
+  showCelebration({
+    icon:        '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>',
+    title:       '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time',
+    sub:         'Your spend request for "Video game" — $60.00 wasn\'t approved.',
+    noAnimation: true,
+    btnLabel:    'Okay',
+    onClose:     () => {},
+  });
+}
+
+function emailDebugLogs() {
+  const html = document.documentElement;
+  const body = document.body;
+  const logs = [
+    `UA: ${navigator.userAgent}`,
+    `window.inner: ${window.innerWidth}x${window.innerHeight}`,
+    `screen: ${screen.width}x${screen.height}`,
+    `devicePixelRatio: ${window.devicePixelRatio}`,
+    `html scrollTop/Height: ${html.scrollTop} / ${html.scrollHeight}`,
+    `html clientHeight: ${html.clientHeight}`,
+    `body scrollTop/Height: ${body.scrollTop} / ${body.scrollHeight}`,
+    `body clientHeight: ${body.clientHeight}`,
+    `body offsetHeight: ${body.offsetHeight}`,
+    `visualViewport: ${window.visualViewport?.width}x${window.visualViewport?.height} offset:${window.visualViewport?.offsetTop}`,
+    `safeAreaTop: ${getComputedStyle(html).getPropertyValue('--sat') || 'check env()'}`,
+    `screens visible: ${[...document.querySelectorAll('.screen')].filter(s => s.style.display !== 'none').map(s => s.id).join(', ')}`,
+  ].join('\n');
+  window.location.href = `mailto:gemsproutapp@gmail.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
+}
+
+function testCameraPermission() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.onchange = () => toast('Camera permission granted!');
+  input.click();
+}
+
+// ── MODAL ─────────────────────────────────────────────────────
+function showModal(html) {
+  // Lock body scroll so iOS keyboard opening doesn't shift background content
+  const scrollY = window.scrollY;
+  document.body.style.position = 'fixed';
+  document.body.style.top      = `-${scrollY}px`;
+  document.body.style.width    = '100%';
+  document.body.dataset.scrollY = scrollY;
+  // Also lock the main-content scroller (has its own overflow-y: auto)
+  const mc = document.querySelector('.main-content');
+  if (mc) { mc.dataset.prevOverflow = mc.style.overflowY; mc.style.overflowY = 'hidden'; }
+
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBg(event)">
+      <div class="modal" id="modal-sheet">
+        <div class="modal-handle" id="modal-drag-handle"></div>
+        ${html}
+      </div>
+    </div>`;
+  _initModalSwipe();
+}
+
+function _initModalSwipe() {
+  const sheet = document.getElementById('modal-sheet');
+  if (!sheet) return;
+  let startY = 0, currentY = 0, dragging = false;
+  const onStart = (e) => {
+    // Arm dismiss gesture if touch is in the top 56px of the sheet (generous handle zone)
+    const sheetRect = sheet.getBoundingClientRect();
+    const touchY = e.touches[0].clientY;
+    if (touchY > sheetRect.top + 56) return;
+    startY   = e.touches[0].clientY;
+    currentY = startY;
+    dragging = true;
+    sheet.style.transition = 'none';
+  };
+  const onMove = (e) => {
+    if (!dragging) return;
+    // Safe to preventDefault — we only get here when dragging from the handle
+    e.preventDefault();
+    currentY = e.touches[0].clientY;
+    const dy = Math.max(0, currentY - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  };
+  const onEnd = () => {
+    if (!dragging) return;
+    dragging = false;
+    const dy = Math.max(0, currentY - startY);
+    if (dy > 100) {
+      sheet.style.transition = 'transform 0.22s ease';
+      sheet.style.transform  = 'translateY(110%)';
+      setTimeout(closeModal, 220);
+    } else {
+      sheet.style.transition = 'transform 0.22s ease';
+      sheet.style.transform  = '';
+    }
+  };
+  sheet.addEventListener('touchstart', onStart, { passive: true });
+  sheet.addEventListener('touchmove',  onMove,  { passive: false });
+  sheet.addEventListener('touchend',   onEnd);
+}
+
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+  // Restore body scroll position locked by showModal
+  const savedY = parseInt(document.body.dataset.scrollY || '0', 10);
+  document.body.style.position = '';
+  document.body.style.top      = '';
+  document.body.style.width    = '';
+  delete document.body.dataset.scrollY;
+  window.scrollTo(0, savedY);
+  // Restore main-content scroller
+  const mc = document.querySelector('.main-content');
+  if (mc) { mc.style.overflowY = mc.dataset.prevOverflow || ''; delete mc.dataset.prevOverflow; }
+}
+
+function closeModalIfBg(e) {
+  if (e.target.id === 'modal-overlay') closeModal();
+}
+
+function openUserSettings() {
+  if (S.currentUser?.role === 'parent') {
+    renderSettings();
+    document.getElementById('settings-root').classList.add('open');
+  } else {
+    const name = S.currentUser?.name || 'User';
+    showModal(`
+      <div class="modal-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Settings</div>
+      <p style="color:var(--muted);font-size:0.95rem;margin-bottom:16px">Signed in as <strong>${esc(name)}</strong>.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+        <button class="btn btn-primary" onclick="switchUserNow()">Switch User</button>
+      </div>`);
+  }
+}
+
+function closeSettings() {
+  document.getElementById('settings-root').classList.remove('open');
+}
+
+// Swipe from left edge to close settings (iOS-style back gesture)
+(function() {
+  let startX = 0, startY = 0, tracking = false;
+  document.addEventListener('touchstart', e => {
+    if (e.touches[0].clientX < 24) { startX = e.touches[0].clientX; startY = e.touches[0].clientY; tracking = true; }
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > 60 && dy < 40) {
+      tracking = false;
+      const sr = document.getElementById('settings-root');
+      if (sr?.classList.contains('open')) closeSettings();
+    }
+  }, { passive: true });
+  document.addEventListener('touchend', () => { tracking = false; }, { passive: true });
+})();
+
+function switchUserNow() {
+  closeModal();
+  goHome();
+}
+
+const _expandedSettingsMembers = new Set();
+function toggleSettingsMember(id) {
+  if (_expandedSettingsMembers.has(id)) _expandedSettingsMembers.delete(id);
+  else _expandedSettingsMembers.add(id);
+  renderSettings();
+}
+
+function showResetPinFlow() {
+  if (!D.settings.parentPin) {
+    // No current PIN — go straight to setting a new one
+    showNewPinModal();
+    return;
+  }
+  // Close settings and use the real PIN/Face ID screen for verification
+  closeSettings();
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  S.pinMode   = 'pinReset';
+  document.getElementById('pin-content').innerHTML = `
+    <div class="pin-avatar"><i class="ph-duotone ph-lock-key" style="color:#6C63FF;font-size:2.5rem"></i></div>
+    <div class="pin-title">Verify Identity</div>
+    <div class="pin-sub">Enter your current PIN to reset it</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>
+    ${getBiometricCredentialId() ? `<button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="tryBiometricUnlock()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Use ${getBiometricLabel()}</button>` : ''}
+    <button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="openUserSettings()">Cancel</button>`;
+  clearTimeout(S._biometricTimer);
+  if (getBiometricCredentialId()) {
+    S._biometricTimer = setTimeout(() => tryBiometricUnlock(), 400);
+  }
+}
+
+function afterPinResetVerified() {
+  renderSettings();
+  document.getElementById('settings-root').classList.add('open');
+  showNewPinModal();
+}
+
+function showNewPinModal() {
+  showModal(`
+    <div class="modal-title">Set New PIN</div>
+    <div class="form-group">
+      <label class="form-label">New PIN <span class="form-label-hint">4 digits</span></label>
+      <input type="password" id="rp-new" maxlength="4" placeholder="4 digits" inputmode="numeric">
+      <div id="rp-new-error" style="display:none;color:var(--pink);font-size:0.8rem;margin-top:4px"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="applyNewPin()">Save</button>
+    </div>`);
+}
+
+function applyNewPin() {
+  const val = document.getElementById('rp-new')?.value.trim();
+  if (!val || val.length < 4) {
+    const err = document.getElementById('rp-new-error');
+    if (err) { err.textContent = 'Please enter a 4-digit PIN.'; err.style.display = 'block'; }
+    return;
+  }
+  D.settings.parentPin = val;
+  saveData();
+  closeModal();
+  if (isBiometricSupported() && !getBiometricCredentialId()) {
+    offerBiometricSetup(() => { toast('PIN updated'); renderSettings(); });
+  } else {
+    toast('PIN updated');
+    renderSettings();
+  }
+}
+
+function renderSettings() {
+  const s = D.settings;
+  const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
+
+  const familyHtml = members.map(k => {
+    const isExpanded = _expandedSettingsMembers.has(k.id);
+    const actions = isExpanded ? `
+      <div class="settings-member-actions">
+        <div class="settings-member-action-row">
+          <div style="flex:1">
+            <div class="settings-member-action-label">💎 Adjust Diamonds</div>
+            <div class="settings-member-action-sub">Manually add or remove diamonds — use for bonuses, corrections, or special rewards</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="showAddPointsModal('${k.id}')">Adjust</button>
+        </div>
+        ${s.savingsEnabled !== false ? `
+        <div class="settings-member-action-row">
+          <div style="flex:1">
+            <div class="settings-member-action-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Adjust Savings</div>
+            <div class="settings-member-action-sub">Deposit or withdraw real dollars — birthday money, allowance, or spending</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-secondary btn-sm" onclick="showSavingsHistory('${k.id}')"><i class="ph-duotone ph-clock-clockwise" style="font-size:0.9rem;vertical-align:middle"></i></button>
+            <button class="btn btn-secondary btn-sm" onclick="showAdjustSavingsModal('${k.id}')">Adjust</button>
+          </div>
+        </div>` : ''}
+        <div class="settings-member-action-row">
+          <div style="flex:1">
+            <div class="settings-member-action-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
+            <div class="settings-member-action-sub">Set which days this kid is here vs. at the other household — streaks skip away days automatically</div>
+          </div>
+          <button class="btn btn-sm" style="background:${k.splitHousehold?.enabled?'var(--green)':'#F3F4F6'};color:${k.splitHousehold?.enabled?'#fff':'var(--text)'}" onclick="showSplitHouseholdModal('${k.id}')">${k.splitHousehold?.enabled?'On':'Set up'}</button>
+        </div>
+        ${k.splitHousehold?.enabled ? (() => {
+          const isHere = isMemberHereOnDate(k, today());
+          return `<div class="settings-member-action-row">
+            <div style="flex:1">
+              <div class="settings-member-action-label">Today's Status</div>
+              <div class="settings-member-action-sub">Is ${esc(k.name)} at your house today?</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm" style="background:${isHere?'var(--green)':'#F3F4F6'};color:${isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',true)">Here</button>
+              <button class="btn btn-sm" style="background:${!isHere?'#EF4444':'#F3F4F6'};color:${!isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',false)">Away</button>
+            </div>
+          </div>`;
+        })() : ''}
+      </div>` : '';
+    return `
+      <div style="border-left:4px solid ${k.color||'#6C63FF'};padding-left:12px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="toggleSettingsMember('${k.id}')">
+          <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
+          <div style="flex:1">
+            <div style="font-weight:700">${esc(k.name)}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0}${s.savingsEnabled!==false?` · <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i> ${s.currency||'$'}${(k.savings||0).toFixed(2)}`:''}</div>
+          </div>
+          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem"></i>
+        </div>
+        ${actions}
+      </div>`;
+  }).join('');
+
+  const pinLabel = D.settings.parentPin ? 'Reset PIN' : 'Set PIN';
+  const bioBtn = isBiometricSupported() ? (getBiometricCredentialId()
+    ? `<button class="btn btn-secondary btn-sm" onclick="removeBiometric();renderSettings()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Remove ${getBiometricLabel()}</button>`
+    : `<button class="btn btn-secondary btn-sm" onclick="registerBiometric()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Set Up ${getBiometricLabel()}</button>`) : '';
+
+  document.getElementById('settings-root').innerHTML = `
+    <div class="settings-header">
+      <button class="btn-back" onclick="closeSettings()">←</button>
+      <span class="settings-header-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Settings</span>
+      <button class="btn btn-secondary btn-sm" onclick="closeSettings();goHome()">Switch User</button>
+    </div>
+    <div class="settings-body">
+
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <div style="font-size:1.8rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${getFamilyCode()}</div>
+          <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${getFamilyCode()}').then(()=>toast('Code copied!'))">
+            <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
+          </button>
+        </div>
+        <div style="font-size:0.8rem;color:var(--muted)">Share this code with another device to sync your family's data.</div>
+        ${RC.betaMode ? `<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
+          <span style="color:var(--muted)">Install on other devices: </span>
+          <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a>
+        </div>` : ''}
+      </div>
+
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Auto-approve chores</div>
+            <div class="toggle-sub">Kids earn diamonds instantly without parent review</div></div>
+          <label class="toggle"><input type="checkbox" ${s.autoApprove?'checked':''} onchange="saveSetting('autoApprove',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Hide unavailable chores</div>
+            <div class="toggle-sub">Chores outside their allowed time window won't show on kids' screens</div></div>
+          <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Sort prizes by value</div>
+            <div class="toggle-sub">Shows cheapest prizes first in the shop and team tabs</div></div>
+          <label class="toggle"><input type="checkbox" ${s.sortPrizesByValue?'checked':''} onchange="saveSetting('sortPrizesByValue',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="form-group">
+          <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family Timezone</label>
+          <select onchange="saveSetting('familyTimezone',this.value)" style="width:100%">
+            ${(Intl.supportedValuesOf?.('timeZone') ?? [s.familyTimezone]).map(tz =>
+              `<option value="${tz}" ${tz === (s.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) ? 'selected' : ''}>${tz.replace(/_/g,' ')}</option>`
+            ).join('')}
+          </select>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
+            ${bioBtn}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div class="card-title" style="margin:0"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Savings Banking</div>
+          <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+        </div>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px;margin-top:4px">Kids can convert diamonds into real savings.</p>
+        ${s.savingsEnabled !== false ? `
+        <div class="form-group">
+          <label class="form-label">Diamonds per dollar <span class="form-label-hint">conversion rate</span></label>
+          <input type="number" value="${s.diamondsPerDollar||10}" min="1" onchange="saveSetting('diamondsPerDollar',parseInt(this.value)||10)">
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Savings matching</div>
+            <div class="toggle-sub">Parents match a percentage of what kids save</div></div>
+          <label class="toggle"><input type="checkbox" ${s.savingsMatchingEnabled?'checked':''} onchange="saveSetting('savingsMatchingEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+        </div>
+        ${s.savingsMatchingEnabled ? `
+        <div class="form-group mt-8">
+          <label class="form-label">Match percentage <span class="form-label-hint">% of amount saved</span></label>
+          <input type="number" value="${s.savingsMatchPercent||50}" min="1" max="200" onchange="saveSetting('savingsMatchPercent',parseInt(this.value)||50)">
+        </div>` : ''}
+        <div class="toggle-row" style="margin-top:${s.savingsMatchingEnabled?'4':'8'}px">
+          <div><div class="toggle-label">Add interest</div>
+            <div class="toggle-sub">Automatically grow savings by a set rate</div></div>
+          <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+        </div>
+        ${s.savingsInterestEnabled ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div class="form-group mb-0">
+            <label class="form-label">Interest rate %</label>
+            <input type="number" value="${s.savingsInterestRate||5}" min="0.1" max="100" step="0.1" onchange="saveSetting('savingsInterestRate',parseFloat(this.value)||5)">
+          </div>
+          <div class="form-group mb-0">
+            <label class="form-label">Period</label>
+            <select onchange="saveSetting('savingsInterestPeriod',this.value);renderSettings()">
+              <option value="weekly"  ${s.savingsInterestPeriod==='weekly' ?'selected':''}>Weekly</option>
+              <option value="monthly" ${(s.savingsInterestPeriod||'monthly')==='monthly'?'selected':''}>Monthly</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
+          <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px"></i>
+          ${(s.savingsInterestPeriod||'monthly')==='weekly'
+            ? 'Interest is applied every <strong>Monday</strong>.'
+            : 'Interest is applied on the <strong>1st of each month</strong>.'}
+        </div>` : ''}
+        ` : ''}
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</div>
+        ${familyHtml || '<div class="empty-state"><div class="empty-text">No kids yet</div></div>'}
+        <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="closeSettings();goSetup()">Edit Family Setup</button>
+        <div class="toggle-row" style="margin-top:14px">
+          <div>
+            <div class="toggle-label"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> 6 PM Home Check</div>
+            <div class="toggle-sub">Prompts you at 6 PM on days that split-household kids are expected to be home, but have not completed any chores yet.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div class="card-title" style="margin:0"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not Listening</div>
+          <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
+        </div>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
+          Hold the big red button on the dashboard to accumulate time. Seconds convert to diamond deductions when you release. Toggle off to hide the button entirely.
+        </p>
+        <div class="form-group mb-0">
+          <label class="form-label">Seconds per diamond lost</label>
+          <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
+        </div>
+      </div>
+
+      <div class="card" style="border:2px solid #FEE2E2">
+        <div class="card-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</div>
+        <button class="btn btn-danger btn-sm" onclick="switchFamily()" style="width:100%;margin-bottom:8px">
+          <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and lets you connect to a different family using their code. Does not delete any family's data from the cloud.</div>
+        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
+      </div>
+
+      ${RC.betaMode ? `<div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
+        <div class="card-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</div>
+        <div style="background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:#78350F;line-height:1.5">
+          <strong>For testers only.</strong> These settings exist to help us find and fix bugs before launch. They will not be present in the final App Store release.
+        </div>
+        <div class="card" style="background:#F0FDF4;border:1.5px solid var(--green);margin-bottom:10px">
+          <div class="card-title" style="font-size:0.9rem"><i class="ph-duotone ph-cloud" style="color:#10B981;font-size:1rem;vertical-align:middle"></i> Cloud Sync</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:0.85rem;color:var(--green);font-weight:600"><i class="ph-duotone ph-check-circle" style="color:var(--green);vertical-align:middle"></i> Automatic</span>
+            <button class="btn btn-secondary btn-sm" onclick="location.reload(true)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload App</button>
+          </div>
+          ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
+        </div>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchConfetti(60)">💎 Test Diamond Rain</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchMixedRain()">⚡ Test Combo Rain</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Test While You Were Away</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()"><i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Test Queued Notifications (3)</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> Test Savings Deposit</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()">🛍️ Test Spend Approved</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
+        <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
+      </div>` : ''}
+
+    </div>`;
+}
+
+// ── SCREEN NAVIGATION ─────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.removeAttribute('style'); s.classList.remove('loading'); });
+  document.getElementById(id).classList.add('active');
+}
+
+function updateSyncBar() {
+  ['kid-sync-bar','parent-sync-bar'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (S.syncStatus==='error') { el.className='sync-bar error'; el.textContent='Sync failed — check connection'; }
+    else { el.innerHTML=''; el.className=''; }
+  });
+}
+
+// ── RE-RENDER CURRENT VIEW ────────────────────────────────────
+// Called after cloud sync updates D; re-renders whichever view is active
+function renderCurrentView() {
+  if (!S.currentUser) return;
+  const u = S.currentUser;
+  if (u.role === 'parent')  renderParentView();
+  else renderKidView();
+}
+
+// ── PULL TO REFRESH ────────────────────────────────────────────
+(function setupPullToRefresh() {
+  return; // Disabled — appears behind iOS notch; manual refresh via Firestore subscription
+  const indicator = document.getElementById('ptr-indicator');
+  let startY = 0, pulling = false, triggered = false, activeScroller = null;
+  let lastScrollTime = 0;
+  const THRESHOLD = 72; // px to pull before release triggers refresh
+  const SCROLL_COOLDOWN = 350; // ms to wait after any scroll before arming PTR
+
+  // Track all scrolls — element-level (main-content) and window-level
+  const markScroll = () => { lastScrollTime = Date.now(); };
+  document.addEventListener('scroll', markScroll, { passive: true, capture: true });
+  window.addEventListener('scroll', markScroll, { passive: true });
+
+  // Returns true if the page is definitely NOT at the very top
+  function pageIsScrolled() {
+    if (window.scrollY > 2) return true;
+    if (document.documentElement.scrollTop > 2) return true;
+    if (activeScroller && activeScroller.scrollTop > 2) return true;
+    return false;
+  }
+
+  function setIndicator(pullPx) {
+    if (pullPx <= 0) {
+      indicator.style.height = '0';
+      indicator.innerHTML = '';
+      return;
+    }
+    const pct  = Math.min(pullPx / THRESHOLD, 1);
+    const h    = Math.round(pct * 52);
+    indicator.style.height = h + 'px';
+    indicator.style.transition = 'none';
+    indicator.innerHTML = pullPx >= THRESHOLD
+      ? '<span>↑ Release to refresh</span>'
+      : '<span>↓ Pull to refresh</span>';
+  }
+
+  function doRefresh() {
+    indicator.style.transition = 'height 0.15s ease';
+    indicator.style.height = '52px';
+    indicator.innerHTML = '<div class="ptr-spinner"></div><span>Refreshing…</span>';
+    // Force a fresh Firestore fetch, fall back to local re-render
+    const done = () => {
+      indicator.style.height = '0';
+      setTimeout(() => { indicator.innerHTML = ''; }, 160);
+    };
+    try {
+      db.doc(getFamilyDoc()).get({ source: 'server' }).then(snap => {
+        if (snap.exists) {
+          D = normalizeData(snap.data());
+          try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+        }
+        renderCurrentView();
+        done();
+      }).catch(() => { renderCurrentView(); done(); });
+    } catch(e) { renderCurrentView(); done(); }
+  }
+
+  document.addEventListener('touchstart', e => {
+    const scroller = e.target.closest('.main-content');
+    if (!scroller) return;
+    activeScroller = scroller;
+    if (pageIsScrolled()) return;
+    if (Date.now() - lastScrollTime < SCROLL_COOLDOWN) return;
+    startY    = e.touches[0].clientY;
+    pulling   = true;
+    triggered = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!pulling) return;
+    // Abort if the page has scrolled since touchstart
+    if (pageIsScrolled()) { pulling = false; setIndicator(0); return; }
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0) { pulling = false; setIndicator(0); return; }
+    setIndicator(dy);
+    if (dy >= THRESHOLD) triggered = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (!pulling) return;
+    pulling = false;
+    activeScroller = null;
+    if (triggered) {
+      doRefresh();
+    } else {
+      indicator.style.transition = 'height 0.2s ease';
+      indicator.style.height = '0';
+      setTimeout(() => { indicator.innerHTML = ''; }, 200);
+    }
+    triggered = false;
+  }, { passive: true });
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 3 — HOME SCREEN + SETUP WIZARD
+═══════════════════════════════════════════════════════════════ */
+
+// ── HOME SCREEN ───────────────────────────────────────────────
+function renderHome() {
+  showScreen('screen-home');
+  const members = D.family.members;
+  const cards = members.map(m => {
+    const bday    = isBirthday(m);
+    const mode    = m.displayMode || 'regular';
+    const modeLabel = m.role === 'parent' ? 'Parent'
+                    : mode === 'tiny'     ? 'Little Kid'
+                    : 'Kid';
+    const ptsLabel = m.role === 'parent' ? '<i class="ph-duotone ph-gear-six" style="color:#fff;font-size:0.9rem;vertical-align:middle"></i> Admin'
+                   : `💎 ${m.diamonds||0} 💎`;
+    return `
+      <button class="profile-card${bday?' bday-card':''}" style="--member-color:${m.color||'#6C63FF'};position:relative"
+              onclick="selectProfile('${m.id}')">
+        ${bday ? `<span class="bday-badge">🎂</span>` : ''}
+        <span class="profile-avatar">${m.avatar||'🙂'}</span>
+        <span class="profile-name">${esc(m.name)}</span>
+        <span class="profile-role">${modeLabel}</span>
+        <span class="profile-diamonds">${ptsLabel}</span>
+      </button>`;
+  }).join('');
+  const anyBday = members.some(m => m.role !== 'parent' && isBirthday(m));
+  const bdayBanner = anyBday
+    ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> It's a birthday today! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
+
+  document.getElementById('home-content').innerHTML = `
+    <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100dvh;display:flex;flex-direction:column">
+      <img class="home-logo" src="gemsproutpadded.png">
+      <div class="home-title">GemSprout</div>
+      <div class="home-family-name">${esc(D.family.name)}</div>
+      <div class="profile-grid">${cards}</div>
+      <button class="home-setup-btn" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Edit Family</button>
+    </div>`;
+
+  // Inline — since we're modifying a child of the screen, re-render properly:
+  const root = document.getElementById('screen-home');
+  root.innerHTML = `
+    ${bdayBanner}
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:24px">
+      <img class="home-logo" src="gemsproutpadded.png" style="margin-top:20px">
+      <div class="home-title">GemSprout</div>
+      <div class="home-family-name">${esc(D.family.name)}</div>
+      <div class="profile-grid" style="max-width:980px;width:100%;padding:0">${cards}</div>
+    </div>
+    <button class="home-setup-btn" style="margin-bottom:28px" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Edit Family</button>`;
+}
+
+function selectProfile(id) {
+  const member = getMember(id);
+  if (!member) return;
+  setCurrentUserId(member.id);
+
+  // Birthday check — trigger before entering any view
+  if (isBirthday(member)) {
+    S.currentUser = member;
+    launchConfetti(80);
+    showCelebration({
+      icon:  '🎂',
+      title: `Happy Birthday, ${member.name}!`,
+      sub:   '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Have an amazing day! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
+      tts:   isTiny(member) ? `Happy Birthday ${member.name}! Wishing you the most wonderful day!` : null,
+      onClose: () => routeToView(member),
+    });
+    return;
+  }
+
+  S.currentUser = member;
+  routeToView(member);
+}
+
+function routeToView(member) {
+  const mode = member.displayMode;
+  if (member.role === 'parent') {
+    renderParentView();
+  } else {
+    renderKidView(); // handles both 'tiny' and 'regular'
+  }
+}
+
+// ── PIN SCREEN ────────────────────────────────────────────────
+function renderPin() {
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  const m = S.currentUser;
+  document.getElementById('pin-content').innerHTML = `
+    <div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>
+    <div class="pin-title">Welcome back, ${esc(m.name)}!</div>
+    <div class="pin-sub">Enter your PIN</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>
+    <button class="btn btn-secondary mt-16" onclick="showAppPin()">← Back</button>`;
+}
+
+function pinKey(k) {
+  if (k === '⌫') {
+    S.pinBuffer = S.pinBuffer.slice(0,-1);
+  } else if (S.pinBuffer.length < 4) {
+    S.pinBuffer += k;
+  }
+  // Update dots
+  for (let i=0;i<4;i++) {
+    const dot = document.getElementById('pd'+i);
+    if (dot) dot.classList.toggle('filled', i < S.pinBuffer.length);
+  }
+  if (S.pinBuffer.length === 4) {
+    setTimeout(() => {
+      if (S.pinBuffer === D.settings.parentPin) {
+        S.pinBuffer = '';
+        if (S.pinMode === 'pinReset') { afterPinResetVerified(); return; }
+        if (S.pinMode === 'app') {
+          setAppUnlocked(true);
+          const rememberedUser = getMember(getCurrentUserId());
+          if (rememberedUser) {
+            S.currentUser = rememberedUser;
+            routeToView(rememberedUser);
+          } else {
+            renderHome();
+          }
+          return;
+        }
+        renderParentView();
+      } else {
+        const err = document.getElementById('pin-error');
+        if (err) { err.textContent='Incorrect PIN, try again'; err.classList.remove('hidden'); }
+        setTimeout(() => {
+          S.pinBuffer = '';
+          for (let i=0;i<4;i++) { const d=document.getElementById('pd'+i); if(d) d.classList.remove('filled'); }
+        }, 500);
+      }
+    }, 200);
+  }
+}
+
+// ── BIOMETRIC / FACE ID ───────────────────────────────────────
+const BIOMETRIC_KEY = 'gemsprout_biometric_id';
+
+function isNative() {
+  return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+
+let _biometricAvailable = null;
+let _biometricType = null; // 1 = Touch ID, 2 = Face ID
+
+async function checkBiometricAvailability() {
+  if (isNative()) {
+    try {
+      const { NativeBiometric } = Capacitor.Plugins;
+      const result = await NativeBiometric.isAvailable();
+      _biometricAvailable = result.isAvailable;
+      _biometricType = result.biometryType || null;
+    } catch { _biometricAvailable = false; }
+  } else {
+    _biometricAvailable = !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+  }
+}
+
+function isBiometricSupported() {
+  if (_biometricAvailable !== null) return _biometricAvailable;
+  // fallback before cache is populated (PWA only)
+  return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+}
+
+function getBiometricLabel() {
+  if (_biometricType === 1) return 'Touch ID';
+  if (_biometricType === 2) return 'Face ID';
+  return 'Face ID'; // default for PWA / unknown
+}
+
+function getBiometricCredentialId() {
+  return localStorage.getItem(BIOMETRIC_KEY);
+}
+
+let _biometricOfferCallback = null;
+
+function offerBiometricSetup(onComplete) {
+  _biometricOfferCallback = onComplete || null;
+  const label = getBiometricLabel();
+  showModal(`
+    <div style="text-align:center;padding:8px 0 4px">
+      <i class="ph-duotone ph-fingerprint" style="font-size:3rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">Use ${label}?</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:10px 0 0;line-height:1.5">Skip typing your PIN — unlock GemSprout instantly with ${label}.</p>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-secondary" onclick="declineBiometricOffer()">Not Now</button>
+      <button class="btn btn-primary" onclick="acceptBiometricOffer()">Set Up ${label}</button>
+    </div>`);
+}
+
+function acceptBiometricOffer() {
+  const cb = _biometricOfferCallback;
+  _biometricOfferCallback = null;
+  closeModal();
+  registerBiometricWithCallback(cb);
+}
+
+function declineBiometricOffer() {
+  const cb = _biometricOfferCallback;
+  _biometricOfferCallback = null;
+  closeModal();
+  if (cb) cb();
+}
+
+async function registerBiometricWithCallback(onComplete) {
+  if (!isBiometricSupported()) { if (onComplete) onComplete(); return; }
+  const label = getBiometricLabel();
+  try {
+    if (isNative()) {
+      const { NativeBiometric } = Capacitor.Plugins;
+      await NativeBiometric.verifyIdentity({ reason: `Set up ${label} for GemSprout`, title: `Set Up ${label}` });
+      localStorage.setItem(BIOMETRIC_KEY, 'native');
+    } else {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'GemSprout' },
+          user: { id: new Uint8Array(16), name: 'parent', displayName: 'Parent' },
+          pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+          timeout: 60000,
+        }
+      });
+      const id = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+      localStorage.setItem(BIOMETRIC_KEY, id);
+    }
+    toast(`${label} set up!`);
+  } catch(e) {
+    if (e.name !== 'NotAllowedError' && e.message !== 'Authentication cancelled.') {
+      alert(`Could not set up ${label}: ` + e.message);
+    }
+  } finally {
+    if (onComplete) onComplete();
+  }
+}
+
+function registerBiometric() {
+  registerBiometricWithCallback(() => renderSettings());
+}
+
+let _biometricInProgress = false;
+
+async function authenticateBiometric(onSuccess) {
+  if (_biometricInProgress) return false;
+  const storedId = getBiometricCredentialId();
+  if (!storedId || !isBiometricSupported()) return false;
+  _biometricInProgress = true;
+  try {
+    if (isNative()) {
+      const { NativeBiometric } = Capacitor.Plugins;
+      await NativeBiometric.verifyIdentity({ reason: 'Unlock GemSprout', title: 'GemSprout' });
+    } else {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
+      await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: rawId, type: 'public-key' }],
+          userVerification: 'required',
+          timeout: 60000,
+        }
+      });
+    }
+    onSuccess();
+    return true;
+  } catch(e) {
+    if (e.name !== 'NotAllowedError' && e.message !== 'Authentication cancelled.') {
+      console.warn('Biometric auth failed:', e.message);
+    }
+    return false;
+  } finally {
+    _biometricInProgress = false;
+  }
+}
+
+function removeBiometric() {
+  localStorage.removeItem(BIOMETRIC_KEY);
+  toast(`${getBiometricLabel()} removed`);
+}
+
+function tryBiometricUnlock() {
+  authenticateBiometric(() => {
+    S.pinBuffer = '';
+    if (S.pinMode === 'pinReset') { afterPinResetVerified(); return; }
+    if (S.pinMode === 'app') {
+      setAppUnlocked(true);
+      const rememberedUser = getMember(getCurrentUserId());
+      if (rememberedUser) {
+        S.currentUser = rememberedUser;
+        routeToView(rememberedUser);
+      } else {
+        renderHome();
+      }
+    } else {
+      renderParentView();
+    }
+  });
+}
+
+// ── SETUP WIZARD ──────────────────────────────────────────────
+const SETUP_STEPS_NEW  = ['welcome','parents','members','chores','prizes','sync','done'];
+const SETUP_STEPS_EDIT = ['welcome','parents','members','sync','done'];
+let SETUP_STEPS = SETUP_STEPS_NEW;
+
+function renderSetupGate() {
+  const gate = document.getElementById('setup-gate');
+  const content = document.getElementById('setup-content');
+  gate.style.display = 'flex';
+  content.style.display = 'none';
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:24px;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <img src="gemsproutpadded.png" style="width:120px;height:120px">
+      <div style="color:#fff;font-size:2rem;font-weight:800;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,0.2)">Welcome to GemSprout</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:1rem;text-align:center;max-width:280px">Chores, rewards, and goals for the whole family.</div>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
+        <button class="btn btn-primary" style="font-size:1.05rem;padding:16px;background:#fff;color:#6C63FF;border:none" onclick="startNewFamily()">
+          <i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:6px"></i> Get Started
+        </button>
+        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showJoinFamily()">
+          <i class="ph-duotone ph-link" style="vertical-align:middle;margin-right:6px"></i> Join Existing Family
+        </button>
+      </div>
+    </div>`;
+}
+
+function startNewFamily() {
+  setFamilyCode(genFamilyCode());
+  document.getElementById('setup-gate').style.display = 'none';
+  document.getElementById('setup-content').style.display = '';
+  goSetup();
+}
+
+function showJoinFamily() {
+  const gate = document.getElementById('setup-gate');
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
+      <div style="font-size:3.5rem"><i class="ph-duotone ph-link" style="color:#6C63FF"></i></div>
+      <div style="font-weight:800;font-size:1.4rem">Join a Family</div>
+      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the 6-character family code shown in the parent's Settings screen.</div>
+      <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
+        style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:280px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
+      <button class="btn btn-primary" style="width:100%;max-width:280px;padding:14px" onclick="joinFamily()">
+        <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
+      </button>
+      <button class="btn-back" style="background:none;border:none;color:var(--muted);font-size:0.95rem;cursor:pointer" onclick="renderSetupGate()">← Back</button>
+    </div>`;
+}
+
+async function joinFamily() {
+  const input = document.getElementById('join-code-input');
+  const code = input?.value.trim().toUpperCase() || '';
+  if (code.length !== 6) { toast('Please enter the full 6-character code'); return; }
+
+  const btn = document.querySelector('#screen-setup .btn-primary');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-duotone ph-hourglass" style="vertical-align:middle"></i> Connecting…'; }
+
+  try {
+    const snap = await db.doc(`families/${code}`).get();
+    if (!snap.exists) {
+      toast('Family code not found — double-check and try again');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family'; }
+      return;
+    }
+    D = normalizeData(snap.data());
+    setFamilyCode(code);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+    auth.signInAnonymously()
+      .then(() => subscribeToFirestore())
+      .catch(() => {});
+    routeAfterLoad();
+  } catch(e) {
+    toast('Connection error — please try again');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family'; }
+  }
+}
+
+function cancelSetup() {
+  const user = S.currentUser;
+  if (user) routeToView(user);
+  else renderHome();
+}
+
+function goSetup() {
+  SETUP_STEPS    = D.setup ? SETUP_STEPS_EDIT : SETUP_STEPS_NEW;
+  S.setupStep    = 0;
+  S.setupParents = D.family.members
+    .filter(m => m.role === 'parent')
+    .map(m => ({...m}));
+  if (S.setupParents.length === 0) {
+    S.setupParents = [{ id:genId(), name:'', avatar:'🧑', color:'#6C63FF', role:'parent', diamonds:0, savings:0, totalEarned:0, birthday:'' }];
+  }
+  // All non-parent members in one unified list
+  S.setupMembers = D.family.members
+    .filter(m => m.role !== 'parent' && !m.deleted)
+    .map(m => ({...m}));
+  showScreen('screen-setup');
+  renderSetupStep();
+}
+
+function renderSetupStep() {
+  const step  = S.setupStep;
+  const total = SETUP_STEPS.length;
+  const dots  = SETUP_STEPS.map((_,i) =>
+    `<div class="step-dot ${i===step?'active':i<step?'done':''}"></div>`
+  ).join('');
+
+  let content = '';
+  switch(SETUP_STEPS[step]) {
+
+    case 'welcome': content = `
+      <div class="setup-top">
+        <div class="setup-emoji"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">${D.setup ? 'Edit Family' : 'Welcome!'}</div>
+        <div class="setup-sub">${D.setup ? 'Update your family settings.' : "Let's set up your GemSprout in just a few steps."}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Family name</label>
+        <input type="text" id="setup-family-name" placeholder="The Smiths" value="${esc(D.family.name||'')}">
+      </div>
+      ${D.setup ? `
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup()">Cancel</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go →</button>
+      </div>` : `<button class="btn btn-primary btn-full" onclick="setupNext()">Let's go →</button>`}`;
+      break;
+
+    case 'parents': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-shield-star" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">Parents</div>
+        <div class="setup-sub">Customize the parent profiles. You can have more than one!</div>
+      </div>
+      <div id="parents-list">${S.setupParents.map((p,i)=>parentSetupCard(p,i)).join('')}</div>
+      <button class="btn btn-secondary btn-full mt-8" onclick="addParentCard()" style="margin-bottom:14px">+ Add another parent</button>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'members': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">Family Members</div>
+        <div class="setup-sub">Add the kids who will use the app.</div>
+      </div>
+      <div id="members-list">${S.setupMembers.map((m,i)=>memberSetupCard(m,i)).join('')}</div>
+      <button class="btn btn-secondary btn-full mt-8" onclick="addMemberCard()" style="margin-bottom:14px">+ Add a family member</button>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'chores': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-clipboard-text" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">Starter Chores</div>
+        <div class="setup-sub">Pick some to add. You can edit everything later.</div>
+      </div>
+      <div id="chore-checks">
+        ${DEFAULT_CHORES.map((c,i) => `
+          <label class="chore-checkbox-row">
+            <input type="checkbox" id="sc${i}" ${D.setup&&D.chores.find(x=>x.title===c.title)?'checked':!D.setup?'checked':''}>
+            <span class="chore-checkbox-icon">${renderIcon(c.icon, c.iconColor, 'font-size:1.4rem')}</span>
+            <span class="chore-checkbox-label">${c.title}</span>
+            <span class="chore-checkbox-dmds">${fmtDmds(c.diamonds)} · ${c.frequency}</span>
+          </label>`).join('')}
+      </div>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'prizes': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:3rem"></i></div>
+        <div class="setup-title">Prize Shop</div>
+        <div class="setup-sub">Choose prizes kids can earn. Add your own later!</div>
+      </div>
+      <div id="prize-checks">
+        ${DEFAULT_PRIZES.map((p,i) => `
+          <label class="chore-checkbox-row">
+            <input type="checkbox" id="sp${i}" ${D.setup&&D.prizes.find(x=>x.title===p.title)?'checked':!D.setup?'checked':''}>
+            <span class="chore-checkbox-icon">${renderIcon(p.icon,p.iconColor)}</span>
+            <span class="chore-checkbox-label">${p.title}</span>
+            <span class="chore-checkbox-dmds">${p.cost} 💎 · ${p.type}</span>
+          </label>`).join('')}
+      </div>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
+      </div>`;
+      break;
+
+    case 'sync': content = `
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-cloud" style="color:#10B981;font-size:3rem"></i></div>
+        <div class="setup-title">Family Sync</div>
+        <div class="setup-sub">All devices sync automatically — nothing to configure!</div>
+      </div>
+      <div class="card" style="background:#F0FDF4;border:2px solid var(--green);margin-bottom:14px">
+        <div class="card-title"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Sync is enabled</div>
+        <p style="font-size:0.88rem;line-height:1.6;color:var(--muted)">
+          GemSprout uses Google Firestore to keep all devices in sync in real time.
+          Any change made on one device will appear on all others instantly.
+        </p>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Auto-approve chores</div>
+          <div class="toggle-sub">Kids earn diamonds instantly without parent approval</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="setup-auto-approve" ${D.settings.autoApprove?'checked':''}>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Parent PIN <span class="form-label-hint">(required)</span></label>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:6px">Keeps kids out of parent settings and protects rewards from being changed.</div>
+        <input type="password" id="setup-pin" maxlength="4" placeholder="4 digits" inputmode="numeric" value="${esc(D.settings.parentPin||'')}">
+        <div id="setup-pin-error" style="display:none;color:var(--pink);font-size:0.8rem;margin-top:4px"></div>
+      </div>
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Finish! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      </div>`;
+      break;
+
+    case 'done': {
+      const _fc = getFamilyCode();
+      content = `
+      <div style="text-align:center;padding:24px 20px 16px">
+        <div style="font-size:4rem"><i class="ph-duotone ph-confetti" style="color:#F97316"></i></div>
+        <div class="setup-title mt-8">You're all set!</div>
+        <div class="setup-sub mt-4" style="margin-bottom:20px">Your GemSprout is ready. Here's how to get everyone connected.</div>
+      </div>
+
+      <div class="card" style="background:#F5F3FF;border:2px solid #C4B5FD;margin-bottom:12px">
+        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Your Family Code</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="font-size:2rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;flex:1">${_fc}</div>
+          <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${_fc}').then(()=>toast('Code copied!'))">
+            <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
+          </button>
+        </div>
+        <div style="font-size:0.78rem;color:#6C63FF;margin-top:6px">Your family code can also be found in Settings — you'll need it to add other devices</div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Adding other devices?</div>
+        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">Install GemSprout on your partner's phone or your kids' tablets, then enter the family code above to sync everyone together.</p>
+        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:4px">Get the app at:</div>
+        <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.9rem;font-weight:700;color:#6C63FF;word-break:break-all;text-decoration:none">${RC.appDownloadUrl}</a>
+      </div>
+
+      <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go! →</button>`;
+      break;
+    }
+  }
+
+  document.getElementById('setup-content').innerHTML = `
+    <div class="step-indicator" style="padding-top:16px">${dots}</div>
+    <div class="setup-step active">${content}</div>`;
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function memberSetupCard(mem, i) {
+  const avatarOpts = AVATARS.slice(0,24).map(a =>
+    `<div class="avatar-opt${a===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','${a}',true)">${a}</div>`
+  ).join('');
+  const colorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c===mem.color?' sel':''}" style="background:${c}" onclick="setMemberField(${i},'color','${c}',true)"></div>`
+  ).join('');
+
+  const dm = mem.displayMode || 'regular';
+  const modes = [
+    { id:'tiny',    icon:'<i class="ph-duotone ph-star" style="color:#F97316;font-size:1.1rem"></i>', label:'Little Kid',  sub:'Big icons + voice' },
+    { id:'regular', icon:'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:1.1rem"></i>', label:'Big Kid',     sub:'Standard view' },
+  ];
+  const modeOpts = modes.map(m =>
+    `<div class="mode-opt${dm===m.id?' sel':''}" onclick="setMemberField(${i},'displayMode','${m.id}',true)">
+      <span class="mode-opt-icon">${m.icon}</span>${m.label}<br>
+      <span style="font-size:0.68rem;opacity:0.7">${m.sub}</span>
+    </div>`
+  ).join('');
+
+  // Birthday dropdowns
+  const [bdMm, bdDd] = (mem.birthday||'').split('-');
+  const monthSel = `<select id="bday-m-${i}" onchange="setMemberBday(${i})">
+    <option value="">Month</option>
+    ${MONTHS.map((mn,idx)=>`<option value="${String(idx+1).padStart(2,'0')}" ${bdMm===String(idx+1).padStart(2,'0')?'selected':''}>${mn}</option>`).join('')}
+  </select>`;
+  const daySel = `<select id="bday-d-${i}" onchange="setMemberBday(${i})">
+    <option value="">Day</option>
+    ${Array.from({length:31},(_,n)=>n+1).map(d=>`<option value="${String(d).padStart(2,'0')}" ${bdDd===String(d).padStart(2,'0')?'selected':''}>${d}</option>`).join('')}
+  </select>`;
+
+  return `
+    <div class="kid-setup-card" id="member-card-${i}">
+      <div class="kid-setup-card-header">
+        <span style="font-size:1.5rem;font-weight:700">${mem.avatar||'🙂'} Member ${i+1}</span>
+        <button class="btn-icon-sm btn-icon-delete" onclick="removeMemberCard(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+      </div>
+      <div class="input-row">
+        <div class="form-group mb-0">
+          <label class="form-label">Name</label>
+          <input type="text" id="mname-${i}" placeholder="Name" value="${esc(mem.name||'')}">
+        </div>
+        <div class="form-group mb-0" style="flex:0 0 80px">
+          <label class="form-label">Age <span class="form-label-hint">opt.</span></label>
+          <input type="number" id="mage-${i}" min="1" max="110" placeholder="Age" value="${mem.age||''}">
+        </div>
+      </div>
+      <div class="form-group mt-8">
+        <label class="form-label"><i class="ph-duotone ph-cake" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Birthday <span class="form-label-hint">for surprise animations!</span></label>
+        <div class="input-row">${monthSel}${daySel}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Display Mode</label>
+        <div class="display-mode-row">${modeOpts}</div>
+      </div>
+      ${dm === 'tiny' ? (() => {
+        const voices = getEnglishVoices();
+        if (!voices.length) return `
+      <div class="form-group">
+        <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice</label>
+        <button class="btn btn-secondary btn-sm" onclick="window.speechSynthesis?.getVoices();renderSetupStep()">Load voice options</button>
+      </div>`;
+        const current = mem.ttsVoice || voices.find(v=>v.name==='Samantha')?.name || voices[0]?.name;
+        const opts = voices.map(v => `<option value="${esc(v.name)}"${v.name===current?' selected':''}>${esc(v.name)}</option>`).join('');
+        return `
+      <div class="form-group">
+        <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="voice-sel-${i}" style="flex:1" onchange="setMemberVoice(${i},this.value)">${opts}</select>
+          <button class="btn btn-secondary btn-sm" style="flex-shrink:0" onclick="previewMemberVoice(${i})"><i class="ph-duotone ph-play" style="font-size:0.9rem;vertical-align:middle"></i> Preview</button>
+        </div>
+      </div>`;
+      })() : ''}
+      <div class="form-group mt-8">
+        <label class="form-label">Avatar</label>
+        <div class="avatar-grid">${avatarOpts}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-row">${colorSwatches}</div>
+      </div>
+    </div>`;
+}
+
+function parentSetupCard(p, i) {
+  const avatarOpts = AVATARS.slice(0,24).map(a =>
+    `<div class="avatar-opt${a===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','${a}',true)">${a}</div>`
+  ).join('');
+  const colorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c===p.color?' sel':''}" style="background:${c}" onclick="setParentField(${i},'color','${c}',true)"></div>`
+  ).join('');
+  const [bdMm, bdDd] = (p.birthday||'').split('-');
+  const monthSel = `<select id="pbday-m-${i}" onchange="setParentBday(${i})">
+    <option value="">Month</option>
+    ${MONTHS.map((mn,idx)=>`<option value="${String(idx+1).padStart(2,'0')}" ${bdMm===String(idx+1).padStart(2,'0')?'selected':''}>${mn}</option>`).join('')}
+  </select>`;
+  const daySel = `<select id="pbday-d-${i}" onchange="setParentBday(${i})">
+    <option value="">Day</option>
+    ${Array.from({length:31},(_,n)=>n+1).map(d=>`<option value="${String(d).padStart(2,'0')}" ${bdDd===String(d).padStart(2,'0')?'selected':''}>${d}</option>`).join('')}
+  </select>`;
+  return `
+    <div class="kid-setup-card" id="parent-card-${i}">
+      <div class="kid-setup-card-header">
+        <span style="font-size:1.5rem;font-weight:700">${p.avatar||'🧑'} Parent ${i+1}</span>
+        ${S.setupParents.length > 1 ? `<button class="btn-icon-sm btn-icon-delete" onclick="removeParentCard(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>` : ''}
+      </div>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" id="pname-${i}" placeholder="Name" value="${esc(p.name||'')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label"><i class="ph-duotone ph-cake" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Birthday <span class="form-label-hint">for surprise animations!</span></label>
+        <div class="input-row">${monthSel}${daySel}</div>
+      </div>
+      <div class="form-group mt-8">
+        <label class="form-label">Avatar</label>
+        <div class="avatar-grid">${avatarOpts}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-row">${colorSwatches}</div>
+      </div>
+    </div>`;
+}
+
+// Unified member card helpers
+function addMemberCard() {
+  const defaults = ['🦁','🐯','🐻','🐼','👵','🌸'];
+  const i = S.setupMembers.length;
+  S.setupMembers.push({
+    id: genId(), name:'', age:null,
+    avatar: defaults[i % defaults.length],
+    color:  COLORS[i % COLORS.length],
+    displayMode: 'regular', role:'kid',
+    diamonds:0, savings:0, totalEarned:0, birthday:'',
+  });
+  renderSetupStep();
+}
+
+function removeMemberCard(i) { if (!confirm('Remove this family member?')) return; S.setupMembers.splice(i,1); renderSetupStep(); }
+
+function setMemberField(i, field, value, rerender=false) {
+  if (S.setupMembers[i]) S.setupMembers[i][field] = value;
+  if (rerender) {
+    S.setupMembers.forEach((_, j) => {
+      const ni = document.getElementById(`mname-${j}`);
+      const ai = document.getElementById(`mage-${j}`);
+      if (ni) S.setupMembers[j].name = ni.value;
+      if (ai) S.setupMembers[j].age = ai.value ? parseInt(ai.value) : '';
+    });
+    renderSetupStep();
+  }
+}
+
+function setMemberBday(i) {
+  const mm = document.getElementById(`bday-m-${i}`)?.value;
+  const dd = document.getElementById(`bday-d-${i}`)?.value;
+  if (S.setupMembers[i]) S.setupMembers[i].birthday = (mm && dd) ? `${mm}-${dd}` : '';
+}
+
+function addParentCard() {
+  const i = S.setupParents.length;
+  const parentColors = ['#6C63FF','#FF6584','#43D9AD','#FF9A3C'];
+  const parentAvatars = ['🧑','👩','👨','🧔'];
+  S.setupParents.push({ id:genId(), name:'', avatar:parentAvatars[i % parentAvatars.length], color:parentColors[i % parentColors.length], role:'parent', diamonds:0, savings:0, totalEarned:0, birthday:'' });
+  renderSetupStep();
+}
+
+function removeParentCard(i) { if (!confirm('Remove this parent?')) return; S.setupParents.splice(i,1); renderSetupStep(); }
+
+function setParentField(i, field, value, rerender=false) {
+  if (S.setupParents[i]) S.setupParents[i][field] = value;
+  if (rerender) {
+    S.setupParents.forEach((_, j) => {
+      const ni = document.getElementById(`pname-${j}`);
+      if (ni) S.setupParents[j].name = ni.value;
+    });
+    renderSetupStep();
+  }
+}
+
+function setParentBday(i) {
+  const mm = document.getElementById(`pbday-m-${i}`)?.value;
+  const dd = document.getElementById(`pbday-d-${i}`)?.value;
+  if (S.setupParents[i]) S.setupParents[i].birthday = (mm && dd) ? `${mm}-${dd}` : '';
+}
+
+function setupNext() {
+  const stepName = SETUP_STEPS[S.setupStep];
+
+  if (stepName === 'welcome') {
+    const name = document.getElementById('setup-family-name')?.value.trim();
+    if (!name) { toast('Please enter a family name'); return; }
+    D.family.name = name;
+  }
+
+  if (stepName === 'parents') {
+    S.setupParents.forEach((p,i) => {
+      const ni = document.getElementById(`pname-${i}`);
+      if (ni) p.name = ni.value.trim();
+      setParentBday(i);
+    });
+    if (S.setupParents.some(p=>!p.name)) { toast('Please give each parent a name'); return; }
+  }
+
+  if (stepName === 'members') {
+    // Flush any still-pending form values before validating
+    S.setupMembers.forEach((m,i) => {
+      const ni = document.getElementById(`mname-${i}`);
+      const ai = document.getElementById(`mage-${i}`);
+      if (ni) m.name = ni.value.trim();
+      if (ai) m.age  = parseInt(ai.value)||null;
+      setMemberBday(i); // flush birthday selects
+    });
+    if (S.setupMembers.length === 0) { toast('Add at least one family member'); return; }
+    if (S.setupMembers.some(m=>!m.name)) { toast('Each family member needs a name'); return; }
+  }
+
+  if (stepName === 'chores') {
+    const kidMembers = S.setupMembers;
+    DEFAULT_CHORES.forEach((c,i) => {
+      const cb = document.getElementById('sc'+i);
+      if (cb && cb.checked && !D.chores.find(x=>x.title===c.title)) {
+        const chore = normalizeChore({
+          title: c.title,
+          icon: c.icon,
+          iconColor: c.iconColor,
+          diamonds: c.diamonds,
+          frequency: c.frequency,
+          assignedTo: kidMembers.map(k=>k.id),
+          completions: {},
+          description: '',
+        });
+        chore.id = genId();
+        D.chores.push(chore);
+      }
+    });
+  }
+
+  if (stepName === 'prizes') {
+    DEFAULT_PRIZES.forEach((p,i) => {
+      const cb = document.getElementById('sp'+i);
+      if (cb && cb.checked && !D.prizes.find(x=>x.title===p.title)) {
+        D.prizes.push({ id:genId(), title:p.title, icon:p.icon, cost:p.cost, type:p.type, redemptions:[] });
+      }
+    });
+  }
+
+  if (stepName === 'sync') {
+    const autoEl = document.getElementById('setup-auto-approve');
+    const pinEl  = document.getElementById('setup-pin');
+    const pin    = pinEl?.value.trim() || '';
+    if (!pin || pin.length < 4) {
+      const err = document.getElementById('setup-pin-error');
+      if (err) { err.textContent = 'Please enter a 4-digit PIN.'; err.style.display = 'block'; }
+      pinEl?.focus();
+      return;
+    }
+    if (autoEl) D.settings.autoApprove = autoEl.checked;
+    D.settings.parentPin = pin;
+    S.setupStep++;
+    if (S.setupStep >= SETUP_STEPS.length) {
+      finishSetup();
+      if (isBiometricSupported() && !getBiometricCredentialId()) offerBiometricSetup();
+    } else {
+      if (isBiometricSupported() && !getBiometricCredentialId()) {
+        offerBiometricSetup(() => renderSetupStep());
+      } else {
+        renderSetupStep();
+      }
+    }
+    return;
+  }
+
+  S.setupStep++;
+  if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
+  renderSetupStep();
+}
+
+function setupBack() {
+  if (S.setupStep > 0) { S.setupStep--; renderSetupStep(); }
+}
+
+function finishSetup() {
+  // Merge parents — preserve existing data (diamonds, etc.), apply setup edits
+  const mergedParents = S.setupParents.map(p => {
+    const existing = D.family.members.find(x=>x.id===p.id) || {};
+    return { ...existing, ...p, role:'parent' };
+  });
+
+  // Derive role from displayMode, preserve existing diamonds/savings
+  const mergedMembers = S.setupMembers.map(m => {
+    const existing = D.family.members.find(x=>x.id===m.id) || {};
+    const role = 'kid';
+    return { ...existing, ...m, role };
+  });
+
+  const keptIds = new Set(S.setupMembers.map(m => m.id));
+  const softDeleted = D.family.members
+    .filter(m => m.role === 'kid' && !m.deleted && !keptIds.has(m.id))
+    .map(m => ({ ...m, deleted: true }));
+  D.family.members = [...mergedParents, ...mergedMembers, ...softDeleted];
+
+  // Assign orphaned chores to all kid members
+  const kidIds = mergedMembers.map(m=>m.id);
+  D.chores.forEach(c => {
+    if (!c.assignedTo || c.assignedTo.length === 0) c.assignedTo = kidIds;
+  });
+
+  if (!D.settings.familyTimezone) {
+    D.settings.familyTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  }
+  D.setup = true;
+  saveData();
+  renderHome();
+}
+
+// ── HTML ESCAPE ───────────────────────────────────────────────
+function esc(str) {
+  return String(str||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 4 — KID VIEWS  (8yo normal · 5yo tiny + TTS)
+═══════════════════════════════════════════════════════════════ */
+
+// ── MAIN KID VIEW ENTRY ───────────────────────────────────────
+function renderKidView() {
+  const m = S.currentUser;
+  if (!m) return;
+  const tiny = isTiny(m);
+
+  showScreen('screen-kid');
+  if (tiny) {
+    document.getElementById('kid-content').className = 'main-content tiny-mode';
+    ttsEnabled = true; // always on for tiny kids
+  } else {
+    document.getElementById('kid-content').className = 'main-content';
+  }
+
+  renderKidHeader();
+  renderKidNav();
+  renderKidTab();
+}
+
+function renderKidHeader() {
+  const m = S.currentUser;
+  if (!m) return;
+  const dmds = m.diamonds || 0;
+  normalizeMember(m);
+  const { current: lvl } = getMemberLevel(m);
+  const streak      = m.streak?.current || 0;
+  const comboStreak = m.comboStreak?.current || 0;
+  const showLevel       = D.settings.levelingEnabled !== false;
+  const showStreak      = D.settings.streakEnabled !== false && streak >= 1;
+  const showComboStreak = comboStreak >= 2;
+  document.getElementById('kid-header').innerHTML = `
+    <div class="header-left">
+      <span class="header-avatar">${m.avatar||'🙂'}</span>
+      <div>
+        <div class="header-name">Hi, ${esc(m.name)}!</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px">
+          ${showLevel       ? `<span class="header-level-badge">${lvl.icon} ${lvl.name}</span>` : ''}
+          ${showStreak      ? `<span class="header-streak-badge"><i class="ph-duotone ph-fire" style="color:#F97316;font-size:0.85rem;vertical-align:middle"></i> ${streak}d streak</span>` : ''}
+          ${showComboStreak ? `<span class="header-streak-badge" style="background:#FEF3C7;border-color:#F59E0B;color:#92400E"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:0.85rem;vertical-align:middle"></i> ${comboStreak}d combos</span>` : ''}
+          ${!showLevel && !showStreak && !showComboStreak ? `<div class="header-sub">${todayDisplay()}</div>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="header-badge">💎 ${dmds}</div>
+      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
+    </div>`;
+}
+
+function renderKidNav() {
+  const tabs = [
+    ['chores',  ICONS.chores,  'Chores'],
+    ['diamonds',ICONS.diamond, 'Diamonds'],
+    ['shop',    ICONS.shop,    'Shop'],
+    ['team',    ICONS.team,    'Team'],
+    ['stats',   ICONS.stats,   'Stats'],
+  ];
+  document.getElementById('kid-nav').innerHTML = tabs.map(([id,icon,label]) => `
+    <button class="nav-item${S.kidTab===id?' active':''}" onclick="switchKidTab('${id}')">
+      <span class="nav-icon">${icon}</span>${label}
+    </button>`).join('');
+}
+
+function switchKidTab(tab) {
+  S.kidTab = tab;
+  renderKidNav();
+  renderKidTab();
+  const m = S.currentUser;
+  if (!m || !isTiny(m)) return;
+  const dmds = m.diamonds || 0;
+  if (tab === 'chores') {
+    const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+    const progressMap = new Map(myChores.map(c => [c.id, getChoreProgress(c, m.id)]));
+    const totalUnits = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.targetCount || 0), 0);
+    const doneUnits  = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.doneCount  || 0), 0);
+    const total = totalUnits || myChores.length;
+    speak(`Let's look at your chores. Today you have completed ${doneUnits} out of ${total}.`);
+  } else if (tab === 'diamonds') {
+    const { current: lvl } = getMemberLevel(m);
+    const streak = m.streak?.current || 0;
+    speak(`You currently have ${dmds} diamonds, you are level ${lvl.level}, and have a ${streak} day streak.`);
+  } else if (tab === 'shop') {
+    const affordable = D.prizes.filter(p => p.type === 'individual' && (p.cost || 0) <= dmds).length;
+    speak(`You have ${dmds} diamonds to spend and can afford ${affordable} prize${affordable === 1 ? '' : 's'}.`);
+  } else if (tab === 'team') {
+    speak('Spend your diamonds towards team prizes.');
+  } else if (tab === 'stats') {
+    speak('Good job! Here\'s everything you\'ve accomplished.');
+  }
+}
+
+
+function renderKidTab() {
+  try {
+  switch(S.kidTab) {
+    case 'chores': renderKidChores(); break;
+    case 'diamonds': renderKidDiamonds(); break;
+    case 'shop':   renderKidShop();   break;
+    case 'team':   renderKidTeam();   break;
+    case 'stats':  renderStatsPage(document.getElementById('kid-content')); break;
+  }
+  } catch(e) {
+    console.error('renderKidTab error:', e);
+    const el = document.getElementById('kid-content');
+    if (el) el.innerHTML = `<div class="card" style="border:2px solid #EF4444;color:#EF4444;padding:1rem">Something went wrong. Please try again or ask a parent.</div>`;
+  }
+}
+
+// ── CHORES TAB ────────────────────────────────────────────────
+function renderKidChores() {
+  const m = S.currentUser;
+  const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+
+  if (myChores.length === 0) {
+    document.getElementById('kid-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon"><i class="ph-duotone ph-confetti" style="color:#F97316;font-size:3rem"></i></div>
+        <div class="empty-text">No chores assigned yet! Ask a parent.</div>
+      </div>`;
+    return;
+  }
+
+  const progressMap = new Map(myChores.map(chore => [chore.id, getChoreProgress(chore, m.id)]));
+  const done        = myChores.filter(c => progressMap.get(c.id)?.status === 'done');
+  const awaiting    = myChores.filter(c => progressMap.get(c.id)?.status === 'pending');
+  const partial     = myChores.filter(c => progressMap.get(c.id)?.status === 'partial');
+  const todo        = myChores.filter(c => progressMap.get(c.id)?.status === 'none');
+  const unavailable = myChores.filter(c => progressMap.get(c.id)?.status === 'unavailable');
+
+  const totalUnits  = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.targetCount || 0), 0);
+  const doneUnits   = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.doneCount || 0), 0);
+  const totalPts    = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.targetCount || 0) * chore.diamonds), 0);
+  const earnedPts   = myChores.reduce((sum, chore) => sum + ((progressMap.get(chore.id)?.doneCount || 0) * chore.diamonds), 0);
+  const pct      = totalPts>0 ? Math.round(earnedPts/totalPts*100) : 0;
+
+  // Daily combo
+  const comboIds  = D.settings.comboEnabled !== false ? new Set(getDailyCombo(m.id)) : new Set();
+  const comboChores = [...comboIds].map(id => D.chores.find(c => c.id === id)).filter(Boolean);
+  const comboCompleted = comboChores.filter(c => progressMap.get(c.id)?.status === 'done').length;
+  const comboBonusAlreadyAwarded = m.comboBonusDate === today();
+
+  const tiny = isTiny(m);
+  const _progressTts = `Today you've done ${doneUnits} out of ${totalUnits || myChores.length} chores.`;
+  let html = `
+    <div class="card" style="background:linear-gradient(135deg,${m.color||'#6C63FF'},${m.color||'#6C63FF'}dd);color:#fff;border-radius:18px"${tiny ? ` onclick="speak('${_progressTts.replace(/'/g,"\\'")}')"` : ''}>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <div style="font-size:1.6rem;font-weight:800">${doneUnits} / ${totalUnits || myChores.length}</div>
+          <div style="opacity:0.85;font-size:0.85rem">completions finished right now</div>
+        </div>
+        <div style="font-size:${tiny?'3rem':'2rem'}">${pct===100?'<i class="ph-duotone ph-trophy" style="color:#FFD93D"></i>':m.avatar||'💎'}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.3);border-radius:999px;height:10px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;border-radius:999px;background:#FFD93D;transition:width 0.5s"></div>
+      </div>
+      <div style="font-size:0.8rem;opacity:0.85;margin-top:6px;text-align:right">+${earnedPts} 💎 earned today</div>
+    </div>`;
+
+  // Combo banner
+  if (D.settings.comboEnabled !== false && comboChores.length >= 3) {
+    const bonusPts = comboChores.reduce((s, c) => s + c.diamonds, 0);
+    const _comboNames = comboChores.map(c => c.title);
+    const _comboNameStr = _comboNames.slice(0,-1).join(', ') + ', and ' + _comboNames[_comboNames.length-1];
+    const _comboTts = comboBonusAlreadyAwarded
+      ? `Amazing! You completed the daily combo and earned bonus diamonds!`
+      : `If you can ${_comboNameStr} today, you will earn double diamonds for all three!`;
+    html += `
+      <div class="combo-banner"${tiny ? ` onclick="speak('${_comboTts.replace(/'/g,"\\'")}')"` : ''}>
+        <div class="combo-banner-header">
+          <div>
+            <div class="combo-banner-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo ${comboBonusAlreadyAwarded ? '— Complete! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i>' : ''}</div>
+            <div class="combo-banner-sub">${comboBonusAlreadyAwarded
+              ? `You earned +${bonusPts} bonus 💎 today!`
+              : `Complete all 3 for +${bonusPts} bonus 💎 (2× those chores!)`}</div>
+          </div>
+          <div class="combo-progress-badge ${comboCompleted >= 3 ? 'complete' : ''}">${comboCompleted}/3</div>
+        </div>
+        <div class="combo-chore-list">
+          ${comboChores.map(c => {
+            const isDone = progressMap.get(c.id)?.status === 'done';
+            return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
+              <span class="combo-chore-item-check">${isDone ? '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1.1rem"></i>' : '<i class="ph-duotone ph-circle" style="color:#D1D5DB;font-size:1.1rem"></i>'}</span>
+              <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} <span class="combo-item-title">${esc(c.title)}</span></span>
+              ${isDone
+                ? `<span style="margin-left:auto;font-size:0.75rem;font-weight:700"><span style="color:#B45309">+${c.diamonds}×2 = </span><span style="color:#16A34A">${c.diamonds*2}</span></span>`
+                : `<span style="margin-left:auto;font-size:0.75rem;opacity:0.7">+${c.diamonds}×2</span>`}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
+  // Todo chores
+  const todoVisible = D.settings.hideUnavailable
+    ? todo.filter(c => progressMap.get(c.id)?.availableNow !== false)
+    : todo;
+  if (todoVisible.length > 0) {
+    html += `<div class="card-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> To Do</div>`;
+    html += `<div id="sort-todo">`;
+    todoVisible.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
+  }
+
+  // Partial slot chores (some slots done, not all)
+  if (partial.length > 0) {
+    partial.forEach(c => {
+      const p = progressMap.get(c.id);
+      const done_ = p?.doneCount || 0;
+      const total_ = p?.targetCount || p?.slotStatuses?.length || '?';
+      html += `<div class="card-title mt-12"><i class="ph-duotone ph-sparkle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> ${done_} of ${total_} Done</div>`;
+      html += `<div>`;
+      html += normalChoreCard(c, m, p, comboIds);
+      html += `</div>`;
+    });
+  }
+
+  // Awaiting parent approval
+  if (awaiting.length > 0) {
+    html += `<div class="card-title mt-12"><i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem;vertical-align:middle"></i> Waiting for Approval</div>`;
+    html += `<div id="sort-pending">`;
+    awaiting.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
+  }
+
+  // Done
+  if (done.length > 0) {
+    html += `<div class="card-title mt-12"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Done Today</div>`;
+    html += `<div id="sort-done">`;
+    done.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
+  }
+
+  if (unavailable.length > 0 && !D.settings.hideUnavailable) {
+    html += `<div class="card-title mt-12"><i class="ph-duotone ph-clock" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Later</div>`;
+    html += `<div id="sort-unavail">`;
+    unavailable.forEach(c => { html += normalChoreCard(c, m, progressMap.get(c.id), comboIds); });
+    html += `</div>`;
+  }
+
+  document.getElementById('kid-content').innerHTML = html;
+
+}
+
+function normalChoreCard(chore, member, progress, comboIds = null) {
+  const isCombo = comboIds?.has(chore.id) || false;
+  const choreStatus = progress?.status || 'none';
+  const comboClass = isCombo && choreStatus !== 'done' ? ' combo-chore' : '';
+  const tiny = isTiny(member);
+  const ttsText = `${chore.title}. Worth ${chore.diamonds} diamonds!`;
+  const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
+
+  // Slot mode: show per-slot rows inside the card
+  if (progress?.isSlotMode) {
+    const slotStatuses = progress.slotStatuses || [];
+
+    // Single-slot: render exactly like a simple count card (no slot table)
+    if (slotStatuses.length === 1) {
+      const { slot, status: ss } = slotStatuses[0];
+      const label = slot.label || formatTimeWindow({start:slot.start, end:slot.end});
+      let btnHtml = '';
+      if (ss === 'available') {
+        const btnLabel = chore.requiresPhoto
+          ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
+          : (tiny ? '<i class="ph-duotone ph-check-circle" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i> Done');
+        btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')">${btnLabel}</button>`;
+      } else if (ss === 'pending') {
+        btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Pending</span>`;
+      } else if (ss !== 'done') {
+        btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-clock" style="font-size:0.9rem;vertical-align:middle"></i> Later</span>`;
+      }
+      const cardStatus = ss === 'done' ? 'done' : ss === 'pending' ? 'pending' : ss === 'available' ? 'none' : 'unavailable';
+      return `
+        <div class="chore-item ${cardStatus}${comboClass}"${ttsAttr}>
+          <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}</span>
+          <div class="chore-info">
+            <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
+            <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
+          </div>
+          <div class="chore-action">${btnHtml}</div>
+        </div>`;
+    }
+
+    const slotsHtml = slotStatuses.map(({slot, status: ss}) => {
+      const label = slot.label || formatTimeWindow({start:slot.start, end:slot.end});
+      let slotBtn;
+      if (ss === 'done')    slotBtn = `<span class="slot-status slot-done"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></span>`;
+      else if (ss === 'pending') slotBtn = `<span class="slot-status slot-pending"><i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem"></i></span>`;
+      else if (ss === 'available') {
+        const btnLabel = chore.requiresPhoto
+          ? (tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Photo')
+          : (tiny ? '<i class="ph-duotone ph-check-circle" style="font-size:1.5rem;vertical-align:middle"></i>'  : '<i class="ph-duotone ph-check-circle" style="font-size:0.9rem;vertical-align:middle"></i> Done');
+        slotBtn = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,'${slot.id}')">${btnLabel}</button>`;
+      } else {
+        const timeHint = slot.start ? formatTimeWindow({start:slot.start, end:slot.end}) : '';
+        slotBtn = `<span class="slot-status slot-waiting" title="${timeHint}"><i class="ph-duotone ph-clock" style="color:#9CA3AF;font-size:1rem"></i></span>`;
+      }
+      return `<div class="chore-slot-row"><span class="chore-slot-label">${esc(label)}</span>${slotBtn}</div>`;
+    }).join('');
+    return `
+      <div class="chore-item ${progress.status}${comboClass}"${ttsAttr}>
+        <span class="chore-icon" style="position:relative">${renderIcon(chore.icon,chore.iconColor)}</span>
+        <div class="chore-info">
+          <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
+          <div class="chore-meta">${fmtDmds(chore.diamonds)} per slot</div>
+          <div class="chore-slots">${slotsHtml}</div>
+        </div>
+      </div>`;
+  }
+
+  // Standard mode — check for photo phase first
+  const photoPhase = getChorePhotoPhase(chore, member?.id);
+  if (photoPhase) {
+    return normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds);
+  }
+
+  const status = choreStatus;
+  const submitted = progress?.completedCount || 0;
+  const target = progress?.targetCount || (status === 'done' ? progress?.doneCount || 1 : 0);
+  let btnHtml = '';
+  if (progress?.canSubmit) {
+    const doneLabel = tiny
+      ? '<i class="ph-duotone ph-check-circle" style="font-size:1.5rem;vertical-align:middle"></i>'
+      : (submitted > 0 ? '<i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i> One more' : '<i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i> Done');
+    btnHtml = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event)">${doneLabel}</button>`;
+  } else if (status==='pending' || status==='partial') {
+    btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Pending</span>`;
+  } else if (status==='unavailable') {
+    btnHtml = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-clock" style="font-size:0.9rem;vertical-align:middle"></i> Later</span>`;
+  } else {
+    btnHtml = ''; // done — no button needed; section header already says "Done Today"
+  }
+  return `
+    <div class="chore-item ${status}${comboClass}"${ttsAttr}>
+      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}</span>
+      <div class="chore-info">
+        <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
+        <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
+        ${target>0?`<div class="chore-meta">${submitted}/${target} submitted${progress?.availabilityText?` · ${esc(progress.availabilityText)}`:''}</div>`:progress?.availabilityText?`<div class="chore-meta">${esc(progress.availabilityText)}</div>`:''}
+      </div>
+      <div class="chore-action">${btnHtml}</div>
+    </div>`;
+}
+
+function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = null) {
+  const isCombo = comboIds?.has(chore.id) || false;
+  const tiny = isTiny(member);
+  const { phase } = photoPhase;
+  let statusClass = 'none';
+  let hintHtml = '';
+  let btnHtml  = '';
+
+  if (phase === 'needs_before') {
+    statusClass = 'none';
+    hintHtml = `<div class="chore-meta" style="color:var(--purple)"><i class="ph-duotone ph-camera" style="font-size:0.9rem;vertical-align:middle"></i> Take a "before" photo to request this chore</div>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="${tiny?`speak('Let\\'s take a picture first!');`:''}kidCompleteChore('${chore.id}',event,null,'before')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Request'}</button>`;
+  } else if (phase === 'before_pending') {
+    statusClass = 'pending';
+    hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve the start</div>`;
+    btnHtml  = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Awaiting OK</span>`;
+  } else if (phase === 'needs_after') {
+    statusClass = 'partial';
+    hintHtml = `<div class="chore-meta" style="color:var(--green)"><i class="ph-duotone ph-check-circle" style="color:var(--green);font-size:0.9rem;vertical-align:middle"></i> Approved! Do the chore, then submit your done photo.</div>`;
+    btnHtml  = `<button class="chore-btn chore-btn-do" onclick="kidCompleteChore('${chore.id}',event,null,'after')">${tiny ? '<i class="ph-duotone ph-camera" style="font-size:1.5rem;vertical-align:middle"></i>' : '<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Done'}</button>`;
+  } else if (phase === 'after_pending') {
+    statusClass = 'pending';
+    hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve completion</div>`;
+    btnHtml  = `<span class="chore-btn chore-btn-pending"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Pending</span>`;
+  } else {
+    statusClass = 'done';
+    btnHtml = `<span class="chore-btn chore-btn-done"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Done</span>`;
+  }
+
+  const comboClass = isCombo && statusClass !== 'done' ? ' combo-chore' : '';
+  let ttsText;
+  if (phase === 'needs_before') {
+    ttsText = `${chore.title}. Take a before photo to start this chore!`;
+  } else if (phase === 'before_pending') {
+    ttsText = `${chore.title}. Waiting for your grown-up to say yes!`;
+  } else if (phase === 'needs_after') {
+    ttsText = `${chore.title}. You were approved! Do the chore, then take a done photo.`;
+  } else if (phase === 'after_pending') {
+    ttsText = `${chore.title}. Waiting for your grown-up to check your done photo.`;
+  } else {
+    ttsText = `${chore.title}. Done! You earned ${chore.diamonds} diamonds!`;
+  }
+  const ttsAttr = tiny ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"` : '';
+
+  return `
+    <div class="chore-item ${statusClass}${comboClass}"${ttsAttr}>
+      <span class="chore-icon" style="position:relative">${renderIcon(chore.icon, chore.iconColor)}</span>
+      <div class="chore-info">
+        <div class="chore-name">${esc(chore.title)}${isCombo ? ' <span style="font-size:0.7rem;color:#D97706;font-weight:700">COMBO</span>' : ''}</div>
+        <div class="chore-meta">${fmtDmds(chore.diamonds)} · ${esc(choreScheduleSummary(chore))}</div>
+        ${hintHtml}
+      </div>
+      <div class="chore-action">${btnHtml}</div>
+    </div>`;
+}
+
+// Tiny mode now uses normalChoreCard — isTiny() handled inside for TTS/sizing
+function tinyChoreCard(chore, member, progress) {
+  return normalChoreCard(chore, member, progress);
+}
+
+// entryTypeOverride: 'before' | 'after' | null
+// slotId: slot id for slot-mode chores
+function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride = null) {
+  evt && evt.stopPropagation();
+  const m = S.currentUser;
+  if (!m) return;
+  const chore = D.chores.find(c=>c.id===choreId);
+  if (!chore) return;
+
+  // If photo mode is set (after or before_after), always go through photo capture
+  if (chore.photoMode && chore.photoMode !== 'none') {
+    const entryType = entryTypeOverride || (chore.photoMode === 'after' ? 'after' : 'before');
+    showPhotoCapture(choreId, slotId, entryType);
+    return;
+  }
+
+  const result = doCompleteChore(choreId, m.id, slotId);
+  if (!result) return;
+  if (result.error) {
+    toast(result.error);
+    if (isTiny(m)) speak(result.error);
+    return;
+  }
+  choreCompleteReact(chore, m, result, evt);
+}
+
+function choreCompleteReact(chore, m, result, evt) {
+  const tiny = isTiny(m);
+  if (!result.approved) {
+    toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Chore submitted! Waiting for parent approval');
+    if (tiny) speak('All done! Waiting for your grown-up to check!');
+    renderKidChores(); renderKidHeader(); renderKidNav();
+  } else {
+    if (tiny) {
+      showCelebration({
+        icon: renderIcon(chore?.icon, chore?.iconColor, 'font-size:3rem') || '💎',
+        title: 'Amazing job! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
+        sub:   esc(chore?.title||'Chore'),
+        diamonds: chore?.diamonds||0,
+        tts: `Wow! You finished ${chore?.title}! You earned ${chore?.diamonds} diamonds! You are amazing!`,
+        onClose: () => { renderKidChores(); renderKidHeader(); }
+      });
+    } else {
+      if (evt) {
+        const rect = evt.target.getBoundingClientRect();
+        diamondsBurst(rect.left + rect.width/2, rect.top, chore?.diamonds||0);
+      }
+      toast(`+${chore?.diamonds} 💎! Great work! 💎`);
+      renderKidChores(); renderKidHeader();
+    }
+    renderKidNav();
+  }
+}
+
+// ── PHOTO CAPTURE ─────────────────────────────────────────────
+function showPhotoCapture(choreId, slotId, entryType) {
+  const chore = D.chores.find(c => c.id === choreId);
+  const isBefore = entryType === 'before';
+  const titleText  = isBefore ? '<i class="ph-duotone ph-camera" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Take a "Before" Photo' : '<i class="ph-duotone ph-camera" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Take a "Done" Photo';
+  const hintText   = isBefore
+    ? `Show the current state of "${esc(chore?.title||'')}" — e.g. the messy room, the full trash can. Parent will approve before you start.`
+    : `Show that you've completed "${esc(chore?.title||'')}"`;
+  const submitText = isBefore ? 'Submit — Request to Start ✓' : 'Submit Completion ✓';
+
+  showModal(`
+    <div class="modal-title">${titleText}</div>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:14px">${hintText}</p>
+    <div class="photo-preview-wrap" id="photo-drop-zone" onclick="document.getElementById('photo-file-input').click()">
+      <img id="photo-preview-img" src="" alt="" style="display:none">
+      <div id="photo-drop-hint" style="color:var(--muted);font-size:2rem;padding:20px 0">
+        <i class="ph-duotone ph-camera" style="color:#9CA3AF;font-size:2.5rem"></i><br><span style="font-size:0.95rem">Tap to take photo or choose image</span>
+      </div>
+    </div>
+    <input type="file" id="photo-file-input" accept="image/*" capture="environment" style="display:none" onchange="previewChorePhoto(event)">
+    <div class="modal-actions" style="flex-direction:column;gap:10px">
+      <button class="btn btn-primary" id="photo-submit-btn" style="opacity:0.4;pointer-events:none" onclick="submitChorePhoto('${choreId}','${slotId||''}','${entryType||''}')">${submitText}</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+
+function previewChorePhoto(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img  = document.getElementById('photo-preview-img');
+    const hint = document.getElementById('photo-drop-hint');
+    const btn  = document.getElementById('photo-submit-btn');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    if (hint) hint.style.display = 'none';
+    if (btn)  { btn.style.opacity = '1'; btn.style.pointerEvents = 'auto'; }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitChorePhoto(choreId, slotId, entryType) {
+  const input = document.getElementById('photo-file-input');
+  const file  = input?.files[0];
+  if (!file) { toast('Please take a photo first'); return; }
+  const btn = document.getElementById('photo-submit-btn');
+  if (btn) { btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; btn.textContent = 'Uploading…'; }
+  try {
+    const photoUrl = await uploadChorePhoto(file);
+    closeModal();
+    const m = S.currentUser;
+    const resolvedEntryType = entryType || null;
+    const result = doCompleteChore(choreId, m.id, slotId || null, photoUrl, resolvedEntryType);
+    if (!result) return;
+    if (result.error) { toast(result.error); return; }
+    if (result.isBefore) {
+      toast('<i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Before photo sent! Waiting for parent to approve the start <i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i>');
+      if (isTiny(m)) speak('Photo sent! Waiting for your grown-up to say yes!');
+      renderKidChores(); renderKidHeader(); renderKidNav();
+      return;
+    }
+    const chore = D.chores.find(c => c.id === choreId);
+    choreCompleteReact(chore, m, result, null);
+  } catch(e) {
+    console.warn('Photo upload failed:', e);
+    toast('Upload failed — check your connection and try again.');
+    if (btn) { btn.style.opacity = '1'; btn.style.pointerEvents = 'auto'; btn.textContent = 'Submit Completion ✓'; }
+  }
+}
+
+async function uploadChorePhoto(file) {
+  const compressed = await compressImage(file, 600, 0.65);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(compressed);
+  });
+}
+
+function compressImage(file, maxPx, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else       { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Canvas toBlob failed')), 'image/jpeg', quality);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function viewPhoto(url) {
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-camera" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Chore Photo</div>
+    <img src="${url}" alt="Chore photo" style="width:100%;border-radius:12px;margin-bottom:16px;display:block">
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal()">Close</button>
+    </div>`);
+}
+
+// ── KID DIAMONDS TAB ──────────────────────────────────────────
+function renderKidDiamonds() {
+  const m   = S.currentUser;
+  const dmds = m.diamonds || 0;
+  const tot = m.totalEarned || 0;
+  const sav = m.savings || 0;
+  normalizeMember(m);
+  const tiny = isTiny(m);
+  const _savSpeech = fmtCurrencySpeech(sav, D.settings.currency || '$');
+
+  const myHistory = D.history.filter(h=>h.memberId===m.id).slice(0,15);
+
+  const _savOn = D.settings.savingsEnabled !== false;
+  let html = `
+    <div class="stats-grid" style="grid-template-columns:repeat(${_savOn?3:2},1fr)">
+      <div class="stat-card"${tiny ? ` onclick="speak('You have ${dmds} diamonds.')"` : ''}><div class="stat-val">${dmds}</div><div class="stat-label">💎 Diamonds</div></div>
+      <div class="stat-card"${tiny ? ` onclick="speak('You\\'ve earned ${tot} diamonds all time.')"` : ''}><div class="stat-val">${tot}</div><div class="stat-label"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.95rem;vertical-align:middle"></i> All Time</div></div>
+      ${_savOn ? `<div class="stat-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}><div class="stat-val">${D.settings.currency||'$'}${sav.toFixed(2)}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>` : ''}
+    </div>`;
+
+  // Level progress banner
+  if (D.settings.levelingEnabled !== false) {
+    const { current: lvl, next, xpIntoLevel, xpNeeded, pct } = getMemberLevel(m);
+    const _lvlTts = next
+      ? `You are currently level ${lvl.level}, and need ${xpNeeded - xpIntoLevel} more X P to level up.`
+      : `You are at the max level! Amazing!`;
+    html += `
+      <div class="level-banner"${tiny ? ` onclick="speak('${_lvlTts}')"` : ''}>
+        <div class="level-banner-icon">${lvl.icon}</div>
+        <div class="level-banner-info">
+          <div class="level-banner-name">Level ${lvl.level}: ${lvl.name}</div>
+          ${next
+            ? `<div class="level-banner-sub">${xpIntoLevel} / ${xpNeeded} XP to ${next.name} ${next.icon}</div>
+               <div class="level-xp-bar"><div class="level-xp-fill" style="width:${pct}%"></div></div>`
+            : `<div class="level-banner-sub"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.9rem;vertical-align:middle"></i> Max level reached!</div>
+               <div class="level-xp-bar"><div class="level-xp-fill" style="width:100%"></div></div>`}
+        </div>
+      </div>`;
+  }
+
+  // Streak row
+  if (D.settings.streakEnabled !== false) {
+    const streak = m.streak?.current || 0;
+    const best   = m.streak?.best    || 0;
+    const _streakTts = streak > 0 && streak >= best
+      ? `You currently have a ${streak} day streak, and this is your best streak so far!`
+      : `You currently have a ${streak} day streak, and your best streak is ${best} days.`;
+    html += `
+      <div class="streak-row"${tiny ? ` onclick="speak('${_streakTts}')"` : ''}>
+        <div class="streak-flame"><i class="ph-duotone ph-fire" style="color:#F97316"></i></div>
+        <div class="streak-info">
+          <div class="streak-count">${streak}-day streak</div>
+          <div class="streak-label">Best: ${best} days · Keep going!</div>
+        </div>
+      </div>`;
+  }
+
+  // Badge grid
+  if (D.settings.levelingEnabled !== false) {
+    const earned = Array.isArray(m.badges) ? m.badges : [];
+    const baseBadgeChips = D?.settings?.baseBadgesEnabled === false ? '' : BADGE_DEFS.map(b => {
+      const def = getBaseBadgeDef(b.id);
+      const have = earned.includes(b.id);
+      const badgeTts = tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")}')"` : '';
+      return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${badgeTts}>
+        <span class="badge-chip-icon">${def.icon}</span>${esc(def.name)}
+      </div>`;
+    }).join('');
+    // Chore badges: earned always shown, non-secret unearned shown locked, secret unearned hidden
+    const choreBadgeChips = (D.chores || []).flatMap(chore =>
+      (chore.badges || []).map(b => {
+        const key = `cb_${b.id}`;
+        const have = earned.includes(key);
+        if (!have && b.secret) return '';
+        const badgeTts = tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")}')"` : '';
+        return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${badgeTts}>
+          <span class="badge-chip-icon">${b.icon||'🏅'}</span>${esc(b.name||'')}
+        </div>`;
+      })
+    ).join('');
+    html += `
+      <div class="card">
+        <div class="card-title"><i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:1rem;vertical-align:middle"></i> Badges</div>
+        <div class="badge-grid">${baseBadgeChips}${choreBadgeChips}</div>
+      </div>`;
+  }
+
+  // Savings tracker
+  if (_savOn) {
+    const cur          = D.settings.currency || '$';
+    const matchOn      = D.settings.savingsMatchingEnabled;
+    const interestOn   = D.settings.savingsInterestEnabled;
+    const matched      = m.savingsMatched || 0;
+    const interest     = m.savingsInterest || 0;
+    const selfSaved    = Math.max(0, sav - matched - interest);
+    const matchPct     = D.settings.savingsMatchPercent || 50;
+    const interestRate   = D.settings.savingsInterestRate || 5;
+    const interestPeriod = D.settings.savingsInterestPeriod || 'monthly';
+    const interestTip    = interestPeriod === 'weekly' ? 'added every Monday' : 'added monthly on the 1st';
+    const hasBreakdown   = (matchOn && matched > 0) || (interestOn && interest > 0);
+    const breakdownHtml  = hasBreakdown
+      ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:6px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+           <span><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i> ${cur}${selfSaved.toFixed(2)} yours</span>
+           ${matched > 0 ? `<span>🤝 ${cur}${matched.toFixed(2)} matched</span>` : ''}
+           ${interest > 0 ? `<span>📈 ${cur}${interest.toFixed(2)} interest</span>` : ''}
+         </div>`
+      : '';
+    const tipsHtml = (matchOn || interestOn)
+      ? `<div style="font-size:0.75rem;opacity:0.7;margin-bottom:12px;display:flex;flex-direction:column;gap:2px;align-items:center">
+           ${matchOn ? `<span>🤝 ${matchPct}% parent match active</span>` : ''}
+           ${interestOn ? `<span>📈 ${interestRate}% interest ${interestTip}</span>` : ''}
+         </div>`
+      : '';
+    const _savTts = tiny ? ` onclick="speak('You have ${_savSpeech} in savings.${matchOn && matched > 0 ? ` Your grown-up matched ${cur}${matched.toFixed(2)}.` : ''}${interestOn && interest > 0 ? ` You have earned ${cur}${interest.toFixed(2)} in interest.` : ''}')"` : '';
+    html += `
+      <div class="savings-card"${_savTts}>
+        <div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> My Savings Jar</div>
+        <div class="savings-amount">${cur}${sav.toFixed(2)}</div>
+        ${breakdownHtml}
+        ${tipsHtml}
+        <div class="savings-label">Keep saving!</div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="showSavingsModal('${m.id}');event.stopPropagation()">+ Add Savings</button>
+          <button class="btn btn-sm" style="background:#F3F4F6;color:#6B7280" onclick="showSavingsHistory('${m.id}');event.stopPropagation()"><i class="ph-duotone ph-clock-clockwise" style="font-size:0.9rem;vertical-align:middle"></i> History</button>
+          ${(function(){
+            const hasPending = (D.savingsRequests||[]).some(r=>r.memberId===m.id&&r.status==='pending');
+            if (hasPending) return `<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;pointer-events:none" onclick="event.stopPropagation()"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Request Pending</button>`;
+            if (sav > 0) return `<button class="btn btn-sm" style="background:#EDE9FE;color:#6C63FF" onclick="showSpendRequestModal('${m.id}');event.stopPropagation()"><i class="ph-duotone ph-shopping-cart" style="font-size:0.9rem;vertical-align:middle"></i> Spend</button>`;
+            return '';
+          })()}
+        </div>
+      </div>`;
+  }
+
+  // History
+  if (myHistory.length > 0) {
+    html += `<div class="card"><div class="card-title"${tiny ? ` onclick="speak('Here\\'s what you\\'ve been up to recently.')"` : ''}><i class="ph-duotone ph-scroll" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</div>`;
+    myHistory.forEach(h => {
+      const pos = h.diamonds > 0;
+      const _ttsStr = h.diamonds !== 0
+        ? `${h.title}. ${pos ? 'Plus' : 'Minus'} ${Math.abs(h.diamonds)} diamonds.`
+        : h.title;
+      const _histTts = tiny ? ` onclick="speak('${_ttsStr.replace(/'/g,"\\'")}')"` : '';
+      const dmdsDisplay = h.diamonds !== 0
+        ? `<div class="history-dmds ${pos?'pos':'neg'}">${pos?'+':''}${h.diamonds}</div>`
+        : '';
+      html += `
+        <div class="history-item"${_histTts}>
+          <span class="history-icon">${historyIcon(h)}</span>
+          <div class="history-info">
+            <div class="history-title">${esc((h.title||'').replace(/^⚡\s*/,''))}</div>
+            <div class="history-date">${fmtDate(h.date)}</div>
+          </div>
+          ${dmdsDisplay}
+        </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-scroll" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">Complete chores to earn diamonds!</div></div>`;
+  }
+
+  document.getElementById('kid-content').innerHTML = html;
+}
+
+function showSpendRequestModal(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  const cur = D.settings.currency || '$';
+  const sav = m.savings || 0;
+  const hasPending = (D.savingsRequests || []).some(r => r.memberId === memberId && r.status === 'pending');
+  if (hasPending) { toast('You already have a request waiting for approval.'); return; }
+  if (sav <= 0) { toast('No savings to spend.'); return; }
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-shopping-cart" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Spend Savings</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Balance: <strong>${cur}${sav.toFixed(2)}</strong> — your parent will approve this.</p>
+    <div class="form-group">
+      <label class="form-label">Amount (${cur})</label>
+      <input type="number" id="spend-amt" min="0.01" max="${sav.toFixed(2)}" step="0.01" placeholder="e.g. 10.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">What for? <span class="form-label-hint">optional</span></label>
+      <input type="text" id="spend-reason" placeholder="Lego set, book, game...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitSpendRequest('${memberId}')">Send Request</button>
+    </div>`);
+}
+
+function submitSpendRequest(memberId) {
+  const m      = getMember(memberId);
+  const amt    = parseFloat(document.getElementById('spend-amt')?.value) || 0;
+  const reason = document.getElementById('spend-reason')?.value.trim() || '';
+  const cur    = D.settings.currency || '$';
+  if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  if (amt > (m.savings || 0)) { toast(`You only have ${cur}${(m.savings||0).toFixed(2)} saved.`); return; }
+  if ((D.savingsRequests || []).some(r => r.memberId === memberId && r.status === 'pending')) {
+    toast('Request already pending.'); return;
+  }
+  D.savingsRequests = D.savingsRequests || [];
+  D.savingsRequests.push({ id: genId(), memberId, amount: amt, reason, status: 'pending', date: today(), createdAt: Date.now() });
+  saveData();
+  closeModal();
+  toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent! Waiting for parent approval');
+  if (isTiny(m)) speak('You asked to spend some money! Waiting for your grown-up to say yes!');
+  renderKidDiamonds();
+}
+
+function approveSavingsRequest(requestId) {
+  const req = (D.savingsRequests || []).find(r => r.id === requestId);
+  if (!req) return;
+  const m   = getMember(req.memberId);
+  const cur = D.settings.currency || '$';
+  if (!m) return;
+  const actual = Math.min(req.amount, m.savings || 0);
+  m.savings = parseFloat(Math.max(0, (m.savings || 0) - actual).toFixed(2));
+  req.status = 'approved';
+  const label = req.reason ? `Spent: ${req.reason}` : 'Savings withdrawal approved';
+  addHistory('savings_withdraw', req.memberId, label, 0, { dollars: actual });
+  saveData();
+  toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function denySavingsRequest(requestId) {
+  const req = (D.savingsRequests || []).find(r => r.id === requestId);
+  if (!req) return;
+  const m = getMember(req.memberId);
+  req.status = 'denied';
+  saveData();
+  toast(`Spend request denied for ${m?.name || 'kid'}`);
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function showSavingsHistory(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  const cur = D.settings.currency || '$';
+  const savTypes = new Set(['savings', 'savings_deposit', 'savings_withdraw']);
+  const entries = (D.history || []).filter(h => h.memberId === memberId && savTypes.has(h.type));
+
+  const savingsIcon = (h) => {
+    if (h.type === 'savings_deposit')  return '<i class="ph-duotone ph-arrow-circle-down" style="color:#2563EB"></i>';
+    if (h.type === 'savings_withdraw') return '<i class="ph-duotone ph-shopping-bag" style="color:#6C63FF"></i>';
+    const t = (h.title || '').toLowerCase();
+    if (t.includes('interest'))   return '<i class="ph-duotone ph-trend-up" style="color:#16A34A"></i>';
+    if (t.includes('match'))      return '<i class="ph-duotone ph-handshake" style="color:#0E7490"></i>';
+    if (t.includes('converted'))  return '<i class="ph-duotone ph-arrows-left-right" style="color:#7C3AED"></i>';
+    return '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>';
+  };
+
+  const rows = entries.length === 0
+    ? '<div style="color:#9CA3AF;font-size:0.9rem;padding:12px 0;text-align:center">No savings activity yet</div>'
+    : entries.map(h => {
+        const isDeposit  = h.type === 'savings_deposit';
+        const isWithdraw = h.type === 'savings_withdraw';
+        const hasDollars = (h.dollars || 0) > 0;
+        const amtHtml = hasDollars
+          ? `<div style="font-weight:700;font-size:0.9rem;color:${isWithdraw?'#6C63FF':'#16A34A'};white-space:nowrap">${isWithdraw?'−':'+'}${cur}${h.dollars.toFixed(2)}</div>`
+          : h.diamonds !== 0
+            ? `<div style="font-weight:700;font-size:0.9rem;color:${h.diamonds>0?'#D97706':'#6B7280'};white-space:nowrap">${h.diamonds>0?'+':''}${h.diamonds} 💎</div>`
+            : '';
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6">
+            <span style="font-size:1.3rem;flex-shrink:0">${savingsIcon(h)}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:0.88rem;font-weight:600">${esc(h.title||'')}</div>
+              <div style="font-size:0.75rem;color:#9CA3AF">${fmtDate(h.date)}</div>
+            </div>
+            ${amtHtml}
+          </div>`;
+      }).join('');
+
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Savings History — ${esc(m.name)}</div>
+    <div style="max-height:60vh;overflow-y:auto;margin:-4px 0 8px">${rows}</div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-full" onclick="closeModal()">Close</button>
+    </div>`);
+}
+
+function showSavingsModal(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  const rate     = D.settings.diamondsPerDollar || 10;
+  const cur      = D.settings.currency || '$';
+  const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
+  const matchPct = D.settings.savingsMatchPercent || 50;
+  const interestOn  = D.settings.savingsInterestEnabled && D.settings.savingsEnabled !== false;
+  const interestRate = D.settings.savingsInterestRate || 5;
+  const interestPeriod = D.settings.savingsInterestPeriod || 'monthly';
+  const matchNote = matchOn
+    ? `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:0.875rem;color:#166534">
+        🤝 <strong>Parent match is on!</strong> For every ${cur}1.00 you save, your parents add ${cur}${(matchPct/100).toFixed(2)} extra (${matchPct}% match).
+       </div>`
+    : '';
+  const interestNote = interestOn
+    ? `<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:0.875rem;color:#1E40AF">
+        📈 <strong>Interest is on!</strong> Your savings grow by ${interestRate}% ${interestPeriod === 'weekly' ? 'every Monday' : 'on the 1st of each month'}.
+       </div>`
+    : '';
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Savings Jar</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:${(matchOn||interestOn)?'10':'16'}px">
+      Convert diamonds to savings (${rate} 💎 = ${cur}1.00).
+    </p>
+    ${matchNote}${interestNote}
+    <div class="form-group">
+      <label class="form-label">Diamonds to convert <span class="form-label-hint">(you have ${m.diamonds||0})</span></label>
+      <input type="number" id="save-dmds" min="0" max="${m.diamonds||0}" step="${rate}" placeholder="${rate}"
+             oninput="updateSavingsPreview('${memberId}',this.value)">
+    </div>
+    <div id="savings-preview" style="font-size:0.85rem;color:#166534;min-height:20px;margin-top:-8px;margin-bottom:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" onclick="doSaveDiamonds('${memberId}')">Convert <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+    </div>`);
+}
+
+function updateSavingsPreview(memberId, rawVal) {
+  const el = document.getElementById('savings-preview');
+  if (!el) return;
+  const rate     = D.settings.diamondsPerDollar || 10;
+  const cur      = D.settings.currency || '$';
+  const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
+  const matchPct = D.settings.savingsMatchPercent || 50;
+  const dmds     = parseInt(rawVal) || 0;
+  if (dmds <= 0 || dmds % rate !== 0) { el.textContent = ''; return; }
+  const dollars      = dmds / rate;
+  const matchDollars = matchOn ? parseFloat((dollars * matchPct / 100).toFixed(2)) : 0;
+  const total        = dollars + matchDollars;
+  el.innerHTML = matchOn && matchDollars > 0
+    ? `${cur}${dollars.toFixed(2)} yours + ${cur}${matchDollars.toFixed(2)} parent match = <strong>${cur}${total.toFixed(2)} total</strong>`
+    : `You'll save ${cur}${dollars.toFixed(2)}`;
+}
+
+function doSaveDiamonds(memberId) {
+  const m    = getMember(memberId);
+  const dmds = parseInt(document.getElementById('save-dmds')?.value) || 0;
+  const rate = D.settings.diamondsPerDollar || 10;
+  const cur  = D.settings.currency || '$';
+  if (!m || dmds <= 0 || dmds > (m.diamonds||0) || dmds % rate !== 0) {
+    toast(`Must be a multiple of ${rate} 💎`); return;
+  }
+  const dollars = dmds / rate;
+  m.diamonds -= dmds;
+  m.savings   = (m.savings||0) + dollars;
+  addHistory('savings', memberId, `Converted ${dmds} 💎 to savings`, -dmds);
+
+  const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
+  let toastMsg   = `+${cur}${dollars.toFixed(2)} saved!`;
+  if (matchOn) {
+    const matchPct    = D.settings.savingsMatchPercent || 50;
+    const matchDollars = parseFloat((dollars * matchPct / 100).toFixed(2));
+    if (matchDollars > 0) {
+      m.savings        = (m.savings||0) + matchDollars;
+      m.savingsMatched = (m.savingsMatched||0) + matchDollars;
+      addHistory('savings', memberId, `Parent match (${matchPct}%) +${cur}${matchDollars.toFixed(2)}`, 0);
+      toastMsg = `+${cur}${dollars.toFixed(2)} saved + ${cur}${matchDollars.toFixed(2)} parent match!`;
+    }
+  }
+
+  saveData();
+  closeModal();
+  toast(toastMsg);
+  renderKidDiamonds();
+  renderKidHeader();
+}
+
+// ── SAVINGS INTEREST ──────────────────────────────────────────
+function applyInterestForAllKids() {
+  const s = D.settings;
+  if (!s.savingsEnabled || !s.savingsInterestEnabled) return;
+  const rate   = parseFloat(s.savingsInterestRate) || 5;
+  const period = s.savingsInterestPeriod || 'monthly';
+  const cur    = s.currency || '$';
+  const todayStr = today();
+
+  // Check if today is an interest day
+  const d = parseDateLocal(todayStr);
+  const isInterestDay = period === 'weekly'
+    ? d.getDay() === 1          // Monday
+    : d.getDate() === 1;        // 1st of month
+  if (!isInterestDay) return;
+
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  let changed = false;
+  kids.forEach(m => {
+    if ((m.savings || 0) <= 0) return;
+    if (m.savingsInterestLastDate === todayStr) return; // already applied today
+    const interest = parseFloat((m.savings * rate / 100).toFixed(2));
+    if (interest <= 0) return;
+    m.savings             = (m.savings || 0) + interest;
+    m.savingsInterest     = (m.savingsInterest || 0) + interest;
+    m.savingsInterestLastDate = todayStr;
+    addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+    changed = true;
+  });
+  if (changed) saveData();
+}
+
+// ── SHOP TAB ──────────────────────────────────────────────────
+function renderKidShop() {
+  const m    = S.currentUser;
+  const tiny = isTiny(m);
+  const dmds  = m.diamonds || 0;
+  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||0)-(b.cost||0) : ()=>0;
+  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
+
+  if (indiv.length === 0) {
+    document.getElementById('kid-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:3rem"></i></div>
+        <div class="empty-text">No prizes yet! Ask a parent to add some.</div>
+      </div>`;
+    return;
+  }
+
+  const renderPrizeCard = (p) => {
+    const canAfford = dmds >= p.cost;
+    const cls = canAfford ? 'can-afford' : '';
+    const tts  = `${p.title}. Costs ${p.cost} diamonds.${canAfford?' You can get this!':` You need ${p.cost-dmds} more diamonds.`}`;
+    return `
+      <div class="prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
+           ${tiny?`title="${esc(tts)}"`:''}>
+        <span class="prize-icon">${renderIcon(p.icon,p.iconColor)}</span>
+        <div class="prize-name">${esc(p.title)}</div>
+        <div class="prize-cost">💎 ${p.cost}</div>
+        ${!canAfford&&!tiny?`<div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${p.cost-dmds} more 💎 needed</div>`:''}
+      </div>`;
+  };
+
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:1.5rem;font-weight:800">💎 ${dmds}</div>
+        <div style="font-size:0.8rem;color:var(--muted)">your diamonds</div>
+      </div>
+      ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
+    </div>
+    <div class="section-row"><span class="section-title"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:1rem;vertical-align:middle"></i> My Prizes</span></div>
+    <div class="prize-grid">${indiv.map(p=>renderPrizeCard(p)).join('')}</div>`;
+
+  document.getElementById('kid-content').innerHTML = html;
+}
+
+function kidRedeemPrize(prizeId, evt) {
+  evt && evt.stopPropagation();
+  const m     = S.currentUser;
+  const prize = D.prizes.find(p=>p.id===prizeId);
+  if (!m || !prize) return;
+
+  const dmds = m.diamonds||0;
+  if (dmds < prize.cost) {
+    const need = prize.cost - dmds;
+    if (isTiny(m)) speak(`You need ${need} more diamonds for this prize!`);
+    else toast(`Need ${need} more 💎 for "${prize.title}"`);
+    return;
+  }
+
+  showModal(`
+    <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} Redeem Prize?</div>
+    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your 💎 ${dmds} diamonds?</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
+      <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></button>
+    </div>`);
+}
+
+function confirmRedeem(prizeId) {
+  const m     = S.currentUser;
+  const prize = D.prizes.find(p=>p.id===prizeId);
+  closeModal();
+  if (!prize) { toast('Prize no longer available'); return; }
+  const ok = doRedeemPrize(prizeId, m?.id);
+  if (!ok) { toast('Could not redeem — not enough diamonds'); return; }
+
+  showCelebration({
+    icon:   renderIcon(prize.icon, prize.iconColor, 'font-size:3.5rem'),
+    title:  'Prize Unlocked!',
+    sub:    prize.title,
+    tts:    isTiny(m) ? `You got it! ${prize.title}! Go show your grown-up!` : null,
+    onClose: () => { renderKidShop(); renderKidHeader(); }
+  });
+}
+
+// ── TEAM TAB ──────────────────────────────────────────────────
+function renderKidTeam() {
+  const m    = S.currentUser;
+  const tiny = isTiny(m);
+  const dmds  = m.diamonds || 0;
+  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.targetPoints||0)-(b.targetPoints||0) : ()=>0;
+  const goals = (D.teamGoals || []).slice().sort(sortFn);
+  const kids  = D.family.members.filter(k=>k.role==='kid'&&!k.deleted);
+
+  if (goals.length === 0) {
+    document.getElementById('kid-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:3rem"></i></div>
+        <div class="empty-text">No team prizes yet! Ask a parent to add some.</div>
+      </div>`;
+    return;
+  }
+
+  const goalCards = goals.map(g => {
+    const total  = goalTotal(g);
+    const target = g.targetPoints || 1;
+    const pct    = Math.min(100, Math.round(total/target*100));
+    const reached = pct >= 100;
+    const myContrib = (g.contributions||{})[m.id] || 0;
+    const contribs = kids.map(k => {
+      const c = (g.contributions||{})[k.id]||0;
+      const pctBar = total>0 ? Math.round(c/total*100) : 0;
+      return `
+        <div class="contrib-row">
+          <span class="contrib-avatar">${k.avatar||'🙂'}</span>
+          <span class="contrib-name" style="color:#fff">${esc(k.name)}</span>
+          <div class="contrib-bar-bg"><div class="contrib-fill" style="width:${pctBar}%"></div></div>
+          <span class="contrib-val">${c}</span>
+        </div>`;
+    }).join('');
+    const _needed = target - total;
+    const _goalTts = reached
+      ? `${g.title}. Amazing! The team reached this goal!`
+      : total > 0
+        ? `${g.title}. The team needs ${_needed} more diamonds.`
+        : `${g.title}. The team needs ${target} diamonds to reach this goal.`;
+    return `
+      <div class="goal-card" style="margin-bottom:14px"${tiny ? ` onclick="speak('${_goalTts.replace(/'/g,"\\'")}')"` : ''}>
+        <span class="goal-icon">${renderIcon(g.icon, g.iconColor, 'font-size:3.5rem')}</span>
+        <div class="goal-title">${esc(g.title)}</div>
+        <div class="goal-sub">${total} / ${target} 💎</div>
+        <div class="goal-bar-bg"><div class="goal-bar-fill" style="width:${pct}%"></div></div>
+        <div class="goal-dmds">${pct}% there! ${reached?'<i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Goal reached!':''}</div>
+        ${kids.length>1?`<div style="height:14px"></div>${contribs}`:''}
+        ${!reached?`
+          <div style="margin-top:14px">
+            ${dmds > 0
+              ? `<button class="btn btn-primary btn-full" onclick="showContributeModal('${m.id}','${g.id}')">
+                   ${tiny?'Give Diamonds! 💎':'Contribute Diamonds 💎'}
+                 </button>`
+              : `<div style="text-align:center;font-size:0.85rem;opacity:0.8">Complete chores to earn diamonds first!</div>`}
+          </div>`
+        : `<div style="text-align:center;margin-top:12px;font-size:0.85rem;opacity:0.9">Tell a parent to collect the reward! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>`}
+      </div>`;
+  }).join('');
+
+  document.getElementById('kid-content').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:1.5rem;font-weight:800">💎 ${dmds}</div>
+        <div style="font-size:0.8rem;color:var(--muted)">your diamonds</div>
+      </div>
+      ${tiny?`<div style="font-size:2rem">${m.avatar}</div>`:''}
+    </div>
+    <div class="section-row"><span class="section-title"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Team Prizes</span></div>
+    ${goalCards}`;
+}
+
+function showContributeModal(memberId, goalId) {
+  const m    = getMember(memberId);
+  const goal = D.teamGoals?.find(g => g.id === goalId);
+  if (!m || !goal) return;
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1.2rem;vertical-align:middle"></i> ${esc(goal.title)}</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">
+      You have <strong>${m.diamonds||0} 💎</strong>. How many do you want to contribute?
+    </p>
+    <div class="form-group">
+      <label class="form-label">Diamonds to contribute</label>
+      <input type="number" id="contrib-dmds" min="1" max="${m.diamonds||0}" placeholder="e.g. 50">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="doContrib('${memberId}','${goalId}')">Contribute! 💎</button>
+    </div>`);
+}
+
+function doContrib(memberId, goalId) {
+  const dmds  = parseInt(document.getElementById('contrib-dmds')?.value)||0;
+  const goal = D.teamGoals?.find(g => g.id === goalId);
+  if (dmds <= 0) { toast('Enter diamonds to contribute'); return; }
+  const ok = doContributeToGoal(memberId, goalId, dmds);
+  closeModal();
+  if (!ok) { toast('Not enough diamonds!'); return; }
+  toast(`+${dmds} 💎 contributed to "${goal?.title}"! <i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.9rem;vertical-align:middle"></i>`);
+  const m = getMember(memberId);
+  if (isTiny(m)) speak(`You gave ${dmds} diamonds to the team! Amazing!`);
+  renderKidTeam();
+  renderKidHeader();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHUNK 5 — PARENT ADMIN VIEW
+═══════════════════════════════════════════════════════════════ */
+
+// ── PARENT VIEW ENTRY ─────────────────────────────────────────
+function renderParentView() {
+  showScreen('screen-parent');
+  renderParentHeader();
+  renderParentNav();
+  renderParentTab();
+}
+
+function renderParentHeader() {
+  const m = S.currentUser;
+  const pending    = pendingApprovals().length + pendingSpendRequests().length;
+  const inProgress = inProgressChores().length;
+  document.getElementById('parent-header').innerHTML = `
+    <div class="header-left">
+      <div>
+        <div class="header-name">${esc(D.family.name)}</div>
+        <div class="header-sub">Parent Dashboard</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      ${pending>0    ? `<span class="header-badge" style="background:#EF4444;color:#fff" title="Needs approval"><i class="ph-duotone ph-hourglass" style="font-size:0.8rem;vertical-align:middle"></i> ${pending}</span>` : ''}
+      ${inProgress>0 ? `<span class="header-badge" style="background:#3B82F6;color:#fff" title="Kid actively working"><i class="ph-duotone ph-hammer" style="font-size:0.8rem;vertical-align:middle"></i> ${inProgress}</span>` : ''}
+      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
+    </div>`;
+}
+
+function renderParentNav() {
+  const pending    = pendingApprovals().length + pendingSpendRequests().length;
+  const inProgress = inProgressChores().length;
+  const homeCount  = pending + inProgress;
+  const tabs = [
+    ['home',    ICONS.home,     'Overview'],
+    ['chores',  ICONS.chores,   'Chores'],
+    ['prizes',  ICONS.prizes,   'Prizes'],
+    ['levels',  ICONS.levels,   'Levels'],
+    ['stats',   ICONS.stats,    'Stats'],
+  ];
+  document.getElementById('parent-nav').innerHTML = tabs.map(([id,icon,label]) => `
+    <button class="nav-item${S.parentTab===id?' active':''}" onclick="switchParentTab('${id}')">
+      <span class="nav-icon">${icon}</span>${label}
+      ${id==='home'&&homeCount>0?`<span class="nav-badge">${homeCount}</span>`:''}
+    </button>`).join('');
+}
+
+function switchParentTab(tab) {
+  S.parentTab = tab;
+  renderParentNav();
+  renderParentTab();
+}
+
+function renderParentTab() {
+  try {
+  switch(S.parentTab) {
+    case 'home':     renderParentHome();     break;
+    case 'chores':   renderParentChores();   break;
+    case 'prizes':   renderParentPrizes();   break;
+    case 'levels':   renderParentLevels();   break;
+    case 'stats':    renderStatsPage(document.getElementById('parent-content')); break;
+  }
+  } catch(e) {
+    console.error('renderParentTab error:', e);
+    const el = document.getElementById('parent-content');
+    if (el) el.innerHTML = `<div class="card" style="border:2px solid #EF4444;color:#EF4444;padding:1rem">Something went wrong rendering this tab. Check the browser console for details.</div>`;
+  }
+}
+
+// ── LIFETIME STATS ────────────────────────────────────────────
+function buildMemberStats(member, histIdx) {
+  const hist = histIdx ? (histIdx.get(member.id) || []) : (D.history || []).filter(h => h.memberId === member.id);
+  normalizeMember(member);
+
+  // Chore history breakdown
+  const choreHist    = hist.filter(h => h.type === 'chore');
+  const prizeHist    = hist.filter(h => h.type === 'prize');
+  const penaltyHist  = hist.filter(h => h.type === 'penalty');
+  const bonusHist    = hist.filter(h => h.type === 'bonus');
+  const levelHist    = hist.filter(h => h.type === 'level');
+  const savDepHist   = hist.filter(h => h.type === 'savings_deposit');
+  const savWithHist  = hist.filter(h => h.type === 'savings_withdraw');
+
+  // Per-chore counts
+  const choreCount = {};
+  choreHist.forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
+  const choreBreakdown = Object.entries(choreCount).sort((a,b) => b[1]-a[1]);
+
+  // Per-prize counts (from prize.redemptions)
+  const prizeCount = {};
+  (D.prizes || []).forEach(p => {
+    const count = (p.redemptions || []).filter(r => r.memberId === member.id).length;
+    if (count > 0) prizeCount[p.title] = { count, icon: p.icon || '🎁', cost: p.cost };
+  });
+  const prizeBreakdown = Object.entries(prizeCount).sort((a,b) => b[1].count - a[1].count);
+
+  // Active days (days with any history)
+  const activeDates = new Set(hist.map(h => h.date));
+  const daysActive = activeDates.size;
+
+  // Most productive date
+  const ptsByDate = {};
+  choreHist.forEach(h => { ptsByDate[h.date] = (ptsByDate[h.date]||0) + (h.diamonds||0); });
+  const bestDate = Object.entries(ptsByDate).sort((a,b)=>b[1]-a[1])[0];
+
+  // Favorite chore
+  const favChore = choreBreakdown[0] || null;
+
+  // NL time
+  const nlSecs = member.nlLifetimeSecs || 0;
+  const nlFmt = nlSecs === 0 ? '0s' : `${Math.floor(nlSecs/60)}m ${nlSecs%60}s`;
+
+  // Level info
+  const lvlInfo = getMemberLevel(member);
+
+  return {
+    choreDone:        choreHist.length,
+    diamondsEarned:      [...choreHist, ...bonusHist].reduce((s,h) => s + (h.diamonds||0), 0),
+    rewardCount:      prizeHist.length,
+    diamondsSpent:      prizeHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
+    penaltyCount:     penaltyHist.length,
+    penaltyAmount:    penaltyHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
+    nlLifetimeSecs:   nlSecs,
+    nlFmt,
+    totalXP:          member.xp || member.totalEarned || 0,
+    badgeCount:       (member.badges || []).length,  // includes standard + chore badges
+    bestStreak:       member.streak?.best || 0,
+    currentStreak:    member.streak?.current || 0,
+    bestComboStreak:  member.comboStreak?.best || 0,
+    currentComboStreak: member.comboStreak?.current || 0,
+    savings:          member.savings || 0,
+    totalDeposited:   savDepHist.reduce((s, h) => s + (h.dollars || 0), 0),
+    totalWithdrawn:   savWithHist.reduce((s, h) => s + (h.dollars || 0), 0),
+    declineCount:     hist.filter(h => h.type === 'decline').length,
+    comboCount:       bonusHist.length,
+    comboDiamonds:       bonusHist.reduce((s,h) => s + Math.abs(h.diamonds||0), 0),
+    levelUps:         Math.max(levelHist.length, lvlInfo.current.level - 1),
+    currentLevel:     lvlInfo.current,
+    daysActive,
+    bestDate:         bestDate ? { date: bestDate[0], dmds: bestDate[1] } : null,
+    favChore,
+    avgChoresPerDay:  daysActive > 0 ? (choreHist.length / daysActive).toFixed(1) : '—',
+    choreBreakdown,
+    prizeBreakdown,
+    totalPoints:      member.diamonds || 0,
+    totalEarned:      member.totalEarned || 0,
+  };
+}
+
+function _statTile(icon, label, value, color, sub, ttsText) {
+  const _ttsAttr = ttsText ? ` onclick="speak('${ttsText.replace(/'/g,"\\'")}')"` : '';
+  return `
+    <div style="background:#fff;border-radius:14px;padding:14px 10px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.07);display:flex;flex-direction:column;align-items:center;gap:4px"${_ttsAttr}>
+      <div style="font-size:1.6rem">${icon}</div>
+      <div style="font-size:1.35rem;font-weight:800;color:${color||'#1f2937'};line-height:1.1">${value}</div>
+      <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em">${label}</div>
+      ${sub ? `<div style="font-size:0.7rem;color:#9ca3af">${sub}</div>` : ''}
+    </div>`;
+}
+
+function _statSection(title, tilesHtml) {
+  return `
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px;padding:0 2px">${title}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${tilesHtml}</div>
+    </div>`;
+}
+
+function _statBreakdownTable(rows, col1, col2) {
+  if (!rows.length) return `<div style="color:#9ca3af;font-size:0.85rem;padding:6px 0">None yet</div>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+    ${rows.map(([name,val],i) => `
+      <tr style="border-bottom:1px solid #f3f4f6">
+        <td style="padding:5px 4px;font-weight:${i===0?'700':'500'}">${esc(name)}</td>
+        <td style="padding:5px 4px;text-align:right;font-weight:700;color:#6C63FF">${val} ${col2}</td>
+      </tr>`).join('')}
+  </table>`;
+}
+
+function renderFamilyStatsCard(kids, histIdx) {
+  const kidIds = new Set(kids.map(k => k.id));
+  const allHist = histIdx
+    ? kids.flatMap(k => histIdx.get(k.id) || [])
+    : (D.history || []).filter(h => kidIds.has(h.memberId));
+  const choreHist   = allHist.filter(h => h.type === 'chore');
+  const declineHist = allHist.filter(h => h.type === 'decline');
+
+  // Overview totals
+  const totalChores  = choreHist.length;
+  const totalDiamonds = kids.reduce((s, k) => s + (k.totalEarned || 0), 0);
+  const totalPrizes  = D.prizes.reduce((s, p) => s + (p.redemptions || []).length, 0);
+
+  // Streaks
+  const kidsOnStreak = kids.filter(k => (k.streak?.current || 0) > 0).length;
+
+  // Most popular chore
+  const choreCounts = {};
+  choreHist.forEach(h => { choreCounts[h.title] = (choreCounts[h.title] || 0) + 1; });
+  const topChore = Object.entries(choreCounts).sort((a, b) => b[1] - a[1])[0];
+
+  // Best single day (most diamonds earned across any kid)
+  const dmByDate = {};
+  choreHist.forEach(h => { dmByDate[h.date] = (dmByDate[h.date] || 0) + (h.diamonds || 0); });
+  const bestDay = Object.entries(dmByDate).sort((a, b) => b[1] - a[1])[0];
+
+  // Favorite prize
+  const prizeCounts = {};
+  D.prizes.forEach(p => {
+    const n = (p.redemptions || []).length;
+    if (n > 0) prizeCounts[p.title] = { n, icon: p.icon || '🎁' };
+  });
+  const topPrize = Object.entries(prizeCounts).sort((a, b) => b[1].n - a[1].n)[0];
+
+  // Total NL time
+  const totalNlSecs = kids.reduce((s, k) => s + (k.nlLifetimeSecs || 0), 0);
+  const nlFmt = totalNlSecs === 0 ? '—'
+    : totalNlSecs < 60 ? `${totalNlSecs}s`
+    : `${Math.floor(totalNlSecs / 60)}m ${totalNlSecs % 60}s`;
+
+  const cur = D.settings.currency || '$';
+  const savOn = D.settings.savingsEnabled !== false;
+  const familyBalance   = kids.reduce((s, k) => s + (k.savings || 0), 0);
+  const familyDeposited = (D.history || []).filter(h => kids.some(k=>k.id===h.memberId) && h.type==='savings_deposit').reduce((s,h)=>s+(h.dollars||0),0);
+  const familyWithdrawn = (D.history || []).filter(h => kids.some(k=>k.id===h.memberId) && h.type==='savings_withdraw').reduce((s,h)=>s+(h.dollars||0),0);
+
+  const overviewSection = _statSection('Family Overview',
+    _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', 'Chores Done', totalChores, '#166534', 'all time, all kids') +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>', 'Diamonds Earned', totalDiamonds, '#92400e', 'all time, all kids') +
+    _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>', 'Prizes Redeemed', totalPrizes, '#1e40af', 'all time, all kids')
+  );
+
+  const savingsOverview = savOn ? _statSection('Family Savings',
+    _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>', 'Total Balance', `${cur}${familyBalance.toFixed(2)}`, '#166534', 'across all kids') +
+    _statTile('<i class="ph-duotone ph-arrow-circle-down" style="color:#2563EB"></i>', 'Total Deposited', `${cur}${familyDeposited.toFixed(2)}`, '#1e40af', 'all time') +
+    _statTile('<i class="ph-duotone ph-shopping-bag" style="color:#6C63FF"></i>', 'Total Spent', `${cur}${familyWithdrawn.toFixed(2)}`, '#4c1d95', 'from savings')
+  ) : '';
+
+  const funTiles =
+    (D.settings.streakEnabled !== false
+      ? _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>', 'Active Streaks', kidsOnStreak, '#b45309', `kid${kidsOnStreak !== 1 ? 's' : ''} on a streak now`)
+      : '') +
+    (topChore
+      ? _statTile('<i class="ph-duotone ph-star" style="color:#7C3AED"></i>', 'Most Popular Chore', topChore[0].split(' ')[0], '#4c1d95', `${topChore[0]} · ${topChore[1]}×`)
+      : '') +
+    (topPrize
+      ? _statTile(`<span style="font-size:1.6rem">${topPrize[1].icon}</span>`, 'Fav Prize', topPrize[1].n + '×', '#1e40af', topPrize[0])
+      : '') +
+    (bestDay
+      ? _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>', 'Best Family Day', `${bestDay[1]} 💎`, '#d97706', fmtDate(bestDay[0]))
+      : '') +
+    _statTile('<i class="ph-duotone ph-arrow-u-down-left" style="color:#6B7280"></i>', 'Chores Declined', declineHist.length, '#374151', 'by parents, all time') +
+    (D.settings.notListeningEnabled !== false
+      ? _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>', 'Not-Listening Time', nlFmt, '#991b1b', 'total across all kids')
+      : '');
+
+  const funSection = funTiles.trim() ? _statSection('Fun Facts', funTiles) : '';
+
+  const isExpanded = _familyStatsExpanded;
+  const caret = `<i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0;margin-left:auto"></i>`;
+
+  return `
+    <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:16px">
+      <div onclick="toggleFamilyStats()" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${isExpanded?'18':'0'}px">
+        <img src="gemsproutpadded.png" style="width:2.5rem;height:2.5rem;border-radius:10px;flex-shrink:0">
+        <div>
+          <div style="font-size:1.1rem;font-weight:800">${esc(D.family.name || 'The Family')}</div>
+          <div style="font-size:0.85rem;color:#6b7280">${kids.length} kid${kids.length !== 1 ? 's' : ''} · all-time combined stats</div>
+        </div>
+        ${caret}
+      </div>
+      ${isExpanded ? `${overviewSection}${savingsOverview}${funSection}` : ''}
+    </div>`;
+}
+
+function renderMemberStatsCard(member, collapse, histIdx) {
+  // collapse = { isExpanded: bool, toggleFn: string } | null (null = always expanded, no toggle)
+  const s = buildMemberStats(member, histIdx);
+  const color = member.color || '#6C63FF';
+  const tts = (isTiny(member) && S.currentUser?.id === member.id) ? (t) => t : () => '';
+
+  const choresSection = _statSection('Chores & Diamonds',
+    _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>','Chores Done', s.choreDone, '#166534', '', tts(`${s.choreDone} chores done.`)) +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>','Diamonds Earned', s.diamondsEarned, '#92400e', '', tts(`You have earned ${s.diamondsEarned} diamonds.`)) +
+    _statTile('<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>','Total XP', s.totalXP, '#4c1d95', '', tts(`You have ${s.totalXP} total X P.`))
+  );
+
+  const _levelTiles = (D.settings.levelingEnabled !== false ? _statTile('<i class="ph-duotone ph-trophy" style="color:#D97706"></i>','Level', `${s.currentLevel.icon} ${s.currentLevel.level}`, color, s.currentLevel.name, tts(`You are level ${s.currentLevel.level}, ${s.currentLevel.name}.`)) : '') +
+    (D.settings.streakEnabled !== false ? _statTile('<i class="ph-duotone ph-fire" style="color:#F97316"></i>','Best Streak', `${s.bestStreak}d`, '#b45309', s.currentStreak > 0 ? `${s.currentStreak}d now` : '', tts(`Your best streak is ${s.bestStreak} days.${s.currentStreak > 0 ? ` You are on a ${s.currentStreak} day streak right now!` : ''}`)) : '') +
+    (D.settings.streakEnabled !== false ? _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Best Combo Streak', `${s.bestComboStreak}d`, '#92400E', s.currentComboStreak > 0 ? `${s.currentComboStreak}d now` : '', tts(`Your best combo streak is ${s.bestComboStreak} days.`)) : '') +
+    _statTile('<i class="ph-duotone ph-calendar-check" style="color:#0E7490"></i>','Days Active', s.daysActive, '#0e7490', '', tts(`You have been active for ${s.daysActive} days.`));
+  const levelSection = _levelTiles.trim() ? _statSection('Level & Streaks', _levelTiles) : '';
+
+  const rewardSection = _statSection('Rewards & Combos',
+    _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>','Prizes Won', s.rewardCount, '#1e40af', '', tts(`You have won ${s.rewardCount} prize${s.rewardCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>','Combos Hit', s.comboCount, '#b45309', `+${s.comboDiamonds} bonus 💎`, tts(`You have hit ${s.comboCount} combo${s.comboCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-shopping-cart" style="color:#374151"></i>','💎 Spent', s.diamondsSpent, '#374151', 'on prizes', tts(`You have spent ${s.diamondsSpent} diamonds on prizes.`))
+  );
+
+  const cur = D.settings.currency || '$';
+  const savingsSection = D.settings.savingsEnabled !== false ? _statSection('Savings Jar',
+    _statTile('<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i>', 'Balance', `${cur}${(s.savings||0).toFixed(2)}`, '#166534', 'current', tts(`You have ${cur}${(s.savings||0).toFixed(2)} in savings.`)) +
+    _statTile('<i class="ph-duotone ph-arrow-circle-down" style="color:#2563EB"></i>', 'Total Deposited', `${cur}${(s.totalDeposited||0).toFixed(2)}`, '#1e40af', 'all time') +
+    _statTile('<i class="ph-duotone ph-shopping-bag" style="color:#6C63FF"></i>', 'Total Spent', `${cur}${(s.totalWithdrawn||0).toFixed(2)}`, '#4c1d95', 'from savings')
+  ) : '';
+
+  // Build chore badge display — earned shown normally, non-secret unearned shown locked, secret unearned hidden
+  const earnedBadgeSet = new Set((member.badges||[]).filter(b => b.startsWith('cb_')));
+  const choreBadgeItems = [];
+  for (const chore of D.chores) {
+    for (const b of (chore.badges||[])) {
+      const key = `cb_${b.id}`;
+      const have = earnedBadgeSet.has(key);
+      if (!have && b.secret) continue;
+      choreBadgeItems.push({ b, chore, have });
+    }
+  }
+  const choreBadgeGrid = choreBadgeItems.length === 0 ? '' : `
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-medal" style="color:#7C3AED;vertical-align:middle"></i> Chore Badges</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${choreBadgeItems.map(({b, chore, have}) =>
+          `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} × ${b.count}">
+            <span class="badge-chip-icon">${b.icon||'🏅'}</span>${esc(b.name||'')}</div>`
+        ).join('')}
+      </div>
+    </div>`;
+
+  const badgeSection = D.settings.levelingEnabled !== false ? _statSection('Achievements',
+    _statTile('<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>','Badges', s.badgeCount, '#7c3aed', '', tts(`You have ${s.badgeCount} badge${s.badgeCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-trend-up" style="color:#0F766E"></i>','Level-Ups', s.levelUps, '#0f766e', '', tts(`You have leveled up ${s.levelUps} time${s.levelUps !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-chart-bar" style="color:#374151"></i>','Avg/Day', s.avgChoresPerDay, '#374151', 'chores per active day', tts(`You average ${s.avgChoresPerDay} chores per day.`))
+  ) : '';
+
+  const penaltySection = _statSection('Penalties',
+    _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b', '', tts(`You have had ${s.penaltyCount} penalty${s.penaltyCount !== 1 ? 's' : ''}.`)) +
+    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','💎 Deducted', s.penaltyAmount, '#991b1b', '', tts(`You have had ${s.penaltyAmount} diamonds deducted.`)) +
+    _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime', tts((() => {
+      const ns = s.nlLifetimeSecs || 0;
+      if (ns === 0) return 'No not-listening time. Great job!';
+      const hrs = Math.floor(ns / 3600), mins = Math.floor((ns % 3600) / 60), secs = ns % 60;
+      if (hrs > 0) return `${hrs} hour${hrs!==1?'s':''} and ${mins} minute${mins!==1?'s':''} of not-listening time.`;
+      if (mins > 0 && secs > 0) return `${mins} minute${mins!==1?'s':''} and ${secs} second${secs!==1?'s':''} of not-listening time.`;
+      if (mins > 0) return `${mins} minute${mins!==1?'s':''} of not-listening time.`;
+      return `${secs} second${secs!==1?'s':''} of not-listening time.`;
+    })()))
+  );
+
+  const bestDaySub = s.bestDate ? `${fmtDate(s.bestDate.date)} · ${s.bestDate.dmds} 💎` : 'No data yet';
+  const favChoreSub = s.favChore ? `${s.favChore[1]}× completed` : 'No chores yet';
+  const extraSection = _statSection('Fun Facts',
+    _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>','Best Day', s.bestDate ? `${s.bestDate.dmds} 💎` : '—', '#d97706', bestDaySub, tts(s.bestDate ? `Your best day was ${s.bestDate.dmds} diamonds.` : `No best day yet.`)) +
+    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : '—', '#db2777', favChoreSub, tts(s.favChore ? `Your favorite chore is ${s.favChore[0]}.` : `No favorite chore yet.`)) +
+    _statTile('<i class="ph-duotone ph-arrow-u-down-left" style="color:#6B7280"></i>','Declined', s.declineCount, '#374151', 'chores declined', '')
+  );
+
+  // Chore breakdown table
+  const choreTableRows = s.choreBreakdown.map(([name,count]) => [name, count]);
+  const choreTable = `
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;vertical-align:middle"></i> Chore Breakdown</div>
+      ${_statBreakdownTable(choreTableRows.slice(0,10), 'Chore', 'times')}
+    </div>`;
+
+  // Prize breakdown table
+  const prizeTableRows = s.prizeBreakdown.map(([name,info]) => [
+    `${info.icon} ${name}`, `${info.count}×`
+  ]);
+  const prizeTable = `
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-gift" style="color:#FF6584;vertical-align:middle"></i> Prize Breakdown</div>
+      ${prizeTableRows.length
+        ? `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+            ${prizeTableRows.slice(0,10).map(([name,val],i) => `
+              <tr style="border-bottom:1px solid #f3f4f6">
+                <td style="padding:5px 4px;font-weight:${i===0?'700':'500'}">${esc(name)}</td>
+                <td style="padding:5px 4px;text-align:right;font-weight:700;color:#6C63FF">${val}</td>
+              </tr>`).join('')}
+          </table>`
+        : '<div style="color:#9ca3af;font-size:0.85rem;padding:6px 0">No prizes redeemed yet</div>'
+      }
+    </div>`;
+
+  const caret = collapse ? `<i class="ph-duotone ph-caret-${collapse.isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0;margin-left:auto"></i>` : '';
+  const headerClick = collapse ? `onclick="${collapse.toggleFn}" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${collapse.isExpanded?'18':'0'}px"` : `style="display:flex;align-items:center;gap:12px;margin-bottom:18px"`;
+
+  return `
+    <div class="card" style="border-top:4px solid ${color};padding:20px">
+      <div ${headerClick}>
+        <span style="font-size:2.5rem;width:2.5rem;text-align:center;flex-shrink:0">${member.avatar||'🙂'}</span>
+        <div>
+          <div style="font-size:1.3rem;font-weight:800">${esc(member.name)}</div>
+          <div style="font-size:0.85rem;color:#6b7280">${D.settings.levelingEnabled !== false ? `${s.currentLevel.icon} ${s.currentLevel.name} · ` : ''}${s.totalEarned} total diamonds earned</div>
+        </div>
+        ${caret}
+      </div>
+      ${collapse && !collapse.isExpanded ? '' : `
+      ${choresSection}
+      ${levelSection}
+      ${rewardSection}
+      ${savingsSection}
+      ${badgeSection}
+      ${choreBadgeGrid}
+      ${penaltySection}
+      ${extraSection}
+      ${choreTable}
+      ${prizeTable}
+      `}
+    </div>`;
+}
+
+function buildHistoryIndex() {
+  const idx = new Map();
+  for (const h of (D.history || [])) {
+    if (!idx.has(h.memberId)) idx.set(h.memberId, []);
+    idx.get(h.memberId).push(h);
+  }
+  return idx;
+}
+
+function renderStatsPage(container) {
+  if (!container) return;
+  const viewer = S.currentUser;
+  const isKid  = viewer?.role === 'kid';
+  const kids   = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const histIdx = buildHistoryIndex();
+
+  let html = `<div style="padding-bottom:20px"><div style="font-size:1.2rem;font-weight:800;padding:16px 0 12px"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;vertical-align:middle"></i> Lifetime Stats</div>`;
+
+  if (isKid) {
+    html += renderMemberStatsCard(viewer, null, histIdx);
+  } else {
+    if (kids.length === 0) {
+      html += `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-smiley" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">No kids added yet</div></div>`;
+    } else {
+      html += renderFamilyStatsCard(kids, histIdx);
+      kids.forEach(kid => {
+        const isExpanded = _expandedStatsKids.has(kid.id);
+        html += renderMemberStatsCard(kid, { isExpanded, toggleFn: `toggleStatsKid('${kid.id}')` }, histIdx);
+      });
+    }
+  }
+
+  html += `
+    <div style="text-align:center;padding:24px 0 8px">
+      <img src="gemsproutpadded.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
+    </div>
+  </div>`;
+  container.innerHTML = html;
+}
+
+// ── PARENT HOME (OVERVIEW) ────────────────────────────────────
+const _expandedSlots     = new Set(); // 'choreId_kidId'
+const _expandedKids      = new Set(); // kidId (home tab)
+const _expandedStatsKids = new Set(); // kidId (stats tab)
+let _familyStatsExpanded = false;
+const _expandedChores    = new Set(); // choreId (chores tab)
+function toggleSlotExpand(key) {
+  if (_expandedSlots.has(key)) _expandedSlots.delete(key);
+  else _expandedSlots.add(key);
+  renderParentHome();
+}
+function toggleChoreExpand(id) {
+  if (_expandedChores.has(id)) _expandedChores.delete(id);
+  else _expandedChores.add(id);
+  renderParentChores();
+}
+function toggleKidSection(kidId) {
+  if (_expandedKids.has(kidId)) _expandedKids.delete(kidId);
+  else _expandedKids.add(kidId);
+  renderParentHome();
+}
+function toggleStatsKid(kidId) {
+  if (_expandedStatsKids.has(kidId)) _expandedStatsKids.delete(kidId);
+  else _expandedStatsKids.add(kidId);
+  renderStatsPage(document.getElementById('parent-content'));
+}
+function toggleFamilyStats() {
+  _familyStatsExpanded = !_familyStatsExpanded;
+  renderStatsPage(document.getElementById('parent-content'));
+}
+
+// ── BETA WELCOME (remove before App Store launch) ─────────────
+const BETA_WELCOME_KEY = 'gemsprout.betaWelcomeSeen';
+function showBetaWelcomeIfNeeded() {
+  if (!RC.betaMode) return;
+  try { if (localStorage.getItem(BETA_WELCOME_KEY)) return; } catch(_) { return; }
+  try { localStorage.setItem(BETA_WELCOME_KEY, '1'); } catch(_) {}
+  showModal(`
+    <div style="text-align:center;margin-bottom:16px">
+      <img src="gemsproutpadded.png" style="width:72px;height:72px;margin-bottom:8px">
+      <div class="modal-title" style="margin-bottom:6px">Welcome to the GemSprout Beta!</div>
+      <p style="color:var(--muted);font-size:0.88rem;line-height:1.5;margin-bottom:14px">
+        Thank you so much for helping us shape GemSprout. Your feedback during this beta means everything.
+      </p>
+    </div>
+    <div style="background:#F5F3FF;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Installing on other devices</div>
+      <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
+        Open the link below on each device, install TestFlight if prompted, then install GemSprout. Your family code is shown in Settings.
+      </p>
+      <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.82rem;font-weight:700;color:#6C63FF;word-break:break-all;text-decoration:none">${RC.appDownloadUrl}</a>
+    </div>
+    <div style="background:#F0FDF4;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-chat-text" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Send us feedback</div>
+      <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
+        Found a bug or have a suggestion? We'd love to hear it.
+      </p>
+      <a href="mailto:gemsproutapp@gmail.com" style="font-size:0.82rem;font-weight:700;color:#16A34A;text-decoration:none">gemsproutapp@gmail.com</a>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="width:100%" onclick="closeModal()">Got it — let's go!</button>
+    </div>`);
+}
+
+function renderParentHome() {
+  const kids        = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
+  const pending     = pendingApprovals();
+  const pendingSpend = pendingSpendRequests();
+  const cur         = D.settings.currency || '$';
+  const t           = today();
+
+  // Pending approvals (chores + savings spend requests)
+  let html = '';
+  if (pending.length > 0 || pendingSpend.length > 0) {
+    html += `<div class="card" style="border:2px solid var(--yellow)">
+      <div class="card-title"><i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem;vertical-align:middle"></i> Needs Approval</div>`;
+    pending.forEach(({chore, memberId, entry}) => {
+      const mem = getMember(memberId);
+      if (!mem) return;
+      const slotLabel = entry.slotId && chore.schedule?.slots
+        ? (chore.schedule.slots.find(s=>s.id===entry.slotId)?.label || '') : '';
+      const isBefore = entry.entryType === 'before';
+      const entryBadge = isBefore
+        ? `<span style="background:#EDE9FE;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">BEFORE</span>`
+        : entry.entryType === 'after'
+        ? `<span style="background:#DCFCE7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">DONE</span>`
+        : '';
+      const ptsLabel = isBefore ? 'Approve to start' : `+${chore.diamonds} 💎`;
+      const photoHtml = entry.photoUrl
+        ? `<img src="${entry.photoUrl}" class="photo-approval-thumb" onclick="viewPhoto('${entry.photoUrl}')" alt="Photo" title="Click to view full size">`
+        : '';
+      html += `
+        <div class="admin-card" style="flex-wrap:wrap;gap:10px">
+          <span class="admin-icon">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
+          <div class="admin-info" style="flex:1;min-width:0">
+            <div class="admin-name">${esc(chore.title)}${entryBadge}${slotLabel?` <span style="font-size:0.8rem;color:var(--muted)">(${esc(slotLabel)})</span>`:''}</div>
+            <div class="admin-meta">${mem.avatar} ${esc(mem.name)} · ${ptsLabel} · ${fmtDate(entry.date)}</div>
+            ${photoHtml}
+          </div>
+          <div class="admin-actions" style="align-self:flex-start">
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-reject"  onclick="rejectChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+          </div>
+        </div>`;
+    });
+    pendingSpend.forEach(req => {
+      const mem = getMember(req.memberId);
+      if (!mem) return;
+      html += `
+        <div class="admin-card" style="flex-wrap:wrap;gap:10px">
+          <span class="admin-icon"><i class="ph-duotone ph-shopping-cart" style="color:#6C63FF;font-size:1.6rem"></i></span>
+          <div class="admin-info" style="flex:1;min-width:0">
+            <div class="admin-name">Spend Request <span style="background:#EDE9FE;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">${cur}${req.amount.toFixed(2)}</span></div>
+            <div class="admin-meta">${mem.avatar} ${esc(mem.name)}${req.reason ? ` · "${esc(req.reason)}"` : ''} · ${fmtDate(req.date)}</div>
+            <div style="font-size:0.8rem;color:var(--muted);margin-top:2px">Balance: ${cur}${(mem.savings||0).toFixed(2)}</div>
+          </div>
+          <div class="admin-actions" style="align-self:flex-start">
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-reject"  onclick="denySavingsRequest('${req.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Kids overview
+  let kidsHtml = '';
+  if (kids.length === 0) {
+    kidsHtml = `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-smiley" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">No kids yet — go to Setup!</div></div>`;
+  }
+  kids.forEach(kid => {
+    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
+    const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
+    const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
+    const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
+    const kidCombo  = D.settings.comboEnabled !== false ? new Set(getDailyCombo(kid.id)) : new Set();
+    const choreRows = myChores.length === 0
+      ? `<div class="empty-state" style="padding:16px 8px"><div class="empty-text">No chores assigned</div></div>`
+      : `<div class="kid-overview-list">${myChores.map(chore => {
+          const progress = getChoreProgress(chore, kid.id);
+          const status = progress.status;
+          const isDone = status === 'done';
+          const slotsDone  = progress.doneCount || 0;
+          const slotsTotal = progress.targetCount || progress.slotStatuses?.length || 0;
+          const statusClass = isDone ? 'done' : status === 'partial' ? 'pending' : status === 'pending' ? 'pending' : 'todo';
+          const statusLabel = isDone ? 'Done'
+            : status === 'partial'      ? `${slotsDone}/${slotsTotal} done`
+            : status === 'pending'      ? 'Waiting'
+            : status === 'unavailable'  ? 'Later'
+            : 'To do';
+          const isCombo = kidCombo.has(chore.id);
+          const expandKey = `${chore.id}_${kid.id}`;
+          const isExpanded = _expandedSlots.has(expandKey);
+
+          let actionBtn, slotExpandSection = '';
+          if (progress.isSlotMode) {
+            // Expand/collapse toggle button
+            actionBtn = `<button class="btn-icon-sm" style="flex-shrink:0;background:#EDE9FE" title="Show slots" onclick="toggleSlotExpand('${expandKey}')"><i class="ph-duotone ph-caret-${isExpanded ? 'up' : 'down'}" style="color:var(--purple);font-size:1rem"></i></button>`;
+            if (isExpanded) {
+              const slotRows = (progress.slotStatuses || []).map(({ slot, status: ss }) => {
+                const slotLabel = slot.label || (slot.start ? `${slot.start}–${slot.end}` : 'Slot');
+                let slotPill, slotBtn;
+                if (ss === 'done') {
+                  slotPill = `<span class="kid-overview-status done" style="font-size:0.7rem;padding:2px 6px">Done</span>`;
+                  slotBtn  = `<button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;flex-shrink:0" title="Undo" onclick="parentUnmarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:0.9rem"></i></button>`;
+                } else if (ss === 'pending') {
+                  slotPill = `<span class="kid-overview-status pending" style="font-size:0.7rem;padding:2px 6px">Waiting</span>`;
+                  slotBtn  = '';
+                } else {
+                  slotPill = `<span class="kid-overview-status todo" style="font-size:0.7rem;padding:2px 6px">${ss === 'waiting' ? 'Later' : 'To do'}</span>`;
+                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:0.9rem"></i></button>`;
+                }
+                return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#f9fafb;border-radius:8px">
+                  <span style="flex:1;font-size:0.82rem;color:#374151">${esc(slotLabel)}</span>
+                  ${slotPill}${slotBtn}
+                </div>`;
+              }).join('');
+              slotExpandSection = `<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">${slotRows}</div>`;
+            }
+          } else {
+            actionBtn = isDone
+              ? `<button class="btn-icon-sm btn-icon-delete" style="flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:1rem"></i></button>`
+              : `<button class="btn-icon-sm btn-icon-approve" style="flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>`;
+          }
+
+          return `
+            <div class="kid-overview-item" style="${isCombo ? 'background:#FFFBEB;box-shadow:inset 3px 0 0 #F59E0B;' : ''}${isExpanded ? 'flex-wrap:wrap;' : ''}align-items:flex-start">
+              <div style="flex:1;min-width:0;padding-top:2px">
+                <div style="font-weight:700;line-height:1.3">${renderIcon(chore.icon,chore.iconColor,'font-size:1.1rem;vertical-align:middle')} ${esc(chore.title)}${isCombo ? ' <i class="ph-duotone ph-lightning" style="font-size:0.75rem;color:#D97706;vertical-align:middle"></i>' : ''}</div>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${choreMetaChips(chore)}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:3px">
+                <span class="kid-overview-status ${statusClass}">${statusLabel}</span>
+                ${actionBtn}
+              </div>
+              ${slotExpandSection ? `<div style="width:100%;margin-top:6px">${slotExpandSection}</div>` : ''}
+            </div>`;
+        }).join('')}</div>`;
+    const isKidCollapsed = !_expandedKids.has(kid.id);
+    kidsHtml += `
+      <div class="kid-overview-card" style="border-top:4px solid ${kid.color||'#6C63FF'}">
+        <div class="member-row" style="padding:0;box-shadow:none;background:transparent;cursor:pointer" onclick="toggleKidSection('${kid.id}')">
+          <span class="member-avatar">${kid.avatar||'🙂'}</span>
+          <div class="member-info">
+            <div class="member-name">${esc(kid.name)}</div>
+            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtDmds(kid.diamonds||0)}</div>
+            <div class="progress-wrap" style="height:8px;margin:6px 0 0">
+              <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="member-dmds">${kid.diamonds||0}</div>
+            <i class="ph-duotone ph-caret-${isKidCollapsed?'down':'up'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
+          </div>
+        </div>
+        ${isKidCollapsed ? '' : choreRows}
+      </div>`;
+  });
+  html += `<div class="card"><div class="card-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Kids Today</div>${kids.length>0?`<div class="overview-kids-grid">${kidsHtml}</div>`:kidsHtml}</div>`;
+
+  // Quick actions
+  html += `
+    <div class="card">
+      <div class="card-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Quick Actions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem" onclick="showChoreModal()">+ Add Chore</button>
+        <button class="btn btn-pink   btn-sm" style="padding:14px;font-size:1rem" onclick="showPrizeModal()">+ Add Prize</button>
+        <button class="btn btn-teal   btn-sm" style="padding:14px;font-size:1rem" onclick="showGoalModal()"><i class="ph-duotone ph-target" style="font-size:1rem;vertical-align:middle"></i> Set Goal</button>
+        <button class="btn btn-sm" style="padding:14px;font-size:1rem;background:var(--orange);color:#fff" onclick="goSetup()"><i class="ph-duotone ph-users-three" style="font-size:1rem;vertical-align:middle"></i> Edit Family</button>
+        ${D.settings.notListeningEnabled !== false ? `<button class="btn btn-danger btn-sm" style="grid-column:span 2;background:#EF4444;color:#fff;font-size:1rem;padding:14px" onclick="showNotListening()"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</button>` : ''}
+      </div>
+    </div>`;
+
+  // NL time tracker
+  const nlKids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const nlRows = nlKids.map(k => {
+    normalizeMember(k);
+    const secs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0);
+    const label = secs === 0 ? 'None today' : `${Math.floor(secs/60)}m ${secs%60}s`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6">
+      <span>${k.avatar||'🙂'} ${esc(k.name)}</span>
+      <span style="font-weight:700;color:${secs>0?'#EF4444':'var(--muted)'}">${label}</span>
+    </div>`;
+  }).join('');
+  html += `
+    <div class="card">
+      <div class="card-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not-Listening Time Today</div>
+      ${nlRows || '<div style="color:var(--muted);font-size:0.9rem">No kids added yet</div>'}
+    </div>`;
+
+  // Recent Activity
+  const recentHistory = (D.history || []).slice(0, 10);
+  if (recentHistory.length > 0) {
+    const actRows = recentHistory.map(h => {
+      const mem = getMember(h.memberId);
+      const badge = historyBadge(h);
+      const icon = historyIcon(h);
+      const ptsColor = h.diamonds >= 0 ? '#166534' : '#991b1b';
+      const ptsStr = h.diamonds !== 0 ? (h.diamonds > 0 ? `+${h.diamonds}` : `${h.diamonds}`) + ' 💎' : '';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6">
+        <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((h.title||'').replace(/^⚡\s*/,'').replace(/<[^>]+>/g,'').trim())}</div>
+          <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : '<span style="font-style:italic">Former member</span>'}${h.choreTitle ? ` · ${esc(h.choreTitle)}` : ''} · ${fmtDate(h.date)}</div>
+        </div>
+        ${ptsStr ? `<span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr}</span>` : ''}
+      </div>`;
+    }).join('');
+    html += `
+      <details class="card" style="padding:0">
+        <summary style="padding:16px 20px;cursor:pointer;font-weight:700;font-size:1rem;list-style:none;display:flex;align-items:center;gap:8px">
+          <span><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span>
+          <i class="ph-duotone ph-caret-down activity-caret" style="color:var(--muted);font-size:1rem;margin-left:auto;transition:transform 0.2s"></i>
+        </summary>
+        <div style="padding:0 20px 16px">${actRows}</div>
+      </details>`;
+  }
+
+  document.getElementById('parent-content').innerHTML = html;
+  showBetaWelcomeIfNeeded(); // remove before App Store launch
+}
+
+function approveChore(choreId, memberId, entryId) {
+  const c = D.chores.find(x=>x.id===choreId);
+  const m = getMember(memberId);
+  const entry = c?.completions?.[memberId]?.find(e => e.id === entryId);
+  const isBefore = entry?.entryType === 'before';
+  doApproveChore(choreId, memberId, entryId);
+  toast(isBefore
+    ? `Approved "${c?.title}" for ${m?.name} — they can start!`
+    : `Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} 💎)`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+function rejectChore(choreId, memberId, entryId) {
+  const m = getMember(memberId);
+  const chore = D.chores.find(c => c.id === choreId);
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-x-circle" style="color:#EF4444;font-size:1.2rem;vertical-align:middle"></i> Decline Chore</div>
+    <p style="margin-bottom:16px;color:var(--muted);font-size:0.9rem">Declining <strong>${esc(chore?.title)}</strong> for ${esc(m?.name)}.</p>
+    <div class="form-group">
+      <label class="form-label">Reason (optional)</label>
+      <input id="decline-reason-input" type="text" placeholder="e.g. Didn't do it properly" style="width:100%">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmRejectChore('${choreId}','${memberId}','${entryId}')">Decline</button>
+    </div>`);
+  setTimeout(() => document.getElementById('decline-reason-input')?.focus(), 100);
+}
+
+function confirmRejectChore(choreId, memberId, entryId) {
+  const reason = document.getElementById('decline-reason-input')?.value?.trim() || '';
+  closeModal();
+  doRejectChore(choreId, memberId, entryId, reason);
+  const m = getMember(memberId);
+  toast(`Chore declined for ${m?.name}`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+// Parent directly marks a chore done for a kid (no kid submission required)
+function parentMarkChoreDone(choreId, memberId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+
+  const progress = getChoreProgress(chore, memberId);
+  if (progress.status === 'done') {
+    toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} Already marked done for ${esc(member.name)}`);
+    return;
+  }
+
+  if (!chore.completions) chore.completions = {};
+  chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+
+  // Remove any orphaned pending entries — the parent manually marking done supersedes them.
+  // (Don't touch 'before' photo entries as they're part of the before_after phase flow.)
+  chore.completions[memberId] = chore.completions[memberId].filter(e => !(e.status === 'pending' && e.entryType !== 'before'));
+
+  let totalPts = 0;
+
+  if (progress.isSlotMode) {
+    // Complete only the currently-available slot(s); if none are in-window, complete just the earliest waiting slot
+    const available = (progress.slotStatuses || []).filter(s => s.status === 'available');
+    const waiting   = (progress.slotStatuses || []).filter(s => s.status === 'waiting');
+    const toComplete = available.length > 0 ? available : waiting.slice(0, 1);
+    if (toComplete.length === 0) { toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} All slots already submitted for ${esc(member.name)}`); return; }
+    toComplete.forEach(({ slot }) => {
+      chore.completions[memberId].push({
+        id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+        slotId: slot.id, photoUrl: null, entryType: null,
+      });
+      totalPts += chore.diamonds;
+    });
+  } else {
+    chore.completions[memberId].push({
+      id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+      slotId: null, photoUrl: null, entryType: null,
+    });
+    totalPts = chore.diamonds;
+  }
+
+  member.diamonds      = (member.diamonds      || 0) + totalPts;
+  member.totalEarned = (member.totalEarned || 0) + totalPts;
+  addHistory('chore', memberId, chore.title, totalPts);
+  checkAfterDiamondsAwarded(member, totalPts);
+  checkChoreBadges(chore, memberId);
+  // Auto-here: parent marking a chore done means the kid is home
+  const _t = today();
+  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+    member.splitHousehold.overrides[_t] = true;
+  }
+  saveData();
+  toast(`Marked "${chore.title}" done for ${member.name} (+${totalPts} 💎)`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+function parentUnmarkChoreDone(choreId, memberId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  // Find the most recent 'done' entry that is NOT a 'before' photo entry
+  const idx = [...entries].reverse().findIndex(e => e.status === 'done' && e.entryType !== 'before');
+  if (idx === -1) { toast('No completion found to remove'); return; }
+  const realIdx = entries.length - 1 - idx;
+
+  entries.splice(realIdx, 1);
+  if (entries.length === 0) delete chore.completions[memberId];
+  else chore.completions[memberId] = entries;
+
+  // Reverse the diamonds
+  const deduct = Math.min(chore.diamonds, member.diamonds || 0);
+  member.diamonds      = (member.diamonds      || 0) - deduct;
+  member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.diamonds);
+  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.diamonds);
+  addHistory('penalty', memberId, `↩ Removed: ${chore.title}`, -deduct);
+  saveData();
+  toast(`↩ Removed "${chore.title}" completion for ${member.name} (−${deduct} 💎)`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+function parentMarkSlotDone(choreId, memberId, slotId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+  const progress = getChoreProgress(chore, memberId);
+  const slotStatus = progress.slotStatuses?.find(s => s.slot.id === slotId);
+  if (!slotStatus) { toast('Slot not found'); return; }
+  if (slotStatus.status === 'done')    { toast('Already done'); return; }
+  if (slotStatus.status === 'pending') { toast('Already submitted — waiting for approval'); return; }
+  if (!chore.completions) chore.completions = {};
+  chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+  chore.completions[memberId].push({
+    id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+    slotId, photoUrl: null, entryType: null,
+  });
+  member.diamonds      = (member.diamonds      || 0) + chore.diamonds;
+  member.totalEarned = (member.totalEarned || 0) + chore.diamonds;
+  addHistory('chore', memberId, chore.title, chore.diamonds);
+  checkAfterDiamondsAwarded(member, chore.diamonds);
+  checkChoreBadges(chore, memberId);
+  saveData();
+  toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} ${esc(slotStatus.slot.label || 'Slot')} done for ${esc(member.name)} (+${chore.diamonds} 💎)`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+function parentUnmarkSlotDone(choreId, memberId, slotId) {
+  const chore  = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  let idx = entries.findIndex(e => e.slotId === slotId && e.date === today() && e.entryType === 'after' && e.status === 'done');
+  if (idx === -1) idx = entries.findIndex(e => e.slotId === slotId && e.date === today() && e.status === 'done' && e.entryType !== 'before');
+  if (idx === -1) { toast('No completion found to remove'); return; }
+  const slot = D.chores.find(c => c.id === choreId)?.schedule?.slots?.find(s => s.id === slotId);
+  entries.splice(idx, 1);
+  if (entries.length === 0) delete chore.completions[memberId];
+  else chore.completions[memberId] = entries;
+  const deduct = Math.min(chore.diamonds, member.diamonds || 0);
+  member.diamonds      = (member.diamonds      || 0) - deduct;
+  member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.diamonds);
+  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.diamonds);
+  addHistory('penalty', memberId, `↩ Removed: ${chore.title} (${slot?.label || 'slot'})`, -deduct);
+  saveData();
+  toast(`↩ Removed ${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} ${esc(slot?.label || 'slot')} for ${esc(member.name)} (−${deduct} 💎)`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+}
+
+// ── DRAG-TO-REORDER ──────────────────────────────────────────
+function applyChoreReorder(newOrderIds) {
+  // Slot the reordered IDs back into the same positions they occupied in D.chores
+  const idSet = new Set(newOrderIds);
+  const positions = [];
+  D.chores.forEach((c, i) => { if (idSet.has(c.id)) positions.push(i); });
+  positions.sort((a, b) => a - b);
+  const lookup = Object.fromEntries(D.chores.map(c => [c.id, c]));
+  const newChores = [...D.chores];
+  newOrderIds.forEach((id, rank) => { newChores[positions[rank]] = lookup[id]; });
+  D.chores = newChores;
+  saveData();
+}
+
+function initSortable(containerEl, onReorder) {
+  if (!containerEl) return;
+  const items = () => [...containerEl.querySelectorAll('[data-drag-id]')];
+
+  // ── Desktop HTML5 DnD ──
+  let dragSrc = null;
+
+  containerEl.addEventListener('dragstart', e => {
+    dragSrc = e.target.closest('[data-drag-id]');
+    if (!dragSrc) return;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragSrc.dataset.dragId);
+    dragSrc.classList.add('drag-src');
+  });
+  containerEl.addEventListener('dragend', () => {
+    items().forEach(el => el.classList.remove('drag-src', 'drag-over'));
+    dragSrc = null;
+  });
+  containerEl.addEventListener('dragover', e => {
+    const target = e.target.closest('[data-drag-id]');
+    if (!target || !dragSrc || target === dragSrc) { e.preventDefault(); return; }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    items().forEach(el => el.classList.remove('drag-over'));
+    target.classList.add('drag-over');
+  });
+  containerEl.addEventListener('drop', e => {
+    e.preventDefault();
+    const target = e.target.closest('[data-drag-id]');
+    if (!target || !dragSrc || target === dragSrc) return;
+    items().forEach(el => el.classList.remove('drag-over'));
+    const all = items();
+    if (all.indexOf(dragSrc) < all.indexOf(target)) target.after(dragSrc);
+    else target.before(dragSrc);
+    dragSrc.classList.remove('drag-src');
+    onReorder(items().map(el => el.dataset.dragId));
+  });
+
+  // ── Mobile touch ──
+  let touchSrc = null, touchOver = null;
+
+  containerEl.addEventListener('touchstart', e => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    touchSrc = handle.closest('[data-drag-id]');
+    if (!touchSrc) return;
+    touchSrc.classList.add('drag-src');
+    e.preventDefault();
+  }, { passive: false });
+
+  containerEl.addEventListener('touchmove', e => {
+    if (!touchSrc) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    touchSrc.style.pointerEvents = 'none';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    touchSrc.style.pointerEvents = '';
+    const target = el?.closest('[data-drag-id]');
+    if (touchOver && touchOver !== target) touchOver.classList.remove('drag-over');
+    if (target && target !== touchSrc) { target.classList.add('drag-over'); touchOver = target; }
+    else touchOver = null;
+  }, { passive: false });
+
+  containerEl.addEventListener('touchend', () => {
+    if (!touchSrc) return;
+    touchSrc.classList.remove('drag-src');
+    if (touchOver) {
+      touchOver.classList.remove('drag-over');
+      const all = items();
+      if (all.indexOf(touchSrc) < all.indexOf(touchOver)) touchOver.after(touchSrc);
+      else touchOver.before(touchSrc);
+      onReorder(items().map(el => el.dataset.dragId));
+    }
+    touchSrc = null; touchOver = null;
+  });
+}
+
+// ── PARENT CHORES ─────────────────────────────────────────────
+function renderParentChores() {
+  const kids = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
+  let html = `
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> All Chores (${D.chores.length})</span>
+      <button class="btn btn-primary btn-sm" onclick="showChoreModal()">+ Add</button>
+    </div>`;
+
+  if (D.chores.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">No chores yet. Add one!</div></div>`;
+  }
+
+  html += `<div id="chore-sort-list">`;
+  D.chores.forEach(chore => {
+    const isExpanded = _expandedChores.has(chore.id);
+    const assignedKids = (chore.assignedTo||[]).map(id=>getMember(id)?.avatar||'').join(' ');
+    const assigneeChip = assignedKids
+      ? `<span style="display:inline-flex;align-items:center;background:#F5F3FF;color:#4C1D95;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">${assignedKids}</span>`
+      : `<span style="display:inline-flex;align-items:center;background:#F3F4F6;color:#9CA3AF;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:600;white-space:nowrap">unassigned</span>`;
+    const diamondChip = `<span style="display:inline-flex;align-items:center;background:#FEF9C3;color:#92400E;border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">💎 ${chore.diamonds}</span>`;
+    html += `
+      <div class="admin-card" data-drag-id="${chore.id}" style="flex-direction:column;align-items:stretch;gap:0;padding:12px 14px">
+        <div onclick="toggleChoreExpand('${chore.id}')" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <span class="admin-icon" style="font-size:1.6rem;flex-shrink:0">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
+          <div class="admin-info">
+            <div class="admin-name">${esc(chore.title)}</div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${diamondChip} ${assigneeChip}</div>
+          </div>
+          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem;flex-shrink:0"></i>
+        </div>
+        ${isExpanded ? `
+        <div style="border-top:1px solid #F3F4F6;margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:8px">
+          <span class="drag-handle" title="Drag to reorder">⠿</span>
+          <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${choreMetaChips(chore).replace(/<span[^>]*>💎[^<]*<\/span>\s*/,'')}</div>
+          <div class="admin-actions">
+            <button class="btn-icon-sm btn-icon-edit"   onclick="showChoreModal('${chore.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-delete" onclick="deleteChore('${chore.id}')"><i class="ph-duotone ph-trash" style="color:#EF4444;font-size:1rem"></i></button>
+          </div>
+        </div>` : ''}
+      </div>`;
+  });
+  html += `</div>`;
+
+  document.getElementById('parent-content').innerHTML = html;
+  initSortable(document.getElementById('chore-sort-list'), ids => applyChoreReorder(ids));
+}
+
+// Ephemeral slot state while modal is open
+let _editSlots = [];
+
+function showChoreModal(choreId) {
+  const kids  = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
+  const chore = choreId ? D.chores.find(c=>c.id===choreId) : null;
+  const c     = normalizeChore(chore || {
+    title:'', icon:'🛏️', diamonds:10, frequency:'day', repeatCount:1,
+    schedule: { period:'day', targetCount:1, daysOfWeek:ALL_DAYS.slice(), windows:{}, slots:null },
+    assignedTo:kids.map(k=>k.id), description:'', completions:{}
+  });
+
+  // Init slot editor state from existing chore
+  _editSlots = c.schedule.slots ? c.schedule.slots.map(s=>({...s})) : [];
+
+  const choreColor = c.iconColor || '#6BCB77';
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===c.icon?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===choreColor?' sel':''}" style="background:${col}" onclick="selChoreColor(this,'${col}')"></div>`
+  ).join('');
+
+  const assignOpts = kids.map(k => `
+    <label class="chore-checkbox-row">
+      <input type="checkbox" name="assign" value="${k.id}" ${c.assignedTo?.includes(k.id)?'checked':''}>
+      <span class="chore-checkbox-icon">${k.avatar}</span>
+      <span class="chore-checkbox-label">${esc(k.name)}</span>
+    </label>`).join('');
+
+  const scheduleRows = WEEKDAY_OPTIONS.map(day => {
+    const checked = c.schedule.period !== 'once' && c.schedule.daysOfWeek.includes(day.value);
+    const win = c.schedule.windows?.[day.value] || { start:'', end:'' };
+    return `
+      <div class="schedule-day-row">
+        <label class="schedule-day-toggle">
+          <input type="checkbox" id="cm-day-${day.value}" ${checked?'checked':''} onchange="toggleChoreDayRow(${day.value})">
+          <span>${day.label}</span>
+        </label>
+        <div class="schedule-day-hours">
+          <input type="time" id="cm-start-${day.value}" value="${win.start||''}" ${checked?'':'disabled'}>
+          <span>to</span>
+          <input type="time" id="cm-end-${day.value}" value="${win.end||''}" ${checked?'':'disabled'}>
+          <button class="copy-time-btn" title="Copy this time to all days" onclick="copyDayTimeToAll(${day.value})"><i class="ph-duotone ph-copy" style="font-size:1rem;vertical-align:middle"></i></button>
+        </div>
+      </div>`;
+  }).join('');
+
+  const hasSlots = _editSlots.length > 0;
+
+  showModal(`
+    <div class="modal-title">${chore?'Edit':'Add'} Chore</div>
+    <input type="hidden" id="cm-icon" value="${c.icon}">
+    <input type="hidden" id="cm-icon-color" value="${choreColor}">
+    <div class="form-group">
+      <label class="form-label">Icon &amp; Color</label>
+      <div class="icon-color-row">${colorSwatches}</div>
+      <input type="text" class="icon-search-input" placeholder="Search icons (e.g. broom, teeth, dog)..." oninput="filterIcons(this.value)">
+      <div class="icon-picker" id="icon-picker-grid" style="color:${choreColor}">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chore name</label>
+      <input type="text" id="cm-title" placeholder="e.g. Brush Teeth" value="${esc(c.title)}">
+    </div>
+    <div class="input-row">
+      <div class="form-group mb-0">
+        <label class="form-label">Diamonds <span class="form-label-hint">${hasSlots?'per slot':'total'}</span></label>
+        <input type="number" id="cm-diamonds" min="1" max="500" value="${c.diamonds}">
+      </div>
+      <div class="form-group mb-0">
+        <label class="form-label">Frequency</label>
+        <select id="cm-freq" onchange="toggleChoreScheduleFields()">
+          <option value="day"  ${c.schedule.period==='day'  ?'selected':''}>Per day</option>
+          <option value="week" ${c.schedule.period==='week' ?'selected':''}>Per week</option>
+          <option value="once" ${c.schedule.period==='once' ?'selected':''}>One-time</option>
+        </select>
+      </div>
+    </div>
+    <div id="cm-schedule-fields">
+      <div class="form-group">
+        <label class="form-label">Completion style</label>
+        <div class="display-mode-row" style="grid-template-columns:1fr 1fr;margin-top:0">
+          <button class="mode-opt${!hasSlots?' sel':''}" id="cm-style-simple" onclick="setChoreStyle('simple')"><span class="mode-opt-icon"><i class="ph-duotone ph-list-numbers" style="font-size:1.1rem"></i></span>Simple count</button>
+          <button class="mode-opt${hasSlots?' sel':''}"  id="cm-style-slots"  onclick="setChoreStyle('slots')"><span class="mode-opt-icon"><i class="ph-duotone ph-clock" style="font-size:1.1rem"></i></span>Timed slots</button>
+        </div>
+        <div class="schedule-help" style="margin-top:6px" id="cm-style-help">${hasSlots?'Each slot earns diamonds independently when completed during its window.':'Complete this chore the set number of times to earn diamonds — each completion counts toward the total.'}</div>
+      </div>
+      <div id="cm-simple-fields" style="display:${hasSlots?'none':'block'}">
+        <div class="form-group">
+          <label class="form-label">Required completions</label>
+          <input type="number" id="cm-repeat" min="1" max="12" value="${c.schedule.targetCount||1}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Available days and hours</label>
+          <div class="schedule-help">Leave times blank for any time on that day.</div>
+          <div class="schedule-day-grid">${scheduleRows}</div>
+        </div>
+      </div>
+      <div id="cm-slots-fields" style="display:${hasSlots?'block':'none'}">
+        <div class="form-group">
+          <label class="form-label">Available days</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px" id="cm-slot-days">
+            ${WEEKDAY_OPTIONS.map(day => {
+              const on = c.schedule.daysOfWeek.includes(day.value);
+              return `<label style="display:flex;align-items:center;gap:5px;font-weight:600;font-size:0.88rem">
+                <input type="checkbox" id="cm-sday-${day.value}" ${on?'checked':''}> ${day.label}
+              </label>`;
+            }).join('')}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Time slots <span class="form-label-hint">each earns ${c.diamonds} 💎</span></label>
+          <div class="slot-editor" id="cm-slot-editor"></div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="addChoreSlot()">+ Add slot</button>
+        </div>
+      </div>
+    </div>
+    ${kids.length>0?`<div class="form-group"><label class="form-label">Assign to</label>${assignOpts}</div>`:''}
+    <div class="form-group">
+      <label class="form-label"><i class="ph-duotone ph-camera" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Photo requirement</label>
+      <select id="cm-photo">
+        <option value="none"         ${c.photoMode==='none'        ||!c.photoMode?'selected':''}>No photo needed</option>
+        <option value="after"        ${c.photoMode==='after'       ?'selected':''}>Completion photo (after only)</option>
+        <option value="before_after" ${c.photoMode==='before_after'?'selected':''}>Before + after photos (shows it needed doing)</option>
+      </select>
+      <div class="schedule-help" style="margin-top:6px">
+        "Before + after" has your child take a photo of the starting state (e.g. the messy room, the full trash) <em>before</em> you approve the start, then a done photo to earn diamonds.
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description <span class="form-label-hint">optional</span></label>
+      <textarea id="cm-desc" placeholder="Any instructions...">${esc(c.description||'')}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveChore('${choreId||''}')">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+    </div>`);
+
+  toggleChoreScheduleFields();
+  renderSlotEditor();
+}
+
+
+function filterIcons(query) {
+  const q = query.toLowerCase().trim();
+  const cur = document.getElementById('cm-icon')?.value;
+  const grid = document.getElementById('icon-picker-grid');
+  if (!grid) return;
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
+  if (matches.length === 0) {
+    grid.innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`;
+  } else {
+    grid.innerHTML = matches.map(({n}) =>
+      `<div class="icon-opt${n===cur?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    ).join('');
+  }
+}
+
+function selChoreIcon(el, icon) {
+  document.getElementById('cm-icon').value = icon;
+  el.closest('#icon-picker-grid, .icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function setChoreStyle(style) {
+  const isSlots = style === 'slots';
+  document.getElementById('cm-style-simple')?.classList.toggle('sel', !isSlots);
+  document.getElementById('cm-style-slots')?.classList.toggle('sel',  isSlots);
+  document.getElementById('cm-simple-fields').style.display = isSlots ? 'none' : 'block';
+  document.getElementById('cm-slots-fields').style.display  = isSlots ? 'block' : 'none';
+  document.getElementById('cm-style-help').textContent = isSlots
+    ? 'Each slot earns diamonds independently when completed during its window.'
+    : 'Complete this chore the set number of times to earn diamonds — each completion counts toward the total.';
+  if (isSlots && _editSlots.length === 0) {
+    _editSlots = [
+      { id: genId(), label: 'Morning', start: '06:00', end: '09:00' },
+      { id: genId(), label: 'Evening', start: '18:00', end: '21:00' },
+    ];
+    renderSlotEditor();
+  }
+}
+
+function renderSlotEditor() {
+  const container = document.getElementById('cm-slot-editor');
+  if (!container) return;
+  container.innerHTML = _editSlots.map((slot, i) => `
+    <div class="slot-editor-row">
+      <input type="text" placeholder="Label (e.g. Morning)" value="${esc(slot.label)}" oninput="_editSlots[${i}].label=this.value">
+      <input type="time" value="${slot.start}" oninput="_editSlots[${i}].start=this.value">
+      <input type="time" value="${slot.end}"   oninput="_editSlots[${i}].end=this.value">
+      <button class="slot-remove-btn" onclick="removeChoreSlot(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+    </div>`).join('');
+}
+
+function addChoreSlot() {
+  _editSlots.push({ id: genId(), label: '', start: '', end: '' });
+  renderSlotEditor();
+}
+
+function removeChoreSlot(i) {
+  _editSlots.splice(i, 1);
+  renderSlotEditor();
+}
+
+function toggleChoreScheduleFields() {
+  const freq = document.getElementById('cm-freq')?.value || 'day';
+  const wrap = document.getElementById('cm-schedule-fields');
+  if (!wrap) return;
+  wrap.style.display = freq === 'once' ? 'none' : 'block';
+}
+
+function copyDayTimeToAll(fromDay) {
+  const start = document.getElementById(`cm-start-${fromDay}`)?.value || '';
+  const end   = document.getElementById(`cm-end-${fromDay}`)?.value   || '';
+  WEEKDAY_OPTIONS.forEach(d => {
+    const cb = document.getElementById(`cm-day-${d.value}`);
+    if (!cb?.checked) return;
+    const s = document.getElementById(`cm-start-${d.value}`);
+    const e = document.getElementById(`cm-end-${d.value}`);
+    if (s) s.value = start;
+    if (e) e.value = end;
+  });
+  toast('Time copied to all active days');
+}
+
+function toggleChoreDayRow(dayIndex) {
+  const enabled = document.getElementById(`cm-day-${dayIndex}`)?.checked;
+  const start = document.getElementById(`cm-start-${dayIndex}`);
+  const end   = document.getElementById(`cm-end-${dayIndex}`);
+  if (start) start.disabled = !enabled;
+  if (end)   end.disabled   = !enabled;
+}
+
+function saveChore(choreId) {
+  const title  = document.getElementById('cm-title')?.value.trim();
+  const icon      = document.getElementById('cm-icon')?.value || 'broom';
+  const iconColor = document.getElementById('cm-icon-color')?.value || '#6BCB77';
+  const diamonds = parseInt(document.getElementById('cm-diamonds')?.value)||10;
+  const freq   = document.getElementById('cm-freq')?.value || 'day';
+  const photoMode = document.getElementById('cm-photo')?.value || 'none';
+  const desc   = document.getElementById('cm-desc')?.value.trim();
+  const assigned = [...document.querySelectorAll('input[name=assign]:checked')].map(x=>x.value);
+
+  if (!title) { toast('Enter a chore name'); return; }
+
+  // Determine if using slot mode or simple mode
+  const useSlots = document.getElementById('cm-slots-fields')?.style.display !== 'none' && _editSlots.length > 0;
+  let scheduleObj;
+
+  if (freq === 'once') {
+    scheduleObj = { period:'once', targetCount:1, daysOfWeek:[], windows:{}, slots:null };
+  } else if (useSlots) {
+    if (_editSlots.length === 0) { toast('Add at least one time slot'); return; }
+    const slotDays = WEEKDAY_OPTIONS.filter(d => document.getElementById(`cm-sday-${d.value}`)?.checked).map(d=>d.value);
+    if (slotDays.length === 0) { toast('Select at least one day'); return; }
+    scheduleObj = { period: freq, targetCount:1, daysOfWeek: slotDays, windows:{}, slots: _editSlots.map(s=>({...s})) };
+  } else {
+    const repeatCount = Math.max(1, parseInt(document.getElementById('cm-repeat')?.value, 10) || 1);
+    const daysOfWeek = WEEKDAY_OPTIONS.filter(d => document.getElementById(`cm-day-${d.value}`)?.checked).map(d=>d.value);
+    if (daysOfWeek.length === 0) { toast('Select at least one day for this chore'); return; }
+    const windows = {};
+    daysOfWeek.forEach(day => {
+      const start = document.getElementById(`cm-start-${day}`)?.value || '';
+      const end   = document.getElementById(`cm-end-${day}`)?.value   || '';
+      if (start || end) windows[day] = { start, end };
+    });
+    scheduleObj = { period: freq, targetCount: repeatCount, daysOfWeek, windows, slots:null };
+  }
+
+  const existingChore = choreId ? D.chores.find(x => x.id === choreId) : null;
+  const badges = existingChore?.badges || [];
+  const choreData = { title, icon, iconColor, diamonds, photoMode, frequency: freq,
+    repeatCount: scheduleObj.targetCount, assignedTo: assigned, description: desc, schedule: scheduleObj, badges };
+
+  if (choreId) {
+    const index = D.chores.findIndex(x=>x.id===choreId);
+    if (index >= 0) D.chores[index] = normalizeChore({ ...D.chores[index], ...choreData });
+  } else {
+    D.chores.push(normalizeChore({ id:genId(), completions:{}, ...choreData }));
+  }
+  saveData();
+  closeModal();
+  toast(choreId ? 'Chore updated!' : 'Chore added!');
+  renderParentChores();
+}
+
+function deleteChore(choreId) {
+  if (!confirm('Delete this chore?')) return;
+  D.chores = D.chores.filter(c=>c.id!==choreId);
+  for (const key of _expandedSlots) {
+    if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
+  }
+  _expandedChores.delete(choreId);
+  saveData();
+  toast('Chore deleted');
+  renderParentChores();
+}
+
+// ── PARENT PRIZES ─────────────────────────────────────────────
+function renderParentPrizes() {
+  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||a.targetPoints||0)-(b.cost||b.targetPoints||0) : ()=>0;
+  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
+  let html = `
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:1rem;vertical-align:middle"></i> Individual Prizes (${indiv.length})</span>
+      <button class="btn btn-primary btn-sm" onclick="showPrizeModal()">+ Add</button>
+    </div>`;
+
+  if (indiv.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:3rem"></i></div><div class="empty-text">No prizes yet. Add one!</div></div>`;
+  }
+
+  indiv.forEach(p => {
+    html += `
+      <div class="admin-card">
+        <span class="admin-icon">${renderIcon(p.icon,p.iconColor,'font-size:1.6rem')}</span>
+        <div class="admin-info">
+          <div class="admin-name">${esc(p.title)}</div>
+          <div class="admin-meta">${p.cost} 💎</div>
+        </div>
+        <div class="admin-actions">
+          <button class="btn-icon-sm btn-icon-edit"   onclick="showPrizeModal('${p.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
+          <button class="btn-icon-sm btn-icon-delete" onclick="deletePrize('${p.id}')"><i class="ph-duotone ph-trash" style="color:#EF4444;font-size:1rem"></i></button>
+        </div>
+      </div>`;
+  });
+
+  // Team goals section
+  const goals = (D.teamGoals || []).slice().sort(sortFn);
+  html += `<div class="divider"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Team Prizes (${goals.length})</span>
+      <button class="btn btn-teal btn-sm" onclick="showGoalModal()">+ Add</button>
+    </div>`;
+
+  if (goals.length === 0) {
+    html += `<div class="empty-state" style="padding:20px"><div class="empty-icon"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:3rem"></i></div><div class="empty-text">No team prizes yet</div></div>`;
+  }
+
+  goals.forEach(g => {
+    const total = goalTotal(g);
+    const pct   = Math.min(100,Math.round(total/(g.targetPoints||1)*100));
+    html += `
+      <div class="admin-card">
+        <span class="admin-icon">${renderIcon(g.icon, g.iconColor, 'font-size:1.6rem')}</span>
+        <div class="admin-info">
+          <div class="admin-name">${esc(g.title)}</div>
+          <div class="admin-meta">${total} / ${g.targetPoints} 💎 · ${pct}%</div>
+          <div class="progress-wrap" style="height:8px;margin-top:6px">
+            <div class="progress-fill teal" style="width:${pct}%"></div>
+          </div>
+        </div>
+        <div class="admin-actions">
+          <button class="btn-icon-sm btn-icon-edit"   onclick="showGoalModal('${g.id}')"><i class="ph-duotone ph-pencil-simple" style="color:#374151;font-size:1rem"></i></button>
+          <button class="btn-icon-sm btn-icon-delete" onclick="clearGoal('${g.id}')"><i class="ph-duotone ph-trash" style="color:#EF4444;font-size:1rem"></i></button>
+        </div>
+      </div>`;
+  });
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+// ── LEVELS TAB ────────────────────────────────────────────────
+const LEVEL_ICON_OPTIONS = [
+  { label:'Leaf',       html:'<i class="ph-duotone ph-leaf" style="color:#22C55E;font-size:1.4rem"></i>' },
+  { label:'Diamond',    html:'<i class="ph-duotone ph-diamond" style="color:#3B82F6;font-size:1.4rem"></i>' },
+  { label:'Gem',        html:'<i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:1.4rem"></i>' },
+  { label:'Trophy',     html:'<i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1.4rem"></i>' },
+  { label:'Fire',       html:'<i class="ph-duotone ph-fire" style="color:#EF4444;font-size:1.4rem"></i>' },
+  { label:'Shield',     html:'<i class="ph-duotone ph-shield-star" style="color:#6C63FF;font-size:1.4rem"></i>' },
+  { label:'Crown',      html:'<i class="ph-duotone ph-crown" style="color:#D97706;font-size:1.4rem"></i>' },
+  { label:'Star',       html:'<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:1.4rem"></i>' },
+  { label:'Rocket',     html:'<i class="ph-duotone ph-rocket-launch" style="color:#6C63FF;font-size:1.4rem"></i>' },
+  { label:'Lightning',  html:'<i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1.4rem"></i>' },
+  { label:'Medal',      html:'<i class="ph-duotone ph-medal" style="color:#D97706;font-size:1.4rem"></i>' },
+  { label:'Sparkle',    html:'<i class="ph-duotone ph-sparkle" style="color:#EC4899;font-size:1.4rem"></i>' },
+  { label:'Mountain',   html:'<i class="ph-duotone ph-mountains" style="color:#6B7280;font-size:1.4rem"></i>' },
+  { label:'Sword',      html:'<i class="ph-duotone ph-sword" style="color:#EF4444;font-size:1.4rem"></i>' },
+  { label:'Acorn',      html:'<i class="ph-duotone ph-acorn" style="color:#92400E;font-size:1.4rem"></i>' },
+  { label:'Planet',     html:'<i class="ph-duotone ph-planet" style="color:#3B82F6;font-size:1.4rem"></i>' },
+  { label:'⭐',         html:'<span style="font-size:1.4rem">⭐</span>' },
+  { label:'🏆',         html:'<span style="font-size:1.4rem">🏆</span>' },
+  { label:'🔥',         html:'<span style="font-size:1.4rem">🔥</span>' },
+  { label:'💎',         html:'<span style="font-size:1.4rem">💎</span>' },
+  { label:'👑',         html:'<span style="font-size:1.4rem">👑</span>' },
+  { label:'🌟',         html:'<span style="font-size:1.4rem">🌟</span>' },
+  { label:'⚡',         html:'<span style="font-size:1.4rem">⚡</span>' },
+  { label:'🎖️',        html:'<span style="font-size:1.4rem">🎖️</span>' },
+];
+
+function renderParentLevels() {
+  const s = D.settings;
+  const levels = getLevels();
+  const members = (D.family?.members || []).filter(m => m.role !== 'parent' && !m.deleted);
+
+  // ── Leveling system card ──
+  let levelsHtml = levels.map((lvl, i) => `
+    <div class="admin-card" style="margin-bottom:8px;gap:8px;align-items:flex-start">
+      <button onclick="showLevelIconPicker(${i})" title="Change icon"
+        style="font-size:1.4rem;background:none;border:1px dashed #D1D5DB;border-radius:8px;padding:4px 8px;cursor:pointer;min-width:44px;text-align:center;flex-shrink:0;line-height:1.4">${lvl.icon}</button>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <input type="text" value="${esc(lvl.name)}" placeholder="Level name"
+          style="font-size:0.9rem;padding:6px 10px;border:1px solid #E5E7EB;border-radius:8px;width:100%"
+          onchange="saveCustomLevel(${i},'name',this.value)">
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" value="${lvl.minXp}" min="0" ${i===0?'disabled title="Level 1 always starts at 0 XP"':''}
+            style="width:80px;font-size:0.9rem;padding:6px 10px;border:1px solid #E5E7EB;border-radius:8px"
+            onchange="saveCustomLevel(${i},'minXp',parseInt(this.value)||0)">
+          <span style="font-size:0.8rem;color:var(--muted)">XP to unlock</span>
+        </div>
+      </div>
+      ${levels.length > 2 ? `<button onclick="deleteCustomLevel(${i})"
+        style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1rem;padding:4px;flex-shrink:0">
+        <i class="ph-duotone ph-trash"></i></button>` : ''}
+    </div>`).join('');
+
+  // ── Base badges rows ──
+  const baseBadgesEnabled = s.baseBadgesEnabled !== false;
+  const baseBadgeRows = BADGE_DEFS.map(def => {
+    const merged = getBaseBadgeDef(def.id);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#FAFAFA;border-radius:10px;border:1px solid #E5E7EB;margin-bottom:6px">
+      <span style="font-size:1.4rem;flex-shrink:0;line-height:1">${merged.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:0.9rem;font-weight:600">${esc(merged.name)}</div>
+        <div style="font-size:0.78rem;color:var(--muted)">${esc(merged.desc)}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── Chore badge rows ──
+  const chores = (D.chores || []);
+  const choreBadgeCards = chores.length === 0
+    ? `<div class="empty-state"><div class="empty-text">No chores yet — add some from the Chores tab</div></div>`
+    : chores.map(chore => {
+        const badges = Array.isArray(chore.badges) ? chore.badges : [];
+        const tierRows = badges.map((b, i) => `
+          <div style="margin-bottom:8px;padding:10px 12px;background:${b.secret?'#fdf4ff':'#f9fafb'};border-radius:10px;border:1px solid ${b.secret?'#e9d5ff':'#e5e7eb'}">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <button onclick="showChoreBadgeIconPicker('${chore.id}',${i})"
+                style="width:48px;height:44px;font-size:1.4rem;background:none;border:1px dashed #d1d5db;border-radius:8px;padding:2px;cursor:pointer;flex-shrink:0;line-height:1">
+                ${b.icon||'🏅'}</button>
+              <input type="text" value="${esc(b.name||'')}" placeholder="Badge name"
+                style="flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:0.9rem"
+                onchange="saveChoreBadgeTier('${chore.id}',${i},'name',this.value)">
+              <button onclick="removeChoreBadgeTier('${chore.id}',${i})"
+                style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.2rem;padding:4px;flex-shrink:0">
+                <i class="ph-duotone ph-trash"></i></button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap">Earn after</span>
+                <input type="number" value="${b.count||10}" min="1"
+                  style="width:64px;border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;font-size:0.9rem;text-align:center"
+                  onchange="saveChoreBadgeTier('${chore.id}',${i},'count',parseInt(this.value)||1)">
+                <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap">completions</span>
+              </div>
+              <button onclick="saveChoreBadgeTier('${chore.id}',${i},'secret',${!b.secret});renderParentLevels()"
+                style="margin-left:auto;background:${b.secret?'#ede9fe':'none'};border:1px solid ${b.secret?'#c4b5fd':'#e5e7eb'};border-radius:8px;padding:7px 10px;cursor:pointer;display:flex;align-items:center;gap:5px;color:${b.secret?'#7c3aed':'#9ca3af'}">
+                <i class="ph-duotone ph-${b.secret?'eye-slash':'eye'}" style="font-size:1.1rem"></i>
+                ${b.secret?`<span style="font-size:0.78rem;font-weight:600">Secret</span>`:''}
+              </button>
+            </div>
+          </div>`).join('');
+
+        return `<div style="margin-bottom:4px;padding-bottom:12px;border-bottom:1px solid #F3F4F6">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <i class="ph-duotone ph-${chore.icon||'broom'}" style="color:${chore.iconColor||'#6BCB77'};font-size:1.2rem"></i>
+            <span style="font-weight:600;font-size:0.95rem">${esc(chore.title)}</span>
+            <span style="margin-left:auto;font-size:0.75rem;color:var(--muted)">${badges.length} tier${badges.length!==1?'s':''}</span>
+          </div>
+          ${tierRows}
+          ${badges.length === 0 ? `<div style="text-align:center;color:var(--muted);font-size:0.82rem;padding:4px 0 8px">No badge tiers yet</div>` : ''}
+          ${badges.length < 5 ? `<button class="btn btn-secondary btn-sm" onclick="addChoreBadgeTier('${chore.id}')">+ Add Badge Tier</button>` : ''}
+        </div>`;
+      }).join('');
+
+  const html = `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin:0"><i class="ph-duotone ph-rocket-launch" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Leveling System</div>
+        <label class="toggle"><input type="checkbox" ${s.levelingEnabled!==false?'checked':''} onchange="saveSetting('levelingEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Kids earn XP equal to their diamonds earned and unlock levels as they progress.</p>
+      ${levelsHtml}
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" onclick="addCustomLevel()">+ Add Level</button>
+        <button class="btn btn-sm" style="background:#F3F4F6;color:#374151" onclick="resetLevelsToDefault()">Reset to Defaults</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin:0"><i class="ph-duotone ph-fire" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Streak Bonuses</div>
+        <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Bonus diamonds when a kid completes all their chores ${s.streakEnabled!==false?'<b>every day in a row</b>':'(currently disabled)'}.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group mb-0"><label class="form-label">3-day streak</label><input type="number" value="${s.streakBonus3||1}" min="0" onchange="saveSetting('streakBonus3',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
+        <div class="form-group mb-0"><label class="form-label">7-day streak</label><input type="number" value="${s.streakBonus7||3}" min="0" onchange="saveSetting('streakBonus7',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
+        <div class="form-group mb-0"><label class="form-label">14-day streak</label><input type="number" value="${s.streakBonus14||5}" min="0" onchange="saveSetting('streakBonus14',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
+        <div class="form-group mb-0"><label class="form-label">30-day streak</label><input type="number" value="${s.streakBonus30||10}" min="0" onchange="saveSetting('streakBonus30',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin:0"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</div>
+        <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.comboEnabled!==false?'14px':'0'}">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores. ${s.comboEnabled!==false?'':'<b>Currently disabled.</b>'}</p>
+      ${s.comboEnabled!==false ? (() => {
+        const kids = D.family.members.filter(m => m.role==='kid' && !m.deleted);
+        if (!kids.length) return '';
+        return kids.map(kid => {
+          const savedCombo = getDailyCombo(kid.id);
+          const pending = (S.pendingComboOverrides || {})[kid.id] || {};
+          const hasPending = Object.keys(pending).length > 0;
+          const effectiveIds = [0, 1, 2].map(i => pending[i] || savedCombo[i]);
+          const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
+          return `<div style="margin-bottom:10px">
+            <div style="font-size:0.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">${esc(kid.name)}'s combo today</div>
+            ${[0,1,2].map(i => `
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <span style="font-size:0.75rem;color:var(--muted);width:16px">${i+1}.</span>
+                <select style="flex:1;font-size:0.82rem;padding:6px 8px;border-radius:8px;border:1px solid var(--border)" onchange="stagePendingCombo('${kid.id}',${i},this.value)">
+                  ${eligible.map(c => `<option value="${c.id}"${effectiveIds[i]===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}
+                </select>
+              </div>`).join('')}
+            ${hasPending ? `<div style="margin-top:2px"><button class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:4px 10px" onclick="saveComboOverride('${kid.id}')">Save Combo</button></div>` : ''}
+          </div>`;
+        }).join('<hr style="border:none;border-top:1px solid var(--border);margin:10px 0">');
+      })() : ''}
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin:0"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Base Badges</div>
+        <label class="toggle"><input type="checkbox" ${s.baseBadgesEnabled!==false?'checked':''} onchange="saveSetting('baseBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">System-wide achievement badges earned automatically — for streaks, levels, and milestones. Toggle off to disable all base badges.</p>
+      <div style="opacity:${baseBadgesEnabled?'1':'0.4'};pointer-events:${baseBadgesEnabled?'auto':'none'};transition:opacity 0.2s">
+        ${baseBadgeRows}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px"><i class="ph-duotone ph-medal" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Chore Badges</div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Per-chore milestone badges — kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye-slash" style="color:#7c3aed;vertical-align:middle"></i> to make a badge secret — it won't appear at all until earned, making it a surprise to discover.</p>
+      ${choreBadgeCards}
+    </div>`;
+
+  document.getElementById('parent-content').innerHTML = html;
+}
+
+function saveCustomLevel(idx, field, value) {
+  const levels = getLevels().map((l,i) => ({...l}));
+  levels[idx][field] = value;
+  // Enforce ascending XP
+  if (field === 'minXp') {
+    for (let i = 1; i < levels.length; i++) {
+      if (levels[i].minXp <= levels[i-1].minXp) levels[i].minXp = levels[i-1].minXp + 1;
+    }
+  }
+  D.settings.customLevels = levels;
+  saveData();
+  renderParentLevels();
+}
+
+function addCustomLevel() {
+  const levels = getLevels().map(l => ({...l}));
+  const last = levels[levels.length - 1];
+  levels.push({ level: last.level + 1, name: 'New Level', icon: '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:1.4rem"></i>', minXp: last.minXp + 200 });
+  D.settings.customLevels = levels;
+  saveData();
+  renderParentLevels();
+}
+
+function deleteCustomLevel(idx) {
+  const levels = getLevels().map(l => ({...l}));
+  if (levels.length <= 2) { toast('Need at least 2 levels'); return; }
+  if (!confirm(`Delete level "${levels[idx]?.name || 'this level'}"?`)) return;
+  levels.splice(idx, 1);
+  // Reassign level numbers
+  levels.forEach((l, i) => { l.level = i + 1; });
+  D.settings.customLevels = levels;
+  saveData();
+  renderParentLevels();
+}
+
+function resetLevelsToDefault() {
+  if (!confirm('Reset all levels back to the defaults? Your custom levels will be lost.')) return;
+  D.settings.customLevels = null;
+  saveData();
+  renderParentLevels();
+}
+
+function showLevelIconPicker(levelIdx) {
+  const optionsHtml = LEVEL_ICON_OPTIONS.map((opt, i) =>
+    `<button onclick="pickLevelIcon(${levelIdx},${i})" title="${opt.label}"
+      style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;width:44px;height:44px">
+      ${opt.html}
+    </button>`
+  ).join('');
+  showModal(`
+    <div class="modal-title">Choose Icon</div>
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:8px">${optionsHtml}</div>
+  `);
+}
+
+function pickLevelIcon(levelIdx, optionIdx) {
+  const opt = LEVEL_ICON_OPTIONS[optionIdx];
+  if (!opt) return;
+  const icon = opt.html.replace('font-size:1.4rem', 'font-size:1em');
+  saveCustomLevel(levelIdx, 'icon', icon);
+  closeModal();
+}
+
+function showBaseBadgeIconPicker(badgeId) {
+  const optionsHtml = LEVEL_ICON_OPTIONS.map((opt, i) =>
+    `<button onclick="pickBaseBadgeIcon('${badgeId}',${i})" title="${opt.label}"
+      style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;width:44px;height:44px">
+      ${opt.html}
+    </button>`
+  ).join('');
+  showModal(`
+    <div class="modal-title">Choose Icon</div>
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:8px">${optionsHtml}</div>
+  `);
+}
+
+function pickBaseBadgeIcon(badgeId, optionIdx) {
+  const opt = LEVEL_ICON_OPTIONS[optionIdx];
+  if (!opt) return;
+  saveBaseBadge(badgeId, 'icon', opt.html.replace('font-size:1.4rem', 'font-size:1em'));
+  closeModal();
+  renderParentLevels();
+}
+
+function saveBaseBadge(id, field, value) {
+  D.settings.customBadgeDefs ??= {};
+  D.settings.customBadgeDefs[id] ??= {};
+  D.settings.customBadgeDefs[id][field] = value;
+  saveData();
+}
+
+
+function saveChoreBadgeTier(choreId, tierIdx, field, value) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore || !Array.isArray(chore.badges) || !chore.badges[tierIdx]) return;
+  chore.badges[tierIdx][field] = value;
+  saveData();
+}
+
+function addChoreBadgeTier(choreId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore) return;
+  if (!Array.isArray(chore.badges)) chore.badges = [];
+  if (chore.badges.length >= 5) { toast('Max 5 badge tiers per chore'); return; }
+  const lastCount = chore.badges.at(-1)?.count || 0;
+  chore.badges.push({ id: genId(), count: Math.max(10, lastCount + 10), name: '', icon: '🏅' });
+  chore.badges.sort((a, b) => a.count - b.count);
+  saveData();
+  renderParentLevels();
+}
+
+function removeChoreBadgeTier(choreId, tierIdx) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore || !chore.badges) return;
+  const badge = chore.badges[tierIdx];
+  if (!confirm(`Delete "${badge?.name || 'this badge tier'}" from ${chore.title}?`)) return;
+  chore.badges.splice(tierIdx, 1);
+  saveData();
+  renderParentLevels();
+}
+
+// ── CHORE BADGE ICON PICKER ───────────────────────────────────
+let _bip = { choreId: null, tierIdx: null, color: '#6BCB77' };
+
+function showChoreBadgeIconPicker(choreId, tierIdx) {
+  const chore = D.chores.find(c => c.id === choreId);
+  const badge = chore?.badges?.[tierIdx];
+  const curIcon = badge?.icon || '';
+  const colorMatch = /color:(#[0-9a-fA-F]{3,6})/.exec(curIcon);
+  _bip = { choreId, tierIdx, color: colorMatch?.[1] || COLORS[0] };
+  const curName = /ph-duotone ph-([\w-]+)/.exec(curIcon)?.[1] || '';
+
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===_bip.color?' sel':''}" style="background:${col}" onclick="selBadgeIconColor(this,'${col}')"></div>`
+  ).join('');
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===curName?' sel':''}" onclick="selBadgeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">Badge Icon</div>
+    <div class="icon-color-row">${colorSwatches}</div>
+    <input type="text" class="icon-search-input" placeholder="Search icons (e.g. trophy, star, fire)..." oninput="filterBadgeIcons(this.value,'${choreId}',${tierIdx})">
+    <div class="icon-picker" id="badge-icon-picker-grid" style="color:${_bip.color}">${iconOpts}</div>
+  `);
+}
+
+function selBadgeIconColor(el, color) {
+  _bip.color = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('badge-icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
+function filterBadgeIcons(query, choreId, tierIdx) {
+  const q = query.toLowerCase().trim();
+  const chore = D.chores.find(c => c.id === choreId);
+  const curName = /ph-duotone ph-([\w-]+)/.exec(chore?.badges?.[tierIdx]?.icon || '')?.[1] || '';
+  const grid = document.getElementById('badge-icon-picker-grid');
+  if (!grid) return;
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
+  grid.innerHTML = matches.length === 0
+    ? `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`
+    : matches.map(({n}) =>
+        `<div class="icon-opt${n===curName?' sel':''}" onclick="selBadgeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+      ).join('');
+}
+
+function selBadgeIcon(el, name) {
+  const icon = `<i class="ph-duotone ph-${name}" style="color:${_bip.color};font-size:1em"></i>`;
+  saveChoreBadgeTier(_bip.choreId, _bip.tierIdx, 'icon', icon);
+  closeModal();
+  renderParentLevels();
+}
+
+function showPrizeModal(prizeId) {
+  const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
+  const p     = prize || { title:'', icon:'gift', iconColor:'#FF6584', cost:100, type:'individual' };
+
+  const prizeColor = p.iconColor || '#FF6584';
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===prizeColor?' sel':''}" style="background:${col}" onclick="selPrizeColor(this,'${col}')"></div>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">${prize?'Edit':'Add'} Prize</div>
+    <input type="hidden" id="pm-icon" value="${p.icon}">
+    <input type="hidden" id="pm-icon-color" value="${prizeColor}">
+    <div class="form-group">
+      <label class="form-label">Icon &amp; Color</label>
+      <div class="icon-color-row">${colorSwatches}</div>
+      <input type="text" class="icon-search-input" placeholder="Search icons (e.g. movie, game, trophy)..." oninput="filterPrizeIcons(this.value)">
+      <div class="icon-picker" id="prize-icon-picker-grid" style="color:${prizeColor}">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Prize name</label>
+      <input type="text" id="pm-title" placeholder="e.g. Movie Night Pick" value="${esc(p.title)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Diamonds cost</label>
+      <input type="number" id="pm-cost" min="1" value="${p.cost}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="savePrize('${prizeId||''}')">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+    </div>`);
+}
+
+function selPrizeIcon(el, icon) {
+  document.getElementById('pm-icon').value = icon;
+  el.closest('#prize-icon-picker-grid, .icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function filterPrizeIcons(query) {
+  const q = query.toLowerCase().trim();
+  const cur = document.getElementById('pm-icon')?.value;
+  const grid = document.getElementById('prize-icon-picker-grid');
+  if (!grid) return;
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
+  if (matches.length === 0) {
+    grid.innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`;
+  } else {
+    grid.innerHTML = matches.map(({n}) =>
+      `<div class="icon-opt${n===cur?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    ).join('');
+  }
+}
+
+function savePrize(prizeId) {
+  const title     = document.getElementById('pm-title')?.value.trim();
+  const icon      = document.getElementById('pm-icon')?.value || 'gift';
+  const iconColor = document.getElementById('pm-icon-color')?.value || '#FF6584';
+  const cost      = parseInt(document.getElementById('pm-cost')?.value)||100;
+  if (!title) { toast('Enter a prize name'); return; }
+
+  if (prizeId) {
+    const p = D.prizes.find(x=>x.id===prizeId);
+    if (p) Object.assign(p, { title, icon, iconColor, cost, type:'individual' });
+  } else {
+    D.prizes.push({ id:genId(), title, icon, iconColor, cost, type:'individual', redemptions:[] });
+  }
+  saveData();
+  closeModal();
+  toast(prizeId?'Prize updated!':'Prize added!');
+  renderParentPrizes();
+}
+
+function deletePrize(prizeId) {
+  if (!confirm('Delete this prize?')) return;
+  D.prizes = D.prizes.filter(p=>p.id!==prizeId);
+  saveData();
+  toast('Prize deleted');
+  renderParentPrizes();
+}
+
+function showGoalModal(goalId) {
+  const existing = goalId ? D.teamGoals?.find(g => g.id === goalId) : null;
+  const g = existing || { title:'', icon:'trophy', iconColor:'#FFD93D', targetPoints:500 };
+  const goalColor = g.iconColor || '#FFD93D';
+  const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
+    `<div class="icon-opt${n===g.icon?' sel':''}" onclick="selGoalIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+  ).join('');
+  const colorSwatches = COLORS.map(col =>
+    `<div class="icon-color-swatch${col===goalColor?' sel':''}" style="background:${col}" onclick="selGoalColor(this,'${col}')"></div>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">${existing?'Edit':'Add'} Team Prize</div>
+    <input type="hidden" id="gm-id" value="${goalId||''}">
+    <input type="hidden" id="gm-icon" value="${g.icon||'trophy'}">
+    <input type="hidden" id="gm-icon-color" value="${goalColor}">
+    <div class="form-group">
+      <label class="form-label">Icon &amp; Color</label>
+      <div class="icon-color-row">${colorSwatches}</div>
+      <input type="text" class="icon-search-input" placeholder="Search icons (e.g. trophy, trip, movie)..." oninput="filterGoalIcons(this.value)">
+      <div class="icon-picker" id="goal-icon-picker-grid" style="color:${goalColor}">${iconOpts}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Prize name</label>
+      <input type="text" id="gm-title" placeholder="e.g. Disney Trip!" value="${esc(g.title)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Diamonds target</label>
+      <input type="number" id="gm-target" min="1" value="${g.targetPoints||500}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" onclick="saveGoal()">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+    </div>`);
+}
+
+function selGoalIcon(el, icon) {
+  document.getElementById('gm-icon').value = icon;
+  el.closest('.icon-picker').querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function selGoalColor(el, color) {
+  document.getElementById('gm-icon-color').value = color;
+  el.closest('.icon-color-row').querySelectorAll('.icon-color-swatch').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  const grid = document.getElementById('goal-icon-picker-grid');
+  if (grid) grid.style.color = color;
+}
+
+function filterGoalIcons(query) {
+  const q = query.toLowerCase().trim();
+  const cur = document.getElementById('gm-icon')?.value;
+  const grid = document.getElementById('goal-icon-picker-grid');
+  if (!grid) return;
+  const matches = q ? ICON_MAP.filter(({k}) => k.includes(q)) : ICON_MAP.slice(0, 48);
+  if (matches.length === 0) {
+    grid.innerHTML = `<div style="color:var(--muted);font-size:0.85rem;padding:8px;grid-column:1/-1">No icons found — try different words.</div>`;
+  } else {
+    grid.innerHTML = matches.map(({n}) =>
+      `<div class="icon-opt${n===cur?' sel':''}" onclick="selGoalIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    ).join('');
+  }
+}
+
+function saveGoal() {
+  const goalId = document.getElementById('gm-id')?.value;
+  const title  = document.getElementById('gm-title')?.value.trim();
+  const icon      = document.getElementById('gm-icon')?.value || 'trophy';
+  const iconColor = document.getElementById('gm-icon-color')?.value || '#FFD93D';
+  const target = parseInt(document.getElementById('gm-target')?.value)||500;
+  if (!title) { toast('Enter a prize name'); return; }
+
+  if (!D.teamGoals) D.teamGoals = [];
+  if (goalId) {
+    const g = D.teamGoals.find(x => x.id === goalId);
+    if (g) Object.assign(g, { title, icon, iconColor, targetPoints: target });
+  } else {
+    D.teamGoals.push({ id: genId(), title, icon, iconColor, targetPoints: target, contributions: {} });
+  }
+  saveData();
+  closeModal();
+  toast(goalId ? 'Team prize updated!' : 'Team prize added!');
+  renderParentPrizes();
+}
+
+function clearGoal(goalId) {
+  if (!confirm('Remove this team prize?')) return;
+  D.teamGoals = (D.teamGoals||[]).filter(g => g.id !== goalId);
+  saveData();
+  renderParentPrizes();
+}
+
+
+// ── ADVANCED DATA EDITOR ──────────────────────────────────────
+function showAdvancedEditor() {
+  const root = document.getElementById('adv-editor-root');
+  root.classList.add('open');
+  _advRender();
+}
+
+function closeAdvancedEditor() {
+  const root = document.getElementById('adv-editor-root');
+  root.classList.remove('open');
+  root.innerHTML = '';
+}
+
+function _advField(label, inputHtml) {
+  return `<div class="adv-field-row">
+    <span class="adv-field-label">${label}</span>
+    ${inputHtml}
+  </div>`;
+}
+
+function _advInput(type, val, onchange, extra='') {
+  const v = val === null || val === undefined ? '' : val;
+  return `<input type="${type}" class="adv-field-input" value="${esc(String(v))}"
+    ${type==='color'?`value="${v}"`:''}
+    onchange="${onchange}" ${extra}>`;
+}
+
+function _advCheck(checked, onchange) {
+  return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+    <input type="checkbox" ${checked?'checked':''} onchange="${onchange}"
+      style="width:18px;height:18px;cursor:pointer">
+    <span style="font-size:0.82rem;color:#6b7280">${checked?'On':'Off'}</span>
+  </label>`;
+}
+
+function advSetMember(id, field, val) {
+  const m = getMember(id);
+  if (!m) return;
+  if (field.includes('.')) {
+    const [a, b] = field.split('.');
+    if (!m[a] || typeof m[a] !== 'object') m[a] = {};
+    m[a][b] = val;
+  } else {
+    m[field] = val;
+  }
+  saveData();
+  _advRefreshStatus(`Member saved`);
+}
+
+function advSetChore(id, field, val) {
+  const c = D.chores.find(x => x.id === id);
+  if (!c) return;
+  c[field] = val;
+  saveData();
+  _advRefreshStatus(`Chore saved`);
+}
+
+function advSetPrize(id, field, val) {
+  const p = D.prizes.find(x => x.id === id);
+  if (!p) return;
+  p[field] = val;
+  saveData();
+  _advRefreshStatus(`Prize saved`);
+}
+
+function advClearChoreCompletions(choreId, memberId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore) return;
+  if (memberId) {
+    if (chore.completions) delete chore.completions[memberId];
+  } else {
+    chore.completions = {};
+  }
+  saveData();
+  _advRenderPreserving();
+  _advRefreshStatus('Completions cleared');
+}
+
+function advDeleteHistory(entryId) {
+  if (!confirm('Delete this history entry?')) return;
+  const idx = D.history.findIndex(h => h.id === entryId);
+  if (idx < 0) return;
+  D.history.splice(idx, 1);
+  saveData();
+  const row = document.querySelector(`[data-hist-id="${entryId}"]`);
+  if (row) row.remove();
+  _advRefreshStatus('Deleted');
+}
+
+function _advRenderPreserving() {
+  const root = document.getElementById('adv-editor-root');
+  const scroll = root ? root.scrollTop : 0;
+  _advRender();
+  if (root) root.scrollTop = scroll;
+}
+
+function advApplyRawJson() {
+  const ta = document.getElementById('adv-raw-json');
+  const statusEl = document.getElementById('adv-json-status');
+  try {
+    const parsed = JSON.parse(ta.value);
+    D = normalizeData(parsed);
+    saveData();
+    if (statusEl) { statusEl.className = 'adv-status ok'; statusEl.textContent = 'Applied & saved successfully'; }
+    _advRenderPreserving();
+  } catch(e) {
+    if (statusEl) { statusEl.className = 'adv-status err'; statusEl.textContent = `JSON error: ${e.message}`; }
+  }
+}
+
+function _advRefreshStatus(msg) {
+  const el = document.getElementById('adv-save-status');
+  if (!el) return;
+  el.className = 'adv-status ok';
+  el.textContent = `${msg}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.textContent = ''; el.className = ''; }, 2000);
+}
+
+function _advRender() {
+  const root = document.getElementById('adv-editor-root');
+  if (!root) return;
+
+  const members = D.family.members;
+  const kids = members.filter(m => m.role === 'kid');
+
+  // ── Members section ──
+  const membersHtml = members.map(m => {
+    normalizeMember(m);
+    const fields = [
+      _advField('Name',         _advInput('text',   m.name,            `advSetMember('${m.id}','name',this.value)`)),
+      _advField('Avatar',       _advInput('text',   m.avatar,          `advSetMember('${m.id}','avatar',this.value)`)),
+      _advField('Age',          _advInput('number', m.age||'',         `advSetMember('${m.id}','age',+this.value)`)),
+      _advField('Color',        _advInput('color',  m.color||'#6C63FF',`advSetMember('${m.id}','color',this.value)`)),
+      _advField('Role',         `<select class="adv-field-input" onchange="advSetMember('${m.id}','role',this.value)">
+        ${['parent','kid'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}
+      </select>`),
+      _advField('Diamonds 💎',    _advInput('number', m.diamonds||0,       `advSetMember('${m.id}','diamonds',+this.value)`)),
+      _advField('Total Earned', _advInput('number', m.totalEarned||0,  `advSetMember('${m.id}','totalEarned',+this.value)`)),
+      _advField('Savings',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
+      _advField('XP 🔮',        _advInput('number', m.xp||0,           `advSetMember('${m.id}','xp',+this.value)`)),
+      _advField('Streak Current',_advInput('number', m.streak?.current||0, `advSetMember('${m.id}','streak.current',+this.value)`)),
+      _advField('Streak Best',  _advInput('number', m.streak?.best||0, `advSetMember('${m.id}','streak.best',+this.value)`)),
+      _advField('Streak Last Date', _advInput('date', m.streak?.lastDate||'', `advSetMember('${m.id}','streak.lastDate',this.value)`)),
+      _advField('NL Today Secs',_advInput('number', m.nlTodaySecs||0,  `advSetMember('${m.id}','nlTodaySecs',+this.value)`)),
+      _advField('NL Lifetime Secs',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
+      _advField('NL Date',      _advInput('date',   m.nlDate||'',      `advSetMember('${m.id}','nlDate',this.value)`)),
+      _advField('Combo Bonus Date',_advInput('date', m.comboBonusDate||'', `advSetMember('${m.id}','comboBonusDate',this.value)`)),
+      _advField('Combo Streak',    _advInput('number', m.comboStreak?.current||0, `advSetMember('${m.id}','comboStreak.current',+this.value)`)),
+      _advField('Combo Streak Best',_advInput('number', m.comboStreak?.best||0,   `advSetMember('${m.id}','comboStreak.best',+this.value)`)),
+      _advField('Combo Streak Date',_advInput('date',  m.comboStreak?.lastDate||'', `advSetMember('${m.id}','comboStreak.lastDate',this.value)`)),
+      _advField('Badges (JSON)',`<textarea class="adv-field-input" rows="2" style="resize:vertical"
+        onchange="advSetMember('${m.id}','badges',JSON.parse(this.value||'[]'))">${esc(JSON.stringify(m.badges||[]))}</textarea>`),
+    ].join('');
+    return `<details class="adv-sub-card" style="margin-bottom:8px">
+      <summary style="cursor:pointer;font-weight:700;font-size:0.9rem;list-style:none;display:flex;align-items:center;gap:8px;padding:4px 0">
+        ${m.avatar||'🙂'} ${esc(m.name)} <span style="font-size:0.75rem;color:#9ca3af;font-weight:400">${m.role}</span>
+      </summary>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${fields}</div>
+    </details>`;
+  }).join('');
+
+  // ── Chores section ──
+  const choresHtml = D.chores.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No chores yet</div>'
+    : D.chores.map(c => {
+      const completionRows = D.family.members.filter(m => {
+        const entries = normalizeCompletionEntries(c.completions?.[m.id]);
+        return entries.length > 0;
+      }).map(m => {
+        const entries = normalizeCompletionEntries(c.completions[m.id]);
+        const doneCount = entries.filter(e=>e.status==='done').length;
+        const pendCount = entries.filter(e=>e.status==='pending').length;
+        const summary = [doneCount&&`${doneCount} done`, pendCount&&`${pendCount} pending`].filter(Boolean).join(', ');
+        return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0">
+          <span style="font-size:1rem">${m.avatar||'🙂'}</span>
+          <span style="font-size:0.8rem;flex:1">${esc(m.name)}: ${summary} (${entries.length} total)</span>
+          <button onclick="advClearChoreCompletions('${c.id}','${m.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:5px;padding:2px 7px;font-size:0.72rem;cursor:pointer">Clear</button>
+        </div>`;
+      }).join('');
+      return `
+        <div style="padding:6px 0;border-bottom:1px solid #f3f4f6">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'<i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF"></i>'}</span>
+            <span style="flex:1;font-size:0.85rem;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.title)}">${esc(c.title)}</span>
+            <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">💎</label>
+            <input type="number" class="adv-field-input" style="width:70px" value="${c.diamonds||0}"
+              onchange="advSetChore('${c.id}','diamonds',+this.value)">
+            <input type="text" class="adv-field-input" style="width:70px" value="${esc(c.icon||'')}" placeholder="icon"
+              onchange="advSetChore('${c.id}','icon',this.value)">
+            <input type="text" class="adv-field-input" style="flex:1;min-width:80px" value="${esc(c.title||'')}" placeholder="title"
+              onchange="advSetChore('${c.id}','title',this.value)">
+          </div>
+          ${completionRows ? `<details style="margin-top:4px"><summary style="font-size:0.72rem;color:#6b7280;cursor:pointer;padding:2px 0">Completions ▸ <span style="color:#d97706;font-weight:600">${(c.schedule||c).period==='once'?'(once — stays done until cleared)':''}</span></summary><div style="padding:4px 0 0 8px">${completionRows}</div></details>` : ''}
+        </div>`;
+    }).join('');
+
+  // ── Prizes section ──
+  const prizesHtml = D.prizes.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No prizes yet</div>'
+    : D.prizes.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6">
+        <span style="font-size:1.2rem;width:28px;text-align:center">${p.icon||'🎁'}</span>
+        <input type="text" class="adv-field-input" style="width:60px" value="${esc(p.icon||'')}" placeholder="icon"
+          onchange="advSetPrize('${p.id}','icon',this.value)">
+        <input type="text" class="adv-field-input" style="flex:2;min-width:80px" value="${esc(p.title||'')}" placeholder="title"
+          onchange="advSetPrize('${p.id}','title',this.value)">
+        <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">cost</label>
+        <input type="number" class="adv-field-input" style="width:75px" value="${p.cost||0}"
+          onchange="advSetPrize('${p.id}','cost',+this.value)">
+      </div>`).join('');
+
+  // ── Settings section ──
+  const SETTING_LABELS = {
+    autoApprove:'Auto-approve chores', diamondsPerDollar:'Diamonds per dollar', parentPin:'Parent PIN',
+    levelingEnabled:'Leveling enabled', streakEnabled:'Streaks enabled',
+    streakBonus3:'Streak bonus (3d)', streakBonus7:'Streak bonus (7d)', streakBonus14:'Streak bonus (14d)', streakBonus30:'Streak bonus (30d)',
+    notListeningSecs:'NL secs per diamond', currency:'Currency symbol', familyName:'Family name',
+    lastSync:'Last sync (auto)', comboEnabled:'Combo bonus enabled', sortPrizesByValue:'Sort prizes by value',
+  };
+  const settingsHtml = Object.entries(D.settings).map(([k, v]) => {
+    const label = SETTING_LABELS[k] || k;
+    let input;
+    if (typeof v === 'boolean') {
+      input = _advCheck(v, `advSetSetting('${k}',this.checked)`);
+    } else if (typeof v === 'number') {
+      input = _advInput('number', v, `advSetSetting('${k}',+this.value)`);
+    } else {
+      input = _advInput('text', v, `advSetSetting('${k}',this.value)`);
+    }
+    return _advField(label, input);
+  }).join('');
+
+  // ── History section ──
+  const histItems = (D.history || []).slice(0, 40);
+  const typeIcon = { chore:'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', prize:'<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>', penalty:'<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>', bonus:'<i class="ph-duotone ph-lightning" style="color:#D97706"></i>', level:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>' };
+  const histHtml = histItems.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No history yet</div>'
+    : histItems.map(h => {
+        const mem = getMember(h.memberId);
+        const ptsStr = (h.diamonds||0) >= 0 ? `+${h.diamonds}` : `${h.diamonds}`;
+        const ptsCol = (h.diamonds||0) >= 0 ? '#166534' : '#991b1b';
+        return `<div class="adv-hist-row" data-hist-id="${h.id}">
+          <span style="width:20px;text-align:center">${typeIcon[h.type]||'<i class="ph-duotone ph-note" style="color:#9CA3AF"></i>'}</span>
+          <span style="width:24px">${mem?.avatar||'?'}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title)}</span>
+          <span style="color:${ptsCol};font-weight:700;white-space:nowrap;margin-right:6px">${ptsStr}</span>
+          <span style="color:#9ca3af;white-space:nowrap;margin-right:8px">${h.date}</span>
+          <button onclick="advDeleteHistory('${h.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:6px;padding:2px 8px;font-size:0.75rem;cursor:pointer;flex-shrink:0"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+        </div>`;
+      }).join('');
+
+  // ── Team Goals section ──
+  const teamGoals = D.teamGoals || [];
+  const goalHtml = teamGoals.length === 0
+    ? '<div style="color:#9ca3af;font-size:0.85rem">No team prizes yet</div>'
+    : teamGoals.map((g,i) => `
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
+        ${_advField('Title',      _advInput('text',   g.title||'',       `D.teamGoals[${i}].title=this.value;saveData();_advRefreshStatus('Saved')`))}
+        ${_advField('Icon',       _advInput('text',   g.icon||'',        `D.teamGoals[${i}].icon=this.value;saveData();_advRefreshStatus('Saved')`))}
+        ${_advField('Target 💎', _advInput('number', g.targetPoints||0, `D.teamGoals[${i}].targetPoints=+this.value;saveData();_advRefreshStatus('Saved')`))}
+        ${_advField('Saved So Far', `<span style="font-size:0.85rem;font-weight:700;color:var(--teal)">${goalTotal(g)} 💎</span>`)}
+        <div style="margin-top:6px"><button class="adv-danger-btn" style="font-size:0.78rem;padding:5px 12px"
+          onclick="if(confirm('Remove this team prize?')){D.teamGoals.splice(${i},1);saveData();_advRender();}">Remove</button></div>
+      </div>`).join('');
+
+  root.innerHTML = `
+    <div class="adv-editor-header">
+      <i class="ph-duotone ph-wrench" style="color:#fff;font-size:1.1rem"></i>
+      <span class="adv-editor-title">Advanced Data Editor</span>
+      <span id="adv-save-status" class="adv-status" style="margin-right:8px"></span>
+      <button class="adv-close-btn" onclick="closeAdvancedEditor()"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+    </div>
+    <div class="adv-editor-body">
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-user" style="vertical-align:middle"></i> Members (${members.length})</div>
+        <div class="adv-section-body">${membersHtml}</div>
+      </div>
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-list" style="vertical-align:middle"></i> Chores (${D.chores.length}) — icon · title · diamonds</div>
+        <div class="adv-section-body">${choresHtml}</div>
+      </div>
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-gift" style="vertical-align:middle"></i> Prizes (${D.prizes.length}) — icon · title · cost</div>
+        <div class="adv-section-body">${prizesHtml}</div>
+      </div>
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-gear-six" style="vertical-align:middle"></i> Settings</div>
+        <div class="adv-section-body">${settingsHtml}</div>
+      </div>
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-trophy" style="vertical-align:middle"></i> Team Prizes (${teamGoals.length})</div>
+        <div class="adv-section-body">${goalHtml}</div>
+      </div>
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-scroll" style="vertical-align:middle"></i> History — last 40 entries · tap × to delete</div>
+        <div class="adv-section-body">${histHtml}</div>
+      </div>
+
+      <div class="adv-section">
+        <div class="adv-section-heading"><i class="ph-duotone ph-code" style="vertical-align:middle"></i> Raw JSON — full database · edit with care</div>
+        <div class="adv-section-body">
+          <p style="font-size:0.78rem;color:#6b7280;margin:0 0 8px"><i class="ph-duotone ph-warning" style="color:#F59E0B;vertical-align:middle"></i> Clicking Apply overwrites all data. Invalid JSON will be rejected.</p>
+          <textarea id="adv-raw-json" class="adv-raw-textarea">${esc(JSON.stringify(D, null, 2))}</textarea>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <button class="adv-apply-btn" onclick="advApplyRawJson()">Apply Raw JSON</button>
+            <button class="adv-apply-btn" style="background:#374151" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload</button>
+            <span id="adv-json-status" class="adv-status"></span>
+          </div>
+        </div>
+      </div>
+
+    </div>`;
+}
+
+function advSetSetting(key, val) {
+  D.settings[key] = val;
+  saveData();
+  _advRefreshStatus('Setting saved');
+}
+
+
+function saveSetting(key, value) {
+  D.settings[key] = value;
+  saveData();
+}
+
+
+function showAddPointsModal(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  showModal(`
+    <div class="modal-title">💎 Adjust Diamonds — ${esc(m.name)}</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.diamonds||0} 💎</strong></p>
+    <div class="form-group">
+      <label class="form-label">Amount</label>
+      <input type="number" id="adj-dmds" min="1" placeholder="e.g. 25">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-reason" placeholder="Bonus for helping...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn" style="background:#FEE2E2;color:#991B1B;font-weight:700" onclick="doAdjustPoints('${memberId}',-1)">− Remove</button>
+      <button class="btn btn-primary" onclick="doAdjustPoints('${memberId}',1)">+ Add</button>
+    </div>`);
+}
+
+function doAdjustPoints(memberId, sign) {
+  const m      = getMember(memberId);
+  const amt    = parseInt(document.getElementById('adj-dmds')?.value)||0;
+  const reason = document.getElementById('adj-reason')?.value.trim() || 'A special bonus from your parent!';
+  if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const dmds = sign * amt;
+  m.diamonds    = Math.max(0, (m.diamonds||0) + dmds);
+  m.totalEarned = dmds>0 ? (m.totalEarned||0)+dmds : m.totalEarned;
+  addHistory('bonus', memberId, reason, dmds);
+  saveData();
+  closeModal();
+  toast(`${dmds>0?'+':''}${dmds} 💎 for ${m.name}`);
+  renderSettings();
+}
+
+function showAdjustSavingsModal(memberId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  const cur = D.settings.currency || '$';
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Adjust Savings — ${esc(m.name)}</div>
+    <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${cur}${(m.savings||0).toFixed(2)}</strong></p>
+    <div class="form-group">
+      <label class="form-label">Amount (${cur})</label>
+      <input type="number" id="adj-sav" min="0.01" step="0.01" placeholder="e.g. 5.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-sav-reason" placeholder="Birthday money, allowance...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn" style="background:#FEE2E2;color:#991B1B;font-weight:700" onclick="doAdjustSavings('${memberId}',-1)">− Withdraw</button>
+      <button class="btn btn-primary" onclick="doAdjustSavings('${memberId}',1)">+ Deposit</button>
+    </div>`);
+}
+
+function doAdjustSavings(memberId, sign) {
+  const m      = getMember(memberId);
+  const amt    = parseFloat(document.getElementById('adj-sav')?.value) || 0;
+  const reason = document.getElementById('adj-sav-reason')?.value.trim();
+  const cur    = D.settings.currency || '$';
+  if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const dollars = parseFloat((sign * amt).toFixed(2));
+  m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
+  if (sign > 0) {
+    const label = reason || 'A savings deposit from your parent!';
+    addHistory('savings_deposit', memberId, label, 0, { dollars: amt });
+  } else {
+    const label = reason ? `Withdrawal: ${reason}` : 'Savings withdrawal';
+    addHistory('savings_withdraw', memberId, label, 0, { dollars: amt });
+  }
+  saveData();
+  closeModal();
+  toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${m.name}`);
+  renderSettings();
+}
+
+function switchFamily() {
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-link-break" style="color:#EF4444;font-size:1.2rem;vertical-align:middle"></i> Join Different Family?</div>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:16px">
+      This will disconnect this device from your current family. Your family's data stays safe in the cloud — you'll just need the family code to rejoin.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="_confirmSwitchFamily()">Continue</button>
+    </div>`);
+}
+
+function _confirmSwitchFamily() {
+  closeModal();
+  closeSettings();
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(FAMILY_CODE_KEY);
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  D = defaultData();
+  showScreen('screen-setup');
+  renderSetupGate();
+}
+
+function resetAllData() {
+  if (!confirm('This will erase ALL family data. Are you absolutely sure?')) return;
+  if (!confirm('Last chance — really reset everything?')) return;
+  localStorage.removeItem(LS_KEY);
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  db.doc(getFamilyDoc()).delete().catch(e => console.warn('Firestore delete error:', e));
+  D = defaultData();
+  location.reload();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INIT — bootstrap the app on page load
+═══════════════════════════════════════════════════════════════ */
+
+function showMaintenanceScreen(title, message, btnText, btnUrl) {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.className = 'screen active loading';
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center;padding:32px';
+  const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
+  el.innerHTML = `
+    <img src="gemsproutpadded.png" class="loading-img" style="width:120px;height:120px">
+    <div style="color:#fff;font-size:1.6rem;font-weight:800;letter-spacing:-0.01em">${title}</div>
+    <div style="color:rgba(255,255,255,0.85);font-size:1rem;max-width:300px;line-height:1.5">${message}</div>
+    ${btnText ? `<button onclick="${btnAction}" style="margin-top:8px;padding:12px 28px;border-radius:12px;border:none;background:#fff;color:#6C63FF;font-weight:700;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}`;
+}
+
+// Global Remote Config values — populated on startup, safe to read anywhere after startApp()
+const RC = {
+  maintenanceMode:        false,
+  maintenanceTitle:       'Down for Maintenance',
+  maintenanceMessage:     'GemSprout is currently undergoing maintenance. Please check back soon.',
+  maintenanceButtonText:  'Try Again',
+  maintenanceButtonUrl:   '',
+  betaMode:               true,
+  appDownloadUrl:         'https://gemsprout.com/beta',
+};
+
+async function checkMaintenanceMode() {
+  try {
+    const rc = firebase.remoteConfig();
+    rc.defaultConfig = { ...RC };
+    rc.settings.minimumFetchIntervalMillis = 60000;
+    await rc.fetchAndActivate();
+    // Populate global RC from fetched values
+    RC.maintenanceMode        = rc.getValue('maintenanceMode').asBoolean();
+    RC.maintenanceTitle       = rc.getValue('maintenanceTitle').asString();
+    RC.maintenanceMessage     = rc.getValue('maintenanceMessage').asString();
+    RC.maintenanceButtonText  = rc.getValue('maintenanceButtonText').asString();
+    RC.maintenanceButtonUrl   = rc.getValue('maintenanceButtonUrl').asString();
+    RC.betaMode               = rc.getValue('betaMode').asBoolean();
+    RC.appDownloadUrl         = rc.getValue('appDownloadUrl').asString();
+    if (RC.maintenanceMode) {
+      showMaintenanceScreen(RC.maintenanceTitle, RC.maintenanceMessage, RC.maintenanceButtonText, RC.maintenanceButtonUrl);
+      return true;
+    }
+  } catch (e) {
+    console.warn('Remote Config unavailable:', e);
+  }
+  return false;
+}
+
+function showLoading() {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.className = 'screen active loading';
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center';
+  el.innerHTML = `
+    <img src="gemsproutpadded.png" class="loading-img" style="width:160px;height:160px">
+    <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.01em">GemSprout</div>
+    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:7px">
+      <i class="ph-duotone ph-hourglass" style="font-size:1.1rem"></i> Loading...
+    </div>`;
+}
+
+function routeAfterLoad() {
+  if (!D.setup || !D.family || D.family.members.length === 0) {
+    S.setupMembers = [];
+    S.setupStep    = 0;
+    showScreen('screen-setup');
+    renderSetupGate();
+  } else {
+    if (isAppUnlocked()) {
+      const rememberedUser = getMember(getCurrentUserId());
+      if (rememberedUser) {
+        S.currentUser = rememberedUser;
+        routeToView(rememberedUser);
+      } else {
+        renderHome();
+      }
+    } else showAppPin();
+  }
+}
+
+function init() {
+  window.speechSynthesis?.getVoices(); // prime async voice loading on iOS
+  loadData();
+  applyInterestForAllKids();
+  scheduleHereCheck();
+
+  // Migration: existing installs pre-date family codes — generate one and push immediately
+  const _needsMigrationPush = !getFamilyCode() && D.setup;
+  if (_needsMigrationPush) setFamilyCode(genFamilyCode());
+
+  const hasLocalData = D.setup && D.family && D.family.members.length > 0;
+
+  if (hasLocalData) {
+    // Fast path: local data exists — show PIN immediately, sync in background
+    if (isAppUnlocked()) {
+      const rememberedUser = getMember(getCurrentUserId());
+      if (rememberedUser) {
+        S.currentUser = rememberedUser;
+        routeToView(rememberedUser);
+        if (rememberedUser.role === 'kid') {
+          savePendingSnapshot(rememberedUser.id);
+          markBonusesSeen(rememberedUser.id);
+          markSavingsSeen(rememberedUser.id);
+          markSpendOutcomesSeen(rememberedUser.id);
+        }
+      } else {
+        renderHome();
+      }
+    } else showAppPin();
+    auth.signInAnonymously()
+      .then(() => {
+        subscribeToFirestore();
+        if (_needsMigrationPush) pushToFirestore();
+      })
+      .catch(err => console.warn('Firestore sync unavailable:', err));
+  } else {
+    // Slow path: no local data (fresh install or standalone PWA first launch)
+    // Wait for Firestore before routing so we don't wrongly show setup wizard
+    showLoading();
+    auth.signInAnonymously()
+      .then(() => subscribeToFirestore(routeAfterLoad))
+      .catch(err => {
+        console.warn('Firestore unavailable, falling back to local data:', err);
+        routeAfterLoad();
+      });
+  }
+}
+
+// Start on DOM ready
+async function startApp() {
+  await checkBiometricAvailability();
+  const inMaintenance = await checkMaintenanceMode();
+  if (!inMaintenance) init();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp);
+} else {
+  startApp();
+}
+
+console.log('✅ GemSprout fully loaded!');
