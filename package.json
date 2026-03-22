@@ -22,6 +22,7 @@
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
+    "capacitor-native-biometric": "^4.2.2",
     "firebase-admin": "^13.7.0"
   }
 }
