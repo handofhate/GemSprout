@@ -3056,6 +3056,12 @@ function renderSettings() {
             ${bioBtn}
           </div>
         </div>
+        ${(s.parentPin || getBiometricCredentialId()) ? `
+        <div class="toggle-row">
+          <div><div class="toggle-label">Lock when leaving app</div>
+            <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
+          <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
+        </div>` : ''}
       </div>
 
       <div class="card">
@@ -8153,6 +8159,15 @@ function init() {
       });
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!D.settings?.lockOnBackground) return;
+  if (document.visibilityState === 'hidden') {
+    if (S.currentUser) setAppUnlocked(false);
+  } else if (document.visibilityState === 'visible') {
+    if (S.currentUser && !isAppUnlocked()) showAppPin();
+  }
+});
 
 // Start on DOM ready
 async function ensureFirestoreAuth() {

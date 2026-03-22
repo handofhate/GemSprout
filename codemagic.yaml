@@ -61,6 +61,12 @@ workflows:
           end
           EOF
 
+      - name: Add Sign In with Apple entitlement
+        script: |
+          ENTITLEMENTS="ios/App/App/App.entitlements"
+          plutil -insert com.apple.developer.applesignin -json '["Default"]' "$ENTITLEMENTS" \
+            || plutil -replace com.apple.developer.applesignin -json '["Default"]' "$ENTITLEMENTS"
+
       - name: Set Info.plist flags
         script: |
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
