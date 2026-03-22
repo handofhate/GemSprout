@@ -72,6 +72,20 @@ workflows:
             '  <array><string>Default</string></array>' \
             '</dict></plist>' > "$ENTITLEMENTS"
 
+      - name: Link entitlements to Xcode project
+        script: |
+          gem install xcodeproj --no-document
+          ruby - <<'EOF'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
+          target = project.targets.first
+          target.build_configurations.each do |config|
+            config.build_settings['CODE_SIGN_ENTITLEMENTS'] = 'App/App.entitlements'
+          end
+          project.save
+          puts 'Set CODE_SIGN_ENTITLEMENTS to App/App.entitlements'
+          EOF
+
       - name: Set Info.plist flags
         script: |
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
