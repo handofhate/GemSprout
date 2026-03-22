@@ -7,6 +7,13 @@
       "launchShowDuration": 0
     }
   },
+  "server": {
+    "allowNavigation": [
+      "accounts.google.com",
+      "appleid.apple.com",
+      "gemsprout1.firebaseapp.com"
+    ]
+  },
   "ios": {
     "scheme": "GemSprout",
     "contentInset": "never",

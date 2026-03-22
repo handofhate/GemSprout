@@ -77,8 +77,9 @@ async function signInWithGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     if (isNative()) {
-      alert('[diag] attempting signInWithRedirect');
+      alert('[diag] calling signInWithRedirect');
       await auth.signInWithRedirect(provider);
+      alert('[diag] redirect returned without navigating');
       return null; // page navigates away; resolved on next load via getRedirectResult
     } else {
       await auth.signInWithPopup(provider);
@@ -8176,9 +8177,11 @@ async function startApp() {
   if (isNative()) {
     try {
       const result = await auth.getRedirectResult();
+      alert('[diag] getRedirectResult: user=' + (result?.user?.uid || 'none'));
       if (result && result.user) {
         const memberId = localStorage.getItem('_pendingAuthMemberId');
         localStorage.removeItem('_pendingAuthMemberId');
+        alert('[diag] memberId=' + memberId);
         if (memberId) {
           await linkParentAuth(result.user, memberId);
           await checkAndPromptNewDevice(result.user.uid, memberId);
