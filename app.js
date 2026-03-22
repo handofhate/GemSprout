@@ -77,6 +77,7 @@ async function signInWithGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     if (isNative()) {
+      alert('[diag] attempting signInWithRedirect');
       await auth.signInWithRedirect(provider);
       return null; // page navigates away; resolved on next load via getRedirectResult
     } else {
