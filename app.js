@@ -73,6 +73,7 @@ async function signInWithGoogle() {
   } catch(e) {
     if (e.code !== 'auth/cancelled-popup-request' && e.message !== 'Sign in cancelled.') {
       console.warn('Google sign-in failed:', e.message);
+      if (isNative()) alert('Google error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -91,6 +92,7 @@ async function signInWithApple() {
   } catch(e) {
     if (e.message !== 'Sign in cancelled.') {
       console.warn('Apple sign-in failed:', e.message);
+      if (isNative()) alert('Apple error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
