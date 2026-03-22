@@ -64,6 +64,8 @@ async function signInWithGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     if (isNative()) {
+      const _cd = window.cordova;
+      alert('[diag] cordova=' + typeof _cd + ' require=' + ((_cd && _cd.require) ? typeof _cd.require : 'none'));
       await auth.signInWithRedirect(provider);
       return null; // page navigates away; resolved on next load via getRedirectResult
     } else {
