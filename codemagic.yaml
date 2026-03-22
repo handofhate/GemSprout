@@ -33,9 +33,8 @@ workflows:
           cp manifest.json www/
           cp *.png www/
           npx cap add ios
-          # Replace the default pod with Lite (core + Apple) + Google subspecs only
-          # This excludes the Facebook SDK, which crashes on launch without its own config
-          sed -i '' "s|pod 'CapacitorFirebaseAuthentication'|pod 'CapacitorFirebaseAuthentication/Lite'\n  pod 'CapacitorFirebaseAuthentication/Google'|" ios/App/Podfile
+          # Facebook SDK is bundled by @capacitor-firebase/authentication but requires
+          # Info.plist entries to not crash. Add placeholders since we don't use Facebook login.
           npx cap sync ios
           cp GoogleService-Info.plist ios/App/App/
 
@@ -45,6 +44,9 @@ workflows:
           plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
           plutil -insert NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist || plutil -replace NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist
           plutil -insert CFBundleURLTypes -json '[{"CFBundleURLSchemes":["com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508"]}]' ios/App/App/Info.plist || true
+          plutil -insert FacebookAppID -string "placeholder" ios/App/App/Info.plist || true
+          plutil -insert FacebookClientToken -string "placeholder" ios/App/App/Info.plist || true
+          plutil -insert FacebookDisplayName -string "GemSprout" ios/App/App/Info.plist || true
 
       - name: Set up code signing
         script: xcode-project use-profiles
@@ -69,6 +71,6 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: true
+        submit_to_testflight: false
         # Set to true when ready for full App Store submission:
         submit_to_app_store: false
