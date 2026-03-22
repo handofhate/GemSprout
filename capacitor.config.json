@@ -5,14 +5,11 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com", "apple.com"]
     }
-  },
-  "server": {
-    "allowNavigation": [
-      "accounts.google.com",
-      "appleid.apple.com",
-      "gemsprout1.firebaseapp.com"
-    ]
   },
   "ios": {
     "scheme": "GemSprout",

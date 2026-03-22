@@ -1,14 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Must run before Firebase loads: prevent Firebase from detecting Cordova.
-       Firebase checks window.cordova?.require to decide whether to use Cordova
-       OAuth mode (which requires Cordova plugins we don't have).
-       Capacitor sets window.cordova as a compatibility shim; we neutralize it. -->
-  <script>
-    try { delete window.cordova; } catch(e) {}
-    try { if (window.cordova) window.cordova.require = null; } catch(e) {}
-  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">

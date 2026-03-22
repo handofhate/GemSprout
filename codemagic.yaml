@@ -34,6 +34,7 @@ workflows:
           cp manifest.json www/
           cp *.png www/
           npx cap add ios
+          cp GoogleService-Info.plist ios/App/App/
           # Generate iOS app icons from source image
           mkdir -p assets
           cp "GemSprout Icon.png" assets/icon-only.png

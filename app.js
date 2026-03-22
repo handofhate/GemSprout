@@ -36,20 +36,7 @@ function getFamilyDoc() {
 }
 
 firebase.initializeApp(FIREBASE_CONFIG);
-// Firebase's compat CDN auto-detects Capacitor WKWebView as a Cordova environment
-// and routes to Cordova auth mode, which requires Cordova plugins we don't have.
-// Fix: call initializeAuth with explicit browserPopupRedirectResolver before
-// firebase.auth() is ever called. The compat wrapper reuses the pre-initialized instance.
-let auth;
-const _authInitPromise = import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js')
-  .then(({ initializeAuth, browserPopupRedirectResolver, indexedDBLocalPersistence }) => {
-    initializeAuth(firebase.app(), {
-      persistence: indexedDBLocalPersistence,
-      popupRedirectResolver: browserPopupRedirectResolver,
-    });
-    auth = firebase.auth();
-  })
-  .catch(() => { auth = firebase.auth(); });
+const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
@@ -75,20 +62,20 @@ function isParentSignedIn() {
 
 async function signInWithGoogle() {
   try {
-    const provider = new firebase.auth.GoogleAuthProvider();
     if (isNative()) {
-      alert('[diag] calling signInWithRedirect');
-      await auth.signInWithRedirect(provider);
-      alert('[diag] redirect returned without navigating');
-      return null; // page navigates away; resolved on next load via getRedirectResult
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential?.idToken);
+      const userCredential = await auth.signInWithCredential(credential);
+      return userCredential.user;
     } else {
+      const provider = new firebase.auth.GoogleAuthProvider();
       await auth.signInWithPopup(provider);
       return auth.currentUser;
     }
   } catch(e) {
     if (e.code !== 'auth/cancelled-popup-request' && e.message !== 'Sign in cancelled.') {
       console.warn('Google sign-in failed:', e.message);
-      if (isNative()) alert('Google error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -96,18 +83,24 @@ async function signInWithGoogle() {
 
 async function signInWithApple() {
   try {
-    const provider = new firebase.auth.OAuthProvider('apple.com');
     if (isNative()) {
-      await auth.signInWithRedirect(provider);
-      return null; // page navigates away; resolved on next load via getRedirectResult
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      const result = await FirebaseAuthentication.signInWithApple();
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken: result.credential?.idToken,
+        rawNonce: result.credential?.rawNonce,
+      });
+      const userCredential = await auth.signInWithCredential(credential);
+      return userCredential.user;
     } else {
+      const provider = new firebase.auth.OAuthProvider('apple.com');
       await auth.signInWithPopup(provider);
       return auth.currentUser;
     }
   } catch(e) {
     if (e.message !== 'Sign in cancelled.') {
       console.warn('Apple sign-in failed:', e.message);
-      if (isNative()) alert('Apple error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -7995,8 +7988,6 @@ function showParentSignIn(memberId, onSuccess) {
 async function handleParentSignIn(provider, memberId) {
   const btns = document.querySelectorAll('#btn-google-signin, #btn-apple-signin');
   btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
-  // Persist memberId so it survives the redirect on iOS
-  if (isNative()) localStorage.setItem('_pendingAuthMemberId', memberId);
   const firebaseUser = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
   if (!firebaseUser) {
     btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
@@ -8168,32 +8159,9 @@ async function ensureFirestoreAuth() {
 }
 
 async function startApp() {
-  await _authInitPromise;
   await checkBiometricAvailability();
   const inMaintenance = await checkMaintenanceMode();
   if (!inMaintenance) init();
-
-  // Handle Firebase OAuth redirect result (iOS sign-in via signInWithRedirect)
-  if (isNative()) {
-    try {
-      const result = await auth.getRedirectResult();
-      alert('[diag] getRedirectResult: user=' + (result?.user?.uid || 'none'));
-      if (result && result.user) {
-        const memberId = localStorage.getItem('_pendingAuthMemberId');
-        localStorage.removeItem('_pendingAuthMemberId');
-        alert('[diag] memberId=' + memberId);
-        if (memberId) {
-          await linkParentAuth(result.user, memberId);
-          await checkAndPromptNewDevice(result.user.uid, memberId);
-        }
-      } else {
-        localStorage.removeItem('_pendingAuthMemberId');
-      }
-    } catch(e) {
-      console.warn('Redirect result error:', e.message);
-      localStorage.removeItem('_pendingAuthMemberId');
-    }
-  }
 }
 
 if (document.readyState === 'loading') {
