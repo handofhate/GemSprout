@@ -63,7 +63,7 @@ function isParentSignedIn() {
 async function signInWithGoogle() {
   try {
     if (isNative()) {
-      const { GoogleAuth } = Capacitor.Plugins;
+      const GoogleAuth = Capacitor.registerPlugin('GoogleAuth');
       const result = await GoogleAuth.signIn();
       const credential = firebase.auth.GoogleAuthProvider.credential(result.authentication.idToken);
       await auth.signInWithCredential(credential);
@@ -85,7 +85,7 @@ async function signInWithGoogle() {
 async function signInWithApple() {
   try {
     if (isNative()) {
-      const { SignInWithApple } = Capacitor.Plugins;
+      const SignInWithApple = Capacitor.registerPlugin('SignInWithApple');
       // Generate a nonce to prevent replay attacks
       const rawNonce = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map(b => b.toString(16).padStart(2, '0')).join('');
