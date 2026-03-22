@@ -22,8 +22,8 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          npm install
-          npm prune
+          npm install --legacy-peer-deps
+          npm prune --legacy-peer-deps
 
       - name: Sync Capacitor to iOS
         script: |
