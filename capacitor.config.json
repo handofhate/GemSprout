@@ -8,6 +8,7 @@
     },
     "GoogleAuth": {
       "scopes": ["profile", "email"],
+      "iosClientId": "493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508.apps.googleusercontent.com",
       "forceCodeForRefreshToken": true
     }
   },
