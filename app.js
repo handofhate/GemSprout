@@ -67,6 +67,7 @@ async function signInWithGoogle() {
       const result = await FirebaseAuthentication.signInWithGoogle();
       const credential = firebase.auth.GoogleAuthProvider.credential(result.credential?.idToken);
       const userCredential = await auth.signInWithCredential(credential);
+      subscribeToFirestore(); // re-establish listener under new auth token
       return userCredential.user;
     } else {
       const provider = new firebase.auth.GoogleAuthProvider();
@@ -101,6 +102,7 @@ async function signInWithApple() {
   } catch(e) {
     if (e.message !== 'Sign in cancelled.') {
       console.warn('Apple sign-in failed:', e.message);
+      if (isNative()) alert('Apple error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -3058,7 +3060,7 @@ function renderSettings() {
 
       <div class="card">
         <div class="card-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</div>
-        ${S.currentUser?.authUid ? `
+        ${(auth.currentUser && !auth.currentUser.isAnonymous) ? `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div>
             <div style="font-size:0.88rem;font-weight:600">${esc(auth.currentUser?.displayName || auth.currentUser?.email || 'Signed in')}</div>

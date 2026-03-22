@@ -233,6 +233,7 @@
       width: min(100%, 1180px);
       margin: 0 auto;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior: none;
       scrollbar-width: none;
     }
     .main-content::-webkit-scrollbar { display: none; }
@@ -1053,8 +1054,13 @@
       color: #DC2626;
       font-size: 0.78rem;
       font-weight: 700;
-      padding: 6px 16px;
+      padding: calc(env(safe-area-inset-top, 0px) + 6px) 16px 6px;
       text-align: center;
+    }
+    /* When sync bar is visible it absorbs the safe-area-inset, so header doesn't double it */
+    #parent-sync-bar.error ~ #parent-header,
+    #kid-sync-bar.error ~ #kid-header {
+      padding-top: 14px;
     }
 
     /* ══════════════════════════════════════════
