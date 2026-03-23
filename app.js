@@ -89,19 +89,14 @@ function _generateNonce() {
   return nonce;
 }
 
-async function _sha256(str) {
-  const data = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 async function signInWithApple() {
   try {
     if (isNative()) {
       const { FirebaseAuthentication } = Capacitor.Plugins;
       const rawNonce = _generateNonce();
-      const hashedNonce = await _sha256(rawNonce);
-      const result = await FirebaseAuthentication.signInWithApple({ nonce: hashedNonce });
+      // Pass rawNonce directly — Apple hashes it before embedding in the token,
+      // Firebase then verifies SHA256(rawNonce) matches what's in the token.
+      const result = await FirebaseAuthentication.signInWithApple({ nonce: rawNonce });
       const provider = new firebase.auth.OAuthProvider('apple.com');
       const credential = provider.credential({
         idToken: result.credential?.idToken,
