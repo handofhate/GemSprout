@@ -8101,10 +8101,13 @@ function showLoading() {
   el.className = 'screen active loading';
   el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center';
   el.innerHTML = `
+    <style>
+      @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
+    </style>
     <img src="gemsproutpadded.png" class="loading-img" style="width:160px;height:160px">
     <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.01em">GemSprout</div>
-    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:7px">
-      <i class="ph-duotone ph-hourglass" style="font-size:1.1rem"></i> Loading...
+    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:2px">
+      Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
     </div>`;
 }
 
