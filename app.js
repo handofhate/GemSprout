@@ -82,15 +82,30 @@ async function signInWithGoogle() {
   }
 }
 
+function _generateNonce() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let nonce = '';
+  for (let i = 0; i < 32; i++) nonce += chars.charAt(Math.floor(Math.random() * chars.length));
+  return nonce;
+}
+
+async function _sha256(str) {
+  const data = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function signInWithApple() {
   try {
     if (isNative()) {
       const { FirebaseAuthentication } = Capacitor.Plugins;
-      const result = await FirebaseAuthentication.signInWithApple();
+      const rawNonce = _generateNonce();
+      const hashedNonce = await _sha256(rawNonce);
+      const result = await FirebaseAuthentication.signInWithApple({ nonce: hashedNonce });
       const provider = new firebase.auth.OAuthProvider('apple.com');
       const credential = provider.credential({
         idToken: result.credential?.idToken,
-        rawNonce: result.credential?.rawNonce,
+        rawNonce: rawNonce,
       });
       const userCredential = await auth.signInWithCredential(credential);
       return userCredential.user;
