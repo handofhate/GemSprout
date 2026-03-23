@@ -82,25 +82,17 @@ async function signInWithGoogle() {
   }
 }
 
-function _generateNonce() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let nonce = '';
-  for (let i = 0; i < 32; i++) nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  return nonce;
-}
-
 async function signInWithApple() {
   try {
     if (isNative()) {
       const { FirebaseAuthentication } = Capacitor.Plugins;
-      const rawNonce = _generateNonce();
-      // Pass rawNonce directly — Apple hashes it before embedding in the token,
-      // Firebase then verifies SHA256(rawNonce) matches what's in the token.
-      const result = await FirebaseAuthentication.signInWithApple({ nonce: rawNonce });
+      // Let the plugin manage the nonce — it returns the raw nonce it used in
+      // result.credential.nonce, which matches what Apple embedded in the token.
+      const result = await FirebaseAuthentication.signInWithApple();
       const provider = new firebase.auth.OAuthProvider('apple.com');
       const credential = provider.credential({
         idToken: result.credential?.idToken,
-        rawNonce: rawNonce,
+        rawNonce: result.credential?.nonce,
       });
       const userCredential = await auth.signInWithCredential(credential);
       return userCredential.user;
