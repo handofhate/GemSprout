@@ -2716,7 +2716,7 @@ function emailDebugLogs() {
     `safeAreaTop: ${getComputedStyle(html).getPropertyValue('--sat') || 'check env()'}`,
     `screens visible: ${[...document.querySelectorAll('.screen')].filter(s => s.style.display !== 'none').map(s => s.id).join(', ')}`,
   ].join('\n');
-  window.location.href = `mailto:gemsproutapp@gmail.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
+  window.location.href = `mailto:beta@gemsprout.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
 }
 
 function testCameraPermission() {
@@ -6019,7 +6019,7 @@ function showBetaWelcomeIfNeeded() {
       <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
         Found a bug or have a suggestion? We'd love to hear it.
       </p>
-      <a href="mailto:gemsproutapp@gmail.com" style="font-size:0.82rem;font-weight:700;color:#16A34A;text-decoration:none">gemsproutapp@gmail.com</a>
+      <a href="mailto:beta@gemsprout.com" style="font-size:0.82rem;font-weight:700;color:#16A34A;text-decoration:none">beta@gemsprout.com</a>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="width:100%" onclick="closeModal()">Got it — let's go!</button>
