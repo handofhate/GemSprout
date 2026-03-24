@@ -782,7 +782,9 @@ function subscribeToFirestore(onFirstLoad) {
       // Ignore snapshots arriving within 1500ms of a local save — they may be echoes
       // of a previous write that arrived after we've already moved on locally.
       const isStaleEcho = !firstSnapshot && (Date.now() - S.lastLocalSave) < 1500;
+      let _didUpdate = false;
       if (!isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
+        _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
         D = normalizedIncoming;
@@ -820,7 +822,7 @@ function subscribeToFirestore(onFirstLoad) {
         checkForDeclineNotifications(S.currentUser, true); // check for declines while away
       }
       if (typeof onFirstLoad === 'function') onFirstLoad();
-    } else {
+    } else if (_didUpdate) {
       renderCurrentView();
       if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
     }
@@ -2506,6 +2508,7 @@ function launchBadgeRain(iconHtml, count = 55) {
 }
 
 let _eggTaps = 0, _eggTimer = null;
+let _avatarTaps = 0, _avatarTimer = null;
 function easterEggTap() {
   _eggTaps++;
   const el = document.getElementById('egg-gem');
@@ -2573,16 +2576,15 @@ function launchMixedRain(count = 120) {
 }
 
 function kidAvatarEasterEgg() {
-  const m = S.currentUser;
-  if (!m) return;
-  // Bounce the avatar element for tactile feedback
-  const el = document.querySelector('.header-avatar');
-  if (el) {
-    el.style.transition = 'transform 0.12s ease';
-    el.style.transform  = 'scale(1.5)';
-    setTimeout(() => { el.style.transform = 'scale(1)'; }, 140);
+  _avatarTaps++;
+  clearTimeout(_avatarTimer);
+  if (_avatarTaps >= 5) {
+    _avatarTaps = 0;
+    const m = S.currentUser;
+    if (m) launchConfetti(50, m.avatar || '🙂');
+    return;
   }
-  launchConfetti(50, m.avatar || '🙂');
+  _avatarTimer = setTimeout(() => { _avatarTaps = 0; }, 2000);
 }
 
 function launchDollarRain(count = 80) {
@@ -3320,9 +3322,14 @@ function showScreen(id) {
 // Called after cloud sync updates D; re-renders whichever view is active
 function renderCurrentView() {
   if (!S.currentUser) return;
-  const u = S.currentUser;
-  if (u.role === 'parent')  renderParentView();
-  else renderKidView();
+  if (S.currentUser.role === 'parent') {
+    // Re-render in-place — skip showScreen() so scroll position is preserved
+    renderParentHeader();
+    renderParentNav();
+    renderParentTab();
+  } else {
+    renderKidView();
+  }
 }
 
 // ── PULL TO REFRESH ────────────────────────────────────────────
@@ -3793,7 +3800,7 @@ function startNewFamily() {
         </button>
         <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
-          Continue with Apple
+          Continue with Apple&nbsp;
         </button>
       </div>
       <button style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer;margin-top:8px" onclick="renderSetupGate()">← Back</button>
@@ -7817,7 +7824,10 @@ function _doClearGoal(goalId) {
 
 
 // ── ADVANCED DATA EDITOR ──────────────────────────────────────
+let _advBackup = null;
+
 function showAdvancedEditor() {
+  _advBackup = JSON.parse(JSON.stringify(D));
   const root = document.getElementById('adv-editor-root');
   root.classList.add('open');
   _advRender();
@@ -7825,9 +7835,18 @@ function showAdvancedEditor() {
 }
 
 function closeAdvancedEditor() {
+  _advBackup = null;
   const root = document.getElementById('adv-editor-root');
   root.classList.remove('open');
   root.innerHTML = '';
+}
+
+function cancelAdvancedEditor() {
+  if (_advBackup) {
+    D = normalizeData(_advBackup);
+    saveData();
+  }
+  closeAdvancedEditor();
 }
 
 function _advField(label, inputHtml) {
@@ -7898,6 +7917,20 @@ function advSetPrize(id, field, val) {
 }
 
 function advClearChoreCompletions(choreId, memberId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore) return;
+  const member = memberId ? getMember(memberId) : null;
+  const what = member ? `${esc(member.name)}'s completions for "${esc(chore.title)}"` : `all completions for "${esc(chore.title)}"`;
+  showModal(`
+    <div class="modal-title">Clear Completions?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will permanently clear ${what}. Chore badge progress will be lost.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doAdvClearCompletions('${choreId}','${memberId||''}')">Clear</button>
+    </div>`);
+}
+
+function _doAdvClearCompletions(choreId, memberId) {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore) return;
   if (memberId) {
@@ -8206,6 +8239,7 @@ function _advRender() {
       <i class="ph-duotone ph-database" style="font-size:1.3rem"></i>
       <span class="adv-header-title">Data Editor</span>
       <span id="adv-save-status" class="adv-status" style="margin-right:4px"></span>
+      <button style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem;font-weight:600;flex-shrink:0;margin-right:6px" onclick="cancelAdvancedEditor()">Cancel</button>
       <button style="background:rgba(255,255,255,0.2);border:none;color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="closeAdvancedEditor()"><i class="ph-duotone ph-x" style="font-size:1rem"></i></button>
     </div>
     <div class="adv-body">
@@ -8652,7 +8686,7 @@ function showParentSignIn(memberId, onSuccess) {
       </button>
       <button id="btn-apple-signin" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('apple','${memberId}')">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
-        Continue with Apple
+        Continue with Apple&nbsp;
       </button>
     </div>
     <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()">← Back</button>`;
