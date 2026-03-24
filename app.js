@@ -82,6 +82,13 @@ async function signInWithGoogle() {
   }
 }
 
+function _authProviderIcon() {
+  const pid = auth.currentUser?.providerData?.[0]?.providerId;
+  if (pid === 'google.com') return '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">';
+  if (pid === 'apple.com')  return '<svg width="22" height="22" viewBox="0 0 814 1000" fill="#000" style="flex-shrink:0"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.5 135.4-317.3 269-317.3 70.1 0 128.4 46.4 172.5 46.4 42.8 0 109.9-49 192.5-49 30.5 0 110.5 2.6 167.5 66.2zm-137.1-234c-27.2 32.5-71.9 58.3-115.6 58.3-5.8 0-11.6-.6-17.3-1.9-.6-5.2-.9-10.5-.9-15.8 0-56.3 29.9-117 72.8-152.4 24.3-20.1 63.4-37 95.3-38.9 1.9 7.1 2.6 14.1 2.6 20.8 0 56.9-24.2 115.9-36.9 129.9z"/></svg>';
+  return '<i class="ph-duotone ph-user-circle" style="font-size:1.3rem;flex-shrink:0"></i>';
+}
+
 async function signInWithApple() {
   try {
     if (isNative()) {
@@ -187,6 +194,12 @@ function showAppPin() {
 
 // ── SWITCH USER ───────────────────────────────────────────────
 function goHome() {
+  S.currentUser = null;
+  setCurrentUserId('');
+  renderHome();
+}
+
+function signOutAndGoHome() {
   const wasParent = S.currentUser?.role === 'parent';
   S.currentUser = null;
   setCurrentUserId('');
@@ -400,7 +413,6 @@ function defaultData() {
       // Not Listening
       notListeningSecs: 60,
       notListeningEnabled: true,
-      sortPrizesByValue: false,
       // Savings
       savingsEnabled:          true,
       savingsMatchingEnabled:  false,
@@ -441,14 +453,8 @@ function saveData() {
 
 async function pushToFirestore() {
   try {
-    S.syncStatus = 'syncing';
-    updateSyncBar();
     await db.doc(getFamilyDoc()).set(D);
-    S.syncStatus = 'ok';
-    updateSyncBar();
   } catch(e) {
-    S.syncStatus = 'error';
-    updateSyncBar();
     console.warn('Firestore write error:', e);
   }
 }
@@ -784,8 +790,6 @@ function subscribeToFirestore(onFirstLoad) {
         }
       }
     }
-    S.syncStatus = 'ok';
-    updateSyncBar();
     if (firstSnapshot) {
       firstSnapshot = false;
       // Check for approvals that happened while the app was closed
@@ -806,8 +810,6 @@ function subscribeToFirestore(onFirstLoad) {
       if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
     }
   }, err => {
-    S.syncStatus = 'error';
-    updateSyncBar();
     console.warn('Firestore listener error:', err);
     if (firstSnapshot) {
       firstSnapshot = false;
@@ -979,6 +981,7 @@ function normalizeMember(m) {
   if (typeof m.nlTodaySecs === 'undefined') m.nlTodaySecs = 0;
   if (typeof m.nlDate === 'undefined') m.nlDate = null;
   if (typeof m.nlLifetimeSecs === 'undefined') m.nlLifetimeSecs = 0;
+  if (typeof m.nlPendingSecs === 'undefined') m.nlPendingSecs = 0;
   return m;
 }
 
@@ -1321,10 +1324,10 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
     }
   }
 
-  // Auto-here: if member is scheduled as away today but is completing a chore,
-  // they must actually be home — record a one-off override so streak logic knows.
+  // Auto-here: completing a chore while marked away means they're actually home.
   const _todayStr = today();
-  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _todayStr)) {
+  normalizeMember(member);
+  if (!isMemberHereOnDate(member, _todayStr)) {
     member.splitHousehold.overrides[_todayStr] = true;
   }
 
@@ -1385,7 +1388,8 @@ function doApproveChore(choreId, memberId, entryId) {
     checkChoreBadges(chore, memberId);
     // Auto-here: approving a chore means the kid must be home
     const _t = today();
-    if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+    normalizeMember(member);
+    if (!isMemberHereOnDate(member, _t)) {
       member.splitHousehold.overrides[_t] = true;
     }
   }
@@ -1703,7 +1707,6 @@ function runHereCheck() {
   const t = today();
   const missing = (D.family?.members || []).filter(m => {
     if (m.role !== 'kid') return false;
-    if (!m.splitHousehold?.enabled) return false;
     if (!isMemberHereOnDate(m, t)) return false;
     // Has any chore completion today?
     return !D.chores.some(c =>
@@ -1740,66 +1743,31 @@ function showSplitHouseholdModal(memberId) {
     return `<button class="sh-day-btn ${here ? 'here' : 'away'}" onclick="toggleShDay(${pos})" id="sh-day-${pos}">${lbl}</button>`;
   }).join('');
 
-  const overrideRows = Object.entries(sh.overrides || {})
-    .sort(([a],[b]) => a.localeCompare(b))
-    .map(([date, isHere]) => `
-      <div class="sh-override-row" id="sh-ov-${date}">
-        <span class="sh-override-label">${date}</span>
-        <span class="sh-badge ${isHere ? 'here' : 'away'}">${isHere ? 'Here' : 'Away'}</span>
-        <button class="btn-icon-sm" onclick="removeShOverride('${date}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
-      </div>`).join('');
-
   showModal(`
-    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split Household — ${esc(member.name)}</div>
+    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split Household Schedule</div>
 
-    <div class="toggle-row" style="margin-bottom:16px">
-      <div>
-        <div class="toggle-label">Enable Split Household</div>
-        <div class="toggle-sub">Streaks skip days they're at the other household</div>
-      </div>
-      <label class="toggle">
-        <input type="checkbox" id="sh-enabled" ${enabled ? 'checked' : ''} onchange="toggleShConfig()">
-        <span class="toggle-track"></span>
-      </label>
+    <div class="form-group">
+      <label class="form-label">Week 1 starts on <span class="form-label-hint">any Monday</span></label>
+      <input type="date" id="sh-ref-monday" value="${ref}">
     </div>
 
-    <div id="sh-config" style="${enabled ? '' : 'display:none'}">
-      <div class="form-group">
-        <label class="form-label">Week 1 starts on <span class="form-label-hint">pick any Monday</span></label>
-        <input type="date" id="sh-ref-monday" value="${ref}">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Schedule — tap a day to toggle here / away</label>
-        <div class="sh-section">
-          <div class="sh-week-block">
-            <div class="sh-week-label">Week 1</div>
-            <div class="sh-days-row">${weekGrid(0)}</div>
-          </div>
-          <div class="sh-week-block">
-            <div class="sh-week-label">Week 2</div>
-            <div class="sh-days-row">${weekGrid(1)}</div>
-          </div>
+    <div class="form-group" style="margin-bottom:4px">
+      <label class="form-label">Schedule <span class="form-label-hint">tap a day to toggle home / away</span></label>
+      <div class="sh-section">
+        <div class="sh-week-block">
+          <div class="sh-week-label">Week 1</div>
+          <div class="sh-days-row">${weekGrid(0)}</div>
+        </div>
+        <div class="sh-week-block">
+          <div class="sh-week-label">Week 2</div>
+          <div class="sh-days-row">${weekGrid(1)}</div>
         </div>
       </div>
+    </div>
 
-      <div class="form-group">
-        <label class="form-label">One-off exceptions</label>
-        <div class="sh-overrides-list" id="sh-overrides-list">${overrideRows || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>'}</div>
-        <div class="sh-add-row">
-          <input type="date" id="sh-ov-date" value="${today()}">
-          <select id="sh-ov-type">
-            <option value="true">Here</option>
-            <option value="false">Away</option>
-          </select>
-          <button class="btn btn-secondary btn-sm" onclick="addShOverride()">Add</button>
-        </div>
-      </div>
-
-      <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
-        <i class="ph-duotone ph-lightbulb" style="color:#F59E0B;vertical-align:middle"></i> Completing a chore on a scheduled away day automatically marks them as here.
-        At 6 pm on here-days with no chore activity, you'll get a prompt asking if they're actually home.
-      </p>
+    <div style="display:flex;gap:6px;font-size:0.78rem;color:var(--muted);margin-top:8px">
+      <i class="ph-duotone ph-lightbulb" style="color:#F59E0B;flex-shrink:0;margin-top:2px"></i>
+      <span>Completing a chore on an away day automatically toggles the kid to home. Use the Home / Away toggles in Settings to make one-off changes.</span>
     </div>
 
     <div class="modal-actions">
@@ -1807,20 +1775,11 @@ function showSplitHouseholdModal(memberId) {
       <button class="btn btn-primary" onclick="saveSplitHousehold()">Save</button>
     </div>`);
 
-  // Request notification permission when enabling
   if (enabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
 }
 
-function toggleShConfig() {
-  const on = document.getElementById('sh-enabled')?.checked;
-  const cfg = document.getElementById('sh-config');
-  if (cfg) cfg.style.display = on ? '' : 'none';
-  if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}
 
 // Holds temporary cycle state while modal is open
 function _getShCycle() {
@@ -1866,7 +1825,16 @@ function addShOverride() {
 }
 
 function removeShOverride(date) {
-  if (!confirm(`Remove the exception for ${date}?`)) return;
+  showModal(`
+    <div class="modal-title">Remove Exception?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">The schedule exception for <strong>${date}</strong> will be removed.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doRemoveShOverride('${date}')">Remove</button>
+    </div>`);
+}
+
+function _doRemoveShOverride(date) {
   const member = getMember(S.shMemberId);
   if (!member) return;
   delete member.splitHousehold.overrides[date];
@@ -1878,12 +1846,17 @@ function removeShOverride(date) {
 }
 
 function saveSplitHousehold() {
-  const member = getMember(S.shMemberId);
-  if (!member) return;
-  member.splitHousehold.enabled = document.getElementById('sh-enabled')?.checked || false;
-  member.splitHousehold.referenceMonday = document.getElementById('sh-ref-monday')?.value || getMostRecentMonday();
-  member.splitHousehold.cycle = _getShCycle();
-  // overrides were already mutated live by addShOverride / removeShOverride
+  const source = getMember(S.shMemberId);
+  if (!source) return;
+  source.splitHousehold.referenceMonday = document.getElementById('sh-ref-monday')?.value || getMostRecentMonday();
+  source.splitHousehold.cycle = _getShCycle();
+  // Apply schedule to all kids equally (overrides stay per-kid)
+  const { referenceMonday, cycle } = source.splitHousehold;
+  D.family.members.filter(m => m.role === 'kid' && !m.deleted && m.id !== source.id).forEach(m => {
+    normalizeMember(m);
+    m.splitHousehold.referenceMonday = referenceMonday;
+    m.splitHousehold.cycle = [...cycle];
+  });
   saveData();
   closeModal();
   toast('Split Household schedule saved');
@@ -1931,6 +1904,15 @@ function markAwayToday(memberId) {
 function setTodayStatus(memberId, isHere) {
   const member = getMember(memberId);
   if (member?.splitHousehold) member.splitHousehold.overrides[today()] = isHere;
+  saveData();
+  renderSettings();
+}
+
+function toggleFamilySplitHousehold(enabled) {
+  D.family.members.filter(m => m.role === 'kid' && !m.deleted).forEach(m => {
+    normalizeMember(m);
+    m.splitHousehold.enabled = enabled;
+  });
   saveData();
   renderSettings();
 }
@@ -2081,10 +2063,11 @@ function saveComboOverride(kidId) {
       return chore && getChoreProgress(chore, kidId).status === 'done';
     });
     if (allDone) {
-      const bonusPts = finalIds.reduce((sum, id) => {
+      const baseSum = finalIds.reduce((sum, id) => {
         const chore = D.chores.find(c => c.id === id);
         return sum + (chore?.diamonds || 0);
       }, 0);
+      const bonusPts = Math.max(1, (D.settings.comboMultiplier || 2) - 1) * baseSum;
       S._pendingComboSave = { kidId, finalIds };
       showModal(`
         <div class="modal-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;vertical-align:middle"></i> Combo Will Complete!</div>
@@ -2134,10 +2117,11 @@ function checkComboBonus(memberId) {
   if (!allDone) return;
 
   member.comboBonusDate = today();
-  const bonusPts = combo.reduce((sum, id) => {
+  const baseSum = combo.reduce((sum, id) => {
     const chore = D.chores.find(c => c.id === id);
     return sum + (chore?.diamonds || 0);
   }, 0);
+  const bonusPts = Math.max(1, (D.settings.comboMultiplier || 2) - 1) * baseSum;
   member.diamonds      = (member.diamonds      || 0) + bonusPts;
   member.totalEarned = (member.totalEarned || 0) + bonusPts;
   if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
@@ -2168,6 +2152,16 @@ function checkComboBonus(memberId) {
 }
 
 // ── NOT LISTENING ─────────────────────────────────────────────
+function fmtNLTime(secs) {
+  if (!secs || secs <= 0) return '0s';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 let _nlState = {
   isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
   selectedKids: [], rafId: null,
@@ -2328,27 +2322,33 @@ function _nlCancel() {
 
 function _nlDone() {
   if (_nlState.isHolding) _nlHoldEnd();
-  const dmds = _nlState.diamondsLost;
   const sessionSecs = Math.floor(_nlState.accumulated / 1000);
+  const secsPerPt = D.settings.notListeningSecs || 60;
   const t = today();
+  let totalDeducted = 0;
   if (_nlState.selectedKids.length > 0) {
     _nlState.selectedKids.forEach(kidId => {
       const m = getMember(kidId);
       if (!m) return;
       normalizeMember(m);
-      // Persist NL seconds for today and lifetime
+      // Today's display counter (resets daily)
       if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
       m.nlTodaySecs = (m.nlTodaySecs || 0) + sessionSecs;
       m.nlLifetimeSecs = (m.nlLifetimeSecs || 0) + sessionSecs;
+      // Global pending seconds — never reset, carry remainder indefinitely
+      m.nlPendingSecs = (m.nlPendingSecs || 0) + sessionSecs;
+      const dmds = Math.floor(m.nlPendingSecs / secsPerPt);
+      m.nlPendingSecs = m.nlPendingSecs % secsPerPt;
       if (dmds > 0) {
         m.diamonds = Math.max(0, (m.diamonds || 0) - dmds);
         addHistory('penalty', kidId, `Not listening penalty`, -dmds);
+        totalDeducted += dmds;
       }
     });
     saveData();
-    if (dmds > 0) {
+    if (totalDeducted > 0) {
       const names = _nlState.selectedKids.map(id => getMember(id)?.name).filter(Boolean).join(' & ');
-      toast(`Deducted ${dmds} 💎 from ${names}`);
+      toast(`Deducted ${totalDeducted} 💎 from ${names}`);
     }
     renderParentHome();
     renderParentHeader();
@@ -2440,12 +2440,12 @@ function selPrizeColor(el, color) {
 }
 
 // ── TOAST ─────────────────────────────────────────────────────
-function toast(msg) {
+function toast(msg, duration = 2900) {
   const el = document.createElement('div');
   el.className = 'toast';
   el.innerHTML = msg;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2900);
+  setTimeout(() => el.remove(), duration);
 }
 
 // ── POINTS BURST ──────────────────────────────────────────────
@@ -2814,7 +2814,9 @@ function closeModalIfBg(e) {
 function openUserSettings() {
   if (S.currentUser?.role === 'parent') {
     renderSettings();
-    document.getElementById('settings-root').classList.add('open');
+    const sr = document.getElementById('settings-root');
+    sr.classList.add('open');
+    sr.scrollTop = 0;
     loadDevicesList();
   } else {
     const name = S.currentUser?.name || 'User';
@@ -2830,6 +2832,43 @@ function openUserSettings() {
 
 function closeSettings() {
   document.getElementById('settings-root').classList.remove('open');
+}
+
+function openFullHistory() {
+  renderFullHistory();
+  const sr = document.getElementById('settings-root');
+  sr.classList.add('open');
+  sr.scrollTop = 0;
+}
+
+function renderFullHistory() {
+  const history = D.history || [];
+  const rows = history.map(h => {
+    const mem = getMember(h.memberId);
+    const badge = historyBadge(h);
+    const icon = historyIcon(h);
+    const ptsColor = h.diamonds >= 0 ? '#166534' : '#991b1b';
+    const ptsStr = h.diamonds !== 0 ? (h.diamonds > 0 ? `+${h.diamonds}` : `${h.diamonds}`) + ' 💎' : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6">
+      <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((h.title||'').replace(/^⚡\s*/,'').replace(/<[^>]+>/g,'').trim())}</div>
+        <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : '<span style="font-style:italic">Former member</span>'}${h.choreTitle ? ` · ${esc(h.choreTitle)}` : ''} · ${fmtDate(h.date)}</div>
+      </div>
+      ${ptsStr ? `<span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('settings-root').innerHTML = `
+    <div class="settings-header">
+      <button class="btn-back" onclick="closeSettings()">←</button>
+      <span class="settings-header-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1.1rem;vertical-align:middle"></i> Full Activity History</span>
+    </div>
+    <div class="settings-body">
+      <div class="card">
+        ${rows || '<div class="empty-state"><div class="empty-text">No activity yet</div></div>'}
+      </div>
+    </div>`;
 }
 
 // Swipe from left edge to close settings (iOS-style back gesture)
@@ -2940,60 +2979,22 @@ function renderSettings() {
   const s = D.settings;
   const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
 
+  const shEnabled = members.some(k => k.splitHousehold?.enabled);
+  const firstKid = members[0];
+
   const familyHtml = members.map(k => {
-    const isExpanded = _expandedSettingsMembers.has(k.id);
-    const actions = isExpanded ? `
-      <div class="settings-member-actions">
-        <div class="settings-member-action-row">
-          <div style="flex:1">
-            <div class="settings-member-action-label">💎 Adjust Diamonds</div>
-            <div class="settings-member-action-sub">Manually add or remove diamonds — use for bonuses, corrections, or special rewards</div>
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="showAddPointsModal('${k.id}')">Adjust</button>
-        </div>
-        ${s.savingsEnabled !== false ? `
-        <div class="settings-member-action-row">
-          <div style="flex:1">
-            <div class="settings-member-action-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Adjust Savings</div>
-            <div class="settings-member-action-sub">Deposit or withdraw real dollars — birthday money, allowance, or spending</div>
-          </div>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="showSavingsHistory('${k.id}')"><i class="ph-duotone ph-clock-clockwise" style="font-size:0.9rem;vertical-align:middle"></i></button>
-            <button class="btn btn-secondary btn-sm" onclick="showAdjustSavingsModal('${k.id}')">Adjust</button>
-          </div>
-        </div>` : ''}
-        <div class="settings-member-action-row">
-          <div style="flex:1">
-            <div class="settings-member-action-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
-            <div class="settings-member-action-sub">Set which days this kid is here vs. at the other household — streaks skip away days automatically</div>
-          </div>
-          <button class="btn btn-sm" style="background:${k.splitHousehold?.enabled?'var(--green)':'#F3F4F6'};color:${k.splitHousehold?.enabled?'#fff':'var(--text)'}" onclick="showSplitHouseholdModal('${k.id}')">${k.splitHousehold?.enabled?'On':'Set up'}</button>
-        </div>
-        ${k.splitHousehold?.enabled ? (() => {
-          const isHere = isMemberHereOnDate(k, today());
-          return `<div class="settings-member-action-row">
-            <div style="flex:1">
-              <div class="settings-member-action-label">Today's Status</div>
-              <div class="settings-member-action-sub">Is ${esc(k.name)} at your house today?</div>
-            </div>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-sm" style="background:${isHere?'var(--green)':'#F3F4F6'};color:${isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',true)">Here</button>
-              <button class="btn btn-sm" style="background:${!isHere?'#EF4444':'#F3F4F6'};color:${!isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',false)">Away</button>
-            </div>
-          </div>`;
-        })() : ''}
-      </div>` : '';
+    const isHere = isMemberHereOnDate(k, today());
     return `
-      <div style="border-left:4px solid ${k.color||'#6C63FF'};padding-left:12px;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="toggleSettingsMember('${k.id}')">
-          <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
-          <div style="flex:1">
-            <div style="font-weight:700">${esc(k.name)}</div>
-            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0}${s.savingsEnabled!==false?` · <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i> ${s.currency||'$'}${(k.savings||0).toFixed(2)}`:''}</div>
-          </div>
-          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem"></i>
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #F3F4F6">
+        <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
+        <div style="flex:1">
+          <div style="font-weight:700">${esc(k.name)}</div>
+          <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · ${k.diamonds||0} 💎${s.savingsEnabled!==false?` · ${s.currency||'$'}${(k.savings||0).toFixed(2)} <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i>`:''}</div>
         </div>
-        ${actions}
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-sm" style="background:${isHere?'var(--green)':'#F3F4F6'};color:${isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',true)">Home</button>
+          <button class="btn btn-sm" style="background:${!isHere?'#EF4444':'#F3F4F6'};color:${!isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',false)">Away</button>
+        </div>
       </div>`;
   }).join('');
 
@@ -3010,8 +3011,8 @@ function renderSettings() {
     </div>
     <div class="settings-body">
 
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</span></div>
       <div class="card">
-        <div class="card-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
           <div style="font-size:1.8rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${getFamilyCode()}</div>
           <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${getFamilyCode()}').then(()=>toast('Code copied!'))">
@@ -3025,8 +3026,9 @@ function renderSettings() {
         </div>` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</span></div>
       <div class="card">
-        <div class="card-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</div>
         <div class="toggle-row">
           <div><div class="toggle-label">Auto-approve chores</div>
             <div class="toggle-sub">Kids earn diamonds instantly without parent review</div></div>
@@ -3037,12 +3039,7 @@ function renderSettings() {
             <div class="toggle-sub">Chores outside their allowed time window won't show on kids' screens</div></div>
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
         </div>
-        <div class="toggle-row">
-          <div><div class="toggle-label">Sort prizes by value</div>
-            <div class="toggle-sub">Shows cheapest prizes first in the shop and team tabs</div></div>
-          <label class="toggle"><input type="checkbox" ${s.sortPrizesByValue?'checked':''} onchange="saveSetting('sortPrizesByValue',this.checked)"><span class="toggle-track"></span></label>
-        </div>
-        <div class="form-group">
+        <div class="form-group mb-0">
           <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family Timezone</label>
           <select onchange="saveSetting('familyTimezone',this.value)" style="width:100%">
             ${(Intl.supportedValuesOf?.('timeZone') ?? [s.familyTimezone]).map(tz =>
@@ -3051,46 +3048,55 @@ function renderSettings() {
           </select>
           <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones.</div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
-            ${bioBtn}
-          </div>
-        </div>
-        ${(s.parentPin || getBiometricCredentialId()) ? `
-        <div class="toggle-row">
-          <div><div class="toggle-label">Lock when leaving app</div>
-            <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
-          <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
-        </div>` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</span></div>
       <div class="card">
-        <div class="card-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</div>
         ${(auth.currentUser && !auth.currentUser.isAnonymous) ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div>
-            <div style="font-size:0.88rem;font-weight:600">${esc(auth.currentUser?.displayName || auth.currentUser?.email || 'Signed in')}</div>
-            <div style="font-size:0.78rem;color:var(--muted)">${esc(auth.currentUser?.email || '')}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${_authProviderIcon()}
+            <div>
+              <div style="font-size:0.88rem;font-weight:600">${esc(auth.currentUser?.displayName || auth.currentUser?.email || 'Signed in')}</div>
+              <div style="font-size:0.78rem;color:var(--muted)">${esc(auth.currentUser?.email || '')}</div>
+            </div>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="confirmSignOut()">Sign Out</button>
         </div>` : `
-        <div style="margin-bottom:12px">
+        <div style="margin-bottom:14px">
           <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px">Link your account to enable push notifications and secure your profile.</div>
           <button class="btn btn-secondary btn-sm" onclick="closeSettings();showParentSignIn('${S.currentUser?.id}')">
             <i class="ph-duotone ph-link" style="font-size:0.9rem;vertical-align:middle"></i> Link Account
           </button>
         </div>`}
-        <div id="devices-list"><div style="font-size:0.82rem;color:var(--muted)">Loading devices…</div></div>
+        <div style="padding-top:14px;border-top:1px solid #F3F4F6">
+          <div class="form-group">
+            <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
+              ${bioBtn}
+            </div>
+          </div>
+          ${(s.parentPin || getBiometricCredentialId()) ? `
+          <div class="toggle-row">
+            <div><div class="toggle-label">Lock when leaving app</div>
+              <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
+            <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
+          </div>` : ''}
+        </div>
+        <div style="padding-top:14px;border-top:1px solid #F3F4F6;margin-top:4px">
+          <div id="devices-list"><div style="font-size:0.82rem;color:var(--muted)">Loading devices…</div></div>
+        </div>
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row">
+        <span class="section-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Savings Banking</span>
+        <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+      </div>
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div class="card-title" style="margin:0"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Savings Banking</div>
-          <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
-        </div>
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px;margin-top:4px">Kids can convert diamonds into real savings.</p>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px">Kids can convert diamonds into real savings.</p>
         ${s.savingsEnabled !== false ? `
         <div class="form-group">
           <label class="form-label">Diamonds per dollar <span class="form-label-hint">conversion rate</span></label>
@@ -3108,70 +3114,111 @@ function renderSettings() {
         </div>` : ''}
         <div class="toggle-row" style="margin-top:${s.savingsMatchingEnabled?'4':'8'}px">
           <div><div class="toggle-label">Add interest</div>
-            <div class="toggle-sub">Automatically grow savings by a set rate</div></div>
+            <div class="toggle-sub">Kids claim their interest as a reward on interest day</div></div>
           <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
         </div>
         ${s.savingsInterestEnabled ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-          <div class="form-group mb-0">
-            <label class="form-label">Interest rate %</label>
-            <input type="number" value="${s.savingsInterestRate||5}" min="0.1" max="100" step="0.1" onchange="saveSetting('savingsInterestRate',parseFloat(this.value)||5)">
-          </div>
-          <div class="form-group mb-0">
-            <label class="form-label">Period</label>
-            <select onchange="saveSetting('savingsInterestPeriod',this.value);renderSettings()">
-              <option value="weekly"  ${s.savingsInterestPeriod==='weekly' ?'selected':''}>Weekly</option>
-              <option value="monthly" ${(s.savingsInterestPeriod||'monthly')==='monthly'?'selected':''}>Monthly</option>
-            </select>
-          </div>
-        </div>
-        <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
-          <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px"></i>
-          ${(s.savingsInterestPeriod||'monthly')==='weekly'
-            ? 'Interest is applied every <strong>Monday</strong>.'
-            : 'Interest is applied on the <strong>1st of each month</strong>.'}
+        <div class="toggle-row">
+          <div><div class="toggle-label">Interest day reminder</div>
+            <div class="toggle-sub">Reminds you on interest day to have kids open the app and claim</div></div>
+          <label class="toggle"><input type="checkbox" ${s.interestDayNotify!==false?'checked':''} onchange="saveSetting('interestDayNotify',this.checked)"><span class="toggle-track"></span></label>
         </div>` : ''}
+        ${s.savingsInterestEnabled ? (() => {
+          const ip = s.savingsInterestPeriod || 'monthly';
+          const iDay = s.savingsInterestDay ?? 1;
+          const iDom = s.savingsInterestDayOfMonth || 1;
+          const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          const domSuffix = iDom === 1 ? 'st' : iDom === 2 ? 'nd' : iDom === 3 ? 'rd' : 'th';
+          return `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+            <div class="form-group mb-0">
+              <label class="form-label">Interest rate %</label>
+              <input type="number" value="${s.savingsInterestRate||5}" min="0.1" max="100" step="0.1" onchange="saveSetting('savingsInterestRate',parseFloat(this.value)||5)">
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label">Period</label>
+              <select onchange="saveSetting('savingsInterestPeriod',this.value);renderSettings()">
+                <option value="weekly"  ${ip==='weekly' ?'selected':''}>Weekly</option>
+                <option value="monthly" ${ip==='monthly'?'selected':''}>Monthly</option>
+              </select>
+            </div>
+            ${ip === 'weekly' ? `
+            <div class="form-group mb-0" style="grid-column:1/-1">
+              <label class="form-label">Available on</label>
+              <select onchange="saveSetting('savingsInterestDay',parseInt(this.value));renderSettings()">
+                ${dayNames.map((d,i) => `<option value="${i}" ${iDay===i?'selected':''}>${d}</option>`).join('')}
+              </select>
+            </div>` : `
+            <div class="form-group mb-0" style="grid-column:1/-1">
+              <label class="form-label">Available on day of month <span class="form-label-hint">1–28</span></label>
+              <input type="number" value="${iDom}" min="1" max="28" onchange="saveSetting('savingsInterestDayOfMonth',Math.min(28,Math.max(1,parseInt(this.value)||1)));renderSettings()">
+            </div>`}
+          </div>
+          <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
+            <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px;flex-shrink:0"></i>${ip === 'weekly'
+              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>.`
+              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>.`}
+            <div style="margin-left:20px">Unclaimed interest expires at midnight.</div>
+          </div>`;
+        })() : ''}
         ` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</span></div>
       <div class="card">
-        <div class="card-title" style="margin-bottom:16px"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</div>
         ${familyHtml || '<div class="empty-state"><div class="empty-text">No kids yet</div></div>'}
-        <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="closeSettings();goSetup()">Edit Family Setup</button>
+        <button class="btn btn-secondary btn-sm btn-full" style="margin-top:12px" onclick="closeSettings();goSetup()">Edit Family Setup</button>
         <div class="toggle-row" style="margin-top:14px">
           <div>
+            <div class="toggle-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
+            <div class="toggle-sub">Streaks skip days kids are at the other household</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${shEnabled && firstKid ? `<button class="btn btn-secondary btn-sm" onclick="showSplitHouseholdModal('${firstKid.id}')">Configure</button>` : ''}
+            <label class="toggle"><input type="checkbox" ${shEnabled?'checked':''} onchange="toggleFamilySplitHousehold(this.checked)"><span class="toggle-track"></span></label>
+          </div>
+        </div>
+        <div class="toggle-row" style="margin-top:8px">
+          <div>
             <div class="toggle-label"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> 6 PM Home Check</div>
-            <div class="toggle-sub">Prompts you at 6 PM on days that split-household kids are expected to be home, but have not completed any chores yet.</div>
+            <div class="toggle-sub">Prompts you at 6 PM if no chores have been completed yet for the day. Also works with Split Household enabled.</div>
           </div>
           <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
         </div>
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row">
+        <span class="section-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not Listening</span>
+        <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderSettings();renderParentHome()"><span class="toggle-track"></span></label>
+      </div>
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div class="card-title" style="margin:0"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not Listening</div>
-          <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
-        </div>
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
-          Hold the big red button on the dashboard to accumulate time. Seconds convert to diamond deductions when you release. Toggle off to hide the button entirely.
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.notListeningEnabled!==false?'14px':'0'}">
+          Adds a hold-to-track button on the dashboard that deducts diamonds for not listening. Seconds accumulate indefinitely — leftovers carry over until a full interval is reached.
         </p>
+        ${s.notListeningEnabled!==false ? `
         <div class="form-group mb-0">
           <label class="form-label">Seconds per diamond lost</label>
           <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
-        </div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Hold the button to track time, release to apply. One 💎 lost per interval — leftover seconds carry forward indefinitely, so nothing is lost between sessions.</div>
+        </div>` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</span></div>
       <div class="card" style="border:2px solid #FEE2E2">
-        <div class="card-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</div>
         <button class="btn btn-danger btn-sm" onclick="switchFamily()" style="width:100%;margin-bottom:8px">
           <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
         </button>
         <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and lets you connect to a different family using their code. Does not delete any family's data from the cloud.</div>
         <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes all family data — chores, prizes, history, and member profiles. This cannot be undone.</div>
       </div>
 
-      ${RC.betaMode ? `<div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
-        <div class="card-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</div>
+      ${RC.betaMode ? `<div style="height:14px"></div>
+      <div class="section-row"><span class="section-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
+      <div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
         <div style="background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:#78350F;line-height:1.5">
           <strong>For testers only.</strong> These settings exist to help us find and fix bugs before launch. They will not be present in the final App Store release.
         </div>
@@ -3201,17 +3248,12 @@ function renderSettings() {
 // ── SCREEN NAVIGATION ─────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.removeAttribute('style'); s.classList.remove('loading'); });
-  document.getElementById(id).classList.add('active');
+  const el = document.getElementById(id);
+  el.classList.add('active');
+  const content = el.querySelector('.main-content');
+  if (content) content.scrollTop = 0;
 }
 
-function updateSyncBar() {
-  ['kid-sync-bar','parent-sync-bar'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (S.syncStatus==='error') { el.className='sync-bar error'; el.textContent='Sync failed — check connection'; }
-    else { el.innerHTML=''; el.className=''; }
-  });
-}
 
 // ── RE-RENDER CURRENT VIEW ────────────────────────────────────
 // Called after cloud sync updates D; re-renders whichever view is active
@@ -3346,7 +3388,9 @@ function renderHome() {
   const bdayBanner = anyBday
     ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> It's a birthday today! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
 
-  document.getElementById('home-content').innerHTML = `
+  const homeEl = document.getElementById('home-content');
+  if (!homeEl) return;
+  homeEl.innerHTML = `
     <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100dvh;display:flex;flex-direction:column">
       <img class="home-logo" src="gemsproutpadded.png">
       <div class="home-title">GemSprout</div>
@@ -3675,6 +3719,35 @@ function renderSetupGate() {
 }
 
 function startNewFamily() {
+  const gate = document.getElementById('setup-gate');
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <img src="gemsproutpadded.png" style="width:90px;height:90px">
+      <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
+        <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('google')">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+          Continue with Google
+        </button>
+        <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
+          <svg width="20" height="20" viewBox="0 0 814 1000" fill="white"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.5 135.4-317.3 269-317.3 70.1 0 128.4 46.4 172.5 46.4 42.8 0 109.9-49 192.5-49 30.5 0 110.5 2.6 167.5 66.2zm-137.1-234c-27.2 32.5-71.9 58.3-115.6 58.3-5.8 0-11.6-.6-17.3-1.9-.6-5.2-.9-10.5-.9-15.8 0-56.3 29.9-117 72.8-152.4 24.3-20.1 63.4-37 95.3-38.9 1.9 7.1 2.6 14.1 2.6 20.8 0 56.9-24.2 115.9-36.9 129.9z"/></svg>
+          Continue with Apple
+        </button>
+      </div>
+      <button style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer;margin-top:8px" onclick="renderSetupGate()">← Back</button>
+    </div>`;
+}
+
+async function _newFamilyAuth(provider) {
+  const btns = document.querySelectorAll('#setup-gate .btn');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  const user = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+  if (!user) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  S.newFamilyDisplayName = user.displayName || '';
   setFamilyCode(genFamilyCode());
   document.getElementById('setup-gate').style.display = 'none';
   document.getElementById('setup-content').style.display = '';
@@ -3739,7 +3812,7 @@ function goSetup() {
     .filter(m => m.role === 'parent')
     .map(m => ({...m}));
   if (S.setupParents.length === 0) {
-    S.setupParents = [{ id:genId(), name:'', avatar:'🧑', color:'#6C63FF', role:'parent', diamonds:0, savings:0, totalEarned:0, birthday:'' }];
+    S.setupParents = [{ id:genId(), name: S.newFamilyDisplayName || '', avatar:'🧑', color:'#6C63FF', role:'parent', diamonds:0, savings:0, totalEarned:0, birthday:'' }];
   }
   // All non-parent members in one unified list
   S.setupMembers = D.family.members
@@ -3773,7 +3846,11 @@ function renderSetupStep() {
       <div class="flex gap-10 mt-8">
         <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup()">Cancel</button>
         <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go →</button>
-      </div>` : `<button class="btn btn-primary btn-full" onclick="setupNext()">Let's go →</button>`}`;
+      </div>` : `
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="renderSetupGate()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go →</button>
+      </div>`}`;
       break;
 
     case 'parents': content = `
@@ -3973,6 +4050,7 @@ function memberSetupCard(mem, i) {
       </div>
       <div class="form-group">
         <label class="form-label">Display Mode</label>
+        <p style="font-size:0.78rem;color:var(--muted);margin:-4px 0 8px;line-height:1.5"><strong>Little Kid</strong> uses large icons and reads chores aloud — great for kids who can't read yet. No not-listening meter is shown. <strong>Big Kid</strong> shows the standard text-based view, including a not-listening progress bar if the feature is enabled.</p>
         <div class="display-mode-row">${modeOpts}</div>
       </div>
       ${dm === 'tiny' ? (() => {
@@ -4059,7 +4137,15 @@ function addMemberCard() {
   renderSetupStep();
 }
 
-function removeMemberCard(i) { if (!confirm('Remove this family member?')) return; S.setupMembers.splice(i,1); renderSetupStep(); }
+function removeMemberCard(i) {
+  showModal(`
+    <div class="modal-title">Remove Member?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This family member will be removed from setup.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();S.setupMembers.splice(${i},1);renderSetupStep()">Remove</button>
+    </div>`);
+}
 
 function setMemberField(i, field, value, rerender=false) {
   if (S.setupMembers[i]) S.setupMembers[i][field] = value;
@@ -4088,7 +4174,15 @@ function addParentCard() {
   renderSetupStep();
 }
 
-function removeParentCard(i) { if (!confirm('Remove this parent?')) return; S.setupParents.splice(i,1); renderSetupStep(); }
+function removeParentCard(i) {
+  showModal(`
+    <div class="modal-title">Remove Parent?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This parent will be removed from setup.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();S.setupParents.splice(${i},1);renderSetupStep()">Remove</button>
+    </div>`);
+}
 
 function setParentField(i, field, value, rerender=false) {
   if (S.setupParents[i]) S.setupParents[i][field] = value;
@@ -4234,6 +4328,7 @@ function finishSetup() {
   }
   D.setup = true;
   saveData();
+  ensureFirestoreAuth().then(() => subscribeToFirestore());
   renderHome();
 }
 
@@ -4267,6 +4362,25 @@ function renderKidView() {
   renderKidHeader();
   renderKidNav();
   renderKidTab();
+
+  // Show interest claim modal once per session per kid
+  if (!S._interestShown) S._interestShown = new Set();
+  if (isInterestDay() && (m.savings || 0) > 0 && m.savingsInterestLastDate !== today() && !S._interestShown.has(m.id)) {
+    S._interestShown.add(m.id);
+    const s = D.settings;
+    const rate = parseFloat(s.savingsInterestRate) || 5;
+    const cur  = s.currency || '$';
+    const interest = parseFloat((m.savings * rate / 100).toFixed(2));
+    setTimeout(() => showCelebration({
+      icon:     '<i class="ph-duotone ph-trend-up" style="color:#16A34A;font-size:3rem"></i>',
+      title:    '📈 It\'s Interest Day!',
+      sub:      `Your savings grew ${rate}% — you earned <strong>${cur}${interest.toFixed(2)}</strong>!`,
+      dollars:  interest,
+      cur,
+      btnLabel: 'Claim Interest 💰',
+      onClose:  () => { claimInterest(m.id); renderKidView(); },
+    }), 600);
+  }
 }
 
 function renderKidHeader() {
@@ -4317,11 +4431,12 @@ function switchKidTab(tab) {
   S.kidTab = tab;
   renderKidNav();
   renderKidTab();
+  const c = document.getElementById('kid-content'); if (c) c.scrollTop = 0;
   const m = S.currentUser;
   if (!m || !isTiny(m)) return;
   const dmds = m.diamonds || 0;
   if (tab === 'chores') {
-    const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+    const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id)).sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||''));
     const progressMap = new Map(myChores.map(c => [c.id, getChoreProgress(c, m.id)]));
     const totalUnits = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.targetCount || 0), 0);
     const doneUnits  = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.doneCount  || 0), 0);
@@ -4361,7 +4476,7 @@ function renderKidTab() {
 // ── CHORES TAB ────────────────────────────────────────────────
 function renderKidChores() {
   const m = S.currentUser;
-  const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+  const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id)).sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||''));
 
   if (myChores.length === 0) {
     document.getElementById('kid-content').innerHTML = `
@@ -4876,6 +4991,29 @@ function renderKidDiamonds() {
       </div>`;
   }
 
+  // Not Listening meter (non-tiny only)
+  if (!tiny && D.settings.notListeningEnabled !== false) {
+    normalizeMember(m);
+    const _nlSecsPerDmd = D.settings.notListeningSecs || 60;
+    const _nlPending = m.nlPendingSecs || 0;
+    const _nlPct = Math.min(100, Math.round(_nlPending / _nlSecsPerDmd * 100));
+    const _nlToday = (m.nlDate === today() ? m.nlTodaySecs || 0 : 0);
+    html += `
+      <div class="card" style="padding:12px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:0.85rem;font-weight:600;color:#EF4444"><i class="ph-duotone ph-speaker-slash" style="font-size:0.9rem;vertical-align:middle"></i> Not-Listening Meter</span>
+          <span style="font-size:0.78rem;color:var(--muted)">${_nlToday > 0 ? fmtNLTime(_nlToday) + ' today' : 'None today'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:8px;background:#FEE2E2;border-radius:99px;overflow:hidden">
+            <div style="height:100%;width:${_nlPct}%;background:#EF4444;border-radius:99px;transition:width 0.3s"></div>
+          </div>
+          <span style="font-size:0.75rem;color:#EF4444;font-weight:600;white-space:nowrap">${_nlPending}s / ${_nlSecsPerDmd}s</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px">Fill the bar to lose a 💎. Seconds add up over time.</div>
+      </div>`;
+  }
+
   // Badge grid
   if (D.settings.levelingEnabled !== false) {
     const earned = Array.isArray(m.badges) ? m.badges : [];
@@ -4917,7 +5055,12 @@ function renderKidDiamonds() {
     const matchPct     = D.settings.savingsMatchPercent || 50;
     const interestRate   = D.settings.savingsInterestRate || 5;
     const interestPeriod = D.settings.savingsInterestPeriod || 'monthly';
-    const interestTip    = interestPeriod === 'weekly' ? 'added every Monday' : 'added monthly on the 1st';
+    const _iDay = D.settings.savingsInterestDay ?? 1;
+    const _iDom = D.settings.savingsInterestDayOfMonth || 1;
+    const _iDomSfx = _iDom === 1 ? 'st' : _iDom === 2 ? 'nd' : _iDom === 3 ? 'rd' : 'th';
+    const interestTip = interestPeriod === 'weekly'
+      ? `claimable every ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_iDay]}`
+      : `claimable on the ${_iDom}${_iDomSfx} of each month`;
     const hasBreakdown   = (matchOn && matched > 0) || (interestOn && interest > 0);
     const breakdownHtml  = hasBreakdown
       ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:6px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
@@ -5115,9 +5258,15 @@ function showSavingsModal(memberId) {
         🤝 <strong>Parent match is on!</strong> For every ${cur}1.00 you save, your parents add ${cur}${(matchPct/100).toFixed(2)} extra (${matchPct}% match).
        </div>`
     : '';
+  const _siDay = D.settings.savingsInterestDay ?? 1;
+  const _siDom = D.settings.savingsInterestDayOfMonth || 1;
+  const _siDomSfx = _siDom === 1 ? 'st' : _siDom === 2 ? 'nd' : _siDom === 3 ? 'rd' : 'th';
+  const _siWhen = interestPeriod === 'weekly'
+    ? `every ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_siDay]}`
+    : `on the ${_siDom}${_siDomSfx} of each month`;
   const interestNote = interestOn
     ? `<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:0.875rem;color:#1E40AF">
-        📈 <strong>Interest is on!</strong> Your savings grow by ${interestRate}% ${interestPeriod === 'weekly' ? 'every Monday' : 'on the 1st of each month'}.
+        📈 <strong>Interest is on!</strong> Your savings grow by ${interestRate}% — claimable ${_siWhen}.
        </div>`
     : '';
   showModal(`
@@ -5189,44 +5338,42 @@ function doSaveDiamonds(memberId) {
 }
 
 // ── SAVINGS INTEREST ──────────────────────────────────────────
-function applyInterestForAllKids() {
+function isInterestDay() {
   const s = D.settings;
-  if (!s.savingsEnabled || !s.savingsInterestEnabled) return;
+  if (!s.savingsEnabled || !s.savingsInterestEnabled) return false;
+  const d = parseDateLocal(today());
+  const period = s.savingsInterestPeriod || 'monthly';
+  return period === 'weekly'
+    ? d.getDay() === (s.savingsInterestDay ?? 1)
+    : d.getDate() === (s.savingsInterestDayOfMonth || 1);
+}
+
+function claimInterest(memberId) {
+  const s = D.settings;
+  if (!isInterestDay()) return;
+  const m = getMember(memberId);
+  if (!m || (m.savings || 0) <= 0 || m.savingsInterestLastDate === today()) return;
   const rate   = parseFloat(s.savingsInterestRate) || 5;
   const period = s.savingsInterestPeriod || 'monthly';
   const cur    = s.currency || '$';
-  const todayStr = today();
-
-  // Check if today is an interest day
-  const d = parseDateLocal(todayStr);
-  const isInterestDay = period === 'weekly'
-    ? d.getDay() === 1          // Monday
-    : d.getDate() === 1;        // 1st of month
-  if (!isInterestDay) return;
-
-  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
-  let changed = false;
-  kids.forEach(m => {
-    if ((m.savings || 0) <= 0) return;
-    if (m.savingsInterestLastDate === todayStr) return; // already applied today
-    const interest = parseFloat((m.savings * rate / 100).toFixed(2));
-    if (interest <= 0) return;
-    m.savings             = (m.savings || 0) + interest;
-    m.savingsInterest     = (m.savingsInterest || 0) + interest;
-    m.savingsInterestLastDate = todayStr;
-    addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
-    changed = true;
-  });
-  if (changed) saveData();
+  const interest = parseFloat((m.savings * rate / 100).toFixed(2));
+  if (interest <= 0) return;
+  m.savings                 = (m.savings || 0) + interest;
+  m.savingsInterest         = (m.savingsInterest || 0) + interest;
+  m.savingsInterestLastDate = today();
+  addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+  saveData();
 }
+
+// Kept for any legacy calls; now a no-op since kids claim interactively
+function applyInterestForAllKids() {}
 
 // ── SHOP TAB ──────────────────────────────────────────────────
 function renderKidShop() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
   const dmds  = m.diamonds || 0;
-  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||0)-(b.cost||0) : ()=>0;
-  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
+  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort((a,b) => (a.cost||0)-(b.cost||0) || (a.title||'').localeCompare(b.title||''));
 
   if (indiv.length === 0) {
     document.getElementById('kid-content').innerHTML = `
@@ -5310,8 +5457,7 @@ function renderKidTeam() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
   const dmds  = m.diamonds || 0;
-  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.targetPoints||0)-(b.targetPoints||0) : ()=>0;
-  const goals = (D.teamGoals || []).slice().sort(sortFn);
+  const goals = (D.teamGoals || []).slice().sort((a,b) => (a.targetPoints||0)-(b.targetPoints||0) || (a.title||'').localeCompare(b.title||''));
   const kids  = D.family.members.filter(k=>k.role==='kid'&&!k.deleted);
 
   if (goals.length === 0) {
@@ -5495,7 +5641,7 @@ function confirmSignOut() {
     <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">You'll need to sign in again to access the parent dashboard on this device.</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="closeModal();closeSettings();goHome()">Sign Out</button>
+      <button class="btn btn-primary" onclick="closeModal();closeSettings();signOutAndGoHome()">Sign Out</button>
     </div>`);
 }
 
@@ -5565,6 +5711,7 @@ function switchParentTab(tab) {
   S.parentTab = tab;
   renderParentNav();
   renderParentTab();
+  const c = document.getElementById('parent-content'); if (c) c.scrollTop = 0;
 }
 
 function renderParentTab() {
@@ -5775,7 +5922,7 @@ function renderFamilyStatsCard(kids, histIdx) {
   const caret = `<i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0;margin-left:auto"></i>`;
 
   return `
-    <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:16px">
+    <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:10px">
       <div onclick="toggleFamilyStats()" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${isExpanded?'18':'0'}px">
         <img src="gemsproutpadded.png" style="width:2.5rem;height:2.5rem;border-radius:10px;flex-shrink:0">
         <div>
@@ -5900,7 +6047,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   const headerClick = collapse ? `onclick="${collapse.toggleFn}" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${collapse.isExpanded?'18':'0'}px"` : `style="display:flex;align-items:center;gap:12px;margin-bottom:18px"`;
 
   return `
-    <div class="card" style="border-top:4px solid ${color};padding:20px">
+    <div class="card" style="border-top:4px solid ${color};padding:20px;margin-bottom:10px">
       <div ${headerClick}>
         <span style="font-size:2.5rem;width:2.5rem;text-align:center;flex-shrink:0">${member.avatar||'🙂'}</span>
         <div>
@@ -5940,7 +6087,7 @@ function renderStatsPage(container) {
   const kids   = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const histIdx = buildHistoryIndex();
 
-  let html = `<div style="padding-bottom:20px"><div style="font-size:1.2rem;font-weight:800;padding:16px 0 12px"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;vertical-align:middle"></i> Lifetime Stats</div>`;
+  let html = `<div style="padding-bottom:20px"><div class="section-row"><span class="section-title"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Lifetime Stats</span></div>`;
 
   if (isKid) {
     html += renderMemberStatsCard(viewer, null, histIdx);
@@ -6035,6 +6182,16 @@ function renderParentHome() {
   const cur         = D.settings.currency || '$';
   const t           = today();
 
+  // Interest day parent reminder (once per session)
+  if (D.settings.interestDayNotify !== false && isInterestDay()) {
+    const unclaimedKids = kids.filter(k => (k.savings || 0) > 0 && k.savingsInterestLastDate !== t);
+    if (unclaimedKids.length > 0 && !S._interestParentToastShown) {
+      S._interestParentToastShown = true;
+      const names = unclaimedKids.map(k => k.name).join(', ');
+      setTimeout(() => toast(`📈 Interest day! Have ${names} open the app to claim.`, 5000), 800);
+    }
+  }
+
   // Pending approvals (chores + savings spend requests)
   let html = '';
   if (pending.length > 0 || pendingSpend.length > 0) {
@@ -6064,7 +6221,7 @@ function renderParentHome() {
             ${photoHtml}
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject"  onclick="rejectChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
@@ -6081,7 +6238,7 @@ function renderParentHome() {
             <div style="font-size:0.8rem;color:var(--muted);margin-top:2px">Balance: ${cur}${(mem.savings||0).toFixed(2)}</div>
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject"  onclick="denySavingsRequest('${req.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
@@ -6095,7 +6252,7 @@ function renderParentHome() {
     kidsHtml = `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-smiley" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">No kids yet — go to Setup!</div></div>`;
   }
   kids.forEach(kid => {
-    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
+    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id)).sort((a,b)=>(a.diamonds||0)-(b.diamonds||0)||(a.title||'').localeCompare(b.title||''));
     const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
     const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
     const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
@@ -6134,7 +6291,7 @@ function renderParentHome() {
                   slotBtn  = '';
                 } else {
                   slotPill = `<span class="kid-overview-status todo" style="font-size:0.7rem;padding:2px 6px">${ss === 'waiting' ? 'Later' : 'To do'}</span>`;
-                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:0.9rem"></i></button>`;
+                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:0.9rem"></i></button>`;
                 }
                 return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#f9fafb;border-radius:8px">
                   <span style="flex:1;font-size:0.82rem;color:#374151">${esc(slotLabel)}</span>
@@ -6146,7 +6303,7 @@ function renderParentHome() {
           } else {
             actionBtn = isDone
               ? `<button class="btn-icon-sm btn-icon-delete" style="flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:1rem"></i></button>`
-              : `<button class="btn-icon-sm btn-icon-approve" style="flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>`;
+              : `<button class="btn-icon-sm btn-icon-approve" style="flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>`;
           }
 
           return `
@@ -6169,7 +6326,7 @@ function renderParentHome() {
           <span class="member-avatar">${kid.avatar||'🙂'}</span>
           <div class="member-info">
             <div class="member-name">${esc(kid.name)}</div>
-            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtDmds(kid.diamonds||0)}</div>
+            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtDmds(kid.diamonds||0)}${D.settings.savingsEnabled!==false?` · ${D.settings.currency||'$'}${(kid.savings||0).toFixed(2)} <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i>`:''}</div>
             <div class="progress-wrap" style="height:8px;margin:6px 0 0">
               <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
             </div>
@@ -6182,37 +6339,50 @@ function renderParentHome() {
         ${isKidCollapsed ? '' : choreRows}
       </div>`;
   });
-  html += `<div class="card"><div class="card-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Kids Today</div>${kids.length>0?`<div class="overview-kids-grid">${kidsHtml}</div>`:kidsHtml}</div>`;
+  html += `<div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Kids Today</span></div>${kids.length>0?`<div class="overview-kids-grid">${kidsHtml}</div>`:kidsHtml}`;
 
   // Quick actions
   html += `
+    <div style="height:28px"></div>
+    <div class="section-row"><span class="section-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Quick Actions</span></div>
     <div class="card">
-      <div class="card-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Quick Actions</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem" onclick="showChoreModal()">+ Add Chore</button>
-        <button class="btn btn-pink   btn-sm" style="padding:14px;font-size:1rem" onclick="showPrizeModal()">+ Add Prize</button>
-        <button class="btn btn-teal   btn-sm" style="padding:14px;font-size:1rem" onclick="showGoalModal()"><i class="ph-duotone ph-target" style="font-size:1rem;vertical-align:middle"></i> Set Goal</button>
-        <button class="btn btn-sm" style="padding:14px;font-size:1rem;background:var(--orange);color:#fff" onclick="goSetup()"><i class="ph-duotone ph-users-three" style="font-size:1rem;vertical-align:middle"></i> Edit Family</button>
+        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem" onclick="showAdjustDiamondsQuick()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> +/− Diamonds</button>
+        ${D.settings.savingsEnabled !== false ? `<button class="btn btn-sm" style="padding:14px;font-size:1rem;background:#16A34A;color:#fff" onclick="showAdjustSavingsQuick()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> +/− Savings</button>` : ''}
         ${D.settings.notListeningEnabled !== false ? `<button class="btn btn-danger btn-sm" style="grid-column:span 2;background:#EF4444;color:#fff;font-size:1rem;padding:14px" onclick="showNotListening()"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</button>` : ''}
       </div>
     </div>`;
 
   // NL time tracker
+  const secsPerDmd = D.settings.notListeningSecs || 60;
   const nlKids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const nlRows = nlKids.map(k => {
     normalizeMember(k);
-    const secs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0);
-    const label = secs === 0 ? 'None today' : `${Math.floor(secs/60)}m ${secs%60}s`;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6">
-      <span>${k.avatar||'🙂'} ${esc(k.name)}</span>
-      <span style="font-weight:700;color:${secs>0?'#EF4444':'var(--muted)'}">${label}</span>
+    const todaySecs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0);
+    const pendingSecs = k.nlPendingSecs || 0;
+    const pct = Math.min(100, Math.round(pendingSecs / secsPerDmd * 100));
+    const todayLabel = todaySecs === 0 ? 'None today' : fmtNLTime(todaySecs);
+    return `<div style="padding:8px 0;border-bottom:1px solid #f3f4f6">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span>${k.avatar||'🙂'} ${esc(k.name)}</span>
+        <span style="font-weight:700;color:${todaySecs>0?'#EF4444':'var(--muted)'}">${todayLabel}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:5px;background:#F3F4F6;border-radius:99px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:#EF4444;border-radius:99px;transition:width 0.3s"></div>
+        </div>
+        <span style="font-size:0.72rem;color:var(--muted);white-space:nowrap">${pendingSecs}s / ${secsPerDmd}s → 💎</span>
+      </div>
     </div>`;
   }).join('');
-  html += `
+  if (D.settings.notListeningEnabled !== false) {
+    html += `
+    <div style="height:14px"></div>
+    <div class="section-row"><span class="section-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not-Listening Time Today</span></div>
     <div class="card">
-      <div class="card-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not-Listening Time Today</div>
       ${nlRows || '<div style="color:var(--muted);font-size:0.9rem">No kids added yet</div>'}
     </div>`;
+  }
 
   // Recent Activity
   const recentHistory = (D.history || []).slice(0, 10);
@@ -6233,13 +6403,11 @@ function renderParentHome() {
       </div>`;
     }).join('');
     html += `
-      <details class="card" style="padding:0">
-        <summary style="padding:16px 20px;cursor:pointer;font-weight:700;font-size:1rem;list-style:none;display:flex;align-items:center;gap:8px">
-          <span><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span>
-          <i class="ph-duotone ph-caret-down activity-caret" style="color:var(--muted);font-size:1rem;margin-left:auto;transition:transform 0.2s"></i>
-        </summary>
-        <div style="padding:0 20px 16px">${actRows}</div>
-      </details>`;
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span></div>
+      <div class="card">${actRows}
+        ${(D.history||[]).length > 10 ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6"><button class="btn btn-secondary btn-sm btn-full" onclick="openFullHistory()">View All Activity</button></div>` : ''}
+      </div>`;
   }
 
   document.getElementById('parent-content').innerHTML = html;
@@ -6337,7 +6505,8 @@ function parentMarkChoreDone(choreId, memberId) {
   checkChoreBadges(chore, memberId);
   // Auto-here: parent marking a chore done means the kid is home
   const _t = today();
-  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+  normalizeMember(member);
+  if (!isMemberHereOnDate(member, _t)) {
     member.splitHousehold.overrides[_t] = true;
   }
   saveData();
@@ -6531,7 +6700,7 @@ function renderParentChores() {
   }
 
   html += `<div id="chore-sort-list">`;
-  D.chores.forEach(chore => {
+  [...D.chores].sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||'')).forEach(chore => {
     const isExpanded = _expandedChores.has(chore.id);
     const assignedKids = (chore.assignedTo||[]).map(id=>getMember(id)?.avatar||'').join(' ');
     const assigneeChip = assignedKids
@@ -6546,7 +6715,7 @@ function renderParentChores() {
             <div class="admin-name">${esc(chore.title)}</div>
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${diamondChip} ${assigneeChip}</div>
           </div>
-          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem;flex-shrink:0"></i>
+          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
         </div>
         ${isExpanded ? `
         <div style="border-top:1px solid #F3F4F6;margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:8px">
@@ -6852,7 +7021,17 @@ function saveChore(choreId) {
 }
 
 function deleteChore(choreId) {
-  if (!confirm('Delete this chore?')) return;
+  const chore = D.chores.find(c => c.id === choreId);
+  showModal(`
+    <div class="modal-title">Delete Chore?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${chore?.title || 'This chore'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doDeleteChore('${choreId}')">Delete</button>
+    </div>`);
+}
+
+function _doDeleteChore(choreId) {
   D.chores = D.chores.filter(c=>c.id!==choreId);
   for (const key of _expandedSlots) {
     if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
@@ -6865,8 +7044,7 @@ function deleteChore(choreId) {
 
 // ── PARENT PRIZES ─────────────────────────────────────────────
 function renderParentPrizes() {
-  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||a.targetPoints||0)-(b.cost||b.targetPoints||0) : ()=>0;
-  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
+  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort((a,b) => (a.cost||a.targetPoints||0)-(b.cost||b.targetPoints||0) || (a.title||'').localeCompare(b.title||''));
   let html = `
     <div class="section-row">
       <span class="section-title"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:1rem;vertical-align:middle"></i> Individual Prizes (${indiv.length})</span>
@@ -6893,8 +7071,8 @@ function renderParentPrizes() {
   });
 
   // Team goals section
-  const goals = (D.teamGoals || []).slice().sort(sortFn);
-  html += `<div class="divider"></div>
+  const goals = (D.teamGoals || []).slice().sort((a,b) => (a.targetPoints||0)-(b.targetPoints||0) || (a.title||'').localeCompare(b.title||''));
+  html += `<div style="height:14px"></div>
     <div class="section-row">
       <span class="section-title"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Team Prizes (${goals.length})</span>
       <button class="btn btn-teal btn-sm" onclick="showGoalModal()">+ Add</button>
@@ -6976,9 +7154,7 @@ function renderParentLevels() {
           <span style="font-size:0.8rem;color:var(--muted)">XP to unlock</span>
         </div>
       </div>
-      ${levels.length > 2 ? `<button onclick="deleteCustomLevel(${i})"
-        style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1rem;padding:4px;flex-shrink:0">
-        <i class="ph-duotone ph-trash"></i></button>` : ''}
+      ${levels.length > 2 ? `<button class="btn-icon-sm btn-icon-delete" onclick="deleteCustomLevel(${i})" style="flex-shrink:0"><i class="ph-duotone ph-trash"></i></button>` : ''}
     </div>`).join('');
 
   // ── Base badges rows ──
@@ -7029,7 +7205,7 @@ function renderParentLevels() {
             </div>
           </div>`).join('');
 
-        return `<div style="margin-bottom:4px;padding-bottom:12px;border-bottom:1px solid #F3F4F6">
+        return `<div style="margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <i class="ph-duotone ph-${chore.icon||'broom'}" style="color:${chore.iconColor||'#6BCB77'};font-size:1.2rem"></i>
             <span style="font-weight:600;font-size:0.95rem">${esc(chore.title)}</span>
@@ -7042,78 +7218,102 @@ function renderParentLevels() {
       }).join('');
 
   const html = `
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-rocket-launch" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Leveling System</span>
+      <label class="toggle"><input type="checkbox" ${s.levelingEnabled!==false?'checked':''} onchange="saveSetting('levelingEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-rocket-launch" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Leveling System</div>
-        <label class="toggle"><input type="checkbox" ${s.levelingEnabled!==false?'checked':''} onchange="saveSetting('levelingEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Kids earn XP equal to their diamonds earned and unlock levels as they progress.</p>
-      ${levelsHtml}
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.levelingEnabled!==false?'14px':'0'}">Kids earn XP equal to their diamonds earned and unlock levels as they progress.</p>
+      ${s.levelingEnabled!==false ? `${levelsHtml}
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-primary btn-sm" onclick="addCustomLevel()">+ Add Level</button>
         <button class="btn btn-sm" style="background:#F3F4F6;color:#374151" onclick="resetLevelsToDefault()">Reset to Defaults</button>
-      </div>
+      </div>` : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-fire" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Streak Bonuses</span>
+      <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-fire" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Streak Bonuses</div>
-        <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Bonus diamonds when a kid completes all their chores ${s.streakEnabled!==false?'<b>every day in a row</b>':'(currently disabled)'}.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="form-group mb-0"><label class="form-label">3-day streak</label><input type="number" value="${s.streakBonus3||1}" min="0" onchange="saveSetting('streakBonus3',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-        <div class="form-group mb-0"><label class="form-label">7-day streak</label><input type="number" value="${s.streakBonus7||3}" min="0" onchange="saveSetting('streakBonus7',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-        <div class="form-group mb-0"><label class="form-label">14-day streak</label><input type="number" value="${s.streakBonus14||5}" min="0" onchange="saveSetting('streakBonus14',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-        <div class="form-group mb-0"><label class="form-label">30-day streak</label><input type="number" value="${s.streakBonus30||10}" min="0" onchange="saveSetting('streakBonus30',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.streakEnabled!==false?'14px':'0'}">Bonus diamonds when a kid completes all their chores every day in a row.</p>
+      ${s.streakEnabled!==false ? `<div style="display:flex;flex-direction:column;gap:8px">
+        ${[['3-day streak','streakBonus3',1],['7-day streak','streakBonus7',3],['14-day streak','streakBonus14',5],['30-day streak','streakBonus30',10]].map(([label,key,def]) => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#FAFAFA;border-radius:10px;border:1px solid #E5E7EB">
+            <span style="flex:1;font-size:0.9rem;font-weight:600">${label}</span>
+            <input type="number" value="${s[key]||def}" min="0"
+              style="width:64px;font-size:0.9rem;padding:6px 8px;border:1px solid #E5E7EB;border-radius:8px;text-align:center"
+              onchange="saveSetting('${key}',parseInt(this.value)||0)">
+            <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap">💎 bonus</span>
+          </div>`).join('')}
+      </div>` : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</span>
+      <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</div>
-        <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.comboEnabled!==false?'14px':'0'}">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores. ${s.comboEnabled!==false?'':'<b>Currently disabled.</b>'}</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.comboEnabled!==false?'14px':'0'}">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores.</p>
       ${s.comboEnabled!==false ? (() => {
         const kids = D.family.members.filter(m => m.role==='kid' && !m.deleted);
         if (!kids.length) return '';
-        return kids.map(kid => {
-          const savedCombo = getDailyCombo(kid.id);
-          const pending = (S.pendingComboOverrides || {})[kid.id] || {};
-          const hasPending = Object.keys(pending).length > 0;
-          const effectiveIds = [0, 1, 2].map(i => pending[i] || savedCombo[i]);
-          const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
-          return `<div style="margin-bottom:10px">
-            <div style="font-size:0.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">${esc(kid.name)}'s combo today</div>
-            ${[0,1,2].map(i => `
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                <span style="font-size:0.75rem;color:var(--muted);width:16px">${i+1}.</span>
-                <select style="flex:1;font-size:0.82rem;padding:6px 8px;border-radius:8px;border:1px solid var(--border)" onchange="stagePendingCombo('${kid.id}',${i},this.value)">
-                  ${eligible.map(c => `<option value="${c.id}"${effectiveIds[i]===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}
-                </select>
-              </div>`).join('')}
-            ${hasPending ? `<div style="margin-top:2px"><button class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:4px 10px" onclick="saveComboOverride('${kid.id}')">Save Combo</button></div>` : ''}
-          </div>`;
-        }).join('<hr style="border:none;border-top:1px solid var(--border);margin:10px 0">');
+        const multiplier = s.comboMultiplier || 2;
+        return `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFFBEB;border-radius:10px;border:1px solid #FDE68A;margin-bottom:14px">
+            <i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1.1rem;flex-shrink:0"></i>
+            <span style="font-size:0.85rem;color:#92400E;flex:1">Complete all 3 for</span>
+            <input type="number" value="${multiplier}" min="2" max="10"
+              style="width:48px;font-size:0.9rem;padding:4px 6px;border:1.5px solid #FDE68A;border-radius:8px;text-align:center;font-weight:700;color:#92400E;background:white"
+              onchange="saveSetting('comboMultiplier',Math.max(2,parseInt(this.value)||2));renderParentLevels()">
+            <span style="font-size:0.85rem;color:#92400E;white-space:nowrap">x 💎</span>
+          </div>
+          ${kids.map(kid => {
+            const savedCombo = getDailyCombo(kid.id);
+            const pending = (S.pendingComboOverrides || {})[kid.id] || {};
+            const hasPending = Object.keys(pending).length > 0;
+            const effectiveIds = [0, 1, 2].map(i => pending[i] || savedCombo[i]);
+            const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
+            return `<div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                <span style="font-size:1.2rem;line-height:1;flex-shrink:0">${kid.avatar}</span>
+                <span style="font-weight:600;font-size:0.95rem">${esc(kid.name)}'s Daily Combo</span>
+              </div>
+              ${[0,1,2].map(i => {
+                const otherIds = effectiveIds.filter((_, j) => j !== i);
+                const slotEligible = eligible.filter(c => !otherIds.includes(c.id));
+                return `
+                  ${i > 0 ? `<div style="text-align:center;font-size:1.1rem;font-weight:800;color:#F59E0B;line-height:1;padding:3px 0">+</div>` : ''}
+                  <select style="width:100%;font-size:0.85rem;padding:9px 10px;border-radius:10px;border:1.5px solid #E5E7EB;background:white;font-weight:500;color:var(--text)" onchange="stagePendingCombo('${kid.id}',${i},this.value)">
+                    ${slotEligible.map(c => `<option value="${c.id}"${effectiveIds[i]===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}
+                  </select>`;
+              }).join('')}
+              ${hasPending ? `<div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="saveComboOverride('${kid.id}')">Save Combo</button></div>` : ''}
+            </div>`;
+          }).join('<div style="height:16px"></div>')}`;
       })() : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Base Badges</span>
+      <label class="toggle"><input type="checkbox" ${s.baseBadgesEnabled!==false?'checked':''} onchange="saveSetting('baseBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Base Badges</div>
-        <label class="toggle"><input type="checkbox" ${s.baseBadgesEnabled!==false?'checked':''} onchange="saveSetting('baseBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">System-wide achievement badges earned automatically — for streaks, levels, and milestones. Toggle off to disable all base badges.</p>
-      <div style="opacity:${baseBadgesEnabled?'1':'0.4'};pointer-events:${baseBadgesEnabled?'auto':'none'};transition:opacity 0.2s">
-        ${baseBadgeRows}
-      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${baseBadgesEnabled?'14px':'0'}">System-wide achievement badges earned automatically — for streaks, levels, and milestones.</p>
+      ${baseBadgesEnabled ? baseBadgeRows : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-medal" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Chore Badges</span>
+      <label class="toggle"><input type="checkbox" ${s.choreBadgesEnabled!==false?'checked':''} onchange="saveSetting('choreBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div class="card-title" style="margin-bottom:12px"><i class="ph-duotone ph-medal" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Chore Badges</div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Per-chore milestone badges — kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye-slash" style="color:#7c3aed;vertical-align:middle"></i> to make a badge secret — it won't appear at all until earned, making it a surprise to discover.</p>
-      ${choreBadgeCards}
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.choreBadgesEnabled!==false?'14px':'0'}">Per-chore milestone badges — kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye" style="color:#9ca3af;vertical-align:middle"></i> to make a badge secret — it won't appear at all until earned, making it a surprise to discover.</p>
+      ${s.choreBadgesEnabled!==false ? choreBadgeCards : ''}
     </div>`;
 
   document.getElementById('parent-content').innerHTML = html;
@@ -7145,9 +7345,19 @@ function addCustomLevel() {
 function deleteCustomLevel(idx) {
   const levels = getLevels().map(l => ({...l}));
   if (levels.length <= 2) { toast('Need at least 2 levels'); return; }
-  if (!confirm(`Delete level "${levels[idx]?.name || 'this level'}"?`)) return;
+  const levelName = levels[idx]?.name || 'this level';
+  showModal(`
+    <div class="modal-title">Delete Level?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${levelName}" will be permanently removed.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doDeleteCustomLevel(${idx})">Delete</button>
+    </div>`);
+}
+
+function _doDeleteCustomLevel(idx) {
+  const levels = getLevels().map(l => ({...l}));
   levels.splice(idx, 1);
-  // Reassign level numbers
   levels.forEach((l, i) => { l.level = i + 1; });
   D.settings.customLevels = levels;
   saveData();
@@ -7155,7 +7365,16 @@ function deleteCustomLevel(idx) {
 }
 
 function resetLevelsToDefault() {
-  if (!confirm('Reset all levels back to the defaults? Your custom levels will be lost.')) return;
+  showModal(`
+    <div class="modal-title">Reset Levels?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">All custom levels will be replaced with the defaults. This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doResetLevelsToDefault()">Reset</button>
+    </div>`);
+}
+
+function _doResetLevelsToDefault() {
   D.settings.customLevels = null;
   saveData();
   renderParentLevels();
@@ -7234,7 +7453,19 @@ function removeChoreBadgeTier(choreId, tierIdx) {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore || !chore.badges) return;
   const badge = chore.badges[tierIdx];
-  if (!confirm(`Delete "${badge?.name || 'this badge tier'}" from ${chore.title}?`)) return;
+  const badgeName = badge?.name || 'this badge tier';
+  showModal(`
+    <div class="modal-title">Delete Badge Tier?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${badgeName}" will be permanently removed from <strong>${chore.title}</strong>.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doRemoveChoreBadgeTier('${choreId}',${tierIdx})">Delete</button>
+    </div>`);
+}
+
+function _doRemoveChoreBadgeTier(choreId, tierIdx) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore || !chore.badges) return;
   chore.badges.splice(tierIdx, 1);
   saveData();
   renderParentLevels();
@@ -7372,7 +7603,17 @@ function savePrize(prizeId) {
 }
 
 function deletePrize(prizeId) {
-  if (!confirm('Delete this prize?')) return;
+  const prize = D.prizes.find(p => p.id === prizeId);
+  showModal(`
+    <div class="modal-title">Delete Prize?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${prize?.title || 'This prize'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doDeletePrize('${prizeId}')">Delete</button>
+    </div>`);
+}
+
+function _doDeletePrize(prizeId) {
   D.prizes = D.prizes.filter(p=>p.id!==prizeId);
   saveData();
   toast('Prize deleted');
@@ -7466,7 +7707,17 @@ function saveGoal() {
 }
 
 function clearGoal(goalId) {
-  if (!confirm('Remove this team prize?')) return;
+  const goal = (D.teamGoals||[]).find(g => g.id === goalId);
+  showModal(`
+    <div class="modal-title">Delete Team Prize?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${goal?.title || 'This team prize'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doClearGoal('${goalId}')">Delete</button>
+    </div>`);
+}
+
+function _doClearGoal(goalId) {
   D.teamGoals = (D.teamGoals||[]).filter(g => g.id !== goalId);
   saveData();
   renderParentPrizes();
@@ -7478,6 +7729,7 @@ function showAdvancedEditor() {
   const root = document.getElementById('adv-editor-root');
   root.classList.add('open');
   _advRender();
+  root.scrollTop = 0;
 }
 
 function closeAdvancedEditor() {
@@ -7487,25 +7739,19 @@ function closeAdvancedEditor() {
 }
 
 function _advField(label, inputHtml) {
-  return `<div class="adv-field-row">
-    <span class="adv-field-label">${label}</span>
+  return `<div class="adv-row">
+    <span class="adv-label">${label}</span>
     ${inputHtml}
   </div>`;
 }
 
 function _advInput(type, val, onchange, extra='') {
   const v = val === null || val === undefined ? '' : val;
-  return `<input type="${type}" class="adv-field-input" value="${esc(String(v))}"
-    ${type==='color'?`value="${v}"`:''}
-    onchange="${onchange}" ${extra}>`;
+  return `<input type="${type}" class="adv-input" value="${esc(String(v))}" onchange="${onchange}" ${extra}>`;
 }
 
 function _advCheck(checked, onchange) {
-  return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-    <input type="checkbox" ${checked?'checked':''} onchange="${onchange}"
-      style="width:18px;height:18px;cursor:pointer">
-    <span style="font-size:0.82rem;color:#6b7280">${checked?'On':'Off'}</span>
-  </label>`;
+  return `<label class="toggle" style="flex-shrink:0"><input type="checkbox" ${checked?'checked':''} onchange="${onchange}"><span class="toggle-track"></span></label>`;
 }
 
 function advSetMember(id, field, val) {
@@ -7520,6 +7766,27 @@ function advSetMember(id, field, val) {
   }
   saveData();
   _advRefreshStatus(`Member saved`);
+}
+
+function advSetRole(memberId, val, el) {
+  if (val === 'kid' && D.family.members.filter(m => m.role === 'parent' && m.id !== memberId).length === 0) {
+    if (el) el.value = 'parent';
+    toast("Can't remove the last parent");
+    return;
+  }
+  advSetMember(memberId, 'role', val);
+}
+
+function advToggleBadge(memberId, badgeId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  if (!Array.isArray(m.badges)) m.badges = [];
+  const idx = m.badges.indexOf(badgeId);
+  if (idx >= 0) m.badges.splice(idx, 1);
+  else m.badges.push(badgeId);
+  saveData();
+  _advRenderPreserving();
+  _advRefreshStatus('Badge updated');
 }
 
 function advSetChore(id, field, val) {
@@ -7552,7 +7819,16 @@ function advClearChoreCompletions(choreId, memberId) {
 }
 
 function advDeleteHistory(entryId) {
-  if (!confirm('Delete this history entry?')) return;
+  showModal(`
+    <div class="modal-title">Delete Entry?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This history entry will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doAdvDeleteHistory('${entryId}')">Delete</button>
+    </div>`);
+}
+
+function _doAdvDeleteHistory(entryId) {
   const idx = D.history.findIndex(h => h.id === entryId);
   if (idx < 0) return;
   D.history.splice(idx, 1);
@@ -7565,8 +7841,16 @@ function advDeleteHistory(entryId) {
 function _advRenderPreserving() {
   const root = document.getElementById('adv-editor-root');
   const scroll = root ? root.scrollTop : 0;
+  const openIds = new Set([...(root?.querySelectorAll('details.adv-member-card[open]') || [])]
+    .map(d => d.dataset.memberId).filter(Boolean));
   _advRender();
-  if (root) root.scrollTop = scroll;
+  if (root) {
+    root.scrollTop = scroll;
+    openIds.forEach(id => {
+      const el = root.querySelector(`details.adv-member-card[data-member-id="${id}"]`);
+      if (el) el.open = true;
+    });
+  }
 }
 
 function advApplyRawJson() {
@@ -7592,205 +7876,285 @@ function _advRefreshStatus(msg) {
   el._t = setTimeout(() => { el.textContent = ''; el.className = ''; }, 2000);
 }
 
+function _advDeleteTeamGoal(idx) {
+  const goal = (D.teamGoals||[])[idx];
+  showModal(`
+    <div class="modal-title">Delete Team Prize?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${goal?.title || 'This team prize'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();D.teamGoals.splice(${idx},1);saveData();_advRender()">Delete</button>
+    </div>`);
+}
+
 function _advRender() {
   const root = document.getElementById('adv-editor-root');
   if (!root) return;
 
   const members = D.family.members;
-  const kids = members.filter(m => m.role === 'kid');
+  const kids = members.filter(m => m.role === 'kid' && !m.deleted);
 
   // ── Members section ──
-  const membersHtml = members.map(m => {
+  const membersHtml = kids.map(m => {
     normalizeMember(m);
-    const fields = [
-      _advField('Name',         _advInput('text',   m.name,            `advSetMember('${m.id}','name',this.value)`)),
-      _advField('Avatar',       _advInput('text',   m.avatar,          `advSetMember('${m.id}','avatar',this.value)`)),
-      _advField('Age',          _advInput('number', m.age||'',         `advSetMember('${m.id}','age',+this.value)`)),
-      _advField('Color',        _advInput('color',  m.color||'#6C63FF',`advSetMember('${m.id}','color',this.value)`)),
-      _advField('Role',         `<select class="adv-field-input" onchange="advSetMember('${m.id}','role',this.value)">
-        ${['parent','kid'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}
-      </select>`),
-      _advField('Diamonds 💎',    _advInput('number', m.diamonds||0,       `advSetMember('${m.id}','diamonds',+this.value)`)),
-      _advField('Total Earned', _advInput('number', m.totalEarned||0,  `advSetMember('${m.id}','totalEarned',+this.value)`)),
-      _advField('Savings',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
-      _advField('XP 🔮',        _advInput('number', m.xp||0,           `advSetMember('${m.id}','xp',+this.value)`)),
-      _advField('Streak Current',_advInput('number', m.streak?.current||0, `advSetMember('${m.id}','streak.current',+this.value)`)),
-      _advField('Streak Best',  _advInput('number', m.streak?.best||0, `advSetMember('${m.id}','streak.best',+this.value)`)),
-      _advField('Streak Last Date', _advInput('date', m.streak?.lastDate||'', `advSetMember('${m.id}','streak.lastDate',this.value)`)),
-      _advField('NL Today Secs',_advInput('number', m.nlTodaySecs||0,  `advSetMember('${m.id}','nlTodaySecs',+this.value)`)),
-      _advField('NL Lifetime Secs',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
-      _advField('NL Date',      _advInput('date',   m.nlDate||'',      `advSetMember('${m.id}','nlDate',this.value)`)),
-      _advField('Combo Bonus Date',_advInput('date', m.comboBonusDate||'', `advSetMember('${m.id}','comboBonusDate',this.value)`)),
-      _advField('Combo Streak',    _advInput('number', m.comboStreak?.current||0, `advSetMember('${m.id}','comboStreak.current',+this.value)`)),
-      _advField('Combo Streak Best',_advInput('number', m.comboStreak?.best||0,   `advSetMember('${m.id}','comboStreak.best',+this.value)`)),
-      _advField('Combo Streak Date',_advInput('date',  m.comboStreak?.lastDate||'', `advSetMember('${m.id}','comboStreak.lastDate',this.value)`)),
-      _advField('Badges (JSON)',`<textarea class="adv-field-input" rows="2" style="resize:vertical"
-        onchange="advSetMember('${m.id}','badges',JSON.parse(this.value||'[]'))">${esc(JSON.stringify(m.badges||[]))}</textarea>`),
-    ].join('');
-    return `<details class="adv-sub-card" style="margin-bottom:8px">
-      <summary style="cursor:pointer;font-weight:700;font-size:0.9rem;list-style:none;display:flex;align-items:center;gap:8px;padding:4px 0">
-        ${m.avatar||'🙂'} ${esc(m.name)} <span style="font-size:0.75rem;color:#9ca3af;font-weight:400">${m.role}</span>
-      </summary>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${fields}</div>
-    </details>`;
-  }).join('');
+    const isKid = m.role === 'kid';
+    const roleLabel = isKid ? 'Kid' : 'Parent';
+    const subtitle = isKid ? `Kid · ${m.diamonds||0} 💎` : 'Parent · Admin';
 
-  // ── Chores section ──
+
+    const balanceFields = [
+      _advField('💎 Current',      _advInput('number', m.diamonds||0,    `advSetMember('${m.id}','diamonds',+this.value)`)),
+      _advField('💎 All Time',     _advInput('number', m.totalEarned||0, `advSetMember('${m.id}','totalEarned',+this.value)`)),
+      _advField('🔮 XP',           _advInput('number', m.xp||0,          `advSetMember('${m.id}','xp',+this.value)`)),
+    ].join('');
+
+    const savingsFields = isKid ? [
+      _advField('💰 Balance',        _advInput('number', (m.savings||0).toFixed(2),        `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`, 'step="0.01"')),
+      _advField('🤝 Parent Matched', _advInput('number', (m.savingsMatched||0).toFixed(2), `advSetMember('${m.id}','savingsMatched',parseFloat(this.value)||0)`, 'step="0.01"')),
+      _advField('📈 Interest Total', _advInput('number', (m.savingsInterest||0).toFixed(2),`advSetMember('${m.id}','savingsInterest',parseFloat(this.value)||0)`, 'step="0.01"')),
+      _advField('📅 Last Claimed',   _advInput('date',   m.savingsInterestLastDate||'',    `advSetMember('${m.id}','savingsInterestLastDate',this.value)`)),
+    ].join('') : '';
+
+    const streakFields = isKid ? [
+      _advField('🔥 Current',   _advInput('number', m.streak?.current||0,  `advSetMember('${m.id}','streak.current',+this.value)`)),
+      _advField('🏅 Best Ever', _advInput('number', m.streak?.best||0,     `advSetMember('${m.id}','streak.best',+this.value)`)),
+      _advField('📅 Last Date', _advInput('date',   m.streak?.lastDate||'',`advSetMember('${m.id}','streak.lastDate',this.value)`)),
+    ].join('') : '';
+
+    const comboFields = isKid ? [
+      _advField('📅 Last Bonus Date',  _advInput('date',   m.comboBonusDate||'',         `advSetMember('${m.id}','comboBonusDate',this.value)`)),
+      _advField('⚡ Streak',           _advInput('number', m.comboStreak?.current||0,    `advSetMember('${m.id}','comboStreak.current',+this.value)`)),
+      _advField('⚡ Streak Best',      _advInput('number', m.comboStreak?.best||0,       `advSetMember('${m.id}','comboStreak.best',+this.value)`)),
+      _advField('📅 Streak Date',      _advInput('date',   m.comboStreak?.lastDate||'',  `advSetMember('${m.id}','comboStreak.lastDate',this.value)`)),
+    ].join('') : '';
+
+    const nlFields = isKid ? [
+      _advField('⏱ Today (secs)',    _advInput('number', m.nlTodaySecs||0,   `advSetMember('${m.id}','nlTodaySecs',+this.value)`)),
+      _advField('⏳ Pending (secs)', _advInput('number', m.nlPendingSecs||0, `advSetMember('${m.id}','nlPendingSecs',+this.value)`)),
+      _advField('📊 Lifetime (secs)',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
+      _advField('📅 Last Date',      _advInput('date',   m.nlDate||'',       `advSetMember('${m.id}','nlDate',this.value)`)),
+    ].join('') : '';
+
+    const badgesField = isKid ? (() => {
+      const earned = m.badges || [];
+      const allBaseBadges = BADGE_DEFS.map(b => ({ id: b.id, icon: b.icon, name: b.name }));
+      const allChoreBadges = (D.chores || []).flatMap(c =>
+        (c.badges || []).map(b => ({ id: `cb_${b.id}`, icon: b.icon || '🏅', name: b.name || '' }))
+      );
+      const allBadges = [...allBaseBadges, ...allChoreBadges];
+      if (allBadges.length === 0) return '';
+      const pills = allBadges.map(b => {
+        const have = earned.includes(b.id);
+        return `<div class="badge-chip ${have ? 'earned' : 'badge-chip-locked'}" style="cursor:pointer"
+          onclick="advToggleBadge('${m.id}','${b.id}')">
+          <span class="badge-chip-icon">${b.icon}</span>${esc(b.name)}
+        </div>`;
+      }).join('');
+      return `<div class="adv-subhead">Badges <span style="font-weight:400;font-size:0.68rem">(tap to toggle)</span></div>
+        <div class="badge-grid">${pills}</div>`;
+    })() : '';
+
+    return `<details class="adv-member-card" data-member-id="${m.id}">
+      <summary class="adv-member-summary">
+        <span style="font-size:1.5rem;flex-shrink:0">${m.avatar||'🙂'}</span>
+        <span style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:0.95rem">${esc(m.name)}</div>
+          <div style="font-size:0.75rem;color:var(--muted)">${subtitle}</div>
+        </span>
+        <i class="ph-duotone ph-caret-down adv-caret" style="font-size:1rem"></i>
+      </summary>
+      <div class="adv-member-body">
+        ${!isKid ? `<div style="font-size:0.82rem;color:var(--muted);padding:4px 0">Parent profile — edit name, avatar, and PIN through Settings.</div>` : ''}
+        ${isKid ? `<div class="adv-subhead">Balance</div>${balanceFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Savings</div>${savingsFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Streak</div>${streakFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Daily Combo</div>${comboFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Not Listening</div>${nlFields}` : ''}
+        ${badgesField}
+      </div>
+    </details>`;
+  });
+
+  // ── Chores section — completions only ──
   const choresHtml = D.chores.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No chores yet</div>'
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No chores yet</div>'
     : D.chores.map(c => {
+      const hasCompletions = D.family.members.some(m => {
+        return normalizeCompletionEntries(c.completions?.[m.id]).length > 0;
+      });
       const completionRows = D.family.members.filter(m => {
-        const entries = normalizeCompletionEntries(c.completions?.[m.id]);
-        return entries.length > 0;
+        return normalizeCompletionEntries(c.completions?.[m.id]).length > 0;
       }).map(m => {
         const entries = normalizeCompletionEntries(c.completions[m.id]);
         const doneCount = entries.filter(e=>e.status==='done').length;
         const pendCount = entries.filter(e=>e.status==='pending').length;
         const summary = [doneCount&&`${doneCount} done`, pendCount&&`${pendCount} pending`].filter(Boolean).join(', ');
-        return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0">
-          <span style="font-size:1rem">${m.avatar||'🙂'}</span>
-          <span style="font-size:0.8rem;flex:1">${esc(m.name)}: ${summary} (${entries.length} total)</span>
-          <button onclick="advClearChoreCompletions('${c.id}','${m.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:5px;padding:2px 7px;font-size:0.72rem;cursor:pointer">Clear</button>
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <span style="font-size:1rem;flex-shrink:0">${m.avatar||'🙂'}</span>
+          <span style="font-size:0.82rem;flex:1;min-width:0">${esc(m.name)}: ${summary}</span>
+          <button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;border-radius:6px" onclick="advClearChoreCompletions('${c.id}','${m.id}')"><i class="ph-duotone ph-trash" style="font-size:0.85rem"></i></button>
         </div>`;
       }).join('');
-      return `
-        <div style="padding:6px 0;border-bottom:1px solid #f3f4f6">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'<i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF"></i>'}</span>
-            <span style="flex:1;font-size:0.85rem;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.title)}">${esc(c.title)}</span>
-            <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">💎</label>
-            <input type="number" class="adv-field-input" style="width:70px" value="${c.diamonds||0}"
-              onchange="advSetChore('${c.id}','diamonds',+this.value)">
-            <input type="text" class="adv-field-input" style="width:70px" value="${esc(c.icon||'')}" placeholder="icon"
-              onchange="advSetChore('${c.id}','icon',this.value)">
-            <input type="text" class="adv-field-input" style="flex:1;min-width:80px" value="${esc(c.title||'')}" placeholder="title"
-              onchange="advSetChore('${c.id}','title',this.value)">
-          </div>
-          ${completionRows ? `<details style="margin-top:4px"><summary style="font-size:0.72rem;color:#6b7280;cursor:pointer;padding:2px 0">Completions ▸ <span style="color:#d97706;font-weight:600">${(c.schedule||c).period==='once'?'(once — stays done until cleared)':''}</span></summary><div style="padding:4px 0 0 8px">${completionRows}</div></details>` : ''}
-        </div>`;
+      // Only render chores that have completions (or always show header, just no completions section)
+      const iconDisplay = c.icon && [...c.icon].length <= 2
+        ? c.icon
+        : '<i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF"></i>';
+      const oncePill = (c.schedule||c).period==='once'
+        ? `<span style="font-size:0.72rem;background:#FEF3C7;color:#92400E;border-radius:4px;padding:1px 5px;font-weight:600">once</span>`
+        : '';
+      return `<div style="padding:10px 0;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:1.3rem;width:28px;text-align:center;flex-shrink:0">${iconDisplay}</span>
+          <span style="font-weight:600;font-size:0.9rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.title)}</span>
+          ${oncePill}
+          <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap;flex-shrink:0">${c.diamonds||0} 💎</span>
+        </div>
+        ${completionRows
+          ? `<div style="margin-top:8px;padding-left:36px">${completionRows}</div>`
+          : `<div style="margin-top:4px;padding-left:36px;font-size:0.78rem;color:var(--muted)">No completions</div>`}
+      </div>`;
     }).join('');
 
-  // ── Prizes section ──
-  const prizesHtml = D.prizes.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No prizes yet</div>'
-    : D.prizes.map(p => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6">
-        <span style="font-size:1.2rem;width:28px;text-align:center">${p.icon||'🎁'}</span>
-        <input type="text" class="adv-field-input" style="width:60px" value="${esc(p.icon||'')}" placeholder="icon"
-          onchange="advSetPrize('${p.id}','icon',this.value)">
-        <input type="text" class="adv-field-input" style="flex:2;min-width:80px" value="${esc(p.title||'')}" placeholder="title"
-          onchange="advSetPrize('${p.id}','title',this.value)">
-        <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">cost</label>
-        <input type="number" class="adv-field-input" style="width:75px" value="${p.cost||0}"
-          onchange="advSetPrize('${p.id}','cost',+this.value)">
-      </div>`).join('');
 
-  // ── Settings section ──
+  // ── Team Goals section — read-only summary + per-kid contributions ──
+  const teamGoals = D.teamGoals || [];
+  const allKids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const goalHtml = teamGoals.length === 0
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No team prizes yet</div>'
+    : teamGoals.map((g,i) => {
+      const total = goalTotal(g);
+      const target = g.targetPoints || 0;
+      const pct = target > 0 ? Math.min(100, Math.round(total / target * 100)) : 0;
+      const contribRows = allKids.map(k => {
+        const c = (g.contributions||{})[k.id] || 0;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <span style="font-size:1rem;flex-shrink:0">${k.avatar||'🙂'}</span>
+          <span style="font-size:0.85rem;flex:1">${esc(k.name)}</span>
+          <input type="number" class="adv-input" style="width:80px;flex:none;text-align:right" value="${c}" min="0"
+            onchange="if(!D.teamGoals[${i}].contributions)D.teamGoals[${i}].contributions={};D.teamGoals[${i}].contributions['${k.id}']=+this.value;saveData();_advRefreshStatus('Saved')">
+          <span style="font-size:0.82rem;color:var(--muted);flex-shrink:0">💎</span>
+        </div>`;
+      }).join('');
+      return `<div style="padding:10px 0;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:1.3rem;flex-shrink:0;display:inline-flex;align-items:center">${renderIcon(g.icon, g.iconColor, 'font-size:1.4rem') || '🏆'}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.title||'')}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">${total} / ${target} 💎 · ${pct}%</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="_advDeleteTeamGoal(${i})">Delete</button>
+        </div>
+        <div style="height:5px;background:#F3F4F6;border-radius:99px;overflow:hidden;margin-bottom:8px">
+          <div style="height:100%;width:${pct}%;background:var(--teal);border-radius:99px"></div>
+        </div>
+        ${contribRows}
+      </div>`;
+    }).join('');
+
+  // ── Settings section — dev-only keys not accessible via Settings/Levels UI ──
+  const SETTINGS_HAS_UI = new Set([
+    'autoApprove','hideUnavailable','familyTimezone','lockOnBackground',
+    'savingsEnabled','diamondsPerDollar','pointsPerDollar','savingsMatchingEnabled','savingsMatchPercent',
+    'savingsInterestEnabled','interestDayNotify','savingsInterestRate','savingsInterestPeriod',
+    'savingsInterestDay','savingsInterestDayOfMonth','hereCheckEnabled',
+    'notListeningEnabled','notListeningSecs',
+    'levelingEnabled','streakEnabled','streakBonus3','streakBonus7','streakBonus14','streakBonus30',
+    'comboEnabled','comboMultiplier','comboSlots',
+    'baseBadgesEnabled','choreBadgesEnabled',
+    'currency','familyName','parentPin',
+  ]);
   const SETTING_LABELS = {
-    autoApprove:'Auto-approve chores', diamondsPerDollar:'Diamonds per dollar', parentPin:'Parent PIN',
-    levelingEnabled:'Leveling enabled', streakEnabled:'Streaks enabled',
-    streakBonus3:'Streak bonus (3d)', streakBonus7:'Streak bonus (7d)', streakBonus14:'Streak bonus (14d)', streakBonus30:'Streak bonus (30d)',
-    notListeningSecs:'NL secs per diamond', currency:'Currency symbol', familyName:'Family name',
-    lastSync:'Last sync (auto)', comboEnabled:'Combo bonus enabled', sortPrizesByValue:'Sort prizes by value',
+    betaMode: 'Beta Mode',
+    lastSync: 'Last Sync',
+    splitHouseholdEnabled: 'Split Household',
+    appVersion: 'App Version',
   };
-  const settingsHtml = Object.entries(D.settings).map(([k, v]) => {
-    const label = SETTING_LABELS[k] || k;
-    let input;
-    if (typeof v === 'boolean') {
-      input = _advCheck(v, `advSetSetting('${k}',this.checked)`);
-    } else if (typeof v === 'number') {
-      input = _advInput('number', v, `advSetSetting('${k}',+this.value)`);
-    } else {
-      input = _advInput('text', v, `advSetSetting('${k}',this.value)`);
-    }
-    return _advField(label, input);
-  }).join('');
+  const devSettings = Object.entries(D.settings).filter(([k, v]) =>
+    !SETTINGS_HAS_UI.has(k) && typeof v !== 'object'
+  );
+  const settingsHtml = devSettings.length === 0
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No dev-only settings found</div>'
+    : devSettings.map(([k, v]) => {
+      const label = SETTING_LABELS[k] || k;
+      let input;
+      if (k === 'lastSync') {
+        input = `<span style="font-size:0.85rem;color:var(--muted)">${v||'never'}</span>`;
+      } else if (typeof v === 'boolean') {
+        input = _advCheck(v, `advSetSetting('${k}',this.checked)`);
+      } else if (typeof v === 'number') {
+        input = _advInput('number', v, `advSetSetting('${k}',+this.value)`);
+      } else {
+        input = _advInput('text', v, `advSetSetting('${k}',this.value)`);
+      }
+      return _advField(label, input);
+    }).join('');
 
   // ── History section ──
-  const histItems = (D.history || []).slice(0, 40);
-  const typeIcon = { chore:'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', prize:'<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>', penalty:'<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>', bonus:'<i class="ph-duotone ph-lightning" style="color:#D97706"></i>', level:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>' };
+  const histItems = (D.history || []).slice(0, 150);
   const histHtml = histItems.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No history yet</div>'
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No history yet</div>'
     : histItems.map(h => {
         const mem = getMember(h.memberId);
+        const badge = historyBadge(h);
+        const icon = historyIcon(h);
         const ptsStr = (h.diamonds||0) >= 0 ? `+${h.diamonds}` : `${h.diamonds}`;
         const ptsCol = (h.diamonds||0) >= 0 ? '#166534' : '#991b1b';
         return `<div class="adv-hist-row" data-hist-id="${h.id}">
-          <span style="width:20px;text-align:center">${typeIcon[h.type]||'<i class="ph-duotone ph-note" style="color:#9CA3AF"></i>'}</span>
-          <span style="width:24px">${mem?.avatar||'?'}</span>
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title)}</span>
-          <span style="color:${ptsCol};font-weight:700;white-space:nowrap;margin-right:6px">${ptsStr}</span>
-          <span style="color:#9ca3af;white-space:nowrap;margin-right:8px">${h.date}</span>
-          <button onclick="advDeleteHistory('${h.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:6px;padding:2px 8px;font-size:0.75rem;cursor:pointer;flex-shrink:0"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+          <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
+          <span style="font-size:1rem;flex-shrink:0">${mem?.avatar||'?'}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:0.85rem">${esc(h.title)}</span>
+          <span style="color:${ptsCol};font-weight:700;white-space:nowrap;font-size:0.85rem">${ptsStr} 💎</span>
+          <span style="color:var(--muted);white-space:nowrap;font-size:0.75rem">${h.date}</span>
+          <button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;border-radius:6px;flex-shrink:0" onclick="advDeleteHistory('${h.id}')"><i class="ph-duotone ph-trash" style="font-size:0.9rem"></i></button>
         </div>`;
       }).join('');
 
-  // ── Team Goals section ──
-  const teamGoals = D.teamGoals || [];
-  const goalHtml = teamGoals.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No team prizes yet</div>'
-    : teamGoals.map((g,i) => `
-      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
-        ${_advField('Title',      _advInput('text',   g.title||'',       `D.teamGoals[${i}].title=this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Icon',       _advInput('text',   g.icon||'',        `D.teamGoals[${i}].icon=this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Target 💎', _advInput('number', g.targetPoints||0, `D.teamGoals[${i}].targetPoints=+this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Saved So Far', `<span style="font-size:0.85rem;font-weight:700;color:var(--teal)">${goalTotal(g)} 💎</span>`)}
-        <div style="margin-top:6px"><button class="adv-danger-btn" style="font-size:0.78rem;padding:5px 12px"
-          onclick="if(confirm('Remove this team prize?')){D.teamGoals.splice(${i},1);saveData();_advRender();}">Remove</button></div>
-      </div>`).join('');
-
   root.innerHTML = `
-    <div class="adv-editor-header">
-      <i class="ph-duotone ph-wrench" style="color:#fff;font-size:1.1rem"></i>
-      <span class="adv-editor-title">Advanced Data Editor</span>
-      <span id="adv-save-status" class="adv-status" style="margin-right:8px"></span>
-      <button class="adv-close-btn" onclick="closeAdvancedEditor()"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+    <div class="adv-header">
+      <i class="ph-duotone ph-database" style="font-size:1.3rem"></i>
+      <span class="adv-header-title">Data Editor</span>
+      <span id="adv-save-status" class="adv-status" style="margin-right:4px"></span>
+      <button style="background:rgba(255,255,255,0.2);border:none;color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="closeAdvancedEditor()"><i class="ph-duotone ph-x" style="font-size:1rem"></i></button>
     </div>
-    <div class="adv-editor-body">
+    <div class="adv-body">
 
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-user" style="vertical-align:middle"></i> Members (${members.length})</div>
-        <div class="adv-section-body">${membersHtml}</div>
+      <div style="height:4px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="vertical-align:middle;margin-right:6px"></i>Members</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">${membersHtml.join('')}</div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-list-checks" style="vertical-align:middle;margin-right:6px"></i>Chore Completions</span></div>
+      <div class="card">${choresHtml}</div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-trophy" style="vertical-align:middle;margin-right:6px"></i>Team Prizes (${teamGoals.length})</span></div>
+      <div class="card">${goalHtml}</div>
+
+      ${devSettings.length > 0 ? `
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-gear-six" style="vertical-align:middle;margin-right:6px"></i>Dev Settings</span></div>
+      <div class="card" style="display:flex;flex-direction:column;gap:6px">${settingsHtml}</div>` : ''}
+
+      <div style="height:14px"></div>
+      <div class="section-row">
+        <span class="section-title"><i class="ph-duotone ph-scroll" style="vertical-align:middle;margin-right:6px"></i>History</span>
+        <span style="font-size:0.8rem;color:var(--muted)">(last 150)</span>
       </div>
+      <div class="card">${histHtml}</div>
 
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-list" style="vertical-align:middle"></i> Chores (${D.chores.length}) — icon · title · diamonds</div>
-        <div class="adv-section-body">${choresHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-gift" style="vertical-align:middle"></i> Prizes (${D.prizes.length}) — icon · title · cost</div>
-        <div class="adv-section-body">${prizesHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-gear-six" style="vertical-align:middle"></i> Settings</div>
-        <div class="adv-section-body">${settingsHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-trophy" style="vertical-align:middle"></i> Team Prizes (${teamGoals.length})</div>
-        <div class="adv-section-body">${goalHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-scroll" style="vertical-align:middle"></i> History — last 40 entries · tap × to delete</div>
-        <div class="adv-section-body">${histHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-code" style="vertical-align:middle"></i> Raw JSON — full database · edit with care</div>
-        <div class="adv-section-body">
-          <p style="font-size:0.78rem;color:#6b7280;margin:0 0 8px"><i class="ph-duotone ph-warning" style="color:#F59E0B;vertical-align:middle"></i> Clicking Apply overwrites all data. Invalid JSON will be rejected.</p>
-          <textarea id="adv-raw-json" class="adv-raw-textarea">${esc(JSON.stringify(D, null, 2))}</textarea>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            <button class="adv-apply-btn" onclick="advApplyRawJson()">Apply Raw JSON</button>
-            <button class="adv-apply-btn" style="background:#374151" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload</button>
-            <span id="adv-json-status" class="adv-status"></span>
-          </div>
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-code" style="vertical-align:middle;margin-right:6px"></i>Raw JSON</span></div>
+      <div class="card">
+        <p style="font-size:0.82rem;color:var(--muted);margin:0 0 10px;line-height:1.5"><i class="ph-duotone ph-warning" style="color:#F59E0B;vertical-align:middle;margin-right:4px"></i>Clicking Apply overwrites all data. Invalid JSON will be rejected.</p>
+        <textarea id="adv-raw-json" style="width:100%;min-height:240px;font-family:'Courier New',monospace;font-size:0.75rem;border:1px solid #D1D5DB;border-radius:8px;padding:10px;box-sizing:border-box;resize:vertical;line-height:1.5">${esc(JSON.stringify(D, null, 2))}</textarea>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-primary btn-sm" onclick="advApplyRawJson()">Apply</button>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)"><i class="ph-duotone ph-arrow-clockwise" style="vertical-align:middle;margin-right:4px"></i>Reload</button>
+          <span id="adv-json-status" class="adv-status"></span>
         </div>
       </div>
 
+      <div style="height:30px"></div>
     </div>`;
 }
 
@@ -7806,6 +8170,201 @@ function saveSetting(key, value) {
   saveData();
 }
 
+
+// ── ADJUST DIAMONDS / SAVINGS (Quick Actions) ─────────────────
+function showAdjustDiamondsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  if (!kids.length) { toast('No kids yet'); return; }
+  S.adjDmdsSign = 1;
+  S.adjDmdsKids = new Set(kids.map(k => k.id));
+  showModal('<div id="adj-dmds-body"></div>');
+  _updateAdjDiamondsBody();
+}
+
+function _updateAdjDiamondsBody() {
+  const el = document.getElementById('adj-dmds-body');
+  if (!el) return;
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const sign = S.adjDmdsSign ?? 1;
+  // Preserve typed values across updates
+  const prevAmt    = document.getElementById('adj-dmds-q')?.value ?? '';
+  const prevReason = document.getElementById('adj-dmds-reason')?.value ?? '';
+  const kidChips = kids.length > 1 ? `
+    <div style="margin-bottom:16px">
+      <div class="form-label" style="margin-bottom:8px">Who</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${kids.map(k => {
+          const sel = (S.adjDmdsKids || new Set()).has(k.id);
+          return `<button onclick="_adjDmdsToggleKid('${k.id}')"
+            style="padding:8px 16px;border-radius:99px;border:2px solid ${sel?'#6C63FF':'#E5E7EB'};
+              background:${sel?'#EDE9FE':'#fff'};color:${sel?'#6C63FF':'var(--text)'};
+              font-weight:700;font-size:0.95rem;cursor:pointer">
+            ${k.avatar||'🙂'} ${esc(k.name)}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+  el.innerHTML = `
+    <div class="modal-title"><i class="ph-duotone ph-sketch-logo" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> +/− Diamonds</div>
+    <div class="toggle-row" style="margin-bottom:16px">
+      <span class="form-label" style="margin-bottom:0">Action</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="_adjDmdsSetSign(1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===1?'#6C63FF':'#E5E7EB'};
+            background:${sign===1?'#6C63FF':'#fff'};color:${sign===1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          + Add
+        </button>
+        <button onclick="_adjDmdsSetSign(-1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===-1?'#EF4444':'#E5E7EB'};
+            background:${sign===-1?'#EF4444':'#fff'};color:${sign===-1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          − Remove
+        </button>
+      </div>
+    </div>
+    ${kidChips}
+    <div class="form-group">
+      <label class="form-label">Amount (💎)</label>
+      <input type="number" id="adj-dmds-q" min="1" value="${esc(prevAmt)}" placeholder="e.g. 5" style="font-size:1.1rem">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-dmds-reason" value="${esc(prevReason)}" placeholder="${sign===1?'Bonus for helping...':'Adjustment...'}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_doAdjDiamondsQuick()">Done</button>
+    </div>`;
+}
+
+function _adjDmdsSetSign(sign) { S.adjDmdsSign = sign; _updateAdjDiamondsBody(); }
+
+function _adjDmdsToggleKid(kidId) {
+  if (!S.adjDmdsKids) S.adjDmdsKids = new Set();
+  if (S.adjDmdsKids.has(kidId)) S.adjDmdsKids.delete(kidId);
+  else S.adjDmdsKids.add(kidId);
+  _updateAdjDiamondsBody();
+}
+
+function _doAdjDiamondsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const targets = kids.filter(k => (S.adjDmdsKids || new Set()).has(k.id));
+  const amt = parseInt(document.getElementById('adj-dmds-q')?.value) || 0;
+  const reason = document.getElementById('adj-dmds-reason')?.value.trim();
+  const sign = S.adjDmdsSign ?? 1;
+  if (!targets.length) { toast('Select at least one kid'); return; }
+  if (amt <= 0) { toast('Enter an amount'); return; }
+  const dmds = sign * amt;
+  targets.forEach(m => {
+    m.diamonds = Math.max(0, (m.diamonds || 0) + dmds);
+    if (dmds > 0) m.totalEarned = (m.totalEarned || 0) + dmds;
+    const label = reason || (dmds > 0 ? 'A special bonus from your parent!' : 'Diamond adjustment');
+    addHistory('bonus', m.id, label, dmds);
+  });
+  saveData();
+  closeModal();
+  const names = targets.map(m => m.name).join(' & ');
+  toast(`${dmds > 0 ? '+' : ''}${dmds} 💎 for ${names}`);
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function showAdjustSavingsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  if (!kids.length) { toast('No kids yet'); return; }
+  S.adjSavSign = 1;
+  S.adjSavKids = new Set(kids.map(k => k.id));
+  showModal('<div id="adj-sav-body"></div>');
+  _updateAdjSavingsBody();
+}
+
+function _updateAdjSavingsBody() {
+  const el = document.getElementById('adj-sav-body');
+  if (!el) return;
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const sign = S.adjSavSign ?? 1;
+  const cur = D.settings.currency || '$';
+  // Preserve typed values across updates
+  const prevAmt    = document.getElementById('adj-sav-q')?.value ?? '';
+  const prevReason = document.getElementById('adj-sav-reason-q')?.value ?? '';
+  const kidChips = kids.length > 1 ? `
+    <div style="margin-bottom:16px">
+      <div class="form-label" style="margin-bottom:8px">Who</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${kids.map(k => {
+          const sel = (S.adjSavKids || new Set()).has(k.id);
+          return `<button onclick="_adjSavToggleKid('${k.id}')"
+            style="padding:8px 16px;border-radius:99px;border:2px solid ${sel?'#16A34A':'#E5E7EB'};
+              background:${sel?'#DCFCE7':'#fff'};color:${sel?'#16A34A':'var(--text)'};
+              font-weight:700;font-size:0.95rem;cursor:pointer">
+            ${k.avatar||'🙂'} ${esc(k.name)}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+  el.innerHTML = `
+    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> +/− Savings</div>
+    <div class="toggle-row" style="margin-bottom:16px">
+      <span class="form-label" style="margin-bottom:0">Action</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="_adjSavSetSign(1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===1?'#16A34A':'#E5E7EB'};
+            background:${sign===1?'#16A34A':'#fff'};color:${sign===1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          + Deposit
+        </button>
+        <button onclick="_adjSavSetSign(-1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===-1?'#EF4444':'#E5E7EB'};
+            background:${sign===-1?'#EF4444':'#fff'};color:${sign===-1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          − Withdraw
+        </button>
+      </div>
+    </div>
+    ${kidChips}
+    <div class="form-group">
+      <label class="form-label">Amount (${cur})</label>
+      <input type="number" id="adj-sav-q" min="0.01" step="0.01" value="${esc(prevAmt)}" placeholder="e.g. 5.00" style="font-size:1.1rem">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-sav-reason-q" value="${esc(prevReason)}" placeholder="${sign===1?'Birthday money, allowance...':'Spending...'}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_doAdjSavingsQuick()">Done</button>
+    </div>`;
+}
+
+function _adjSavSetSign(sign) { S.adjSavSign = sign; _updateAdjSavingsBody(); }
+
+function _adjSavToggleKid(kidId) {
+  if (!S.adjSavKids) S.adjSavKids = new Set();
+  if (S.adjSavKids.has(kidId)) S.adjSavKids.delete(kidId);
+  else S.adjSavKids.add(kidId);
+  _updateAdjSavingsBody();
+}
+
+function _doAdjSavingsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const targets = kids.filter(k => (S.adjSavKids || new Set()).has(k.id));
+  const amt = parseFloat(document.getElementById('adj-sav-q')?.value) || 0;
+  const reason = document.getElementById('adj-sav-reason-q')?.value.trim();
+  const sign = S.adjSavSign ?? 1;
+  const cur = D.settings.currency || '$';
+  if (!targets.length) { toast('Select at least one kid'); return; }
+  if (amt <= 0) { toast('Enter an amount'); return; }
+  const dollars = parseFloat((sign * amt).toFixed(2));
+  targets.forEach(m => {
+    m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
+    if (sign > 0) {
+      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, { dollars: amt });
+    } else {
+      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, { dollars: amt });
+    }
+  });
+  saveData();
+  closeModal();
+  const names = targets.map(m => m.name).join(' & ');
+  toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${names}`);
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
 
 function showAddPointsModal(memberId) {
   const m = getMember(memberId);
@@ -7910,8 +8469,21 @@ function _confirmSwitchFamily() {
 }
 
 function resetAllData() {
-  if (!confirm('This will erase ALL family data. Are you absolutely sure?')) return;
-  if (!confirm('Last chance — really reset everything?')) return;
+  showModal(`
+    <div class="modal-title" style="color:#EF4444">⚠️ Reset All Data?</div>
+    <p style="margin:0 0 12px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will <strong>permanently erase all family data</strong> — chores, prizes, history, member profiles, and settings. This cannot be undone.</p>
+    <p style="margin:0 0 10px;color:var(--muted);font-size:0.88rem">Type <strong>reset</strong> below to confirm:</p>
+    <input id="reset-type-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:20px;outline:none"
+      placeholder=""
+      oninput="document.getElementById('reset-type-btn').disabled=this.value.trim()!=='reset'">
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button id="reset-type-btn" class="btn btn-danger" disabled onclick="closeModal();_doResetAllData()">Reset Everything</button>
+    </div>`);
+}
+
+function _doResetAllData() {
   localStorage.removeItem(LS_KEY);
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   db.doc(getFamilyDoc()).delete().catch(e => console.warn('Firestore delete error:', e));
@@ -8191,5 +8763,14 @@ if (document.readyState === 'loading') {
 } else {
   startApp();
 }
+
+// Scroll to top when app is foregrounded (tab/app switch back)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const kc = document.getElementById('kid-content');
+  const pc = document.getElementById('parent-content');
+  if (kc) kc.scrollTop = 0;
+  if (pc) pc.scrollTop = 0;
+});
 
 console.log('✅ GemSprout fully loaded!');
