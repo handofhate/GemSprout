@@ -105,6 +105,7 @@ async function signInWithApple() {
         rawNonce: result.credential?.nonce,
       });
       const userCredential = await auth.signInWithCredential(credential);
+      subscribeToFirestore(); // re-establish listener under new auth token
       return userCredential.user;
     } else {
       const provider = new firebase.auth.OAuthProvider('apple.com');
@@ -131,17 +132,17 @@ async function signOutParent() {
 }
 
 // Called after a parent successfully signs in — links their Firebase UID to their member record
-async function linkParentAuth(firebaseUser, memberId) {
+async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   setParentAuthUid(firebaseUser.uid);
   try {
-    const pid = firebaseUser.providerData?.[0]?.providerId;
+    const pid = overrideProviderId || firebaseUser.providerData?.[0]?.providerId;
     if (pid) localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, pid);
   } catch {}
   const member = getMember(memberId);
   if (!member) return;
   if (!member.authUid) member.authUid = firebaseUser.uid; // backward compat — keep first-ever UID
   if (!member.authProviders) member.authProviders = [];
-  const pid   = firebaseUser.providerData?.[0]?.providerId || 'unknown';
+  const pid   = overrideProviderId || firebaseUser.providerData?.[0]?.providerId || 'unknown';
   const email = firebaseUser.email || firebaseUser.providerData?.[0]?.email || '';
   const entry = { providerId: pid, uid: firebaseUser.uid, email };
   const idx = member.authProviders.findIndex(p => p.providerId === pid);
@@ -239,6 +240,13 @@ const AVATARS = ['🦁','🐯','🐻','🐼','🦊','🐰','🐸','🐨','🦄',
 
 const COLORS  = ['#6C63FF','#FF6584','#43D9AD','#FFD93D','#6BCB77',
                  '#FF9A3C','#4ECDC4','#45B7D1','#E91E63','#9C27B0'];
+
+// Returns displayable HTML for an avatar value (emoji or image path)
+function renderAvatarHtml(a, fallback = '🙂') {
+  if (!a) return fallback;
+  if (/\.(png|jpe?g|gif|webp)$/i.test(a)) return `<img src="${a}" class="avatar-img">`;
+  return a;
+}
 
 // ── NAV TAB ICONS (duotone SVGs, sized to 1em so they scale with font-size) ──
 const ICONS = {
@@ -2581,7 +2589,25 @@ function kidAvatarEasterEgg() {
   if (_avatarTaps >= 5) {
     _avatarTaps = 0;
     const m = S.currentUser;
-    if (m) launchConfetti(50, m.avatar || '🙂');
+    if (m) {
+      if (/\.(png|jpe?g|gif|webp)$/i.test(m.avatar)) launchGemsproutRain();
+      else launchConfetti(50, m.avatar || '🙂');
+    }
+    return;
+  }
+  _avatarTimer = setTimeout(() => { _avatarTaps = 0; }, 2000);
+}
+
+function parentAvatarEasterEgg() {
+  _avatarTaps++;
+  clearTimeout(_avatarTimer);
+  if (_avatarTaps >= 5) {
+    _avatarTaps = 0;
+    const m = S.currentUser;
+    if (m) {
+      if (/\.(png|jpe?g|gif|webp)$/i.test(m.avatar)) launchGemsproutRain();
+      else launchConfetti(50, m.avatar || '⭐');
+    }
     return;
   }
   _avatarTimer = setTimeout(() => { _avatarTaps = 0; }, 2000);
@@ -2868,6 +2894,7 @@ function openUserSettings() {
 
 function closeSettings() {
   document.getElementById('settings-root').classList.remove('open');
+  if (S.currentUser?.role === 'parent') renderParentTab();
 }
 
 function openFullHistory() {
@@ -3113,8 +3140,8 @@ function renderSettings() {
             </div>
           </div>
           ${_googleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Unlink</button>`
-            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Link</button>`}
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Sign Out</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Sign In</button>`}
         </div>
         <div style="height:1px;background:#F3F4F6;margin:2px 0"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;margin-bottom:${_anyLinked?'10':'4'}px">
@@ -3127,12 +3154,10 @@ function renderSettings() {
             </div>
           </div>
           ${_appleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Unlink</button>`
-            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Link</button>`}
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Sign Out</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Sign In</button>`}
         </div>
-        ${_anyLinked
-          ? `<button class="btn btn-secondary btn-sm" onclick="confirmSignOut()">Sign Out</button>`
-          : `<div style="font-size:0.82rem;color:var(--muted)">Link an account to enable push notifications and secure your profile.</div>`}
+        ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted)">Sign in with Google or Apple to enable push notifications and secure your profile.</div>` : ''}
         <div style="padding-top:14px;border-top:1px solid #F3F4F6">
           <div class="form-group">
             <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
@@ -3446,7 +3471,7 @@ function renderHome() {
       <button class="profile-card${bday?' bday-card':''}" style="--member-color:${m.color||'#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
         ${bday ? `<span class="bday-badge">🎂</span>` : ''}
-        <span class="profile-avatar">${m.avatar||'🙂'}</span>
+        <span class="profile-avatar">${renderAvatarHtml(m.avatar)}</span>
         <span class="profile-name">${esc(m.name)}</span>
         <span class="profile-role">${modeLabel}</span>
         <span class="profile-diamonds">${ptsLabel}</span>
@@ -3535,8 +3560,11 @@ function renderPin() {
   showScreen('screen-pin');
   S.pinBuffer = '';
   const m = S.currentUser;
+  const _pinAvEl = m.avatar && /\.(png|jpe?g)$/i.test(m.avatar)
+    ? `<img class="pin-avatar" src="${m.avatar}">`
+    : `<div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>`;
   document.getElementById('pin-content').innerHTML = `
-    <div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>
+    ${_pinAvEl}
     <div class="pin-title">Welcome back, ${esc(m.name)}!</div>
     <div class="pin-sub">Enter your PIN</div>
     <div class="pin-dots" id="pin-dots">
@@ -4066,9 +4094,12 @@ function renderSetupStep() {
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function memberSetupCard(mem, i) {
-  const avatarOpts = AVATARS.slice(0,24).map(a =>
-    `<div class="avatar-opt${a===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','${a}',true)">${a}</div>`
-  ).join('');
+  const avatarOpts = [
+    `<div class="avatar-opt${'gemsproutpadded.png'===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','gemsproutpadded.png',true)"><img src="gemsproutpadded.png" class="avatar-img"></div>`,
+    ...AVATARS.slice(0,23).map(a =>
+      `<div class="avatar-opt${a===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','${a}',true)">${a}</div>`
+    )
+  ].join('');
   const colorSwatches = COLORS.map(c =>
     `<div class="color-swatch${c===mem.color?' sel':''}" style="background:${c}" onclick="setMemberField(${i},'color','${c}',true)"></div>`
   ).join('');
@@ -4099,7 +4130,7 @@ function memberSetupCard(mem, i) {
   return `
     <div class="kid-setup-card" id="member-card-${i}">
       <div class="kid-setup-card-header">
-        <span style="font-size:1.5rem;font-weight:700">${mem.avatar||'🙂'} Member ${i+1}</span>
+        <span style="font-size:1.5rem;font-weight:700">${renderAvatarHtml(mem.avatar,'🙂')} Member ${i+1}</span>
         <button class="btn-icon-sm btn-icon-delete" onclick="removeMemberCard(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
       </div>
       <div class="input-row">
@@ -4151,9 +4182,12 @@ function memberSetupCard(mem, i) {
 }
 
 function parentSetupCard(p, i) {
-  const avatarOpts = AVATARS.slice(0,24).map(a =>
-    `<div class="avatar-opt${a===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','${a}',true)">${a}</div>`
-  ).join('');
+  const avatarOpts = [
+    `<div class="avatar-opt${'gemsproutpadded.png'===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','gemsproutpadded.png',true)"><img src="gemsproutpadded.png" class="avatar-img"></div>`,
+    ...AVATARS.slice(0,23).map(a =>
+      `<div class="avatar-opt${a===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','${a}',true)">${a}</div>`
+    )
+  ].join('');
   const colorSwatches = COLORS.map(c =>
     `<div class="color-swatch${c===p.color?' sel':''}" style="background:${c}" onclick="setParentField(${i},'color','${c}',true)"></div>`
   ).join('');
@@ -4169,7 +4203,7 @@ function parentSetupCard(p, i) {
   return `
     <div class="kid-setup-card" id="parent-card-${i}">
       <div class="kid-setup-card-header">
-        <span style="font-size:1.5rem;font-weight:700">${p.avatar||'🧑'} Parent ${i+1}</span>
+        <span style="font-size:1.5rem;font-weight:700">${renderAvatarHtml(p.avatar,'🧑')} Parent ${i+1}</span>
         ${S.setupParents.length > 1 ? `<button class="btn-icon-sm btn-icon-delete" onclick="removeParentCard(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>` : ''}
       </div>
       <div class="form-group">
@@ -4464,7 +4498,7 @@ function renderKidHeader() {
   const showComboStreak = comboStreak >= 2;
   document.getElementById('kid-header').innerHTML = `
     <div class="header-left">
-      <span class="header-avatar" onclick="kidAvatarEasterEgg()" style="cursor:pointer">${m.avatar||'🙂'}</span>
+      <span class="header-avatar" onclick="kidAvatarEasterEgg()" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px">
@@ -5718,7 +5752,7 @@ async function linkAdditionalProvider(providerId) {
   if (providerId === 'google.com')      user = await signInWithGoogle();
   else if (providerId === 'apple.com')  user = await signInWithApple();
   if (!user || !S.currentUser) return;
-  await linkParentAuth(user, S.currentUser.id);
+  await linkParentAuth(user, S.currentUser.id, providerId);
   renderSettings();
 }
 
@@ -5777,6 +5811,7 @@ function renderParentHeader() {
   const inProgress = inProgressChores().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
+      <span class="header-avatar" onclick="parentAvatarEasterEgg()" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
       <div>
         <div class="header-name">${esc(D.family.name)}</div>
         <div class="header-sub">Parent Dashboard</div>

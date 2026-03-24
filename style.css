@@ -99,6 +99,9 @@
     }
     .profile-card:active { transform: scale(0.96); }
     .profile-avatar { font-size: 3rem; line-height: 1; }
+    /* Image avatar sizing — 1.08em compensates for gemsprout's built-in padding to match emoji visual size */
+    .avatar-img { object-fit: contain; width: 1.08em; height: 1.08em; vertical-align: middle; }
+    .avatar-opt .avatar-img { width: 1.46em; height: 1.46em; display: block; margin: auto; }
     .profile-name   { font-weight: 700; font-size: 1rem; color: var(--text); }
     .profile-role   { font-size: 0.75rem; color: var(--muted); }
     .profile-diamonds {
