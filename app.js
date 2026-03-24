@@ -42,6 +42,7 @@ const storage = firebase.storage();
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
 const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
 const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
+const PARENT_AUTH_PROVIDER_KEY = 'gemsprout.parentAuthProvider';
 
 // ── PARENT AUTH ───────────────────────────────────────────────
 
@@ -83,9 +84,11 @@ async function signInWithGoogle() {
 }
 
 function _authProviderIcon() {
-  const pid = auth.currentUser?.providerData?.[0]?.providerId;
+  let pid;
+  try { pid = localStorage.getItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
+  if (!pid) pid = auth.currentUser?.providerData?.[0]?.providerId;
   if (pid === 'google.com') return '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">';
-  if (pid === 'apple.com')  return '<svg width="22" height="22" viewBox="0 0 814 1000" fill="#000" style="flex-shrink:0"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.5 135.4-317.3 269-317.3 70.1 0 128.4 46.4 172.5 46.4 42.8 0 109.9-49 192.5-49 30.5 0 110.5 2.6 167.5 66.2zm-137.1-234c-27.2 32.5-71.9 58.3-115.6 58.3-5.8 0-11.6-.6-17.3-1.9-.6-5.2-.9-10.5-.9-15.8 0-56.3 29.9-117 72.8-152.4 24.3-20.1 63.4-37 95.3-38.9 1.9 7.1 2.6 14.1 2.6 20.8 0 56.9-24.2 115.9-36.9 129.9z"/></svg>';
+  if (pid === 'apple.com')  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>';
   return '<i class="ph-duotone ph-user-circle" style="font-size:1.3rem;flex-shrink:0"></i>';
 }
 
@@ -130,9 +133,20 @@ async function signOutParent() {
 // Called after a parent successfully signs in — links their Firebase UID to their member record
 async function linkParentAuth(firebaseUser, memberId) {
   setParentAuthUid(firebaseUser.uid);
+  try {
+    const pid = firebaseUser.providerData?.[0]?.providerId;
+    if (pid) localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, pid);
+  } catch {}
   const member = getMember(memberId);
-  if (!member || member.authUid === firebaseUser.uid) return;
-  member.authUid = firebaseUser.uid;
+  if (!member) return;
+  if (!member.authUid) member.authUid = firebaseUser.uid; // backward compat — keep first-ever UID
+  if (!member.authProviders) member.authProviders = [];
+  const pid   = firebaseUser.providerData?.[0]?.providerId || 'unknown';
+  const email = firebaseUser.email || firebaseUser.providerData?.[0]?.email || '';
+  const entry = { providerId: pid, uid: firebaseUser.uid, email };
+  const idx = member.authProviders.findIndex(p => p.providerId === pid);
+  if (idx >= 0) member.authProviders[idx] = entry; else member.authProviders.push(entry);
+  member.authUids = member.authProviders.map(p => p.uid); // for future Firestore array-contains queries
   saveData();
 }
 
@@ -204,6 +218,7 @@ function signOutAndGoHome() {
   S.currentUser = null;
   setCurrentUserId('');
   setParentAuthUid(null);
+  try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   if (wasParent) signOutParent().finally(() => {
     auth.signInAnonymously().catch(() => {});
     renderHome();
@@ -1660,9 +1675,10 @@ function getMostRecentMonday() {
 // Always returns true when split household is disabled.
 function isMemberHereOnDate(member, dateStr) {
   const sh = member.splitHousehold;
-  if (!sh || !sh.enabled) return true;
-  const overrides = sh.overrides || {};
+  // Check manual overrides first — always honoured regardless of SH enabled state
+  const overrides = sh?.overrides || {};
   if (dateStr in overrides) return overrides[dateStr];
+  if (!sh || !sh.enabled) return true;
   // Map date → position in 14-day cycle (index 0 = Monday of week 1)
   const ref  = new Date((sh.referenceMonday || getMostRecentMonday()) + 'T00:00:00');
   const d    = new Date(dateStr + 'T00:00:00');
@@ -2556,6 +2572,19 @@ function launchMixedRain(count = 120) {
   _startRain(pieces);
 }
 
+function kidAvatarEasterEgg() {
+  const m = S.currentUser;
+  if (!m) return;
+  // Bounce the avatar element for tactile feedback
+  const el = document.querySelector('.header-avatar');
+  if (el) {
+    el.style.transition = 'transform 0.12s ease';
+    el.style.transform  = 'scale(1.5)';
+    setTimeout(() => { el.style.transform = 'scale(1)'; }, 140);
+  }
+  launchConfetti(50, m.avatar || '🙂');
+}
+
 function launchDollarRain(count = 80) {
   const bills = ['💵','💵','💵','💰','💵'];
   const pieces = [];
@@ -2739,8 +2768,13 @@ function showModal(html) {
   document.body.style.width    = '100%';
   document.body.dataset.scrollY = scrollY;
   // Also lock the main-content scroller (has its own overflow-y: auto)
+  // Only save prevOverflow on the first call — re-entrant showModal calls must not overwrite it
+  // or closeModal will restore to 'hidden' instead of '' and leave scrolling permanently broken
   const mc = document.querySelector('.main-content');
-  if (mc) { mc.dataset.prevOverflow = mc.style.overflowY; mc.style.overflowY = 'hidden'; }
+  if (mc) {
+    if (mc.dataset.prevOverflow === undefined) mc.dataset.prevOverflow = mc.style.overflowY;
+    mc.style.overflowY = 'hidden';
+  }
 
   const root = document.getElementById('modal-root');
   root.innerHTML = `
@@ -2979,6 +3013,20 @@ function renderSettings() {
   const s = D.settings;
   const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
 
+  // Auth providers — migrate from old single-authUid if authProviders not yet populated
+  let _authProviders = S.currentUser?.authProviders || [];
+  if (!_authProviders.length && auth.currentUser && !auth.currentUser.isAnonymous) {
+    _authProviders = auth.currentUser.providerData.map(p => ({
+      providerId: p.providerId, uid: auth.currentUser.uid,
+      email: p.email || auth.currentUser.email || ''
+    }));
+  }
+  const _googleProv = _authProviders.find(p => p.providerId === 'google.com');
+  const _appleProv  = _authProviders.find(p => p.providerId === 'apple.com');
+  const _anyLinked  = !!(_googleProv || _appleProv);
+  const _googleIcon = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
+  const _appleIcon  = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>`;
+
   const shEnabled = members.some(k => k.splitHousehold?.enabled);
   const firstKid = members[0];
 
@@ -3053,23 +3101,36 @@ function renderSettings() {
       <div style="height:14px"></div>
       <div class="section-row"><span class="section-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</span></div>
       <div class="card">
-        ${(auth.currentUser && !auth.currentUser.isAnonymous) ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">
           <div style="display:flex;align-items:center;gap:10px">
-            ${_authProviderIcon()}
+            ${_googleIcon}
             <div>
-              <div style="font-size:0.88rem;font-weight:600">${esc(auth.currentUser?.displayName || auth.currentUser?.email || 'Signed in')}</div>
-              <div style="font-size:0.78rem;color:var(--muted)">${esc(auth.currentUser?.email || '')}</div>
+              ${_googleProv
+                ? `<div style="font-size:0.85rem;font-weight:600">Google</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_googleProv.email||'Linked')}</div>`
+                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Google</div>`}
             </div>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="confirmSignOut()">Sign Out</button>
-        </div>` : `
-        <div style="margin-bottom:14px">
-          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px">Link your account to enable push notifications and secure your profile.</div>
-          <button class="btn btn-secondary btn-sm" onclick="closeSettings();showParentSignIn('${S.currentUser?.id}')">
-            <i class="ph-duotone ph-link" style="font-size:0.9rem;vertical-align:middle"></i> Link Account
-          </button>
-        </div>`}
+          ${_googleProv
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Unlink</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Link</button>`}
+        </div>
+        <div style="height:1px;background:#F3F4F6;margin:2px 0"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;margin-bottom:${_anyLinked?'10':'4'}px">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${_appleIcon}
+            <div>
+              ${_appleProv
+                ? `<div style="font-size:0.85rem;font-weight:600">Apple</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_appleProv.email||'Linked')}</div>`
+                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Apple</div>`}
+            </div>
+          </div>
+          ${_appleProv
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Unlink</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Link</button>`}
+        </div>
+        ${_anyLinked
+          ? `<button class="btn btn-secondary btn-sm" onclick="confirmSignOut()">Sign Out</button>`
+          : `<div style="font-size:0.82rem;color:var(--muted)">Link an account to enable push notifications and secure your profile.</div>`}
         <div style="padding-top:14px;border-top:1px solid #F3F4F6">
           <div class="form-group">
             <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
@@ -3190,7 +3251,7 @@ function renderSettings() {
 
       <div style="height:14px"></div>
       <div class="section-row">
-        <span class="section-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not Listening</span>
+        <span class="section-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> You're Not Listening</span>
         <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderSettings();renderParentHome()"><span class="toggle-track"></span></label>
       </div>
       <div class="card">
@@ -3731,7 +3792,7 @@ function startNewFamily() {
           Continue with Google
         </button>
         <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
-          <svg width="20" height="20" viewBox="0 0 814 1000" fill="white"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.5 135.4-317.3 269-317.3 70.1 0 128.4 46.4 172.5 46.4 42.8 0 109.9-49 192.5-49 30.5 0 110.5 2.6 167.5 66.2zm-137.1-234c-27.2 32.5-71.9 58.3-115.6 58.3-5.8 0-11.6-.6-17.3-1.9-.6-5.2-.9-10.5-.9-15.8 0-56.3 29.9-117 72.8-152.4 24.3-20.1 63.4-37 95.3-38.9 1.9 7.1 2.6 14.1 2.6 20.8 0 56.9-24.2 115.9-36.9 129.9z"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
           Continue with Apple
         </button>
       </div>
@@ -4396,7 +4457,7 @@ function renderKidHeader() {
   const showComboStreak = comboStreak >= 2;
   document.getElementById('kid-header').innerHTML = `
     <div class="header-left">
-      <span class="header-avatar">${m.avatar||'🙂'}</span>
+      <span class="header-avatar" onclick="kidAvatarEasterEgg()" style="cursor:pointer">${m.avatar||'🙂'}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px">
@@ -5569,7 +5630,7 @@ function renderParentView() {
   renderParentTab();
   // Prompt existing users (pre-auth update) to link their account — non-blocking
   // TODO: remove once auth is required (next build after beta migration)
-  if (S.currentUser && !S.currentUser.authUid && !S._authPromptShown) {
+  if (S.currentUser && !S.currentUser.authUid && !S.currentUser.authUids?.length && !S._authPromptShown) {
     S._authPromptShown = true;
     setTimeout(() => showLinkAccountPrompt(S.currentUser.id), 1500);
   }
@@ -5577,14 +5638,14 @@ function renderParentView() {
   // TODO: remove once all beta users have been migrated to required PIN
   if (S.currentUser && !D.settings.parentPin && !S._pinPromptShown) {
     S._pinPromptShown = true;
-    setTimeout(() => showRequirePinPrompt(), S.currentUser.authUid ? 1500 : 3000);
+    setTimeout(() => showRequirePinPrompt(), (S.currentUser.authUid || S.currentUser.authUids?.length) ? 1500 : 3000);
   }
 }
 
 async function loadDevicesList() {
   const el = document.getElementById('devices-list');
   if (!el) return;
-  const parentUid = S.currentUser?.authUid;
+  const parentUid = getParentAuthUid();
   if (!parentUid) { el.innerHTML = ''; return; }
   try {
     const snap = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
@@ -5620,7 +5681,7 @@ function confirmRemoveDevice(index) {
 
 async function removeDevice(index) {
   closeModal();
-  const parentUid = S.currentUser?.authUid;
+  const parentUid = getParentAuthUid();
   if (!parentUid) return;
   try {
     const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
@@ -5643,6 +5704,38 @@ function confirmSignOut() {
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="closeModal();closeSettings();signOutAndGoHome()">Sign Out</button>
     </div>`);
+}
+
+async function linkAdditionalProvider(providerId) {
+  let user;
+  if (providerId === 'google.com')      user = await signInWithGoogle();
+  else if (providerId === 'apple.com')  user = await signInWithApple();
+  if (!user || !S.currentUser) return;
+  await linkParentAuth(user, S.currentUser.id);
+  renderSettings();
+}
+
+function unlinkProvider(providerId) {
+  const member = S.currentUser;
+  if (!member?.authProviders?.length) return;
+  const remaining = member.authProviders.filter(p => p.providerId !== providerId);
+  if (remaining.length === 0) {
+    showModal(`
+      <div class="modal-title">Remove Account?</div>
+      <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This is your only linked account. Removing it will sign you out.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="closeModal();closeSettings();signOutAndGoHome()">Remove &amp; Sign Out</button>
+      </div>`);
+    return;
+  }
+  member.authProviders = remaining;
+  member.authUids = remaining.map(p => p.uid);
+  const next = remaining[0];
+  setParentAuthUid(next.uid);
+  try { localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, next.providerId); } catch {}
+  saveData();
+  renderSettings();
 }
 
 function showRequirePinPrompt() {
@@ -5744,9 +5837,9 @@ function buildMemberStats(member, histIdx) {
   const savDepHist   = hist.filter(h => h.type === 'savings_deposit');
   const savWithHist  = hist.filter(h => h.type === 'savings_withdraw');
 
-  // Per-chore counts
+  // Per-chore counts — exclude streak bonus entries (stored as type 'chore' but aren't real chores)
   const choreCount = {};
-  choreHist.forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
+  choreHist.filter(h => !(h.title||'').startsWith('Streak bonus (')).forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
   const choreBreakdown = Object.entries(choreCount).sort((a,b) => b[1]-a[1]);
 
   // Per-prize counts (from prize.redemptions)
@@ -5906,7 +5999,7 @@ function renderFamilyStatsCard(kids, histIdx) {
       ? _statTile('<i class="ph-duotone ph-star" style="color:#7C3AED"></i>', 'Most Popular Chore', topChore[0].split(' ')[0], '#4c1d95', `${topChore[0]} · ${topChore[1]}×`)
       : '') +
     (topPrize
-      ? _statTile(`<span style="font-size:1.6rem">${topPrize[1].icon}</span>`, 'Fav Prize', topPrize[1].n + '×', '#1e40af', topPrize[0])
+      ? _statTile(renderIcon(topPrize[1].icon, '#1e40af', 'font-size:1.6rem'), 'Fav Prize', topPrize[1].n + '×', '#1e40af', topPrize[0])
       : '') +
     (bestDay
       ? _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>', 'Best Family Day', `${bestDay[1]} 💎`, '#d97706', fmtDate(bestDay[0]))
@@ -6025,18 +6118,15 @@ function renderMemberStatsCard(member, collapse, histIdx) {
     </div>`;
 
   // Prize breakdown table
-  const prizeTableRows = s.prizeBreakdown.map(([name,info]) => [
-    `${info.icon} ${name}`, `${info.count}×`
-  ]);
   const prizeTable = `
     <div style="margin-bottom:18px">
       <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-gift" style="color:#FF6584;vertical-align:middle"></i> Prize Breakdown</div>
-      ${prizeTableRows.length
+      ${s.prizeBreakdown.length
         ? `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
-            ${prizeTableRows.slice(0,10).map(([name,val],i) => `
+            ${s.prizeBreakdown.slice(0,10).map(([name,info],i) => `
               <tr style="border-bottom:1px solid #f3f4f6">
-                <td style="padding:5px 4px;font-weight:${i===0?'700':'500'}">${esc(name)}</td>
-                <td style="padding:5px 4px;text-align:right;font-weight:700;color:#6C63FF">${val}</td>
+                <td style="padding:5px 4px;font-weight:${i===0?'700':'500'}">${renderIcon(info.icon)} ${esc(name)}</td>
+                <td style="padding:5px 4px;text-align:right;font-weight:700;color:#6C63FF">${info.count}×</td>
               </tr>`).join('')}
           </table>`
         : '<div style="color:#9ca3af;font-size:0.85rem;padding:6px 0">No prizes redeemed yet</div>'
@@ -6347,7 +6437,7 @@ function renderParentHome() {
     <div class="section-row"><span class="section-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Quick Actions</span></div>
     <div class="card">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem" onclick="showAdjustDiamondsQuick()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> +/− Diamonds</button>
+        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem;${D.settings.savingsEnabled === false ? 'grid-column:span 2;' : ''}" onclick="showAdjustDiamondsQuick()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> +/− Diamonds</button>
         ${D.settings.savingsEnabled !== false ? `<button class="btn btn-sm" style="padding:14px;font-size:1rem;background:#16A34A;color:#fff" onclick="showAdjustSavingsQuick()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> +/− Savings</button>` : ''}
         ${D.settings.notListeningEnabled !== false ? `<button class="btn btn-danger btn-sm" style="grid-column:span 2;background:#EF4444;color:#fff;font-size:1rem;padding:14px" onclick="showNotListening()"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</button>` : ''}
       </div>
@@ -7134,6 +7224,8 @@ const LEVEL_ICON_OPTIONS = [
 ];
 
 function renderParentLevels() {
+  const _lvlContainer = document.getElementById('parent-content');
+  const _lvlScroll = _lvlContainer ? _lvlContainer.scrollTop : 0;
   const s = D.settings;
   const levels = getLevels();
   const members = (D.family?.members || []).filter(m => m.role !== 'parent' && !m.deleted);
@@ -7316,7 +7408,7 @@ function renderParentLevels() {
       ${s.choreBadgesEnabled!==false ? choreBadgeCards : ''}
     </div>`;
 
-  document.getElementById('parent-content').innerHTML = html;
+  if (_lvlContainer) { _lvlContainer.innerHTML = html; _lvlContainer.scrollTop = _lvlScroll; }
 }
 
 function saveCustomLevel(idx, field, value) {
@@ -8176,7 +8268,7 @@ function showAdjustDiamondsQuick() {
   const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   if (!kids.length) { toast('No kids yet'); return; }
   S.adjDmdsSign = 1;
-  S.adjDmdsKids = new Set(kids.map(k => k.id));
+  S.adjDmdsKids = new Set();
   showModal('<div id="adj-dmds-body"></div>');
   _updateAdjDiamondsBody();
 }
@@ -8271,7 +8363,7 @@ function showAdjustSavingsQuick() {
   const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   if (!kids.length) { toast('No kids yet'); return; }
   S.adjSavSign = 1;
-  S.adjSavKids = new Set(kids.map(k => k.id));
+  S.adjSavKids = new Set();
   showModal('<div id="adj-sav-body"></div>');
   _updateAdjSavingsBody();
 }
@@ -8559,7 +8651,7 @@ function showParentSignIn(memberId, onSuccess) {
         Continue with Google
       </button>
       <button id="btn-apple-signin" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('apple','${memberId}')">
-        <svg width="20" height="20" viewBox="0 0 814 1000"><path fill="#fff" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.1 134.7-316.5 266.9-316.5 101.2 0 184.7 67.4 244.5 67.4 56.7 0 154.5-71.9 270.1-71.9 43.8 0 169.7 4.2 259.1 127.4zm-234.5-181.5c50.7-60.2 87.5-143.7 87.5-227.2 0-11.6-.6-23.3-2.5-33.3-83.1 3.2-186.2 55.5-251.3 128.5-46.8 52.7-92.1 136.2-92.1 221.5 0 13.4 2.5 26.8 3.5 31.1 5.1.9 13.4 1.9 21.6 1.9 74.9 0 171.3-49.9 233.3-122.5z"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
         Continue with Apple
       </button>
     </div>
@@ -8691,6 +8783,13 @@ function routeAfterLoad() {
 
 function init() {
   window.speechSynthesis?.getVoices(); // prime async voice loading on iOS
+
+  // Re-render settings if it's open when Firebase auth state resolves (async on app restore).
+  // This fixes the "Link Account" flash when closing on kid profile and reopening.
+  auth.onAuthStateChanged(() => {
+    if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
+  });
+
   loadData();
   applyInterestForAllKids();
   scheduleHereCheck();
