@@ -4200,7 +4200,7 @@ async function _devResetInviteTest() {
 
 async function startQRScan() {
   if (!isNative()) return;
-  const BarcodeScanner = Capacitor?.Plugins?.BarcodeScanner;
+  const BarcodeScanner = Capacitor?.Plugins?.BarcodeScanner || window.capacitorBarcodeScanner?.BarcodeScanner;
   if (!BarcodeScanner) {
     toast('QR scanning not available — enter the code manually');
     return;
@@ -4236,7 +4236,11 @@ async function startQRScan() {
       toast('No QR code detected — try again');
     }
   } catch(e) {
-    if (!e.message?.includes('cancel')) toast('QR scan failed — enter the code manually');
+    if (!e.message?.includes('cancel')) {
+      const msg = e?.message || e?.errorMessage || e?.error || (typeof e === 'string' ? e : 'Unknown error');
+      alert('QR scan failed: ' + msg);
+      toast('QR scan failed — enter the code manually');
+    }
   }
 }
 

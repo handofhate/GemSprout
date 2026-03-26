@@ -33,6 +33,7 @@ workflows:
           cp app.js www/
           cp manifest.json www/
           cp *.png www/
+          cp node_modules/@capacitor-mlkit/barcode-scanning/dist/plugin.js www/mlkit-barcode-scanning.js
           npx cap add ios
           if [ -f ios/App/Podfile ]; then
             sed -i '' "s/platform :ios, '.*'/platform :ios, '15.5'/" ios/App/Podfile
