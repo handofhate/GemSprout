@@ -61,6 +61,27 @@ function isParentSignedIn() {
   return !!getParentAuthUid();
 }
 
+function _isRecentParentAuthForMember(member) {
+  const recent = S._recentParentAuth;
+  if (!recent || !recent.uid || !member) return false;
+  const ageMs = Date.now() - recent.at;
+  if (ageMs > 2 * 60 * 1000) return false;
+  const email = recent.email || '';
+  const providers = member.authProviders || [];
+  return member.authUid === recent.uid || providers.some(p => p.uid === recent.uid || (email && p.email?.toLowerCase() === email));
+}
+
+function ensureParentAuth(member, onSuccess) {
+  if (!member || member.role !== 'parent') return true;
+  if (isParentSignedIn()) return true;
+  if (_isRecentParentAuthForMember(member)) {
+    setParentAuthUid(S._recentParentAuth.uid);
+    return true;
+  }
+  showParentSignIn(member.id, onSuccess);
+  return false;
+}
+
 async function signInWithGoogle() {
   try {
     if (isNative()) {
@@ -149,6 +170,9 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   if (idx >= 0) member.authProviders[idx] = entry; else member.authProviders.push(entry);
   member.authUids = member.authProviders.map(p => p.uid); // for future Firestore array-contains queries
   saveData();
+  // Write UID→familyCode so returning parents can Sign In on new devices
+  db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid }, { merge: true })
+    .catch(e => console.warn('users doc write failed:', e));
 }
 
 function setAppUnlocked(v) {
@@ -409,6 +433,7 @@ let S = {            // UI state (not persisted)
   _authPromptShown:      false,
   _pinPromptShown:       false,
   _parentSignInCallback: null,
+  _recentParentAuth:     null,
 };
 
 // ── DEFAULT DATA ──────────────────────────────────────────────
@@ -469,6 +494,7 @@ function loadData() {
 
 function saveData() {
   S.lastLocalSave = Date.now();
+  if (D.settings) D.settings.lastSync = Date.now();
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
   if (S.currentUser?.role === 'kid') savePendingSnapshot(S.currentUser.id);
   pushToFirestore();
@@ -787,11 +813,14 @@ function subscribeToFirestore(onFirstLoad) {
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
+      const incomingSync = normalizedIncoming.settings?.lastSync || 0;
+      const localSync = D.settings?.lastSync || 0;
+      const isOlderThanLocal = incomingSync && localSync && incomingSync < localSync;
       // Ignore snapshots arriving within 1500ms of a local save — they may be echoes
       // of a previous write that arrived after we've already moved on locally.
-      const isStaleEcho = !firstSnapshot && (Date.now() - S.lastLocalSave) < 1500;
+      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
       let _didUpdate = false;
-      if (!isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
+      if (!isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
         _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
@@ -3096,7 +3125,15 @@ function renderSettings() {
             <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
           </button>
         </div>
-        <div style="font-size:0.8rem;color:var(--muted)">Share this code with another device to sync your family's data.</div>
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Use these to get other family members set up on their devices.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="showKidDeviceQR()">
+            <i class="ph-duotone ph-qr-code" style="font-size:0.9rem;vertical-align:middle"></i> Add a Kid Device
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="showInviteParent()">
+            <i class="ph-duotone ph-user-plus" style="font-size:0.9rem;vertical-align:middle"></i> Invite a Parent
+          </button>
+        </div>
         ${RC.betaMode ? `<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
           <span style="color:var(--muted)">Install on other devices: </span>
           <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a>
@@ -3327,6 +3364,12 @@ function renderSettings() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
+        <div style="height:10px"></div>
+        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="_devShowInviteTest()"><i class="ph-duotone ph-flask" style="font-size:0.9rem;vertical-align:middle"></i> Test Invite System</button>
+        <button class="btn btn-secondary btn-full" onclick="_devResetInviteTest()"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:0.9rem;vertical-align:middle"></i> Reset Invite Test</button>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">Reset clears all invites for this family and the last test user doc automatically.</div>
+        <div style="height:10px"></div>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>` : ''}
 
@@ -3346,7 +3389,11 @@ function showScreen(id) {
 // ── RE-RENDER CURRENT VIEW ────────────────────────────────────
 // Called after cloud sync updates D; re-renders whichever view is active
 function renderCurrentView() {
-  if (!S.currentUser) return;
+  if (!S.currentUser) {
+    const home = document.getElementById('screen-home');
+    if (home?.classList.contains('active')) renderHome();
+    return;
+  }
   if (S.currentUser.role === 'parent') {
     // Re-render in-place — skip showScreen() so scroll position is preserved
     renderParentHeader();
@@ -3457,8 +3504,9 @@ function renderCurrentView() {
 
 // ── HOME SCREEN ───────────────────────────────────────────────
 function renderHome() {
+  loadData();
   showScreen('screen-home');
-  const members = D.family.members;
+  const members = D.family.members.filter(m => !m.deleted);
   const cards = members.map(m => {
     const bday    = isBirthday(m);
     const mode    = m.displayMode || 'regular';
@@ -3547,8 +3595,8 @@ function selectProfile(id) {
 }
 
 function routeToView(member) {
-  const mode = member.displayMode;
   if (member.role === 'parent') {
+    if (!ensureParentAuth(member, (authedMember) => routeToView(authedMember))) return;
     renderParentView();
   } else {
     renderKidView(); // handles both 'tiny' and 'regular'
@@ -3807,8 +3855,11 @@ function renderSetupGate() {
         <button class="btn btn-primary" style="font-size:1.05rem;padding:16px;background:#fff;color:#6C63FF;border:none" onclick="startNewFamily()">
           <i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:6px"></i> Get Started
         </button>
-        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showJoinFamily()">
-          <i class="ph-duotone ph-link" style="vertical-align:middle;margin-right:6px"></i> Join Existing Family
+        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showSignInFlow()">
+          <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Sign In
+        </button>
+        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.85);border:1.5px solid rgba(255,255,255,0.25)" onclick="showKidEntry()">
+          <i class="ph-duotone ph-smiley" style="vertical-align:middle;margin-right:6px"></i> I'm a Kid
         </button>
       </div>
     </div>`;
@@ -3832,6 +3883,15 @@ function startNewFamily() {
         </button>
       </div>
       <button style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer;margin-top:8px" onclick="renderSetupGate()">← Back</button>
+      ${RC.betaMode ? `
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
+        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">🛠 Dev — skip real auth</div>
+        <div style="display:flex;gap:8px">
+          <input id="dev-getstarted-email" type="email" placeholder="test@email.com" autocomplete="off"
+            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
+          <button onclick="_devTestGetStarted()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test →</button>
+        </div>
+      </div>` : ''}
     </div>`;
 }
 
@@ -3843,6 +3903,45 @@ async function _newFamilyAuth(provider) {
     btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
     return;
   }
+  await _processNewFamilyUser(user);
+}
+
+async function _devTestGetStarted() {
+  const email = (document.getElementById('dev-getstarted-email')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
+  await _processNewFamilyUser({ uid: `dev-${email.replace(/[^a-z0-9]/g, '-')}`, email, displayName: '' });
+}
+
+async function _processNewFamilyUser(user) {
+  S._pendingNewFamilyUser = user;
+  const email = (user.email || '').toLowerCase();
+  if (email) {
+    try {
+      const inviteSnap = await db.collection('invites').where('email', '==', email).limit(1).get();
+      const invite = inviteSnap.docs[0];
+      if (invite && !invite.data().used) {
+        showModal(`
+          <div style="text-align:center;padding:4px 0 8px">
+            <i class="ph-duotone ph-question" style="font-size:2.5rem;color:#6C63FF"></i>
+            <div class="modal-title" style="margin-top:8px">Joining a family?</div>
+          </div>
+          <p style="font-size:0.88rem;color:var(--muted);margin:0 0 16px;line-height:1.5">This email has a pending invite to an existing GemSprout family. Did you mean to join that family, or create a brand new one?</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-primary" onclick="closeModal();_acceptInviteFromGetStarted()">Join existing family</button>
+            <button class="btn btn-secondary" onclick="closeModal();_continueNewFamily()">Create a new family</button>
+          </div>`);
+        return;
+      }
+    } catch(e) { /* ignore — proceed with new family */ }
+  }
+  _continueNewFamily();
+}
+
+function _continueNewFamily() {
+  const user = S._pendingNewFamilyUser;
+  S._pendingNewFamilyUser = null;
+  if (!user) return;
+  S._newFamilyFirebaseUser = user; // kept so finishSetup() can link auth without re-prompting
   S.newFamilyDisplayName = user.displayName || '';
   setFamilyCode(genFamilyCode());
   document.getElementById('setup-gate').style.display = 'none';
@@ -3850,19 +3949,30 @@ async function _newFamilyAuth(provider) {
   goSetup();
 }
 
-function showJoinFamily() {
+async function _acceptInviteFromGetStarted() {
+  const user = S._pendingNewFamilyUser;
+  S._pendingNewFamilyUser = null;
+  if (!user) return;
+  await _resolveSignInUser(user);
+}
+
+function showKidEntry() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
-      <div style="font-size:3.5rem"><i class="ph-duotone ph-link" style="color:#6C63FF"></i></div>
-      <div style="font-weight:800;font-size:1.4rem">Join a Family</div>
-      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the 6-character family code shown in the parent's Settings screen.</div>
+      <div style="font-size:3.5rem"><i class="ph-duotone ph-smiley" style="color:#6C63FF"></i></div>
+      <div style="font-weight:800;font-size:1.4rem">I'm a Kid!</div>
+      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the family code from your parent's Settings screen, or scan the QR code they show you.</div>
       <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
         style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:280px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
         oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
       <button class="btn btn-primary" style="width:100%;max-width:280px;padding:14px" onclick="joinFamily()">
         <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
       </button>
+      ${isNative() ? `
+      <button class="btn btn-secondary" style="width:100%;max-width:280px;padding:12px" onclick="startQRScan()">
+        <i class="ph-duotone ph-qr-code" style="vertical-align:middle;margin-right:6px"></i> Scan QR Code
+      </button>` : ''}
       <button class="btn-back" style="background:none;border:none;color:var(--muted);font-size:0.95rem;cursor:pointer" onclick="renderSetupGate()">← Back</button>
     </div>`;
 }
@@ -3895,6 +4005,326 @@ async function joinFamily() {
   }
 }
 
+// ── SIGN IN FLOW (returning parent on new device) ─────────────
+
+function showSignInFlow() {
+  const gate = document.getElementById('setup-gate');
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
+      <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+        <button id="signin-google-btn" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('google')">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+          Continue with Google
+        </button>
+        <button id="signin-apple-btn" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('apple')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+          Continue with Apple&nbsp;
+        </button>
+      </div>
+      <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()">← Back</button>
+      ${RC.betaMode ? `
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
+        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">🛠 Dev — skip real auth</div>
+        <div style="display:flex;gap:8px">
+          <input id="dev-signin-email" type="email" placeholder="invited@email.com" autocomplete="off"
+            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
+          <button onclick="_devTestSignIn()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test →</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+}
+
+async function _handleSignIn(provider) {
+  const btns = document.querySelectorAll('#signin-google-btn,#signin-apple-btn');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  const user = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+  if (!user) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  await _resolveSignInUser(user);
+}
+
+async function _resolveSignInUser(firebaseUser) {
+  showLoading();
+  try {
+    // 1. Check if this UID is already linked to a family (returning parent, any device)
+    const userDoc = await db.doc(`users/${firebaseUser.uid}`).get();
+    if (userDoc.exists && userDoc.data().familyCode) {
+      setFamilyCode(userDoc.data().familyCode);
+      await ensureFirestoreAuth();
+      subscribeToFirestore(routeAfterLoad);
+      return;
+    }
+    // 2. Check if their email has a pending invite (Parent B joining for the first time)
+    const email = (firebaseUser.email || '').toLowerCase();
+    if (email) {
+      const inviteSnap = await db.collection('invites').where('email', '==', email).limit(1).get();
+      const invite = inviteSnap.docs[0];
+      if (invite && !invite.data().used) {
+        const familyCode = invite.data().familyCode;
+        await invite.ref.update({ used: true, usedAt: Date.now(), usedByUid: firebaseUser.uid });
+        setFamilyCode(familyCode);
+        db.doc(`users/${firebaseUser.uid}`).set({ familyCode, uid: firebaseUser.uid }, { merge: true }).catch(() => {});
+        await ensureFirestoreAuth();
+        subscribeToFirestore(() => showParentBSetup(firebaseUser));
+        return;
+      }
+    }
+    _showSignInNotFound();
+  } catch(e) {
+    console.warn('Sign in lookup failed:', e);
+    _showSignInNotFound();
+  }
+}
+
+function _showSignInNotFound() {
+  const gate = document.getElementById('setup-gate');
+  if (!gate) return;
+  showScreen('screen-setup');
+  gate.style.display = 'flex';
+  document.getElementById('setup-content').style.display = 'none';
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:16px;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <i class="ph-duotone ph-magnifying-glass" style="font-size:3rem;color:rgba(255,255,255,0.7)"></i>
+      <div style="color:#fff;font-size:1.4rem;font-weight:800;text-align:center">No family found</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:300px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
+      <button class="btn" style="background:#fff;color:#6C63FF;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:8px" onclick="renderSetupGate()">← Back</button>
+    </div>`;
+}
+
+
+// ── PARENT B ONBOARDING ───────────────────────────────────────
+
+function showParentBSetup(firebaseUser) {
+  const defaultName = firebaseUser?.displayName || '';
+  const col = COLORS[Math.floor(Math.random() * COLORS.length)] || '#6C63FF';
+  S._parentBMember = { id: genId(), name: defaultName, avatar: '🧑', color: col, role: 'parent', diamonds: 0, savings: 0, totalEarned: 0, birthday: '' };
+  S._parentBFirebaseUser = firebaseUser;
+
+  showScreen('screen-setup');
+  document.getElementById('setup-gate').style.display = 'none';
+  const content = document.getElementById('setup-content');
+  content.style.display = '';
+
+  const avatarOpts = [
+    `<div class="avatar-opt${'gemsproutpadded.png'===S._parentBMember.avatar?' sel':''}" onclick="S._parentBMember.avatar='gemsproutpadded.png';document.querySelectorAll('#parentb-avatars .avatar-opt').forEach(el=>el.classList.remove('sel'));this.classList.add('sel')"><img src="gemsproutpadded.png" class="avatar-img"></div>`,
+    ...AVATARS.slice(0, 23).map(a =>
+      `<div class="avatar-opt${a === S._parentBMember.avatar ? ' sel' : ''}" onclick="S._parentBMember.avatar='${a}';document.querySelectorAll('#parentb-avatars .avatar-opt').forEach(el=>el.classList.remove('sel'));this.classList.add('sel')">${a}</div>`
+    )
+  ].join('');
+  const colorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c === col ? ' sel' : ''}" style="background:${c}" onclick="S._parentBMember.color='${c}';document.querySelectorAll('#parentb-colors .color-swatch').forEach(el=>el.classList.remove('sel'));this.classList.add('sel')"></div>`
+  ).join('');
+
+  content.innerHTML = `
+    <div class="setup-step active">
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-hand-waving" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">Welcome to ${esc(D.family.name || 'GemSprout')}!</div>
+        <div class="setup-sub">Set up your parent profile and you're in.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Your name</label>
+        <input type="text" id="parentb-name" placeholder="Your name" value="${esc(defaultName)}" oninput="S._parentBMember.name=this.value">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Avatar</label>
+        <div class="avatar-grid" id="parentb-avatars">${avatarOpts}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-row" id="parentb-colors">${colorSwatches}</div>
+      </div>
+      <button class="btn btn-primary btn-full mt-8" onclick="finishParentBSetup()">
+        Get Started <i class="ph-duotone ph-arrow-right" style="vertical-align:middle;margin-left:4px"></i>
+      </button>
+    </div>`;
+}
+
+async function finishParentBSetup() {
+  const member = S._parentBMember;
+  const firebaseUser = S._parentBFirebaseUser;
+  const name = (document.getElementById('parentb-name')?.value || '').trim();
+  if (!name) { toast('Enter your name to continue'); return; }
+  member.name = name;
+  const firstParentIdx = D.family.members.findIndex(m => m.role === 'parent');
+  D.family.members.splice(firstParentIdx >= 0 ? firstParentIdx + 1 : 0, 0, member);
+  S.currentUser = member;
+  setCurrentUserId(member.id);
+  setAppUnlocked(true);
+  saveData();
+  await linkParentAuth(firebaseUser, member.id);
+  S._parentBMember = null;
+  S._parentBFirebaseUser = null;
+  routeToView(member);
+}
+
+// ── DEV / TEST HELPERS ───────────────────────────────────────
+
+const DEV_TEST_UID_KEY = 'gemsprout.devTestUid';
+
+function _devShowInviteTest() {
+  showInviteParent(true);
+}
+
+async function _devTestSignIn() {
+  const email = (document.getElementById('dev-signin-email')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
+  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
+  try { localStorage.setItem(DEV_TEST_UID_KEY, fakeUid); } catch {}
+  await _resolveSignInUser({ uid: fakeUid, email });
+}
+
+async function _devResetInviteTest() {
+  try {
+    const deletes = [];
+    const snaps = await db.collection('invites').where('familyCode', '==', getFamilyCode()).get();
+    snaps.docs.forEach(d => deletes.push(d.ref.delete()));
+    const storedUid = localStorage.getItem(DEV_TEST_UID_KEY);
+    if (storedUid) {
+      deletes.push(db.doc(`users/${storedUid}`).delete());
+      localStorage.removeItem(DEV_TEST_UID_KEY);
+    }
+    await Promise.all(deletes);
+    toast(`Reset — ${snaps.docs.length} invite(s) cleared`);
+  } catch(e) {
+    toast('Reset failed: ' + e.message);
+  }
+}
+
+// ── QR CODE SCAN (kid device) ─────────────────────────────────
+
+async function startQRScan() {
+  if (!isNative()) return;
+  const BarcodeScanner = Capacitor?.Plugins?.BarcodeScanner;
+  if (!BarcodeScanner) {
+    toast('QR scanning not available — enter the code manually');
+    return;
+  }
+  try {
+    if (typeof BarcodeScanner.isSupported === 'function') {
+      const supported = await BarcodeScanner.isSupported();
+      if (supported && supported.supported === false) {
+        toast('QR scanning not available — enter the code manually');
+        return;
+      }
+    }
+    if (typeof BarcodeScanner.checkPermissions === 'function') {
+      const perms = await BarcodeScanner.checkPermissions();
+      const status = perms?.camera || 'prompt';
+      if (status !== 'granted' && status !== 'limited') {
+        const req = await BarcodeScanner.requestPermissions();
+        const next = req?.camera || 'denied';
+        if (next !== 'granted' && next !== 'limited') {
+          toast('Camera access is required to scan a QR code');
+          return;
+        }
+      }
+    }
+    const result = await BarcodeScanner.scan({ formats: ['QR_CODE'] });
+    const barcode = result?.barcodes?.[0];
+    const raw = barcode?.rawValue || barcode?.displayValue || '';
+    if (raw) {
+      const code = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      const input = document.getElementById('join-code-input');
+      if (input) { input.value = code; joinFamily(); }
+    } else {
+      toast('No QR code detected — try again');
+    }
+  } catch(e) {
+    if (!e.message?.includes('cancel')) toast('QR scan failed — enter the code manually');
+  }
+}
+
+// ── QR CODE DISPLAY (parent settings) ────────────────────────
+
+function showKidDeviceQR() {
+  const code = getFamilyCode();
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <div class="modal-title">Add a Kid Device</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">On the kid's device, open GemSprout, tap <strong>I'm a Kid</strong>, then scan this QR code or type the code below.</p>
+    </div>
+    <div id="qr-code-container" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+    <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;margin-bottom:16px">${code}</div>
+    <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">Done</button>`);
+  setTimeout(() => {
+    const el = document.getElementById('qr-code-container');
+    if (!el) return;
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(el, { text: code, width: 200, height: 200, colorDark: '#4C1D95', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.H });
+    } else {
+      el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">QR unavailable — use the code above</div>`;
+    }
+  }, 50);
+}
+
+// ── PARENT INVITE (email-based) ───────────────────────────────
+
+function showInviteParent(testMode = false) {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-user-plus" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">${testMode ? 'Test: Invite a Parent' : 'Invite a Parent'}</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">${testMode
+        ? 'Enter any fake email. After submitting you\'ll get a button to go to the welcome screen and test the sign-in.'
+        : 'Enter the email address your partner will use to sign in (their Google or Apple account email).'}</p>
+    </div>
+    <div id="invite-modal-body">
+      <input id="invite-email-input" type="email" placeholder="${testMode ? 'faketest@email.com' : 'partner@email.com'}" autocomplete="${testMode ? 'off' : 'email'}"
+        style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:16px;outline:none">
+      <button class="btn btn-primary" style="width:100%" onclick="_submitParentInvite(${testMode})">
+        <i class="ph-duotone ph-envelope" style="vertical-align:middle;margin-right:6px"></i> ${testMode ? 'Save Test Invite' : 'Send Invite'}
+      </button>
+      <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="closeModal()">Cancel</button>
+    </div>`);
+  setTimeout(() => document.getElementById('invite-email-input')?.focus(), 100);
+}
+
+async function _submitParentInvite(testMode = false) {
+  const email = (document.getElementById('invite-email-input')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a valid email address'); return; }
+  const btn = document.querySelector('#invite-modal-body .btn-primary');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Saving…'; }
+  try {
+    await db.collection('invites').add({
+      email,
+      familyCode: getFamilyCode(),
+      createdAt: Date.now(),
+      createdByMemberId: S.currentUser?.id || '',
+      used: false
+    });
+    const body = document.getElementById('invite-modal-body');
+    if (!body) return;
+    if (testMode) {
+      body.innerHTML = `
+        <div style="text-align:center;padding:8px 0">
+          <i class="ph-duotone ph-check-circle" style="font-size:2rem;color:var(--green)"></i>
+          <div style="font-weight:700;margin:8px 0 4px">Invite saved for <span style="color:#6C63FF">${esc(email)}</span></div>
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px">Now tap below to go to the welcome screen, hit Sign In, and type this email in the Dev box.</div>
+          <button class="btn btn-primary" style="width:100%" onclick="closeModal();closeSettings();showScreen('screen-setup');renderSetupGate()">
+            Go to Welcome Screen →
+          </button>
+        </div>`;
+    } else {
+      body.innerHTML = `
+        <div style="text-align:center;padding:8px 0">
+          <i class="ph-duotone ph-check-circle" style="font-size:2rem;color:var(--green)"></i>
+          <div style="font-weight:700;margin:8px 0 4px">Invite sent!</div>
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px"><strong>${esc(email)}</strong> will be recognized automatically when they sign in.</div>
+          <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">Done</button>
+        </div>`;
+    }
+  } catch(e) {
+    toast('Something went wrong — please try again');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-envelope" style="vertical-align:middle;margin-right:6px"></i> ' + (testMode ? 'Save Test Invite' : 'Send Invite'); }
+  }
+}
+
 function cancelSetup() {
   const user = S.currentUser;
   if (user) routeToView(user);
@@ -3902,6 +4332,7 @@ function cancelSetup() {
 }
 
 function goSetup() {
+  loadData();
   SETUP_STEPS    = D.setup ? SETUP_STEPS_EDIT : SETUP_STEPS_NEW;
   S.setupStep    = 0;
   S.setupParents = D.family.members
@@ -3952,11 +4383,13 @@ function renderSetupStep() {
     case 'parents': content = `
       <div class="setup-top" style="padding-top:20px">
         <div class="setup-emoji"><i class="ph-duotone ph-shield-star" style="color:#6C63FF;font-size:3rem"></i></div>
-        <div class="setup-title">Parents</div>
-        <div class="setup-sub">Customize the parent profiles. You can have more than one!</div>
+        <div class="setup-title">Your Profile</div>
+        <div class="setup-sub">Set up your parent profile. Your partner will set up theirs when they join.</div>
       </div>
       <div id="parents-list">${S.setupParents.map((p,i)=>parentSetupCard(p,i)).join('')}</div>
-      <button class="btn btn-secondary btn-full mt-8" onclick="addParentCard()" style="margin-bottom:14px">+ Add another parent</button>
+      <button class="btn btn-secondary btn-full mt-8" onclick="showInviteParent()" style="margin-bottom:14px">
+        <i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:6px"></i> Invite a Parent
+      </button>
       <div class="flex gap-10 mt-8">
         <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
         <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
@@ -4057,28 +4490,27 @@ function renderSetupStep() {
     case 'done': {
       const _fc = getFamilyCode();
       content = `
-      <div style="text-align:center;padding:24px 20px 16px">
+      <div style="text-align:center;padding:24px 20px 12px">
         <div style="font-size:4rem"><i class="ph-duotone ph-confetti" style="color:#F97316"></i></div>
         <div class="setup-title mt-8">You're all set!</div>
-        <div class="setup-sub mt-4" style="margin-bottom:20px">Your GemSprout is ready. Here's how to get everyone connected.</div>
+        <div class="setup-sub mt-4">GemSprout is ready to go.</div>
       </div>
 
-      <div class="card" style="background:#F5F3FF;border:2px solid #C4B5FD;margin-bottom:12px">
-        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Your Family Code</div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em"><i class="ph-duotone ph-smiley" style="vertical-align:middle;margin-right:4px"></i> Adding your kids</div>
+        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">On each kid's device, open GemSprout and tap <strong>I'm a Kid</strong>. They'll enter this code or scan the QR code from <strong>Settings → Family Code</strong>.</p>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:2rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;flex:1">${_fc}</div>
+          <div style="font-size:1.8rem;font-weight:900;letter-spacing:0.18em;color:#4C1D95;font-family:monospace;flex:1">${_fc}</div>
           <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${_fc}').then(()=>toast('Code copied!'))">
             <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
           </button>
         </div>
-        <div style="font-size:0.78rem;color:#6C63FF;margin-top:6px">Your family code can also be found in Settings — you'll need it to add other devices</div>
+        ${RC.betaMode ? `<div style="margin-top:10px;font-size:0.8rem;color:var(--muted)">Get the app at: <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a></div>` : ''}
       </div>
 
       <div class="card" style="margin-bottom:20px">
-        <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Adding other devices?</div>
-        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">Install GemSprout on your partner's phone or your kids' tablets, then enter the family code above to sync everyone together.</p>
-        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:4px">Get the app at:</div>
-        <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.9rem;font-weight:700;color:#6C63FF;word-break:break-all;text-decoration:none">${RC.appDownloadUrl}</a>
+        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Adding your partner</div>
+        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5">Your partner will get an email invite with a download link. They should install GemSprout and sign in with the same account the invite was sent to. If you still need to invite them, go to <strong>Settings → Invite a Parent</strong>.</p>
       </div>
 
       <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go! →</button>`;
@@ -4400,6 +4832,7 @@ function setupBack() {
 }
 
 function finishSetup() {
+  const wasSetup = !!D.setup;
   // Merge parents — preserve existing data (diamonds, etc.), apply setup edits
   const mergedParents = S.setupParents.map(p => {
     const existing = D.family.members.find(x=>x.id===p.id) || {};
@@ -4429,8 +4862,22 @@ function finishSetup() {
     D.settings.familyTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   }
   D.setup = true;
+  // Link auth for the parent who signed in during Get Started — prevents re-auth prompt right after setup
+  if (S._newFamilyFirebaseUser && mergedParents[0]) {
+    const setupUser = S._newFamilyFirebaseUser;
+    linkParentAuth(setupUser, mergedParents[0].id);
+    S._recentParentAuth = { uid: setupUser.uid, email: (setupUser.email || '').toLowerCase(), at: Date.now() };
+    S._newFamilyFirebaseUser = null;
+  }
   saveData();
   ensureFirestoreAuth().then(() => subscribeToFirestore());
+  S.currentUser = null;
+  setCurrentUserId('');
+  loadData();
+  if (wasSetup) {
+    location.reload(true);
+    return;
+  }
   renderHome();
 }
 
@@ -5665,6 +6112,8 @@ function doContrib(memberId, goalId) {
 
 // ── PARENT VIEW ENTRY ─────────────────────────────────────────
 function renderParentView() {
+  const member = S.currentUser;
+  if (member?.role === 'parent' && !ensureParentAuth(member, () => renderParentView())) return;
   showScreen('screen-parent');
   renderParentHeader();
   renderParentNav();
@@ -5813,8 +6262,8 @@ function renderParentHeader() {
     <div class="header-left">
       <span class="header-avatar" onclick="parentAvatarEasterEgg()" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
       <div>
-        <div class="header-name">${esc(D.family.name)}</div>
-        <div class="header-sub">Parent Dashboard</div>
+        <div class="header-name">Hi, ${esc(m.name)}!</div>
+        <div class="header-sub">${esc(D.family.name)}</div>
       </div>
     </div>
     <div class="header-actions">
@@ -8712,7 +9161,7 @@ function showParentSignIn(memberId, onSuccess) {
   const member = getMember(memberId);
   el.innerHTML = `
     <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
-    <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back</div>
+    <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
     <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
     <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
       <button id="btn-google-signin" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('google','${memberId}')">
@@ -8724,8 +9173,34 @@ function showParentSignIn(memberId, onSuccess) {
         Continue with Apple&nbsp;
       </button>
     </div>
-    <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()">← Back</button>`;
+    <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()">← Back</button>
+    ${RC.betaMode ? `
+    <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
+      <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">🛠 Dev — skip real auth</div>
+      <div style="display:flex;gap:8px">
+        <input id="dev-parentsignin-email" type="email" placeholder="your setup email" autocomplete="off"
+          style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
+        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test →</button>
+      </div>
+    </div>` : ''}`;
   S._parentSignInCallback = onSuccess || null;
+}
+
+function _devParentSignIn(memberId) {
+  const email = (document.getElementById('dev-parentsignin-email')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
+  const member = getMember(memberId);
+  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
+  const linked = member?.authUid === fakeUid ||
+    (member?.authProviders || []).some(p => p.email?.toLowerCase() === email || p.uid === fakeUid);
+  if (!linked) {
+    toast('That email isn\'t linked to this profile — use the email you signed up with');
+    return;
+  }
+  setParentAuthUid(fakeUid);
+  const cb = S._parentSignInCallback;
+  S._parentSignInCallback = null;
+  proceedAsParent(memberId, cb);
 }
 
 async function handleParentSignIn(provider, memberId) {

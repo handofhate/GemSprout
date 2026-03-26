@@ -34,6 +34,9 @@ workflows:
           cp manifest.json www/
           cp *.png www/
           npx cap add ios
+          if [ -f ios/App/Podfile ]; then
+            sed -i '' "s/platform :ios, '.*'/platform :ios, '15.5'/" ios/App/Podfile
+          fi
           cp GoogleService-Info.plist ios/App/App/
           # Generate iOS app icons from source image
           mkdir -p assets
