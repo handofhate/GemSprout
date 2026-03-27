@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="GemSprout">
@@ -37,7 +38,6 @@
 
   <!-- ═══════════ SCREEN: KID VIEW ═══════════ -->
   <div id="screen-kid" class="screen">
-    <div id="kid-sync-bar"></div>
     <header class="app-header" id="kid-header"></header>
     <main  class="main-content" id="kid-content"></main>
     <nav   class="nav-bar"      id="kid-nav"></nav>
@@ -45,7 +45,6 @@
 
   <!-- ═══════════ SCREEN: PARENT VIEW ═══════════ -->
   <div id="screen-parent" class="screen">
-    <div id="parent-sync-bar"></div>
     <header class="app-header" id="parent-header"></header>
     <main  class="main-content" id="parent-content"></main>
     <nav   class="nav-bar"      id="parent-nav"></nav>
@@ -67,6 +66,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-remote-config-compat.js"></script>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="capacitor-core.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

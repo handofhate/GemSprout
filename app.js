@@ -39,8 +39,140 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
-const APP_UNLOCK_KEY = 'gemsprout.appUnlocked';
-const CURRENT_USER_KEY = 'gemsprout.currentUserId';
+const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
+const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
+const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
+const PARENT_AUTH_PROVIDER_KEY = 'gemsprout.parentAuthProvider';
+
+// ── PARENT AUTH ───────────────────────────────────────────────
+
+function getParentAuthUid() {
+  try { return localStorage.getItem(PARENT_AUTH_KEY) || null; } catch { return null; }
+}
+
+function setParentAuthUid(uid) {
+  try {
+    if (uid) localStorage.setItem(PARENT_AUTH_KEY, uid);
+    else localStorage.removeItem(PARENT_AUTH_KEY);
+  } catch {}
+}
+
+function isParentSignedIn() {
+  return !!getParentAuthUid();
+}
+
+function _isRecentParentAuthForMember(member) {
+  const recent = S._recentParentAuth;
+  if (!recent || !recent.uid || !member) return false;
+  const ageMs = Date.now() - recent.at;
+  if (ageMs > 2 * 60 * 1000) return false;
+  const email = recent.email || '';
+  const providers = member.authProviders || [];
+  return member.authUid === recent.uid || providers.some(p => p.uid === recent.uid || (email && p.email?.toLowerCase() === email));
+}
+
+function ensureParentAuth(member, onSuccess) {
+  if (!member || member.role !== 'parent') return true;
+  if (isParentSignedIn()) return true;
+  if (_isRecentParentAuthForMember(member)) {
+    setParentAuthUid(S._recentParentAuth.uid);
+    return true;
+  }
+  showParentSignIn(member.id, onSuccess);
+  return false;
+}
+
+async function signInWithGoogle() {
+  try {
+    if (isNative()) {
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential?.idToken);
+      const userCredential = await auth.signInWithCredential(credential);
+      subscribeToFirestore(); // re-establish listener under new auth token
+      return userCredential.user;
+    } else {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await auth.signInWithPopup(provider);
+      return auth.currentUser;
+    }
+  } catch(e) {
+    if (e.code !== 'auth/cancelled-popup-request' && e.message !== 'Sign in cancelled.') {
+      console.warn('Google sign-in failed:', e.message);
+    }
+    return null;
+  }
+}
+
+function _authProviderIcon() {
+  let pid;
+  try { pid = localStorage.getItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
+  if (!pid) pid = auth.currentUser?.providerData?.[0]?.providerId;
+  if (pid === 'google.com') return '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">';
+  if (pid === 'apple.com')  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>';
+  return '<i class="ph-duotone ph-user-circle" style="font-size:1.3rem;flex-shrink:0"></i>';
+}
+
+async function signInWithApple() {
+  try {
+    if (isNative()) {
+      const { FirebaseAuthentication } = Capacitor.Plugins;
+      // Let the plugin manage the nonce — it returns the raw nonce it used in
+      // result.credential.nonce, which matches what Apple embedded in the token.
+      const result = await FirebaseAuthentication.signInWithApple();
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken: result.credential?.idToken,
+        rawNonce: result.credential?.nonce,
+      });
+      const userCredential = await auth.signInWithCredential(credential);
+      subscribeToFirestore(); // re-establish listener under new auth token
+      return userCredential.user;
+    } else {
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      await auth.signInWithPopup(provider);
+      return auth.currentUser;
+    }
+  } catch(e) {
+    if (e.message !== 'Sign in cancelled.') {
+      console.warn('Apple sign-in failed:', e.message);
+    }
+    return null;
+  }
+}
+
+async function signOutParent() {
+  try {
+    await auth.signOut();
+  } catch(e) {
+    console.warn('Sign out error:', e.message);
+  } finally {
+    setParentAuthUid(null);
+  }
+}
+
+// Called after a parent successfully signs in — links their Firebase UID to their member record
+async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
+  setParentAuthUid(firebaseUser.uid);
+  try {
+    const pid = overrideProviderId || firebaseUser.providerData?.[0]?.providerId;
+    if (pid) localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, pid);
+  } catch {}
+  const member = getMember(memberId);
+  if (!member) return;
+  if (!member.authUid) member.authUid = firebaseUser.uid; // backward compat — keep first-ever UID
+  if (!member.authProviders) member.authProviders = [];
+  const pid   = overrideProviderId || firebaseUser.providerData?.[0]?.providerId || 'unknown';
+  const email = firebaseUser.email || firebaseUser.providerData?.[0]?.email || '';
+  const entry = { providerId: pid, uid: firebaseUser.uid, email };
+  const idx = member.authProviders.findIndex(p => p.providerId === pid);
+  if (idx >= 0) member.authProviders[idx] = entry; else member.authProviders.push(entry);
+  member.authUids = member.authProviders.map(p => p.uid); // for future Firestore array-contains queries
+  saveData();
+  // Write UID→familyCode so returning parents can Sign In on new devices
+  db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
+    .catch(e => console.warn('users doc write failed:', e));
+}
 
 function setAppUnlocked(v) {
   try { localStorage.setItem(APP_UNLOCK_KEY, v ? '1' : '0'); } catch (_) {}
@@ -100,12 +232,21 @@ function showAppPin() {
 
 // ── SWITCH USER ───────────────────────────────────────────────
 function goHome() {
+  S.currentUser = null;
+  setCurrentUserId('');
+  renderHome();
+}
+
+function signOutAndGoHome() {
   const wasParent = S.currentUser?.role === 'parent';
   S.currentUser = null;
   setCurrentUserId('');
-  // Parent is already authenticated — go straight to profile picker.
-  // Kids still require PIN to get back to the picker (protects parent profile).
-  if (wasParent) renderHome();
+  setParentAuthUid(null);
+  try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
+  if (wasParent) signOutParent().finally(() => {
+    auth.signInAnonymously().catch(() => {});
+    renderHome();
+  });
   else showAppPin();
 }
 
@@ -122,6 +263,13 @@ const AVATARS = ['🦁','🐯','🐻','🐼','🦊','🐰','🐸','🐨','🦄',
 
 const COLORS  = ['#6C63FF','#FF6584','#43D9AD','#FFD93D','#6BCB77',
                  '#FF9A3C','#4ECDC4','#45B7D1','#E91E63','#9C27B0'];
+
+// Returns displayable HTML for an avatar value (emoji or image path)
+function renderAvatarHtml(a, fallback = '🙂') {
+  if (!a) return fallback;
+  if (/\.(png|jpe?g|gif|webp)$/i.test(a)) return `<img src="${a}" class="avatar-img">`;
+  return a;
+}
 
 // ── NAV TAB ICONS (duotone SVGs, sized to 1em so they scale with font-size) ──
 const ICONS = {
@@ -272,15 +420,19 @@ const ALL_DAYS = WEEKDAY_OPTIONS.map(day => day.value);
 // ── APP STATE ────────────────────────────────────────────────
 let D = {};          // the live data object (mirrors localStorage)
 let S = {            // UI state (not persisted)
-  currentUser:   null,
-  kidTab:        'chores',
-  parentTab:     'home',
-  setupStep:     0,
-  setupMembers:  [],   // unified non-parent members during setup
-  pinBuffer:     '',
-  pinMode:       'app', // 'app' = gate to member picker | 'parent' = gate to parent view
-  syncStatus:    'idle', // 'idle' | 'syncing' | 'ok' | 'error'
-  lastLocalSave: 0,     // timestamp of last local write — suppresses stale Firestore snapshots
+  currentUser:          null,
+  kidTab:               'chores',
+  parentTab:            'home',
+  setupStep:            0,
+  setupMembers:         [],   // unified non-parent members during setup
+  pinBuffer:            '',
+  pinMode:              'app', // 'app' = gate to member picker | 'parent' = gate to parent view
+  syncStatus:           'idle', // 'idle' | 'syncing' | 'ok' | 'error'
+  lastLocalSave:        0,     // timestamp of last local write — suppresses stale Firestore snapshots
+  _authPromptShown:      false,
+  _pinPromptShown:       false,
+  _parentSignInCallback: null,
+  _recentParentAuth:     null,
 };
 
 // ── DEFAULT DATA ──────────────────────────────────────────────
@@ -308,7 +460,6 @@ function defaultData() {
       // Not Listening
       notListeningSecs: 60,
       notListeningEnabled: true,
-      sortPrizesByValue: false,
       // Savings
       savingsEnabled:          true,
       savingsMatchingEnabled:  false,
@@ -342,6 +493,7 @@ function loadData() {
 
 function saveData() {
   S.lastLocalSave = Date.now();
+  if (D.settings) D.settings.lastSync = Date.now();
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
   if (S.currentUser?.role === 'kid') savePendingSnapshot(S.currentUser.id);
   pushToFirestore();
@@ -349,14 +501,8 @@ function saveData() {
 
 async function pushToFirestore() {
   try {
-    S.syncStatus = 'syncing';
-    updateSyncBar();
     await db.doc(getFamilyDoc()).set(D);
-    S.syncStatus = 'ok';
-    updateSyncBar();
   } catch(e) {
-    S.syncStatus = 'error';
-    updateSyncBar();
     console.warn('Firestore write error:', e);
   }
 }
@@ -666,10 +812,15 @@ function subscribeToFirestore(onFirstLoad) {
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
+      const incomingSync = normalizedIncoming.settings?.lastSync || 0;
+      const localSync = D.settings?.lastSync || 0;
+      const isOlderThanLocal = incomingSync && localSync && incomingSync < localSync;
       // Ignore snapshots arriving within 1500ms of a local save — they may be echoes
       // of a previous write that arrived after we've already moved on locally.
-      const isStaleEcho = !firstSnapshot && (Date.now() - S.lastLocalSave) < 1500;
-      if (!isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
+      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
+      let _didUpdate = false;
+      if (!isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
+        _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
         D = normalizedIncoming;
@@ -692,8 +843,6 @@ function subscribeToFirestore(onFirstLoad) {
         }
       }
     }
-    S.syncStatus = 'ok';
-    updateSyncBar();
     if (firstSnapshot) {
       firstSnapshot = false;
       // Check for approvals that happened while the app was closed
@@ -709,13 +858,11 @@ function subscribeToFirestore(onFirstLoad) {
         checkForDeclineNotifications(S.currentUser, true); // check for declines while away
       }
       if (typeof onFirstLoad === 'function') onFirstLoad();
-    } else {
+    } else if (_didUpdate) {
       renderCurrentView();
       if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
     }
   }, err => {
-    S.syncStatus = 'error';
-    updateSyncBar();
     console.warn('Firestore listener error:', err);
     if (firstSnapshot) {
       firstSnapshot = false;
@@ -887,6 +1034,7 @@ function normalizeMember(m) {
   if (typeof m.nlTodaySecs === 'undefined') m.nlTodaySecs = 0;
   if (typeof m.nlDate === 'undefined') m.nlDate = null;
   if (typeof m.nlLifetimeSecs === 'undefined') m.nlLifetimeSecs = 0;
+  if (typeof m.nlPendingSecs === 'undefined') m.nlPendingSecs = 0;
   return m;
 }
 
@@ -1229,10 +1377,10 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
     }
   }
 
-  // Auto-here: if member is scheduled as away today but is completing a chore,
-  // they must actually be home — record a one-off override so streak logic knows.
+  // Auto-here: completing a chore while marked away means they're actually home.
   const _todayStr = today();
-  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _todayStr)) {
+  normalizeMember(member);
+  if (!isMemberHereOnDate(member, _todayStr)) {
     member.splitHousehold.overrides[_todayStr] = true;
   }
 
@@ -1293,7 +1441,8 @@ function doApproveChore(choreId, memberId, entryId) {
     checkChoreBadges(chore, memberId);
     // Auto-here: approving a chore means the kid must be home
     const _t = today();
-    if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+    normalizeMember(member);
+    if (!isMemberHereOnDate(member, _t)) {
       member.splitHousehold.overrides[_t] = true;
     }
   }
@@ -1564,9 +1713,10 @@ function getMostRecentMonday() {
 // Always returns true when split household is disabled.
 function isMemberHereOnDate(member, dateStr) {
   const sh = member.splitHousehold;
-  if (!sh || !sh.enabled) return true;
-  const overrides = sh.overrides || {};
+  // Check manual overrides first — always honoured regardless of SH enabled state
+  const overrides = sh?.overrides || {};
   if (dateStr in overrides) return overrides[dateStr];
+  if (!sh || !sh.enabled) return true;
   // Map date → position in 14-day cycle (index 0 = Monday of week 1)
   const ref  = new Date((sh.referenceMonday || getMostRecentMonday()) + 'T00:00:00');
   const d    = new Date(dateStr + 'T00:00:00');
@@ -1611,7 +1761,6 @@ function runHereCheck() {
   const t = today();
   const missing = (D.family?.members || []).filter(m => {
     if (m.role !== 'kid') return false;
-    if (!m.splitHousehold?.enabled) return false;
     if (!isMemberHereOnDate(m, t)) return false;
     // Has any chore completion today?
     return !D.chores.some(c =>
@@ -1648,66 +1797,31 @@ function showSplitHouseholdModal(memberId) {
     return `<button class="sh-day-btn ${here ? 'here' : 'away'}" onclick="toggleShDay(${pos})" id="sh-day-${pos}">${lbl}</button>`;
   }).join('');
 
-  const overrideRows = Object.entries(sh.overrides || {})
-    .sort(([a],[b]) => a.localeCompare(b))
-    .map(([date, isHere]) => `
-      <div class="sh-override-row" id="sh-ov-${date}">
-        <span class="sh-override-label">${date}</span>
-        <span class="sh-badge ${isHere ? 'here' : 'away'}">${isHere ? 'Here' : 'Away'}</span>
-        <button class="btn-icon-sm" onclick="removeShOverride('${date}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
-      </div>`).join('');
-
   showModal(`
-    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split Household — ${esc(member.name)}</div>
+    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split Household Schedule</div>
 
-    <div class="toggle-row" style="margin-bottom:16px">
-      <div>
-        <div class="toggle-label">Enable Split Household</div>
-        <div class="toggle-sub">Streaks skip days they're at the other household</div>
-      </div>
-      <label class="toggle">
-        <input type="checkbox" id="sh-enabled" ${enabled ? 'checked' : ''} onchange="toggleShConfig()">
-        <span class="toggle-track"></span>
-      </label>
+    <div class="form-group">
+      <label class="form-label">Week 1 starts on <span class="form-label-hint">any Monday</span></label>
+      <input type="date" id="sh-ref-monday" value="${ref}">
     </div>
 
-    <div id="sh-config" style="${enabled ? '' : 'display:none'}">
-      <div class="form-group">
-        <label class="form-label">Week 1 starts on <span class="form-label-hint">pick any Monday</span></label>
-        <input type="date" id="sh-ref-monday" value="${ref}">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Schedule — tap a day to toggle here / away</label>
-        <div class="sh-section">
-          <div class="sh-week-block">
-            <div class="sh-week-label">Week 1</div>
-            <div class="sh-days-row">${weekGrid(0)}</div>
-          </div>
-          <div class="sh-week-block">
-            <div class="sh-week-label">Week 2</div>
-            <div class="sh-days-row">${weekGrid(1)}</div>
-          </div>
+    <div class="form-group" style="margin-bottom:4px">
+      <label class="form-label">Schedule <span class="form-label-hint">tap a day to toggle home / away</span></label>
+      <div class="sh-section">
+        <div class="sh-week-block">
+          <div class="sh-week-label">Week 1</div>
+          <div class="sh-days-row">${weekGrid(0)}</div>
+        </div>
+        <div class="sh-week-block">
+          <div class="sh-week-label">Week 2</div>
+          <div class="sh-days-row">${weekGrid(1)}</div>
         </div>
       </div>
+    </div>
 
-      <div class="form-group">
-        <label class="form-label">One-off exceptions</label>
-        <div class="sh-overrides-list" id="sh-overrides-list">${overrideRows || '<div style="color:var(--text-muted);font-size:0.82rem">No exceptions yet</div>'}</div>
-        <div class="sh-add-row">
-          <input type="date" id="sh-ov-date" value="${today()}">
-          <select id="sh-ov-type">
-            <option value="true">Here</option>
-            <option value="false">Away</option>
-          </select>
-          <button class="btn btn-secondary btn-sm" onclick="addShOverride()">Add</button>
-        </div>
-      </div>
-
-      <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
-        <i class="ph-duotone ph-lightbulb" style="color:#F59E0B;vertical-align:middle"></i> Completing a chore on a scheduled away day automatically marks them as here.
-        At 6 pm on here-days with no chore activity, you'll get a prompt asking if they're actually home.
-      </p>
+    <div style="display:flex;gap:6px;font-size:0.78rem;color:var(--muted);margin-top:8px">
+      <i class="ph-duotone ph-lightbulb" style="color:#F59E0B;flex-shrink:0;margin-top:2px"></i>
+      <span>Completing a chore on an away day automatically toggles the kid to home. Use the Home / Away toggles in Settings to make one-off changes.</span>
     </div>
 
     <div class="modal-actions">
@@ -1715,20 +1829,11 @@ function showSplitHouseholdModal(memberId) {
       <button class="btn btn-primary" onclick="saveSplitHousehold()">Save</button>
     </div>`);
 
-  // Request notification permission when enabling
   if (enabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
 }
 
-function toggleShConfig() {
-  const on = document.getElementById('sh-enabled')?.checked;
-  const cfg = document.getElementById('sh-config');
-  if (cfg) cfg.style.display = on ? '' : 'none';
-  if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}
 
 // Holds temporary cycle state while modal is open
 function _getShCycle() {
@@ -1774,7 +1879,16 @@ function addShOverride() {
 }
 
 function removeShOverride(date) {
-  if (!confirm(`Remove the exception for ${date}?`)) return;
+  showModal(`
+    <div class="modal-title">Remove Exception?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">The schedule exception for <strong>${date}</strong> will be removed.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doRemoveShOverride('${date}')">Remove</button>
+    </div>`);
+}
+
+function _doRemoveShOverride(date) {
   const member = getMember(S.shMemberId);
   if (!member) return;
   delete member.splitHousehold.overrides[date];
@@ -1786,12 +1900,17 @@ function removeShOverride(date) {
 }
 
 function saveSplitHousehold() {
-  const member = getMember(S.shMemberId);
-  if (!member) return;
-  member.splitHousehold.enabled = document.getElementById('sh-enabled')?.checked || false;
-  member.splitHousehold.referenceMonday = document.getElementById('sh-ref-monday')?.value || getMostRecentMonday();
-  member.splitHousehold.cycle = _getShCycle();
-  // overrides were already mutated live by addShOverride / removeShOverride
+  const source = getMember(S.shMemberId);
+  if (!source) return;
+  source.splitHousehold.referenceMonday = document.getElementById('sh-ref-monday')?.value || getMostRecentMonday();
+  source.splitHousehold.cycle = _getShCycle();
+  // Apply schedule to all kids equally (overrides stay per-kid)
+  const { referenceMonday, cycle } = source.splitHousehold;
+  D.family.members.filter(m => m.role === 'kid' && !m.deleted && m.id !== source.id).forEach(m => {
+    normalizeMember(m);
+    m.splitHousehold.referenceMonday = referenceMonday;
+    m.splitHousehold.cycle = [...cycle];
+  });
   saveData();
   closeModal();
   toast('Split Household schedule saved');
@@ -1839,6 +1958,15 @@ function markAwayToday(memberId) {
 function setTodayStatus(memberId, isHere) {
   const member = getMember(memberId);
   if (member?.splitHousehold) member.splitHousehold.overrides[today()] = isHere;
+  saveData();
+  renderSettings();
+}
+
+function toggleFamilySplitHousehold(enabled) {
+  D.family.members.filter(m => m.role === 'kid' && !m.deleted).forEach(m => {
+    normalizeMember(m);
+    m.splitHousehold.enabled = enabled;
+  });
   saveData();
   renderSettings();
 }
@@ -1989,10 +2117,11 @@ function saveComboOverride(kidId) {
       return chore && getChoreProgress(chore, kidId).status === 'done';
     });
     if (allDone) {
-      const bonusPts = finalIds.reduce((sum, id) => {
+      const baseSum = finalIds.reduce((sum, id) => {
         const chore = D.chores.find(c => c.id === id);
         return sum + (chore?.diamonds || 0);
       }, 0);
+      const bonusPts = Math.max(1, (D.settings.comboMultiplier || 2) - 1) * baseSum;
       S._pendingComboSave = { kidId, finalIds };
       showModal(`
         <div class="modal-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;vertical-align:middle"></i> Combo Will Complete!</div>
@@ -2042,10 +2171,11 @@ function checkComboBonus(memberId) {
   if (!allDone) return;
 
   member.comboBonusDate = today();
-  const bonusPts = combo.reduce((sum, id) => {
+  const baseSum = combo.reduce((sum, id) => {
     const chore = D.chores.find(c => c.id === id);
     return sum + (chore?.diamonds || 0);
   }, 0);
+  const bonusPts = Math.max(1, (D.settings.comboMultiplier || 2) - 1) * baseSum;
   member.diamonds      = (member.diamonds      || 0) + bonusPts;
   member.totalEarned = (member.totalEarned || 0) + bonusPts;
   if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
@@ -2076,6 +2206,16 @@ function checkComboBonus(memberId) {
 }
 
 // ── NOT LISTENING ─────────────────────────────────────────────
+function fmtNLTime(secs) {
+  if (!secs || secs <= 0) return '0s';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
 let _nlState = {
   isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
   selectedKids: [], rafId: null,
@@ -2236,27 +2376,33 @@ function _nlCancel() {
 
 function _nlDone() {
   if (_nlState.isHolding) _nlHoldEnd();
-  const dmds = _nlState.diamondsLost;
   const sessionSecs = Math.floor(_nlState.accumulated / 1000);
+  const secsPerPt = D.settings.notListeningSecs || 60;
   const t = today();
+  let totalDeducted = 0;
   if (_nlState.selectedKids.length > 0) {
     _nlState.selectedKids.forEach(kidId => {
       const m = getMember(kidId);
       if (!m) return;
       normalizeMember(m);
-      // Persist NL seconds for today and lifetime
+      // Today's display counter (resets daily)
       if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
       m.nlTodaySecs = (m.nlTodaySecs || 0) + sessionSecs;
       m.nlLifetimeSecs = (m.nlLifetimeSecs || 0) + sessionSecs;
+      // Global pending seconds — never reset, carry remainder indefinitely
+      m.nlPendingSecs = (m.nlPendingSecs || 0) + sessionSecs;
+      const dmds = Math.floor(m.nlPendingSecs / secsPerPt);
+      m.nlPendingSecs = m.nlPendingSecs % secsPerPt;
       if (dmds > 0) {
         m.diamonds = Math.max(0, (m.diamonds || 0) - dmds);
         addHistory('penalty', kidId, `Not listening penalty`, -dmds);
+        totalDeducted += dmds;
       }
     });
     saveData();
-    if (dmds > 0) {
+    if (totalDeducted > 0) {
       const names = _nlState.selectedKids.map(id => getMember(id)?.name).filter(Boolean).join(' & ');
-      toast(`Deducted ${dmds} 💎 from ${names}`);
+      toast(`Deducted ${totalDeducted} 💎 from ${names}`);
     }
     renderParentHome();
     renderParentHeader();
@@ -2348,12 +2494,12 @@ function selPrizeColor(el, color) {
 }
 
 // ── TOAST ─────────────────────────────────────────────────────
-function toast(msg) {
+function toast(msg, duration = 2900) {
   const el = document.createElement('div');
   el.className = 'toast';
   el.innerHTML = msg;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2900);
+  setTimeout(() => el.remove(), duration);
 }
 
 // ── POINTS BURST ──────────────────────────────────────────────
@@ -2398,6 +2544,7 @@ function launchBadgeRain(iconHtml, count = 55) {
 }
 
 let _eggTaps = 0, _eggTimer = null;
+let _avatarTaps = 0, _avatarTimer = null;
 function easterEggTap() {
   _eggTaps++;
   const el = document.getElementById('egg-gem');
@@ -2462,6 +2609,36 @@ function launchMixedRain(count = 120) {
     pieces.push(el);
   }
   _startRain(pieces);
+}
+
+function kidAvatarEasterEgg() {
+  _avatarTaps++;
+  clearTimeout(_avatarTimer);
+  if (_avatarTaps >= 5) {
+    _avatarTaps = 0;
+    const m = S.currentUser;
+    if (m) {
+      if (/\.(png|jpe?g|gif|webp)$/i.test(m.avatar)) launchGemsproutRain();
+      else launchConfetti(50, m.avatar || '🙂');
+    }
+    return;
+  }
+  _avatarTimer = setTimeout(() => { _avatarTaps = 0; }, 2000);
+}
+
+function parentAvatarEasterEgg() {
+  _avatarTaps++;
+  clearTimeout(_avatarTimer);
+  if (_avatarTaps >= 5) {
+    _avatarTaps = 0;
+    const m = S.currentUser;
+    if (m) {
+      if (/\.(png|jpe?g|gif|webp)$/i.test(m.avatar)) launchGemsproutRain();
+      else launchConfetti(50, m.avatar || '⭐');
+    }
+    return;
+  }
+  _avatarTimer = setTimeout(() => { _avatarTaps = 0; }, 2000);
 }
 
 function launchDollarRain(count = 80) {
@@ -2626,7 +2803,7 @@ function emailDebugLogs() {
     `safeAreaTop: ${getComputedStyle(html).getPropertyValue('--sat') || 'check env()'}`,
     `screens visible: ${[...document.querySelectorAll('.screen')].filter(s => s.style.display !== 'none').map(s => s.id).join(', ')}`,
   ].join('\n');
-  window.location.href = `mailto:gemsproutapp@gmail.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
+  window.location.href = `mailto:beta@gemsprout.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
 }
 
 function testCameraPermission() {
@@ -2647,8 +2824,13 @@ function showModal(html) {
   document.body.style.width    = '100%';
   document.body.dataset.scrollY = scrollY;
   // Also lock the main-content scroller (has its own overflow-y: auto)
+  // Only save prevOverflow on the first call — re-entrant showModal calls must not overwrite it
+  // or closeModal will restore to 'hidden' instead of '' and leave scrolling permanently broken
   const mc = document.querySelector('.main-content');
-  if (mc) { mc.dataset.prevOverflow = mc.style.overflowY; mc.style.overflowY = 'hidden'; }
+  if (mc) {
+    if (mc.dataset.prevOverflow === undefined) mc.dataset.prevOverflow = mc.style.overflowY;
+    mc.style.overflowY = 'hidden';
+  }
 
   const root = document.getElementById('modal-root');
   root.innerHTML = `
@@ -2722,7 +2904,10 @@ function closeModalIfBg(e) {
 function openUserSettings() {
   if (S.currentUser?.role === 'parent') {
     renderSettings();
-    document.getElementById('settings-root').classList.add('open');
+    const sr = document.getElementById('settings-root');
+    sr.classList.add('open');
+    sr.scrollTop = 0;
+    loadDevicesList();
   } else {
     const name = S.currentUser?.name || 'User';
     showModal(`
@@ -2731,12 +2916,95 @@ function openUserSettings() {
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Close</button>
         <button class="btn btn-primary" onclick="switchUserNow()">Switch User</button>
+      </div>
+      <div style="border-top:1px solid #F3F4F6;margin-top:12px;padding-top:12px">
+        <button class="btn btn-secondary btn-sm" style="width:100%;color:#EF4444;border-color:#EF4444" onclick="closeModal();showLeaveDevicePin()">
+          <i class="ph-duotone ph-sign-out" style="vertical-align:middle;margin-right:6px"></i> Leave this Device
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:6px;text-align:center">Requires parent PIN. Removes this family from the device.</div>
       </div>`);
   }
 }
 
+function showLeaveDevicePin() {
+  if (!D.settings?.parentPin) {
+    _doLeaveDevice();
+    return;
+  }
+  const saved = S.currentUser;
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  S.pinMode   = 'leaveDevice';
+  S._leaveDeviceUser = saved;
+  document.getElementById('pin-content').innerHTML = `
+    <div class="pin-avatar"><i class="ph-duotone ph-sign-out" style="color:#6C63FF;font-size:2.5rem"></i></div>
+    <div class="pin-title">Leave this Device</div>
+    <div class="pin-sub">Enter the parent PIN to confirm</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>
+    <button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="S.currentUser=S._leaveDeviceUser;routeToView(S._leaveDeviceUser)">Cancel</button>`;
+}
+
+function _doLeaveDevice() {
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(FAMILY_CODE_KEY);
+  D = defaultData();
+  S.currentUser = null;
+  showScreen('screen-setup');
+  renderSetupGate();
+}
+
 function closeSettings() {
   document.getElementById('settings-root').classList.remove('open');
+  if (S.currentUser?.role === 'parent') renderParentTab();
+}
+
+function openFullHistory() {
+  renderFullHistory();
+  const sr = document.getElementById('settings-root');
+  sr.classList.add('open');
+  sr.scrollTop = 0;
+}
+
+function renderFullHistory() {
+  const history = D.history || [];
+  const rows = history.map(h => {
+    const mem = getMember(h.memberId);
+    const badge = historyBadge(h);
+    const icon = historyIcon(h);
+    const ptsColor = h.diamonds >= 0 ? '#166534' : '#991b1b';
+    const ptsStr = h.diamonds !== 0 ? (h.diamonds > 0 ? `+${h.diamonds}` : `${h.diamonds}`) + ' 💎' : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f6">
+      <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((h.title||'').replace(/^⚡\s*/,'').replace(/<[^>]+>/g,'').trim())}</div>
+        <div style="font-size:0.77rem;color:var(--muted)">${mem ? `${mem.avatar} ${esc(mem.name)}` : '<span style="font-style:italic">Former member</span>'}${h.choreTitle ? ` · ${esc(h.choreTitle)}` : ''} · ${fmtDate(h.date)}</div>
+      </div>
+      ${ptsStr ? `<span style="font-weight:700;color:${ptsColor};font-size:0.9rem;white-space:nowrap">${ptsStr}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('settings-root').innerHTML = `
+    <div class="settings-header">
+      <button class="btn-back" onclick="closeSettings()">←</button>
+      <span class="settings-header-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1.1rem;vertical-align:middle"></i> Full Activity History</span>
+    </div>
+    <div class="settings-body">
+      <div class="card">
+        ${rows || '<div class="empty-state"><div class="empty-text">No activity yet</div></div>'}
+      </div>
+    </div>`;
 }
 
 // Swipe from left edge to close settings (iOS-style back gesture)
@@ -2847,60 +3115,36 @@ function renderSettings() {
   const s = D.settings;
   const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
 
+  // Auth providers — migrate from old single-authUid if authProviders not yet populated
+  let _authProviders = S.currentUser?.authProviders || [];
+  if (!_authProviders.length && auth.currentUser && !auth.currentUser.isAnonymous) {
+    _authProviders = auth.currentUser.providerData.map(p => ({
+      providerId: p.providerId, uid: auth.currentUser.uid,
+      email: p.email || auth.currentUser.email || ''
+    }));
+  }
+  const _googleProv = _authProviders.find(p => p.providerId === 'google.com');
+  const _appleProv  = _authProviders.find(p => p.providerId === 'apple.com');
+  const _anyLinked  = !!(_googleProv || _appleProv);
+  const _googleIcon = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
+  const _appleIcon  = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>`;
+
+  const shEnabled = members.some(k => k.splitHousehold?.enabled);
+  const firstKid = members[0];
+
   const familyHtml = members.map(k => {
-    const isExpanded = _expandedSettingsMembers.has(k.id);
-    const actions = isExpanded ? `
-      <div class="settings-member-actions">
-        <div class="settings-member-action-row">
-          <div style="flex:1">
-            <div class="settings-member-action-label">💎 Adjust Diamonds</div>
-            <div class="settings-member-action-sub">Manually add or remove diamonds — use for bonuses, corrections, or special rewards</div>
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="showAddPointsModal('${k.id}')">Adjust</button>
-        </div>
-        ${s.savingsEnabled !== false ? `
-        <div class="settings-member-action-row">
-          <div style="flex:1">
-            <div class="settings-member-action-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.9rem;vertical-align:middle"></i> Adjust Savings</div>
-            <div class="settings-member-action-sub">Deposit or withdraw real dollars — birthday money, allowance, or spending</div>
-          </div>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="showSavingsHistory('${k.id}')"><i class="ph-duotone ph-clock-clockwise" style="font-size:0.9rem;vertical-align:middle"></i></button>
-            <button class="btn btn-secondary btn-sm" onclick="showAdjustSavingsModal('${k.id}')">Adjust</button>
-          </div>
-        </div>` : ''}
-        <div class="settings-member-action-row">
-          <div style="flex:1">
-            <div class="settings-member-action-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
-            <div class="settings-member-action-sub">Set which days this kid is here vs. at the other household — streaks skip away days automatically</div>
-          </div>
-          <button class="btn btn-sm" style="background:${k.splitHousehold?.enabled?'var(--green)':'#F3F4F6'};color:${k.splitHousehold?.enabled?'#fff':'var(--text)'}" onclick="showSplitHouseholdModal('${k.id}')">${k.splitHousehold?.enabled?'On':'Set up'}</button>
-        </div>
-        ${k.splitHousehold?.enabled ? (() => {
-          const isHere = isMemberHereOnDate(k, today());
-          return `<div class="settings-member-action-row">
-            <div style="flex:1">
-              <div class="settings-member-action-label">Today's Status</div>
-              <div class="settings-member-action-sub">Is ${esc(k.name)} at your house today?</div>
-            </div>
-            <div style="display:flex;gap:6px">
-              <button class="btn btn-sm" style="background:${isHere?'var(--green)':'#F3F4F6'};color:${isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',true)">Here</button>
-              <button class="btn btn-sm" style="background:${!isHere?'#EF4444':'#F3F4F6'};color:${!isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',false)">Away</button>
-            </div>
-          </div>`;
-        })() : ''}
-      </div>` : '';
+    const isHere = isMemberHereOnDate(k, today());
     return `
-      <div style="border-left:4px solid ${k.color||'#6C63FF'};padding-left:12px;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="toggleSettingsMember('${k.id}')">
-          <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
-          <div style="flex:1">
-            <div style="font-weight:700">${esc(k.name)}</div>
-            <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · 💎 ${k.diamonds||0}${s.savingsEnabled!==false?` · <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i> ${s.currency||'$'}${(k.savings||0).toFixed(2)}`:''}</div>
-          </div>
-          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem"></i>
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #F3F4F6">
+        <span style="font-size:1.6rem">${k.avatar||'🙂'}</span>
+        <div style="flex:1">
+          <div style="font-weight:700">${esc(k.name)}</div>
+          <div style="font-size:0.78rem;color:var(--muted)">Age ${k.age||'?'} · ${k.diamonds||0} 💎${s.savingsEnabled!==false?` · ${s.currency||'$'}${(k.savings||0).toFixed(2)} <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i>`:''}</div>
         </div>
-        ${actions}
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-sm" style="background:${isHere?'var(--green)':'#F3F4F6'};color:${isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',true)">Home</button>
+          <button class="btn btn-sm" style="background:${!isHere?'#EF4444':'#F3F4F6'};color:${!isHere?'#fff':'var(--text)'}" onclick="setTodayStatus('${k.id}',false)">Away</button>
+        </div>
       </div>`;
   }).join('');
 
@@ -2917,23 +3161,32 @@ function renderSettings() {
     </div>
     <div class="settings-body">
 
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</span></div>
       <div class="card">
-        <div class="card-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
           <div style="font-size:1.8rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${getFamilyCode()}</div>
           <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${getFamilyCode()}').then(()=>toast('Code copied!'))">
             <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
           </button>
         </div>
-        <div style="font-size:0.8rem;color:var(--muted)">Share this code with another device to sync your family's data.</div>
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Use these to get other family members set up on their devices.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="showKidDeviceQR()">
+            <i class="ph-duotone ph-qr-code" style="font-size:0.9rem;vertical-align:middle"></i> Add a Kid Device
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="showInviteParent()">
+            <i class="ph-duotone ph-user-plus" style="font-size:0.9rem;vertical-align:middle"></i> Invite a Parent
+          </button>
+        </div>
         ${RC.betaMode ? `<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
           <span style="color:var(--muted)">Install on other devices: </span>
           <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a>
         </div>` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</span></div>
       <div class="card">
-        <div class="card-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</div>
         <div class="toggle-row">
           <div><div class="toggle-label">Auto-approve chores</div>
             <div class="toggle-sub">Kids earn diamonds instantly without parent review</div></div>
@@ -2944,12 +3197,7 @@ function renderSettings() {
             <div class="toggle-sub">Chores outside their allowed time window won't show on kids' screens</div></div>
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
         </div>
-        <div class="toggle-row">
-          <div><div class="toggle-label">Sort prizes by value</div>
-            <div class="toggle-sub">Shows cheapest prizes first in the shop and team tabs</div></div>
-          <label class="toggle"><input type="checkbox" ${s.sortPrizesByValue?'checked':''} onchange="saveSetting('sortPrizesByValue',this.checked)"><span class="toggle-track"></span></label>
-        </div>
-        <div class="form-group">
+        <div class="form-group mb-0">
           <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family Timezone</label>
           <select onchange="saveSetting('familyTimezone',this.value)" style="width:100%">
             ${(Intl.supportedValuesOf?.('timeZone') ?? [s.familyTimezone]).map(tz =>
@@ -2958,21 +3206,66 @@ function renderSettings() {
           </select>
           <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones.</div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
-            ${bioBtn}
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</span></div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${_googleIcon}
+            <div>
+              ${_googleProv
+                ? `<div style="font-size:0.85rem;font-weight:600">Google</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_googleProv.email||'Linked')}</div>`
+                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Google</div>`}
+            </div>
           </div>
+          ${_googleProv
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Sign Out</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Sign In</button>`}
+        </div>
+        <div style="height:1px;background:#F3F4F6;margin:2px 0"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;margin-bottom:${_anyLinked?'10':'4'}px">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${_appleIcon}
+            <div>
+              ${_appleProv
+                ? `<div style="font-size:0.85rem;font-weight:600">Apple</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_appleProv.email||'Linked')}</div>`
+                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Apple</div>`}
+            </div>
+          </div>
+          ${_appleProv
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Sign Out</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Sign In</button>`}
+        </div>
+        ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted)">Sign in with Google or Apple to enable push notifications and secure your profile.</div>` : ''}
+        <div style="padding-top:14px;border-top:1px solid #F3F4F6">
+          <div class="form-group">
+            <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
+              ${bioBtn}
+            </div>
+          </div>
+          ${(s.parentPin || getBiometricCredentialId()) ? `
+          <div class="toggle-row">
+            <div><div class="toggle-label">Lock when leaving app</div>
+              <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
+            <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
+          </div>` : ''}
+        </div>
+        <div style="padding-top:14px;border-top:1px solid #F3F4F6;margin-top:4px">
+          <div id="devices-list"><div style="font-size:0.82rem;color:var(--muted)">Loading devices…</div></div>
         </div>
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row">
+        <span class="section-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Savings Banking</span>
+        <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+      </div>
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div class="card-title" style="margin:0"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Savings Banking</div>
-          <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
-        </div>
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px;margin-top:4px">Kids can convert diamonds into real savings.</p>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px">Kids can convert diamonds into real savings.</p>
         ${s.savingsEnabled !== false ? `
         <div class="form-group">
           <label class="form-label">Diamonds per dollar <span class="form-label-hint">conversion rate</span></label>
@@ -2990,70 +3283,111 @@ function renderSettings() {
         </div>` : ''}
         <div class="toggle-row" style="margin-top:${s.savingsMatchingEnabled?'4':'8'}px">
           <div><div class="toggle-label">Add interest</div>
-            <div class="toggle-sub">Automatically grow savings by a set rate</div></div>
+            <div class="toggle-sub">Kids claim their interest as a reward on interest day</div></div>
           <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
         </div>
         ${s.savingsInterestEnabled ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-          <div class="form-group mb-0">
-            <label class="form-label">Interest rate %</label>
-            <input type="number" value="${s.savingsInterestRate||5}" min="0.1" max="100" step="0.1" onchange="saveSetting('savingsInterestRate',parseFloat(this.value)||5)">
-          </div>
-          <div class="form-group mb-0">
-            <label class="form-label">Period</label>
-            <select onchange="saveSetting('savingsInterestPeriod',this.value);renderSettings()">
-              <option value="weekly"  ${s.savingsInterestPeriod==='weekly' ?'selected':''}>Weekly</option>
-              <option value="monthly" ${(s.savingsInterestPeriod||'monthly')==='monthly'?'selected':''}>Monthly</option>
-            </select>
-          </div>
-        </div>
-        <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
-          <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px"></i>
-          ${(s.savingsInterestPeriod||'monthly')==='weekly'
-            ? 'Interest is applied every <strong>Monday</strong>.'
-            : 'Interest is applied on the <strong>1st of each month</strong>.'}
+        <div class="toggle-row">
+          <div><div class="toggle-label">Interest day reminder</div>
+            <div class="toggle-sub">Reminds you on interest day to have kids open the app and claim</div></div>
+          <label class="toggle"><input type="checkbox" ${s.interestDayNotify!==false?'checked':''} onchange="saveSetting('interestDayNotify',this.checked)"><span class="toggle-track"></span></label>
         </div>` : ''}
+        ${s.savingsInterestEnabled ? (() => {
+          const ip = s.savingsInterestPeriod || 'monthly';
+          const iDay = s.savingsInterestDay ?? 1;
+          const iDom = s.savingsInterestDayOfMonth || 1;
+          const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          const domSuffix = iDom === 1 ? 'st' : iDom === 2 ? 'nd' : iDom === 3 ? 'rd' : 'th';
+          return `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+            <div class="form-group mb-0">
+              <label class="form-label">Interest rate %</label>
+              <input type="number" value="${s.savingsInterestRate||5}" min="0.1" max="100" step="0.1" onchange="saveSetting('savingsInterestRate',parseFloat(this.value)||5)">
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label">Period</label>
+              <select onchange="saveSetting('savingsInterestPeriod',this.value);renderSettings()">
+                <option value="weekly"  ${ip==='weekly' ?'selected':''}>Weekly</option>
+                <option value="monthly" ${ip==='monthly'?'selected':''}>Monthly</option>
+              </select>
+            </div>
+            ${ip === 'weekly' ? `
+            <div class="form-group mb-0" style="grid-column:1/-1">
+              <label class="form-label">Available on</label>
+              <select onchange="saveSetting('savingsInterestDay',parseInt(this.value));renderSettings()">
+                ${dayNames.map((d,i) => `<option value="${i}" ${iDay===i?'selected':''}>${d}</option>`).join('')}
+              </select>
+            </div>` : `
+            <div class="form-group mb-0" style="grid-column:1/-1">
+              <label class="form-label">Available on day of month <span class="form-label-hint">1–28</span></label>
+              <input type="number" value="${iDom}" min="1" max="28" onchange="saveSetting('savingsInterestDayOfMonth',Math.min(28,Math.max(1,parseInt(this.value)||1)));renderSettings()">
+            </div>`}
+          </div>
+          <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
+            <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px;flex-shrink:0"></i>${ip === 'weekly'
+              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>.`
+              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>.`}
+            <div style="margin-left:20px">Unclaimed interest expires at midnight.</div>
+          </div>`;
+        })() : ''}
         ` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</span></div>
       <div class="card">
-        <div class="card-title" style="margin-bottom:16px"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</div>
         ${familyHtml || '<div class="empty-state"><div class="empty-text">No kids yet</div></div>'}
-        <button class="btn btn-secondary btn-sm btn-full mt-8" onclick="closeSettings();goSetup()">Edit Family Setup</button>
+        <button class="btn btn-secondary btn-sm btn-full" style="margin-top:12px" onclick="closeSettings();goSetup()">Edit Family Setup</button>
         <div class="toggle-row" style="margin-top:14px">
           <div>
+            <div class="toggle-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
+            <div class="toggle-sub">Streaks skip days kids are at the other household</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${shEnabled && firstKid ? `<button class="btn btn-secondary btn-sm" onclick="showSplitHouseholdModal('${firstKid.id}')">Configure</button>` : ''}
+            <label class="toggle"><input type="checkbox" ${shEnabled?'checked':''} onchange="toggleFamilySplitHousehold(this.checked)"><span class="toggle-track"></span></label>
+          </div>
+        </div>
+        <div class="toggle-row" style="margin-top:8px">
+          <div>
             <div class="toggle-label"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> 6 PM Home Check</div>
-            <div class="toggle-sub">Prompts you at 6 PM on days that split-household kids are expected to be home, but have not completed any chores yet.</div>
+            <div class="toggle-sub">Prompts you at 6 PM if no chores have been completed yet for the day. Also works with Split Household enabled.</div>
           </div>
           <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
         </div>
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row">
+        <span class="section-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> You're Not Listening</span>
+        <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderSettings();renderParentHome()"><span class="toggle-track"></span></label>
+      </div>
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div class="card-title" style="margin:0"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not Listening</div>
-          <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
-        </div>
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:14px">
-          Hold the big red button on the dashboard to accumulate time. Seconds convert to diamond deductions when you release. Toggle off to hide the button entirely.
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.notListeningEnabled!==false?'14px':'0'}">
+          Adds a hold-to-track button on the dashboard that deducts diamonds for not listening. Seconds accumulate indefinitely — leftovers carry over until a full interval is reached.
         </p>
+        ${s.notListeningEnabled!==false ? `
         <div class="form-group mb-0">
           <label class="form-label">Seconds per diamond lost</label>
           <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
-        </div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Hold the button to track time, release to apply. One 💎 lost per interval — leftover seconds carry forward indefinitely, so nothing is lost between sessions.</div>
+        </div>` : ''}
       </div>
 
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</span></div>
       <div class="card" style="border:2px solid #FEE2E2">
-        <div class="card-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</div>
         <button class="btn btn-danger btn-sm" onclick="switchFamily()" style="width:100%;margin-bottom:8px">
           <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
         </button>
         <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and lets you connect to a different family using their code. Does not delete any family's data from the cloud.</div>
         <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes all family data — chores, prizes, history, and member profiles. This cannot be undone.</div>
       </div>
 
-      ${RC.betaMode ? `<div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
-        <div class="card-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</div>
+      ${RC.betaMode ? `<div style="height:14px"></div>
+      <div class="section-row"><span class="section-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
+      <div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
         <div style="background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:#78350F;line-height:1.5">
           <strong>For testers only.</strong> These settings exist to help us find and fix bugs before launch. They will not be present in the final App Store release.
         </div>
@@ -3074,6 +3408,12 @@ function renderSettings() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
+        <div style="height:10px"></div>
+        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="_devShowInviteTest()"><i class="ph-duotone ph-flask" style="font-size:0.9rem;vertical-align:middle"></i> Test Invite System</button>
+        <button class="btn btn-secondary btn-full" onclick="_devResetInviteTest()"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:0.9rem;vertical-align:middle"></i> Reset Invite Test</button>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">Reset clears all invites for this family and the last test user doc automatically.</div>
+        <div style="height:10px"></div>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>` : ''}
 
@@ -3083,25 +3423,29 @@ function renderSettings() {
 // ── SCREEN NAVIGATION ─────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.removeAttribute('style'); s.classList.remove('loading'); });
-  document.getElementById(id).classList.add('active');
+  const el = document.getElementById(id);
+  el.classList.add('active');
+  const content = el.querySelector('.main-content');
+  if (content) content.scrollTop = 0;
 }
 
-function updateSyncBar() {
-  ['kid-sync-bar','parent-sync-bar'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (S.syncStatus==='error') { el.className='sync-bar error'; el.textContent='Sync failed — check connection'; }
-    else { el.innerHTML=''; el.className=''; }
-  });
-}
 
 // ── RE-RENDER CURRENT VIEW ────────────────────────────────────
 // Called after cloud sync updates D; re-renders whichever view is active
 function renderCurrentView() {
-  if (!S.currentUser) return;
-  const u = S.currentUser;
-  if (u.role === 'parent')  renderParentView();
-  else renderKidView();
+  if (!S.currentUser) {
+    const home = document.getElementById('screen-home');
+    if (home?.classList.contains('active')) renderHome();
+    return;
+  }
+  if (S.currentUser.role === 'parent') {
+    // Re-render in-place — skip showScreen() so scroll position is preserved
+    renderParentHeader();
+    renderParentNav();
+    renderParentTab();
+  } else {
+    renderKidView();
+  }
 }
 
 // ── PULL TO REFRESH ────────────────────────────────────────────
@@ -3204,8 +3548,9 @@ function renderCurrentView() {
 
 // ── HOME SCREEN ───────────────────────────────────────────────
 function renderHome() {
+  loadData();
   showScreen('screen-home');
-  const members = D.family.members;
+  const members = D.family.members.filter(m => !m.deleted);
   const cards = members.map(m => {
     const bday    = isBirthday(m);
     const mode    = m.displayMode || 'regular';
@@ -3218,7 +3563,7 @@ function renderHome() {
       <button class="profile-card${bday?' bday-card':''}" style="--member-color:${m.color||'#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
         ${bday ? `<span class="bday-badge">🎂</span>` : ''}
-        <span class="profile-avatar">${m.avatar||'🙂'}</span>
+        <span class="profile-avatar">${renderAvatarHtml(m.avatar)}</span>
         <span class="profile-name">${esc(m.name)}</span>
         <span class="profile-role">${modeLabel}</span>
         <span class="profile-diamonds">${ptsLabel}</span>
@@ -3228,7 +3573,9 @@ function renderHome() {
   const bdayBanner = anyBday
     ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> It's a birthday today! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
 
-  document.getElementById('home-content').innerHTML = `
+  const homeEl = document.getElementById('home-content');
+  if (!homeEl) return;
+  homeEl.innerHTML = `
     <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100dvh;display:flex;flex-direction:column">
       <img class="home-logo" src="gemsproutpadded.png">
       <div class="home-title">GemSprout</div>
@@ -3255,6 +3602,24 @@ function selectProfile(id) {
   if (!member) return;
   setCurrentUserId(member.id);
 
+  // Parents require Google/Apple auth
+  if (member.role === 'parent' && !isParentSignedIn()) {
+    showParentSignIn(id, (authedMember) => {
+      if (isBirthday(authedMember)) {
+        S.currentUser = authedMember;
+        launchConfetti(80);
+        showCelebration({
+          icon: '🎂', title: `Happy Birthday, ${authedMember.name}!`,
+          sub: '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Have an amazing day! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
+          tts: null, onClose: () => routeToView(authedMember),
+        });
+      } else {
+        routeToView(authedMember);
+      }
+    });
+    return;
+  }
+
   // Birthday check — trigger before entering any view
   if (isBirthday(member)) {
     S.currentUser = member;
@@ -3274,8 +3639,8 @@ function selectProfile(id) {
 }
 
 function routeToView(member) {
-  const mode = member.displayMode;
   if (member.role === 'parent') {
+    if (!ensureParentAuth(member, (authedMember) => routeToView(authedMember))) return;
     renderParentView();
   } else {
     renderKidView(); // handles both 'tiny' and 'regular'
@@ -3287,8 +3652,11 @@ function renderPin() {
   showScreen('screen-pin');
   S.pinBuffer = '';
   const m = S.currentUser;
+  const _pinAvEl = m.avatar && /\.(png|jpe?g)$/i.test(m.avatar)
+    ? `<img class="pin-avatar" src="${m.avatar}">`
+    : `<div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>`;
   document.getElementById('pin-content').innerHTML = `
-    <div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>
+    ${_pinAvEl}
     <div class="pin-title">Welcome back, ${esc(m.name)}!</div>
     <div class="pin-sub">Enter your PIN</div>
     <div class="pin-dots" id="pin-dots">
@@ -3322,6 +3690,7 @@ function pinKey(k) {
       if (S.pinBuffer === D.settings.parentPin) {
         S.pinBuffer = '';
         if (S.pinMode === 'pinReset') { afterPinResetVerified(); return; }
+        if (S.pinMode === 'leaveDevice') { _doLeaveDevice(); return; }
         if (S.pinMode === 'app') {
           setAppUnlocked(true);
           const rememberedUser = getMember(getCurrentUserId());
@@ -3531,33 +3900,124 @@ function renderSetupGate() {
         <button class="btn btn-primary" style="font-size:1.05rem;padding:16px;background:#fff;color:#6C63FF;border:none" onclick="startNewFamily()">
           <i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:6px"></i> Get Started
         </button>
-        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showJoinFamily()">
-          <i class="ph-duotone ph-link" style="vertical-align:middle;margin-right:6px"></i> Join Existing Family
+        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showSignInFlow()">
+          <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Sign In
+        </button>
+        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.85);border:1.5px solid rgba(255,255,255,0.25)" onclick="showKidEntry()">
+          <i class="ph-duotone ph-smiley" style="vertical-align:middle;margin-right:6px"></i> I'm a Kid
         </button>
       </div>
     </div>`;
 }
 
 function startNewFamily() {
+  const gate = document.getElementById('setup-gate');
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <img src="gemsproutpadded.png" style="width:90px;height:90px">
+      <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
+        <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('google')">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+          Continue with Google
+        </button>
+        <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+          Continue with Apple&nbsp;
+        </button>
+      </div>
+      <button style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer;margin-top:8px" onclick="renderSetupGate()">← Back</button>
+      ${RC.betaMode ? `
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
+        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">🛠 Dev — skip real auth</div>
+        <div style="display:flex;gap:8px">
+          <input id="dev-getstarted-email" type="email" placeholder="test@email.com" autocomplete="off"
+            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
+          <button onclick="_devTestGetStarted()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test →</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+}
+
+async function _newFamilyAuth(provider) {
+  const btns = document.querySelectorAll('#setup-gate .btn');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  const user = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+  if (!user) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  await _processNewFamilyUser(user);
+}
+
+async function _devTestGetStarted() {
+  const email = (document.getElementById('dev-getstarted-email')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
+  await _processNewFamilyUser({ uid: `dev-${email.replace(/[^a-z0-9]/g, '-')}`, email, displayName: '' });
+}
+
+async function _processNewFamilyUser(user) {
+  S._pendingNewFamilyUser = user;
+  const email = (user.email || '').toLowerCase();
+  if (email) {
+    try {
+      const inviteSnap = await db.collection('invites').where('email', '==', email).limit(1).get();
+      const invite = inviteSnap.docs[0];
+      if (invite && !invite.data().used) {
+        showModal(`
+          <div style="text-align:center;padding:4px 0 8px">
+            <i class="ph-duotone ph-question" style="font-size:2.5rem;color:#6C63FF"></i>
+            <div class="modal-title" style="margin-top:8px">Joining a family?</div>
+          </div>
+          <p style="font-size:0.88rem;color:var(--muted);margin:0 0 16px;line-height:1.5">This email has a pending invite to an existing GemSprout family. Did you mean to join that family, or create a brand new one?</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-primary" onclick="closeModal();_acceptInviteFromGetStarted()">Join existing family</button>
+            <button class="btn btn-secondary" onclick="closeModal();_continueNewFamily()">Create a new family</button>
+          </div>`);
+        return;
+      }
+    } catch(e) { /* ignore — proceed with new family */ }
+  }
+  _continueNewFamily();
+}
+
+function _continueNewFamily() {
+  const user = S._pendingNewFamilyUser;
+  S._pendingNewFamilyUser = null;
+  if (!user) return;
+  S._newFamilyFirebaseUser = user; // kept so finishSetup() can link auth without re-prompting
+  S.newFamilyDisplayName = user.displayName || '';
   setFamilyCode(genFamilyCode());
   document.getElementById('setup-gate').style.display = 'none';
   document.getElementById('setup-content').style.display = '';
   goSetup();
 }
 
-function showJoinFamily() {
+async function _acceptInviteFromGetStarted() {
+  const user = S._pendingNewFamilyUser;
+  S._pendingNewFamilyUser = null;
+  if (!user) return;
+  await _resolveSignInUser(user);
+}
+
+function showKidEntry() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
-      <div style="font-size:3.5rem"><i class="ph-duotone ph-link" style="color:#6C63FF"></i></div>
-      <div style="font-weight:800;font-size:1.4rem">Join a Family</div>
-      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the 6-character family code shown in the parent's Settings screen.</div>
+      <div style="font-size:3.5rem"><i class="ph-duotone ph-smiley" style="color:#6C63FF"></i></div>
+      <div style="font-weight:800;font-size:1.4rem">I'm a Kid!</div>
+      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the family code from your parent's Settings screen, or scan the QR code they show you.</div>
       <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
         style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:280px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
         oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
       <button class="btn btn-primary" style="width:100%;max-width:280px;padding:14px" onclick="joinFamily()">
         <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
       </button>
+      ${isNative() ? `
+      <button class="btn btn-secondary" style="width:100%;max-width:280px;padding:12px" onclick="startQRScan()">
+        <i class="ph-duotone ph-qr-code" style="vertical-align:middle;margin-right:6px"></i> Scan QR Code
+      </button>` : ''}
       <button class="btn-back" style="background:none;border:none;color:var(--muted);font-size:0.95rem;cursor:pointer" onclick="renderSetupGate()">← Back</button>
     </div>`;
 }
@@ -3579,14 +4039,373 @@ async function joinFamily() {
     }
     D = normalizeData(snap.data());
     setFamilyCode(code);
+    setCurrentUserId('');   // don't inherit a remembered profile from a previous session
+    setParentAuthUid(null); // don't inherit parent auth trust from a previous session
     try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
-    auth.signInAnonymously()
+    ensureFirestoreAuth()
       .then(() => subscribeToFirestore())
       .catch(() => {});
     routeAfterLoad();
   } catch(e) {
     toast('Connection error — please try again');
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family'; }
+  }
+}
+
+// ── SIGN IN FLOW (returning parent on new device) ─────────────
+
+function showSignInFlow() {
+  const gate = document.getElementById('setup-gate');
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
+      <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+        <button id="signin-google-btn" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('google')">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+          Continue with Google
+        </button>
+        <button id="signin-apple-btn" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('apple')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+          Continue with Apple&nbsp;
+        </button>
+      </div>
+      <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()">← Back</button>
+      ${RC.betaMode ? `
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
+        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">🛠 Dev — skip real auth</div>
+        <div style="display:flex;gap:8px">
+          <input id="dev-signin-email" type="email" placeholder="invited@email.com" autocomplete="off"
+            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
+          <button onclick="_devTestSignIn()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test →</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+}
+
+async function _handleSignIn(provider) {
+  const btns = document.querySelectorAll('#signin-google-btn,#signin-apple-btn');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  const user = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+  if (!user) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  await _resolveSignInUser(user);
+}
+
+async function _resolveSignInUser(firebaseUser) {
+  showLoading();
+  try {
+    // 1. Check if this UID is already linked to a family (returning parent, any device)
+    const userDoc = await db.doc(`users/${firebaseUser.uid}`).get();
+    if (userDoc.exists && userDoc.data().familyCode) {
+      setFamilyCode(userDoc.data().familyCode);
+      await ensureFirestoreAuth();
+      subscribeToFirestore(routeAfterLoad);
+      return;
+    }
+    // 2. Check if their email has a pending invite (Parent B joining for the first time)
+    const email = (firebaseUser.email || '').toLowerCase();
+    if (email) {
+      const inviteSnap = await db.collection('invites').where('email', '==', email).limit(1).get();
+      const invite = inviteSnap.docs[0];
+      if (invite && !invite.data().used) {
+        const familyCode = invite.data().familyCode;
+        await invite.ref.update({ used: true, usedAt: Date.now(), usedByUid: firebaseUser.uid });
+        setFamilyCode(familyCode);
+        db.doc(`users/${firebaseUser.uid}`).set({ familyCode, uid: firebaseUser.uid, email }, { merge: true }).catch(() => {});
+        await ensureFirestoreAuth();
+        subscribeToFirestore(() => showParentBSetup(firebaseUser));
+        return;
+      }
+      // 3. Email fallback — existing parent signing in with a different UID (e.g. switched provider)
+      const emailSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+      if (!emailSnap.empty) {
+        const data = emailSnap.docs[0].data();
+        if (data.familyCode) {
+          // Register this new UID so future lookups hit step 1 instead
+          db.doc(`users/${firebaseUser.uid}`).set({ familyCode: data.familyCode, uid: firebaseUser.uid, email }, { merge: true }).catch(() => {});
+          setFamilyCode(data.familyCode);
+          await ensureFirestoreAuth();
+          subscribeToFirestore(routeAfterLoad);
+          return;
+        }
+      }
+    }
+    _showSignInNotFound();
+  } catch(e) {
+    console.warn('Sign in lookup failed:', e);
+    _showSignInNotFound();
+  }
+}
+
+function _showSignInNotFound() {
+  const gate = document.getElementById('setup-gate');
+  if (!gate) return;
+  showScreen('screen-setup');
+  gate.style.display = 'flex';
+  document.getElementById('setup-content').style.display = 'none';
+  gate.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:16px;background:linear-gradient(145deg,#667eea,#764ba2)">
+      <i class="ph-duotone ph-magnifying-glass" style="font-size:3rem;color:rgba(255,255,255,0.7)"></i>
+      <div style="color:#fff;font-size:1.4rem;font-weight:800;text-align:center">No family found</div>
+      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:300px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
+      <button class="btn" style="background:#fff;color:#6C63FF;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:8px" onclick="renderSetupGate()">← Back</button>
+    </div>`;
+}
+
+
+// ── PARENT B ONBOARDING ───────────────────────────────────────
+
+function showParentBSetup(firebaseUser) {
+  const defaultName = firebaseUser?.displayName || '';
+  const col = COLORS[Math.floor(Math.random() * COLORS.length)] || '#6C63FF';
+  S._parentBMember = { id: genId(), name: defaultName, avatar: '🧑', color: col, role: 'parent', diamonds: 0, savings: 0, totalEarned: 0, birthday: '' };
+  S._parentBFirebaseUser = firebaseUser;
+
+  showScreen('screen-setup');
+  document.getElementById('setup-gate').style.display = 'none';
+  const content = document.getElementById('setup-content');
+  content.style.display = '';
+
+  const avatarOpts = [
+    `<div class="avatar-opt${'gemsproutpadded.png'===S._parentBMember.avatar?' sel':''}" onclick="S._parentBMember.avatar='gemsproutpadded.png';document.querySelectorAll('#parentb-avatars .avatar-opt').forEach(el=>el.classList.remove('sel'));this.classList.add('sel')"><img src="gemsproutpadded.png" class="avatar-img"></div>`,
+    ...AVATARS.slice(0, 23).map(a =>
+      `<div class="avatar-opt${a === S._parentBMember.avatar ? ' sel' : ''}" onclick="S._parentBMember.avatar='${a}';document.querySelectorAll('#parentb-avatars .avatar-opt').forEach(el=>el.classList.remove('sel'));this.classList.add('sel')">${a}</div>`
+    )
+  ].join('');
+  const colorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c === col ? ' sel' : ''}" style="background:${c}" onclick="S._parentBMember.color='${c}';document.querySelectorAll('#parentb-colors .color-swatch').forEach(el=>el.classList.remove('sel'));this.classList.add('sel')"></div>`
+  ).join('');
+
+  content.innerHTML = `
+    <div class="setup-step active">
+      <div class="setup-top" style="padding-top:20px">
+        <div class="setup-emoji"><i class="ph-duotone ph-hand-waving" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">Welcome to ${esc(D.family.name || 'GemSprout')}!</div>
+        <div class="setup-sub">Set up your parent profile and you're in.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Your name</label>
+        <input type="text" id="parentb-name" placeholder="Your name" value="${esc(defaultName)}" oninput="S._parentBMember.name=this.value">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Avatar</label>
+        <div class="avatar-grid" id="parentb-avatars">${avatarOpts}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-row" id="parentb-colors">${colorSwatches}</div>
+      </div>
+      <button class="btn btn-primary btn-full mt-8" onclick="finishParentBSetup()">
+        Get Started <i class="ph-duotone ph-arrow-right" style="vertical-align:middle;margin-left:4px"></i>
+      </button>
+    </div>`;
+}
+
+async function finishParentBSetup() {
+  const member = S._parentBMember;
+  const firebaseUser = S._parentBFirebaseUser;
+  const name = (document.getElementById('parentb-name')?.value || '').trim();
+  if (!name) { toast('Enter your name to continue'); return; }
+  member.name = name;
+  const firstParentIdx = D.family.members.findIndex(m => m.role === 'parent');
+  D.family.members.splice(firstParentIdx >= 0 ? firstParentIdx + 1 : 0, 0, member);
+  S.currentUser = member;
+  setCurrentUserId(member.id);
+  setAppUnlocked(true);
+  saveData();
+  await linkParentAuth(firebaseUser, member.id);
+  S._parentBMember = null;
+  S._parentBFirebaseUser = null;
+  routeToView(member);
+}
+
+// ── DEV / TEST HELPERS ───────────────────────────────────────
+
+const DEV_TEST_UID_KEY = 'gemsprout.devTestUid';
+
+function _devShowInviteTest() {
+  showInviteParent(true);
+}
+
+async function _devTestSignIn() {
+  const email = (document.getElementById('dev-signin-email')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
+  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
+  try { localStorage.setItem(DEV_TEST_UID_KEY, fakeUid); } catch {}
+  await _resolveSignInUser({ uid: fakeUid, email });
+}
+
+async function _devResetInviteTest() {
+  try {
+    const deletes = [];
+    const snaps = await db.collection('invites').where('familyCode', '==', getFamilyCode()).get();
+    snaps.docs.forEach(d => deletes.push(d.ref.delete()));
+    const storedUid = localStorage.getItem(DEV_TEST_UID_KEY);
+    if (storedUid) {
+      deletes.push(db.doc(`users/${storedUid}`).delete());
+      localStorage.removeItem(DEV_TEST_UID_KEY);
+    }
+    await Promise.all(deletes);
+    toast(`Reset — ${snaps.docs.length} invite(s) cleared`);
+  } catch(e) {
+    toast('Reset failed: ' + e.message);
+  }
+}
+
+// ── QR CODE SCAN (kid device) ─────────────────────────────────
+
+let _qrStream = null, _qrAnimFrame = null;
+
+async function startQRScan() {
+  if (!isNative()) return;
+  if (typeof jsQR === 'undefined') { toast('QR scanner not available — enter the code manually'); return; }
+
+  // Build fullscreen overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'qr-scan-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <video id="qr-video" playsinline muted autoplay
+      style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0"></video>
+    <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:20px;pointer-events:none">
+      <div style="width:220px;height:220px;border:3px solid rgba(255,255,255,0.8);border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45)"></div>
+      <div style="color:#fff;font-size:0.95rem;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.6)">Point at the QR code</div>
+    </div>
+    <button onclick="stopQRScan()" style="position:absolute;bottom:56px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.4);color:#fff;font-size:1rem;font-weight:600;padding:14px 36px;border-radius:50px;cursor:pointer">Cancel</button>`;
+  document.body.appendChild(overlay);
+
+  try {
+    _qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = document.getElementById('qr-video');
+    video.srcObject = _qrStream;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const scan = () => {
+      if (!document.getElementById('qr-scan-overlay')) return;
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+        if (result?.data) {
+          stopQRScan();
+          const code = result.data.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+          const input = document.getElementById('join-code-input');
+          if (input) { input.value = code; joinFamily(); }
+          return;
+        }
+      }
+      _qrAnimFrame = requestAnimationFrame(scan);
+    };
+    _qrAnimFrame = requestAnimationFrame(scan);
+
+  } catch(e) {
+    stopQRScan();
+    const msg = (e?.message || '').toLowerCase();
+    if (msg.includes('permission') || msg.includes('denied')) {
+      toast('Camera permission denied — enter the code manually');
+    } else if (!msg.includes('abort')) {
+      toast('Camera unavailable — enter the code manually');
+    }
+  }
+}
+
+function stopQRScan() {
+  if (_qrAnimFrame) { cancelAnimationFrame(_qrAnimFrame); _qrAnimFrame = null; }
+  if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
+  const overlay = document.getElementById('qr-scan-overlay');
+  if (overlay) overlay.remove();
+}
+
+// ── QR CODE DISPLAY (parent settings) ────────────────────────
+
+function showKidDeviceQR() {
+  const code = getFamilyCode();
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <div class="modal-title">Add a Kid Device</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">On the kid's device, open GemSprout, tap <strong>I'm a Kid</strong>, then scan this QR code or type the code below.</p>
+    </div>
+    <div id="qr-code-container" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+    <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;margin-bottom:16px">${code}</div>
+    <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">Done</button>`);
+  setTimeout(() => {
+    const el = document.getElementById('qr-code-container');
+    if (!el) return;
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(el, { text: code, width: 200, height: 200, colorDark: '#4C1D95', colorLight: '#FFFFFF', correctLevel: QRCode.CorrectLevel.H });
+    } else {
+      el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">QR unavailable — use the code above</div>`;
+    }
+  }, 50);
+}
+
+// ── PARENT INVITE (email-based) ───────────────────────────────
+
+function showInviteParent(testMode = false) {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-user-plus" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">${testMode ? 'Test: Invite a Parent' : 'Invite a Parent'}</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">${testMode
+        ? 'Enter any fake email. After submitting you\'ll get a button to go to the welcome screen and test the sign-in.'
+        : 'Enter the email address your partner will use to sign in (their Google or Apple account email).'}</p>
+    </div>
+    <div id="invite-modal-body">
+      <input id="invite-email-input" type="email" placeholder="${testMode ? 'faketest@email.com' : 'partner@email.com'}" autocomplete="${testMode ? 'off' : 'email'}"
+        style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:16px;outline:none">
+      <button class="btn btn-primary" style="width:100%" onclick="_submitParentInvite(${testMode})">
+        <i class="ph-duotone ph-envelope" style="vertical-align:middle;margin-right:6px"></i> ${testMode ? 'Save Test Invite' : 'Send Invite'}
+      </button>
+      <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="closeModal()">Cancel</button>
+    </div>`);
+  setTimeout(() => document.getElementById('invite-email-input')?.focus(), 100);
+}
+
+async function _submitParentInvite(testMode = false) {
+  const email = (document.getElementById('invite-email-input')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a valid email address'); return; }
+  const btn = document.querySelector('#invite-modal-body .btn-primary');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Saving…'; }
+  try {
+    await db.collection('invites').add({
+      email,
+      familyCode: getFamilyCode(),
+      createdAt: Date.now(),
+      createdByMemberId: S.currentUser?.id || '',
+      used: false
+    });
+    const body = document.getElementById('invite-modal-body');
+    if (!body) return;
+    if (testMode) {
+      body.innerHTML = `
+        <div style="text-align:center;padding:8px 0">
+          <i class="ph-duotone ph-check-circle" style="font-size:2rem;color:var(--green)"></i>
+          <div style="font-weight:700;margin:8px 0 4px">Invite saved for <span style="color:#6C63FF">${esc(email)}</span></div>
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px">Now tap below to go to the welcome screen, hit Sign In, and type this email in the Dev box.</div>
+          <button class="btn btn-primary" style="width:100%" onclick="closeModal();closeSettings();showScreen('screen-setup');renderSetupGate()">
+            Go to Welcome Screen →
+          </button>
+        </div>`;
+    } else {
+      body.innerHTML = `
+        <div style="text-align:center;padding:8px 0">
+          <i class="ph-duotone ph-check-circle" style="font-size:2rem;color:var(--green)"></i>
+          <div style="font-weight:700;margin:8px 0 4px">Invite sent!</div>
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px"><strong>${esc(email)}</strong> will be recognized automatically when they sign in.</div>
+          <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">Done</button>
+        </div>`;
+    }
+  } catch(e) {
+    toast('Something went wrong — please try again');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-envelope" style="vertical-align:middle;margin-right:6px"></i> ' + (testMode ? 'Save Test Invite' : 'Send Invite'); }
   }
 }
 
@@ -3597,13 +4416,14 @@ function cancelSetup() {
 }
 
 function goSetup() {
+  loadData();
   SETUP_STEPS    = D.setup ? SETUP_STEPS_EDIT : SETUP_STEPS_NEW;
   S.setupStep    = 0;
   S.setupParents = D.family.members
     .filter(m => m.role === 'parent')
     .map(m => ({...m}));
   if (S.setupParents.length === 0) {
-    S.setupParents = [{ id:genId(), name:'', avatar:'🧑', color:'#6C63FF', role:'parent', diamonds:0, savings:0, totalEarned:0, birthday:'' }];
+    S.setupParents = [{ id:genId(), name: S.newFamilyDisplayName || '', avatar:'🧑', color:'#6C63FF', role:'parent', diamonds:0, savings:0, totalEarned:0, birthday:'' }];
   }
   // All non-parent members in one unified list
   S.setupMembers = D.family.members
@@ -3637,17 +4457,23 @@ function renderSetupStep() {
       <div class="flex gap-10 mt-8">
         <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup()">Cancel</button>
         <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go →</button>
-      </div>` : `<button class="btn btn-primary btn-full" onclick="setupNext()">Let's go →</button>`}`;
+      </div>` : `
+      <div class="flex gap-10 mt-8">
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="renderSetupGate()">← Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go →</button>
+      </div>`}`;
       break;
 
     case 'parents': content = `
       <div class="setup-top" style="padding-top:20px">
         <div class="setup-emoji"><i class="ph-duotone ph-shield-star" style="color:#6C63FF;font-size:3rem"></i></div>
-        <div class="setup-title">Parents</div>
-        <div class="setup-sub">Customize the parent profiles. You can have more than one!</div>
+        <div class="setup-title">Your Profile</div>
+        <div class="setup-sub">Set up your parent profile. Your partner will set up theirs when they join.</div>
       </div>
       <div id="parents-list">${S.setupParents.map((p,i)=>parentSetupCard(p,i)).join('')}</div>
-      <button class="btn btn-secondary btn-full mt-8" onclick="addParentCard()" style="margin-bottom:14px">+ Add another parent</button>
+      <button class="btn btn-secondary btn-full mt-8" onclick="showInviteParent()" style="margin-bottom:14px">
+        <i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:6px"></i> Invite a Parent
+      </button>
       <div class="flex gap-10 mt-8">
         <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
         <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next →</button>
@@ -3748,28 +4574,27 @@ function renderSetupStep() {
     case 'done': {
       const _fc = getFamilyCode();
       content = `
-      <div style="text-align:center;padding:24px 20px 16px">
+      <div style="text-align:center;padding:24px 20px 12px">
         <div style="font-size:4rem"><i class="ph-duotone ph-confetti" style="color:#F97316"></i></div>
         <div class="setup-title mt-8">You're all set!</div>
-        <div class="setup-sub mt-4" style="margin-bottom:20px">Your GemSprout is ready. Here's how to get everyone connected.</div>
+        <div class="setup-sub mt-4">GemSprout is ready to go.</div>
       </div>
 
-      <div class="card" style="background:#F5F3FF;border:2px solid #C4B5FD;margin-bottom:12px">
-        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Your Family Code</div>
+      <div class="card" style="margin-bottom:12px">
+        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em"><i class="ph-duotone ph-smiley" style="vertical-align:middle;margin-right:4px"></i> Adding your kids</div>
+        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">On each kid's device, open GemSprout and tap <strong>I'm a Kid</strong>. They'll enter this code or scan the QR code from <strong>Settings → Family Code</strong>.</p>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:2rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;flex:1">${_fc}</div>
+          <div style="font-size:1.8rem;font-weight:900;letter-spacing:0.18em;color:#4C1D95;font-family:monospace;flex:1">${_fc}</div>
           <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${_fc}').then(()=>toast('Code copied!'))">
             <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
           </button>
         </div>
-        <div style="font-size:0.78rem;color:#6C63FF;margin-top:6px">Your family code can also be found in Settings — you'll need it to add other devices</div>
+        ${RC.betaMode ? `<div style="margin-top:10px;font-size:0.8rem;color:var(--muted)">Get the app at: <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a></div>` : ''}
       </div>
 
       <div class="card" style="margin-bottom:20px">
-        <div style="font-weight:700;font-size:0.9rem;margin-bottom:6px"><i class="ph-duotone ph-devices" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Adding other devices?</div>
-        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">Install GemSprout on your partner's phone or your kids' tablets, then enter the family code above to sync everyone together.</p>
-        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:4px">Get the app at:</div>
-        <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.9rem;font-weight:700;color:#6C63FF;word-break:break-all;text-decoration:none">${RC.appDownloadUrl}</a>
+        <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Adding your partner</div>
+        <p style="font-size:0.83rem;color:var(--muted);line-height:1.5">Your partner will get an email invite with a download link. They should install GemSprout and sign in with the same account the invite was sent to. If you still need to invite them, go to <strong>Settings → Invite a Parent</strong>.</p>
       </div>
 
       <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go! →</button>`;
@@ -3785,9 +4610,12 @@ function renderSetupStep() {
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function memberSetupCard(mem, i) {
-  const avatarOpts = AVATARS.slice(0,24).map(a =>
-    `<div class="avatar-opt${a===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','${a}',true)">${a}</div>`
-  ).join('');
+  const avatarOpts = [
+    `<div class="avatar-opt${'gemsproutpadded.png'===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','gemsproutpadded.png',true)"><img src="gemsproutpadded.png" class="avatar-img"></div>`,
+    ...AVATARS.slice(0,23).map(a =>
+      `<div class="avatar-opt${a===mem.avatar?' sel':''}" onclick="setMemberField(${i},'avatar','${a}',true)">${a}</div>`
+    )
+  ].join('');
   const colorSwatches = COLORS.map(c =>
     `<div class="color-swatch${c===mem.color?' sel':''}" style="background:${c}" onclick="setMemberField(${i},'color','${c}',true)"></div>`
   ).join('');
@@ -3818,7 +4646,7 @@ function memberSetupCard(mem, i) {
   return `
     <div class="kid-setup-card" id="member-card-${i}">
       <div class="kid-setup-card-header">
-        <span style="font-size:1.5rem;font-weight:700">${mem.avatar||'🙂'} Member ${i+1}</span>
+        <span style="font-size:1.5rem;font-weight:700">${renderAvatarHtml(mem.avatar,'🙂')} Member ${i+1}</span>
         <button class="btn-icon-sm btn-icon-delete" onclick="removeMemberCard(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
       </div>
       <div class="input-row">
@@ -3837,6 +4665,7 @@ function memberSetupCard(mem, i) {
       </div>
       <div class="form-group">
         <label class="form-label">Display Mode</label>
+        <p style="font-size:0.78rem;color:var(--muted);margin:-4px 0 8px;line-height:1.5"><strong>Little Kid</strong> uses large icons and reads chores aloud — great for kids who can't read yet. No not-listening meter is shown. <strong>Big Kid</strong> shows the standard text-based view, including a not-listening progress bar if the feature is enabled.</p>
         <div class="display-mode-row">${modeOpts}</div>
       </div>
       ${dm === 'tiny' ? (() => {
@@ -3869,9 +4698,12 @@ function memberSetupCard(mem, i) {
 }
 
 function parentSetupCard(p, i) {
-  const avatarOpts = AVATARS.slice(0,24).map(a =>
-    `<div class="avatar-opt${a===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','${a}',true)">${a}</div>`
-  ).join('');
+  const avatarOpts = [
+    `<div class="avatar-opt${'gemsproutpadded.png'===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','gemsproutpadded.png',true)"><img src="gemsproutpadded.png" class="avatar-img"></div>`,
+    ...AVATARS.slice(0,23).map(a =>
+      `<div class="avatar-opt${a===p.avatar?' sel':''}" onclick="setParentField(${i},'avatar','${a}',true)">${a}</div>`
+    )
+  ].join('');
   const colorSwatches = COLORS.map(c =>
     `<div class="color-swatch${c===p.color?' sel':''}" style="background:${c}" onclick="setParentField(${i},'color','${c}',true)"></div>`
   ).join('');
@@ -3887,7 +4719,7 @@ function parentSetupCard(p, i) {
   return `
     <div class="kid-setup-card" id="parent-card-${i}">
       <div class="kid-setup-card-header">
-        <span style="font-size:1.5rem;font-weight:700">${p.avatar||'🧑'} Parent ${i+1}</span>
+        <span style="font-size:1.5rem;font-weight:700">${renderAvatarHtml(p.avatar,'🧑')} Parent ${i+1}</span>
         ${S.setupParents.length > 1 ? `<button class="btn-icon-sm btn-icon-delete" onclick="removeParentCard(${i})"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>` : ''}
       </div>
       <div class="form-group">
@@ -3923,7 +4755,15 @@ function addMemberCard() {
   renderSetupStep();
 }
 
-function removeMemberCard(i) { if (!confirm('Remove this family member?')) return; S.setupMembers.splice(i,1); renderSetupStep(); }
+function removeMemberCard(i) {
+  showModal(`
+    <div class="modal-title">Remove Member?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This family member will be removed from setup.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();S.setupMembers.splice(${i},1);renderSetupStep()">Remove</button>
+    </div>`);
+}
 
 function setMemberField(i, field, value, rerender=false) {
   if (S.setupMembers[i]) S.setupMembers[i][field] = value;
@@ -3952,7 +4792,15 @@ function addParentCard() {
   renderSetupStep();
 }
 
-function removeParentCard(i) { if (!confirm('Remove this parent?')) return; S.setupParents.splice(i,1); renderSetupStep(); }
+function removeParentCard(i) {
+  showModal(`
+    <div class="modal-title">Remove Parent?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This parent will be removed from setup.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();S.setupParents.splice(${i},1);renderSetupStep()">Remove</button>
+    </div>`);
+}
 
 function setParentField(i, field, value, rerender=false) {
   if (S.setupParents[i]) S.setupParents[i][field] = value;
@@ -4068,6 +4916,7 @@ function setupBack() {
 }
 
 function finishSetup() {
+  const wasSetup = !!D.setup;
   // Merge parents — preserve existing data (diamonds, etc.), apply setup edits
   const mergedParents = S.setupParents.map(p => {
     const existing = D.family.members.find(x=>x.id===p.id) || {};
@@ -4097,7 +4946,22 @@ function finishSetup() {
     D.settings.familyTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   }
   D.setup = true;
+  // Link auth for the parent who signed in during Get Started — prevents re-auth prompt right after setup
+  if (S._newFamilyFirebaseUser && mergedParents[0]) {
+    const setupUser = S._newFamilyFirebaseUser;
+    linkParentAuth(setupUser, mergedParents[0].id);
+    S._recentParentAuth = { uid: setupUser.uid, email: (setupUser.email || '').toLowerCase(), at: Date.now() };
+    S._newFamilyFirebaseUser = null;
+  }
   saveData();
+  ensureFirestoreAuth().then(() => subscribeToFirestore());
+  S.currentUser = null;
+  setCurrentUserId('');
+  loadData();
+  if (wasSetup) {
+    location.reload(true);
+    return;
+  }
   renderHome();
 }
 
@@ -4131,6 +4995,25 @@ function renderKidView() {
   renderKidHeader();
   renderKidNav();
   renderKidTab();
+
+  // Show interest claim modal once per session per kid
+  if (!S._interestShown) S._interestShown = new Set();
+  if (isInterestDay() && (m.savings || 0) > 0 && m.savingsInterestLastDate !== today() && !S._interestShown.has(m.id)) {
+    S._interestShown.add(m.id);
+    const s = D.settings;
+    const rate = parseFloat(s.savingsInterestRate) || 5;
+    const cur  = s.currency || '$';
+    const interest = parseFloat((m.savings * rate / 100).toFixed(2));
+    setTimeout(() => showCelebration({
+      icon:     '<i class="ph-duotone ph-trend-up" style="color:#16A34A;font-size:3rem"></i>',
+      title:    '📈 It\'s Interest Day!',
+      sub:      `Your savings grew ${rate}% — you earned <strong>${cur}${interest.toFixed(2)}</strong>!`,
+      dollars:  interest,
+      cur,
+      btnLabel: 'Claim Interest 💰',
+      onClose:  () => { claimInterest(m.id); renderKidView(); },
+    }), 600);
+  }
 }
 
 function renderKidHeader() {
@@ -4146,7 +5029,7 @@ function renderKidHeader() {
   const showComboStreak = comboStreak >= 2;
   document.getElementById('kid-header').innerHTML = `
     <div class="header-left">
-      <span class="header-avatar">${m.avatar||'🙂'}</span>
+      <span class="header-avatar" onclick="kidAvatarEasterEgg()" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:3px">
@@ -4181,11 +5064,12 @@ function switchKidTab(tab) {
   S.kidTab = tab;
   renderKidNav();
   renderKidTab();
+  const c = document.getElementById('kid-content'); if (c) c.scrollTop = 0;
   const m = S.currentUser;
   if (!m || !isTiny(m)) return;
   const dmds = m.diamonds || 0;
   if (tab === 'chores') {
-    const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+    const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id)).sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||''));
     const progressMap = new Map(myChores.map(c => [c.id, getChoreProgress(c, m.id)]));
     const totalUnits = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.targetCount || 0), 0);
     const doneUnits  = myChores.reduce((sum, c) => sum + (progressMap.get(c.id)?.doneCount  || 0), 0);
@@ -4225,7 +5109,7 @@ function renderKidTab() {
 // ── CHORES TAB ────────────────────────────────────────────────
 function renderKidChores() {
   const m = S.currentUser;
-  const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id));
+  const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id)).sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||''));
 
   if (myChores.length === 0) {
     document.getElementById('kid-content').innerHTML = `
@@ -4740,6 +5624,29 @@ function renderKidDiamonds() {
       </div>`;
   }
 
+  // Not Listening meter (non-tiny only)
+  if (!tiny && D.settings.notListeningEnabled !== false) {
+    normalizeMember(m);
+    const _nlSecsPerDmd = D.settings.notListeningSecs || 60;
+    const _nlPending = m.nlPendingSecs || 0;
+    const _nlPct = Math.min(100, Math.round(_nlPending / _nlSecsPerDmd * 100));
+    const _nlToday = (m.nlDate === today() ? m.nlTodaySecs || 0 : 0);
+    html += `
+      <div class="card" style="padding:12px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:0.85rem;font-weight:600;color:#EF4444"><i class="ph-duotone ph-speaker-slash" style="font-size:0.9rem;vertical-align:middle"></i> Not-Listening Meter</span>
+          <span style="font-size:0.78rem;color:var(--muted)">${_nlToday > 0 ? fmtNLTime(_nlToday) + ' today' : 'None today'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:8px;background:#FEE2E2;border-radius:99px;overflow:hidden">
+            <div style="height:100%;width:${_nlPct}%;background:#EF4444;border-radius:99px;transition:width 0.3s"></div>
+          </div>
+          <span style="font-size:0.75rem;color:#EF4444;font-weight:600;white-space:nowrap">${_nlPending}s / ${_nlSecsPerDmd}s</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px">Fill the bar to lose a 💎. Seconds add up over time.</div>
+      </div>`;
+  }
+
   // Badge grid
   if (D.settings.levelingEnabled !== false) {
     const earned = Array.isArray(m.badges) ? m.badges : [];
@@ -4781,7 +5688,12 @@ function renderKidDiamonds() {
     const matchPct     = D.settings.savingsMatchPercent || 50;
     const interestRate   = D.settings.savingsInterestRate || 5;
     const interestPeriod = D.settings.savingsInterestPeriod || 'monthly';
-    const interestTip    = interestPeriod === 'weekly' ? 'added every Monday' : 'added monthly on the 1st';
+    const _iDay = D.settings.savingsInterestDay ?? 1;
+    const _iDom = D.settings.savingsInterestDayOfMonth || 1;
+    const _iDomSfx = _iDom === 1 ? 'st' : _iDom === 2 ? 'nd' : _iDom === 3 ? 'rd' : 'th';
+    const interestTip = interestPeriod === 'weekly'
+      ? `claimable every ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_iDay]}`
+      : `claimable on the ${_iDom}${_iDomSfx} of each month`;
     const hasBreakdown   = (matchOn && matched > 0) || (interestOn && interest > 0);
     const breakdownHtml  = hasBreakdown
       ? `<div style="font-size:0.78rem;opacity:0.85;margin-bottom:6px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
@@ -4979,9 +5891,15 @@ function showSavingsModal(memberId) {
         🤝 <strong>Parent match is on!</strong> For every ${cur}1.00 you save, your parents add ${cur}${(matchPct/100).toFixed(2)} extra (${matchPct}% match).
        </div>`
     : '';
+  const _siDay = D.settings.savingsInterestDay ?? 1;
+  const _siDom = D.settings.savingsInterestDayOfMonth || 1;
+  const _siDomSfx = _siDom === 1 ? 'st' : _siDom === 2 ? 'nd' : _siDom === 3 ? 'rd' : 'th';
+  const _siWhen = interestPeriod === 'weekly'
+    ? `every ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_siDay]}`
+    : `on the ${_siDom}${_siDomSfx} of each month`;
   const interestNote = interestOn
     ? `<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:0.875rem;color:#1E40AF">
-        📈 <strong>Interest is on!</strong> Your savings grow by ${interestRate}% ${interestPeriod === 'weekly' ? 'every Monday' : 'on the 1st of each month'}.
+        📈 <strong>Interest is on!</strong> Your savings grow by ${interestRate}% — claimable ${_siWhen}.
        </div>`
     : '';
   showModal(`
@@ -5053,44 +5971,42 @@ function doSaveDiamonds(memberId) {
 }
 
 // ── SAVINGS INTEREST ──────────────────────────────────────────
-function applyInterestForAllKids() {
+function isInterestDay() {
   const s = D.settings;
-  if (!s.savingsEnabled || !s.savingsInterestEnabled) return;
+  if (!s.savingsEnabled || !s.savingsInterestEnabled) return false;
+  const d = parseDateLocal(today());
+  const period = s.savingsInterestPeriod || 'monthly';
+  return period === 'weekly'
+    ? d.getDay() === (s.savingsInterestDay ?? 1)
+    : d.getDate() === (s.savingsInterestDayOfMonth || 1);
+}
+
+function claimInterest(memberId) {
+  const s = D.settings;
+  if (!isInterestDay()) return;
+  const m = getMember(memberId);
+  if (!m || (m.savings || 0) <= 0 || m.savingsInterestLastDate === today()) return;
   const rate   = parseFloat(s.savingsInterestRate) || 5;
   const period = s.savingsInterestPeriod || 'monthly';
   const cur    = s.currency || '$';
-  const todayStr = today();
-
-  // Check if today is an interest day
-  const d = parseDateLocal(todayStr);
-  const isInterestDay = period === 'weekly'
-    ? d.getDay() === 1          // Monday
-    : d.getDate() === 1;        // 1st of month
-  if (!isInterestDay) return;
-
-  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
-  let changed = false;
-  kids.forEach(m => {
-    if ((m.savings || 0) <= 0) return;
-    if (m.savingsInterestLastDate === todayStr) return; // already applied today
-    const interest = parseFloat((m.savings * rate / 100).toFixed(2));
-    if (interest <= 0) return;
-    m.savings             = (m.savings || 0) + interest;
-    m.savingsInterest     = (m.savingsInterest || 0) + interest;
-    m.savingsInterestLastDate = todayStr;
-    addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
-    changed = true;
-  });
-  if (changed) saveData();
+  const interest = parseFloat((m.savings * rate / 100).toFixed(2));
+  if (interest <= 0) return;
+  m.savings                 = (m.savings || 0) + interest;
+  m.savingsInterest         = (m.savingsInterest || 0) + interest;
+  m.savingsInterestLastDate = today();
+  addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+  saveData();
 }
+
+// Kept for any legacy calls; now a no-op since kids claim interactively
+function applyInterestForAllKids() {}
 
 // ── SHOP TAB ──────────────────────────────────────────────────
 function renderKidShop() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
   const dmds  = m.diamonds || 0;
-  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||0)-(b.cost||0) : ()=>0;
-  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
+  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort((a,b) => (a.cost||0)-(b.cost||0) || (a.title||'').localeCompare(b.title||''));
 
   if (indiv.length === 0) {
     document.getElementById('kid-content').innerHTML = `
@@ -5174,8 +6090,7 @@ function renderKidTeam() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
   const dmds  = m.diamonds || 0;
-  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.targetPoints||0)-(b.targetPoints||0) : ()=>0;
-  const goals = (D.teamGoals || []).slice().sort(sortFn);
+  const goals = (D.teamGoals || []).slice().sort((a,b) => (a.targetPoints||0)-(b.targetPoints||0) || (a.title||'').localeCompare(b.title||''));
   const kids  = D.family.members.filter(k=>k.role==='kid'&&!k.deleted);
 
   if (goals.length === 0) {
@@ -5281,11 +6196,139 @@ function doContrib(memberId, goalId) {
 
 // ── PARENT VIEW ENTRY ─────────────────────────────────────────
 function renderParentView() {
+  const member = S.currentUser;
+  if (member?.role === 'parent' && !ensureParentAuth(member, () => renderParentView())) return;
   showScreen('screen-parent');
   renderParentHeader();
   renderParentNav();
   renderParentTab();
+  // Prompt existing users who have no PIN set — non-blocking
+  if (S.currentUser && !D.settings.parentPin && !S._pinPromptShown) {
+    S._pinPromptShown = true;
+    setTimeout(() => showRequirePinPrompt(), 1500);
+  }
 }
+
+async function loadDevicesList() {
+  const el = document.getElementById('devices-list');
+  if (!el) return;
+  const parentUid = getParentAuthUid();
+  if (!parentUid) { el.innerHTML = ''; return; }
+  try {
+    const snap = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
+    const tokens = snap.exists ? (snap.data().tokens || []) : [];
+    if (tokens.length === 0) {
+      el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">No devices registered for notifications yet.</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div style="font-size:0.8rem;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Notification Devices</div>
+      ${tokens.map((t, i) => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i < tokens.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
+          <div>
+            <div style="font-size:0.88rem;font-weight:600">${esc(t.deviceName || 'Device')}</div>
+            <div style="font-size:0.75rem;color:var(--muted)">${t.registeredAt ? new Date(t.registeredAt).toLocaleDateString() : ''}</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="confirmRemoveDevice(${i})">Remove</button>
+        </div>`).join('')}`;
+  } catch {
+    el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">Could not load devices.</div>`;
+  }
+}
+
+function confirmRemoveDevice(index) {
+  showModal(`
+    <div class="modal-title">Remove Device?</div>
+    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This device will no longer receive notifications. You can re-register it by signing in again.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="removeDevice(${index})">Remove</button>
+    </div>`);
+}
+
+async function removeDevice(index) {
+  closeModal();
+  const parentUid = getParentAuthUid();
+  if (!parentUid) return;
+  try {
+    const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
+    const snap = await ref.get();
+    const tokens = snap.exists ? (snap.data().tokens || []) : [];
+    tokens.splice(index, 1);
+    await ref.set({ tokens });
+    toast('Device removed');
+    loadDevicesList();
+  } catch {
+    toast('Could not remove device');
+  }
+}
+
+function confirmSignOut() {
+  showModal(`
+    <div class="modal-title">Sign Out?</div>
+    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">You'll need to sign in again to access the parent dashboard on this device.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="closeModal();closeSettings();signOutAndGoHome()">Sign Out</button>
+    </div>`);
+}
+
+async function linkAdditionalProvider(providerId) {
+  let user;
+  if (providerId === 'google.com')      user = await signInWithGoogle();
+  else if (providerId === 'apple.com')  user = await signInWithApple();
+  if (!user || !S.currentUser) return;
+  await linkParentAuth(user, S.currentUser.id, providerId);
+  renderSettings();
+}
+
+function _removeLastProviderAndSignOut() {
+  const member = S.currentUser;
+  if (member) {
+    member.authProviders = [];
+    member.authUids = [];
+    saveData();
+  }
+  closeSettings();
+  signOutAndGoHome();
+}
+
+function unlinkProvider(providerId) {
+  const member = S.currentUser;
+  if (!member?.authProviders?.length) return;
+  const remaining = member.authProviders.filter(p => p.providerId !== providerId);
+  if (remaining.length === 0) {
+    showModal(`
+      <div class="modal-title">Remove Account?</div>
+      <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This is your only linked account. Removing it will sign you out.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="closeModal();_removeLastProviderAndSignOut()">Remove &amp; Sign Out</button>
+      </div>`);
+    return;
+  }
+  member.authProviders = remaining;
+  member.authUids = remaining.map(p => p.uid);
+  const next = remaining[0];
+  setParentAuthUid(next.uid);
+  try { localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, next.providerId); } catch {}
+  saveData();
+  renderSettings();
+}
+
+function showRequirePinPrompt() {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-lock-key" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">Action Required</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Please set a 4-digit PIN and link your Google or Apple account before your next session — both are now required. If you ever lose access to your family, reach out and we'll get you back in.</p>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-secondary" onclick="closeModal()">Not Now</button>
+      <button class="btn btn-primary" onclick="closeModal();showNewPinModal()">Set PIN</button>
+    </div>`);
+}
+
 
 function renderParentHeader() {
   const m = S.currentUser;
@@ -5293,9 +6336,10 @@ function renderParentHeader() {
   const inProgress = inProgressChores().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
+      <span class="header-avatar" onclick="parentAvatarEasterEgg()" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
       <div>
-        <div class="header-name">${esc(D.family.name)}</div>
-        <div class="header-sub">Parent Dashboard</div>
+        <div class="header-name">Hi, ${esc(m.name)}!</div>
+        <div class="header-sub">${esc(D.family.name)}</div>
       </div>
     </div>
     <div class="header-actions">
@@ -5327,6 +6371,7 @@ function switchParentTab(tab) {
   S.parentTab = tab;
   renderParentNav();
   renderParentTab();
+  const c = document.getElementById('parent-content'); if (c) c.scrollTop = 0;
 }
 
 function renderParentTab() {
@@ -5359,9 +6404,9 @@ function buildMemberStats(member, histIdx) {
   const savDepHist   = hist.filter(h => h.type === 'savings_deposit');
   const savWithHist  = hist.filter(h => h.type === 'savings_withdraw');
 
-  // Per-chore counts
+  // Per-chore counts — exclude streak bonus entries (stored as type 'chore' but aren't real chores)
   const choreCount = {};
-  choreHist.forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
+  choreHist.filter(h => !(h.title||'').startsWith('Streak bonus (')).forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
   const choreBreakdown = Object.entries(choreCount).sort((a,b) => b[1]-a[1]);
 
   // Per-prize counts (from prize.redemptions)
@@ -5521,7 +6566,7 @@ function renderFamilyStatsCard(kids, histIdx) {
       ? _statTile('<i class="ph-duotone ph-star" style="color:#7C3AED"></i>', 'Most Popular Chore', topChore[0].split(' ')[0], '#4c1d95', `${topChore[0]} · ${topChore[1]}×`)
       : '') +
     (topPrize
-      ? _statTile(`<span style="font-size:1.6rem">${topPrize[1].icon}</span>`, 'Fav Prize', topPrize[1].n + '×', '#1e40af', topPrize[0])
+      ? _statTile(renderIcon(topPrize[1].icon, '#1e40af', 'font-size:1.6rem'), 'Fav Prize', topPrize[1].n + '×', '#1e40af', topPrize[0])
       : '') +
     (bestDay
       ? _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>', 'Best Family Day', `${bestDay[1]} 💎`, '#d97706', fmtDate(bestDay[0]))
@@ -5537,7 +6582,7 @@ function renderFamilyStatsCard(kids, histIdx) {
   const caret = `<i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0;margin-left:auto"></i>`;
 
   return `
-    <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:16px">
+    <div class="card" style="border-top:4px solid #6C63FF;padding:20px;margin-bottom:10px">
       <div onclick="toggleFamilyStats()" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${isExpanded?'18':'0'}px">
         <img src="gemsproutpadded.png" style="width:2.5rem;height:2.5rem;border-radius:10px;flex-shrink:0">
         <div>
@@ -5640,18 +6685,15 @@ function renderMemberStatsCard(member, collapse, histIdx) {
     </div>`;
 
   // Prize breakdown table
-  const prizeTableRows = s.prizeBreakdown.map(([name,info]) => [
-    `${info.icon} ${name}`, `${info.count}×`
-  ]);
   const prizeTable = `
     <div style="margin-bottom:18px">
       <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-gift" style="color:#FF6584;vertical-align:middle"></i> Prize Breakdown</div>
-      ${prizeTableRows.length
+      ${s.prizeBreakdown.length
         ? `<table style="width:100%;border-collapse:collapse;font-size:0.85rem">
-            ${prizeTableRows.slice(0,10).map(([name,val],i) => `
+            ${s.prizeBreakdown.slice(0,10).map(([name,info],i) => `
               <tr style="border-bottom:1px solid #f3f4f6">
-                <td style="padding:5px 4px;font-weight:${i===0?'700':'500'}">${esc(name)}</td>
-                <td style="padding:5px 4px;text-align:right;font-weight:700;color:#6C63FF">${val}</td>
+                <td style="padding:5px 4px;font-weight:${i===0?'700':'500'}">${renderIcon(info.icon)} ${esc(name)}</td>
+                <td style="padding:5px 4px;text-align:right;font-weight:700;color:#6C63FF">${info.count}×</td>
               </tr>`).join('')}
           </table>`
         : '<div style="color:#9ca3af;font-size:0.85rem;padding:6px 0">No prizes redeemed yet</div>'
@@ -5662,7 +6704,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   const headerClick = collapse ? `onclick="${collapse.toggleFn}" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:${collapse.isExpanded?'18':'0'}px"` : `style="display:flex;align-items:center;gap:12px;margin-bottom:18px"`;
 
   return `
-    <div class="card" style="border-top:4px solid ${color};padding:20px">
+    <div class="card" style="border-top:4px solid ${color};padding:20px;margin-bottom:10px">
       <div ${headerClick}>
         <span style="font-size:2.5rem;width:2.5rem;text-align:center;flex-shrink:0">${member.avatar||'🙂'}</span>
         <div>
@@ -5702,7 +6744,7 @@ function renderStatsPage(container) {
   const kids   = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const histIdx = buildHistoryIndex();
 
-  let html = `<div style="padding-bottom:20px"><div style="font-size:1.2rem;font-weight:800;padding:16px 0 12px"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;vertical-align:middle"></i> Lifetime Stats</div>`;
+  let html = `<div style="padding-bottom:20px"><div class="section-row"><span class="section-title"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Lifetime Stats</span></div>`;
 
   if (isKid) {
     html += renderMemberStatsCard(viewer, null, histIdx);
@@ -5783,7 +6825,7 @@ function showBetaWelcomeIfNeeded() {
       <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:8px">
         Found a bug or have a suggestion? We'd love to hear it.
       </p>
-      <a href="mailto:gemsproutapp@gmail.com" style="font-size:0.82rem;font-weight:700;color:#16A34A;text-decoration:none">gemsproutapp@gmail.com</a>
+      <a href="mailto:beta@gemsprout.com" style="font-size:0.82rem;font-weight:700;color:#16A34A;text-decoration:none">beta@gemsprout.com</a>
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" style="width:100%" onclick="closeModal()">Got it — let's go!</button>
@@ -5796,6 +6838,16 @@ function renderParentHome() {
   const pendingSpend = pendingSpendRequests();
   const cur         = D.settings.currency || '$';
   const t           = today();
+
+  // Interest day parent reminder (once per session)
+  if (D.settings.interestDayNotify !== false && isInterestDay()) {
+    const unclaimedKids = kids.filter(k => (k.savings || 0) > 0 && k.savingsInterestLastDate !== t);
+    if (unclaimedKids.length > 0 && !S._interestParentToastShown) {
+      S._interestParentToastShown = true;
+      const names = unclaimedKids.map(k => k.name).join(', ');
+      setTimeout(() => toast(`📈 Interest day! Have ${names} open the app to claim.`, 5000), 800);
+    }
+  }
 
   // Pending approvals (chores + savings spend requests)
   let html = '';
@@ -5826,7 +6878,7 @@ function renderParentHome() {
             ${photoHtml}
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject"  onclick="rejectChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
@@ -5843,7 +6895,7 @@ function renderParentHome() {
             <div style="font-size:0.8rem;color:var(--muted);margin-top:2px">Balance: ${cur}${(mem.savings||0).toFixed(2)}</div>
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject"  onclick="denySavingsRequest('${req.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
@@ -5857,7 +6909,7 @@ function renderParentHome() {
     kidsHtml = `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-smiley" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">No kids yet — go to Setup!</div></div>`;
   }
   kids.forEach(kid => {
-    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id));
+    const myChores  = D.chores.filter(c=>c.assignedTo?.includes(kid.id)).sort((a,b)=>(a.diamonds||0)-(b.diamonds||0)||(a.title||'').localeCompare(b.title||''));
     const doneCount = myChores.filter(c=>choreStatus(c,kid.id)==='done').length;
     const pendCount = myChores.filter(c=>choreStatus(c,kid.id)==='pending').length;
     const pct       = myChores.length>0 ? Math.round(doneCount/myChores.length*100) : 0;
@@ -5896,7 +6948,7 @@ function renderParentHome() {
                   slotBtn  = '';
                 } else {
                   slotPill = `<span class="kid-overview-status todo" style="font-size:0.7rem;padding:2px 6px">${ss === 'waiting' ? 'Later' : 'To do'}</span>`;
-                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:0.9rem"></i></button>`;
+                  slotBtn  = `<button class="btn-icon-sm btn-icon-approve" style="width:28px;height:28px;flex-shrink:0" title="Mark done" onclick="parentMarkSlotDone('${chore.id}','${kid.id}','${slot.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:0.9rem"></i></button>`;
                 }
                 return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#f9fafb;border-radius:8px">
                   <span style="flex:1;font-size:0.82rem;color:#374151">${esc(slotLabel)}</span>
@@ -5908,7 +6960,7 @@ function renderParentHome() {
           } else {
             actionBtn = isDone
               ? `<button class="btn-icon-sm btn-icon-delete" style="flex-shrink:0" title="Remove completion" onclick="parentUnmarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="color:#EF4444;font-size:1rem"></i></button>`
-              : `<button class="btn-icon-sm btn-icon-approve" style="flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check" style="color:#16A34A;font-size:1rem"></i></button>`;
+              : `<button class="btn-icon-sm btn-icon-approve" style="flex-shrink:0" title="Mark done (award diamonds)" onclick="parentMarkChoreDone('${chore.id}','${kid.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>`;
           }
 
           return `
@@ -5931,7 +6983,7 @@ function renderParentHome() {
           <span class="member-avatar">${kid.avatar||'🙂'}</span>
           <div class="member-info">
             <div class="member-name">${esc(kid.name)}</div>
-            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtDmds(kid.diamonds||0)}</div>
+            <div class="member-stats">${doneCount}/${myChores.length} chores · ${pendCount>0?`${pendCount} pending · `:''}${fmtDmds(kid.diamonds||0)}${D.settings.savingsEnabled!==false?` · ${D.settings.currency||'$'}${(kid.savings||0).toFixed(2)} <i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.85rem;vertical-align:middle"></i>`:''}</div>
             <div class="progress-wrap" style="height:8px;margin:6px 0 0">
               <div class="progress-fill" style="width:${pct}%;background:${kid.color||'var(--purple)'}"></div>
             </div>
@@ -5944,37 +6996,50 @@ function renderParentHome() {
         ${isKidCollapsed ? '' : choreRows}
       </div>`;
   });
-  html += `<div class="card"><div class="card-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Kids Today</div>${kids.length>0?`<div class="overview-kids-grid">${kidsHtml}</div>`:kidsHtml}</div>`;
+  html += `<div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Kids Today</span></div>${kids.length>0?`<div class="overview-kids-grid">${kidsHtml}</div>`:kidsHtml}`;
 
   // Quick actions
   html += `
+    <div style="height:28px"></div>
+    <div class="section-row"><span class="section-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Quick Actions</span></div>
     <div class="card">
-      <div class="card-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Quick Actions</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem" onclick="showChoreModal()">+ Add Chore</button>
-        <button class="btn btn-pink   btn-sm" style="padding:14px;font-size:1rem" onclick="showPrizeModal()">+ Add Prize</button>
-        <button class="btn btn-teal   btn-sm" style="padding:14px;font-size:1rem" onclick="showGoalModal()"><i class="ph-duotone ph-target" style="font-size:1rem;vertical-align:middle"></i> Set Goal</button>
-        <button class="btn btn-sm" style="padding:14px;font-size:1rem;background:var(--orange);color:#fff" onclick="goSetup()"><i class="ph-duotone ph-users-three" style="font-size:1rem;vertical-align:middle"></i> Edit Family</button>
+        <button class="btn btn-primary btn-sm" style="padding:14px;font-size:1rem;${D.settings.savingsEnabled === false ? 'grid-column:span 2;' : ''}" onclick="showAdjustDiamondsQuick()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> +/− Diamonds</button>
+        ${D.settings.savingsEnabled !== false ? `<button class="btn btn-sm" style="padding:14px;font-size:1rem;background:#16A34A;color:#fff" onclick="showAdjustSavingsQuick()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> +/− Savings</button>` : ''}
         ${D.settings.notListeningEnabled !== false ? `<button class="btn btn-danger btn-sm" style="grid-column:span 2;background:#EF4444;color:#fff;font-size:1rem;padding:14px" onclick="showNotListening()"><i class="ph-duotone ph-speaker-slash" style="font-size:1.1rem;vertical-align:middle"></i> You're Not Listening</button>` : ''}
       </div>
     </div>`;
 
   // NL time tracker
+  const secsPerDmd = D.settings.notListeningSecs || 60;
   const nlKids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const nlRows = nlKids.map(k => {
     normalizeMember(k);
-    const secs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0);
-    const label = secs === 0 ? 'None today' : `${Math.floor(secs/60)}m ${secs%60}s`;
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6">
-      <span>${k.avatar||'🙂'} ${esc(k.name)}</span>
-      <span style="font-weight:700;color:${secs>0?'#EF4444':'var(--muted)'}">${label}</span>
+    const todaySecs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0);
+    const pendingSecs = k.nlPendingSecs || 0;
+    const pct = Math.min(100, Math.round(pendingSecs / secsPerDmd * 100));
+    const todayLabel = todaySecs === 0 ? 'None today' : fmtNLTime(todaySecs);
+    return `<div style="padding:8px 0;border-bottom:1px solid #f3f4f6">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span>${k.avatar||'🙂'} ${esc(k.name)}</span>
+        <span style="font-weight:700;color:${todaySecs>0?'#EF4444':'var(--muted)'}">${todayLabel}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:5px;background:#F3F4F6;border-radius:99px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:#EF4444;border-radius:99px;transition:width 0.3s"></div>
+        </div>
+        <span style="font-size:0.72rem;color:var(--muted);white-space:nowrap">${pendingSecs}s / ${secsPerDmd}s → 💎</span>
+      </div>
     </div>`;
   }).join('');
-  html += `
+  if (D.settings.notListeningEnabled !== false) {
+    html += `
+    <div style="height:14px"></div>
+    <div class="section-row"><span class="section-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not-Listening Time Today</span></div>
     <div class="card">
-      <div class="card-title"><i class="ph-duotone ph-speaker-slash" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Not-Listening Time Today</div>
       ${nlRows || '<div style="color:var(--muted);font-size:0.9rem">No kids added yet</div>'}
     </div>`;
+  }
 
   // Recent Activity
   const recentHistory = (D.history || []).slice(0, 10);
@@ -5995,13 +7060,11 @@ function renderParentHome() {
       </div>`;
     }).join('');
     html += `
-      <details class="card" style="padding:0">
-        <summary style="padding:16px 20px;cursor:pointer;font-weight:700;font-size:1rem;list-style:none;display:flex;align-items:center;gap:8px">
-          <span><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span>
-          <i class="ph-duotone ph-caret-down activity-caret" style="color:var(--muted);font-size:1rem;margin-left:auto;transition:transform 0.2s"></i>
-        </summary>
-        <div style="padding:0 20px 16px">${actRows}</div>
-      </details>`;
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span></div>
+      <div class="card">${actRows}
+        ${(D.history||[]).length > 10 ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6"><button class="btn btn-secondary btn-sm btn-full" onclick="openFullHistory()">View All Activity</button></div>` : ''}
+      </div>`;
   }
 
   document.getElementById('parent-content').innerHTML = html;
@@ -6099,7 +7162,8 @@ function parentMarkChoreDone(choreId, memberId) {
   checkChoreBadges(chore, memberId);
   // Auto-here: parent marking a chore done means the kid is home
   const _t = today();
-  if (member.splitHousehold?.enabled && !isMemberHereOnDate(member, _t)) {
+  normalizeMember(member);
+  if (!isMemberHereOnDate(member, _t)) {
     member.splitHousehold.overrides[_t] = true;
   }
   saveData();
@@ -6293,7 +7357,7 @@ function renderParentChores() {
   }
 
   html += `<div id="chore-sort-list">`;
-  D.chores.forEach(chore => {
+  [...D.chores].sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||'')).forEach(chore => {
     const isExpanded = _expandedChores.has(chore.id);
     const assignedKids = (chore.assignedTo||[]).map(id=>getMember(id)?.avatar||'').join(' ');
     const assigneeChip = assignedKids
@@ -6308,7 +7372,7 @@ function renderParentChores() {
             <div class="admin-name">${esc(chore.title)}</div>
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px">${diamondChip} ${assigneeChip}</div>
           </div>
-          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1rem;flex-shrink:0"></i>
+          <i class="ph-duotone ph-caret-${isExpanded?'up':'down'}" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
         </div>
         ${isExpanded ? `
         <div style="border-top:1px solid #F3F4F6;margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:8px">
@@ -6614,7 +7678,17 @@ function saveChore(choreId) {
 }
 
 function deleteChore(choreId) {
-  if (!confirm('Delete this chore?')) return;
+  const chore = D.chores.find(c => c.id === choreId);
+  showModal(`
+    <div class="modal-title">Delete Chore?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${chore?.title || 'This chore'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doDeleteChore('${choreId}')">Delete</button>
+    </div>`);
+}
+
+function _doDeleteChore(choreId) {
   D.chores = D.chores.filter(c=>c.id!==choreId);
   for (const key of _expandedSlots) {
     if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
@@ -6627,8 +7701,7 @@ function deleteChore(choreId) {
 
 // ── PARENT PRIZES ─────────────────────────────────────────────
 function renderParentPrizes() {
-  const sortFn = D.settings.sortPrizesByValue ? (a,b) => (a.cost||a.targetPoints||0)-(b.cost||b.targetPoints||0) : ()=>0;
-  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort(sortFn);
+  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort((a,b) => (a.cost||a.targetPoints||0)-(b.cost||b.targetPoints||0) || (a.title||'').localeCompare(b.title||''));
   let html = `
     <div class="section-row">
       <span class="section-title"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:1rem;vertical-align:middle"></i> Individual Prizes (${indiv.length})</span>
@@ -6655,8 +7728,8 @@ function renderParentPrizes() {
   });
 
   // Team goals section
-  const goals = (D.teamGoals || []).slice().sort(sortFn);
-  html += `<div class="divider"></div>
+  const goals = (D.teamGoals || []).slice().sort((a,b) => (a.targetPoints||0)-(b.targetPoints||0) || (a.title||'').localeCompare(b.title||''));
+  html += `<div style="height:14px"></div>
     <div class="section-row">
       <span class="section-title"><i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Team Prizes (${goals.length})</span>
       <button class="btn btn-teal btn-sm" onclick="showGoalModal()">+ Add</button>
@@ -6718,6 +7791,8 @@ const LEVEL_ICON_OPTIONS = [
 ];
 
 function renderParentLevels() {
+  const _lvlContainer = document.getElementById('parent-content');
+  const _lvlScroll = _lvlContainer ? _lvlContainer.scrollTop : 0;
   const s = D.settings;
   const levels = getLevels();
   const members = (D.family?.members || []).filter(m => m.role !== 'parent' && !m.deleted);
@@ -6738,9 +7813,7 @@ function renderParentLevels() {
           <span style="font-size:0.8rem;color:var(--muted)">XP to unlock</span>
         </div>
       </div>
-      ${levels.length > 2 ? `<button onclick="deleteCustomLevel(${i})"
-        style="background:none;border:none;color:#EF4444;cursor:pointer;font-size:1.1rem;padding:4px;flex-shrink:0">
-        <i class="ph-duotone ph-trash"></i></button>` : ''}
+      ${levels.length > 2 ? `<button class="btn-icon-sm btn-icon-delete" onclick="deleteCustomLevel(${i})" style="flex-shrink:0"><i class="ph-duotone ph-trash"></i></button>` : ''}
     </div>`).join('');
 
   // ── Base badges rows ──
@@ -6791,7 +7864,7 @@ function renderParentLevels() {
             </div>
           </div>`).join('');
 
-        return `<div style="margin-bottom:4px;padding-bottom:12px;border-bottom:1px solid #F3F4F6">
+        return `<div style="margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <i class="ph-duotone ph-${chore.icon||'broom'}" style="color:${chore.iconColor||'#6BCB77'};font-size:1.2rem"></i>
             <span style="font-weight:600;font-size:0.95rem">${esc(chore.title)}</span>
@@ -6804,81 +7877,105 @@ function renderParentLevels() {
       }).join('');
 
   const html = `
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-rocket-launch" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Leveling System</span>
+      <label class="toggle"><input type="checkbox" ${s.levelingEnabled!==false?'checked':''} onchange="saveSetting('levelingEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-rocket-launch" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Leveling System</div>
-        <label class="toggle"><input type="checkbox" ${s.levelingEnabled!==false?'checked':''} onchange="saveSetting('levelingEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Kids earn XP equal to their diamonds earned and unlock levels as they progress.</p>
-      ${levelsHtml}
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.levelingEnabled!==false?'14px':'0'}">Kids earn XP equal to their diamonds earned and unlock levels as they progress.</p>
+      ${s.levelingEnabled!==false ? `${levelsHtml}
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-primary btn-sm" onclick="addCustomLevel()">+ Add Level</button>
         <button class="btn btn-sm" style="background:#F3F4F6;color:#374151" onclick="resetLevelsToDefault()">Reset to Defaults</button>
-      </div>
+      </div>` : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-fire" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Streak Bonuses</span>
+      <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-fire" style="color:#F97316;font-size:1rem;vertical-align:middle"></i> Streak Bonuses</div>
-        <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Bonus diamonds when a kid completes all their chores ${s.streakEnabled!==false?'<b>every day in a row</b>':'(currently disabled)'}.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="form-group mb-0"><label class="form-label">3-day streak</label><input type="number" value="${s.streakBonus3||1}" min="0" onchange="saveSetting('streakBonus3',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-        <div class="form-group mb-0"><label class="form-label">7-day streak</label><input type="number" value="${s.streakBonus7||3}" min="0" onchange="saveSetting('streakBonus7',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-        <div class="form-group mb-0"><label class="form-label">14-day streak</label><input type="number" value="${s.streakBonus14||5}" min="0" onchange="saveSetting('streakBonus14',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-        <div class="form-group mb-0"><label class="form-label">30-day streak</label><input type="number" value="${s.streakBonus30||10}" min="0" onchange="saveSetting('streakBonus30',parseInt(this.value)||0)"> <span style="font-size:0.75rem;color:var(--muted)">💎 bonus</span></div>
-      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.streakEnabled!==false?'14px':'0'}">Bonus diamonds when a kid completes all their chores every day in a row.</p>
+      ${s.streakEnabled!==false ? `<div style="display:flex;flex-direction:column;gap:8px">
+        ${[['3-day streak','streakBonus3',1],['7-day streak','streakBonus7',3],['14-day streak','streakBonus14',5],['30-day streak','streakBonus30',10]].map(([label,key,def]) => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#FAFAFA;border-radius:10px;border:1px solid #E5E7EB">
+            <span style="flex:1;font-size:0.9rem;font-weight:600">${label}</span>
+            <input type="number" value="${s[key]||def}" min="0"
+              style="width:64px;font-size:0.9rem;padding:6px 8px;border:1px solid #E5E7EB;border-radius:8px;text-align:center"
+              onchange="saveSetting('${key}',parseInt(this.value)||0)">
+            <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap">💎 bonus</span>
+          </div>`).join('')}
+      </div>` : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</span>
+      <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1rem;vertical-align:middle"></i> Daily Combo</div>
-        <label class="toggle"><input type="checkbox" ${s.comboEnabled!==false?'checked':''} onchange="saveSetting('comboEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.comboEnabled!==false?'14px':'0'}">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores. ${s.comboEnabled!==false?'':'<b>Currently disabled.</b>'}</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.comboEnabled!==false?'14px':'0'}">Each kid gets a random set of 3 chores per day — complete all 3 for double diamonds on those chores.</p>
       ${s.comboEnabled!==false ? (() => {
         const kids = D.family.members.filter(m => m.role==='kid' && !m.deleted);
         if (!kids.length) return '';
-        return kids.map(kid => {
-          const savedCombo = getDailyCombo(kid.id);
-          const pending = (S.pendingComboOverrides || {})[kid.id] || {};
-          const hasPending = Object.keys(pending).length > 0;
-          const effectiveIds = [0, 1, 2].map(i => pending[i] || savedCombo[i]);
-          const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
-          return `<div style="margin-bottom:10px">
-            <div style="font-size:0.8rem;font-weight:700;color:var(--muted);margin-bottom:6px">${esc(kid.name)}'s combo today</div>
-            ${[0,1,2].map(i => `
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                <span style="font-size:0.75rem;color:var(--muted);width:16px">${i+1}.</span>
-                <select style="flex:1;font-size:0.82rem;padding:6px 8px;border-radius:8px;border:1px solid var(--border)" onchange="stagePendingCombo('${kid.id}',${i},this.value)">
-                  ${eligible.map(c => `<option value="${c.id}"${effectiveIds[i]===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}
-                </select>
-              </div>`).join('')}
-            ${hasPending ? `<div style="margin-top:2px"><button class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:4px 10px" onclick="saveComboOverride('${kid.id}')">Save Combo</button></div>` : ''}
-          </div>`;
-        }).join('<hr style="border:none;border-top:1px solid var(--border);margin:10px 0">');
+        const multiplier = s.comboMultiplier || 2;
+        return `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FFFBEB;border-radius:10px;border:1px solid #FDE68A;margin-bottom:14px">
+            <i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:1.1rem;flex-shrink:0"></i>
+            <span style="font-size:0.85rem;color:#92400E;flex:1">Complete all 3 for</span>
+            <input type="number" value="${multiplier}" min="2" max="10"
+              style="width:48px;font-size:0.9rem;padding:4px 6px;border:1.5px solid #FDE68A;border-radius:8px;text-align:center;font-weight:700;color:#92400E;background:white"
+              onchange="saveSetting('comboMultiplier',Math.max(2,parseInt(this.value)||2));renderParentLevels()">
+            <span style="font-size:0.85rem;color:#92400E;white-space:nowrap">x 💎</span>
+          </div>
+          ${kids.map(kid => {
+            const savedCombo = getDailyCombo(kid.id);
+            const pending = (S.pendingComboOverrides || {})[kid.id] || {};
+            const hasPending = Object.keys(pending).length > 0;
+            const effectiveIds = [0, 1, 2].map(i => pending[i] || savedCombo[i]);
+            const eligible = D.chores.filter(c => c.assignedTo?.includes(kid.id) && c.schedule?.period !== 'once');
+            return `<div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                <span style="font-size:1.2rem;line-height:1;flex-shrink:0">${kid.avatar}</span>
+                <span style="font-weight:600;font-size:0.95rem">${esc(kid.name)}'s Daily Combo</span>
+              </div>
+              ${[0,1,2].map(i => {
+                const otherIds = effectiveIds.filter((_, j) => j !== i);
+                const slotEligible = eligible.filter(c => !otherIds.includes(c.id));
+                return `
+                  ${i > 0 ? `<div style="text-align:center;font-size:1.1rem;font-weight:800;color:#F59E0B;line-height:1;padding:3px 0">+</div>` : ''}
+                  <select style="width:100%;font-size:0.85rem;padding:9px 10px;border-radius:10px;border:1.5px solid #E5E7EB;background:white;font-weight:500;color:var(--text)" onchange="stagePendingCombo('${kid.id}',${i},this.value)">
+                    ${slotEligible.map(c => `<option value="${c.id}"${effectiveIds[i]===c.id?'selected':''}>${esc(c.title)}</option>`).join('')}
+                  </select>`;
+              }).join('')}
+              ${hasPending ? `<div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="saveComboOverride('${kid.id}')">Save Combo</button></div>` : ''}
+            </div>`;
+          }).join('<div style="height:16px"></div>')}`;
       })() : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Base Badges</span>
+      <label class="toggle"><input type="checkbox" ${s.baseBadgesEnabled!==false?'checked':''} onchange="saveSetting('baseBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div class="card-title" style="margin:0"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Base Badges</div>
-        <label class="toggle"><input type="checkbox" ${s.baseBadgesEnabled!==false?'checked':''} onchange="saveSetting('baseBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
-      </div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">System-wide achievement badges earned automatically — for streaks, levels, and milestones. Toggle off to disable all base badges.</p>
-      <div style="opacity:${baseBadgesEnabled?'1':'0.4'};pointer-events:${baseBadgesEnabled?'auto':'none'};transition:opacity 0.2s">
-        ${baseBadgeRows}
-      </div>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${baseBadgesEnabled?'14px':'0'}">System-wide achievement badges earned automatically — for streaks, levels, and milestones.</p>
+      ${baseBadgesEnabled ? baseBadgeRows : ''}
     </div>
 
+    <div style="height:14px"></div>
+    <div class="section-row">
+      <span class="section-title"><i class="ph-duotone ph-medal" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Chore Badges</span>
+      <label class="toggle"><input type="checkbox" ${s.choreBadgesEnabled!==false?'checked':''} onchange="saveSetting('choreBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
+    </div>
     <div class="card">
-      <div class="card-title" style="margin-bottom:12px"><i class="ph-duotone ph-medal" style="color:#D97706;font-size:1rem;vertical-align:middle"></i> Chore Badges</div>
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:14px">Per-chore milestone badges — kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye-slash" style="color:#7c3aed;vertical-align:middle"></i> to make a badge secret — it won't appear at all until earned, making it a surprise to discover.</p>
-      ${choreBadgeCards}
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.choreBadgesEnabled!==false?'14px':'0'}">Per-chore milestone badges — kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye" style="color:#9ca3af;vertical-align:middle"></i> to make a badge secret — it won't appear at all until earned, making it a surprise to discover.</p>
+      ${s.choreBadgesEnabled!==false ? choreBadgeCards : ''}
     </div>`;
 
-  document.getElementById('parent-content').innerHTML = html;
+  if (_lvlContainer) { _lvlContainer.innerHTML = html; _lvlContainer.scrollTop = _lvlScroll; }
 }
 
 function saveCustomLevel(idx, field, value) {
@@ -6907,9 +8004,19 @@ function addCustomLevel() {
 function deleteCustomLevel(idx) {
   const levels = getLevels().map(l => ({...l}));
   if (levels.length <= 2) { toast('Need at least 2 levels'); return; }
-  if (!confirm(`Delete level "${levels[idx]?.name || 'this level'}"?`)) return;
+  const levelName = levels[idx]?.name || 'this level';
+  showModal(`
+    <div class="modal-title">Delete Level?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${levelName}" will be permanently removed.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doDeleteCustomLevel(${idx})">Delete</button>
+    </div>`);
+}
+
+function _doDeleteCustomLevel(idx) {
+  const levels = getLevels().map(l => ({...l}));
   levels.splice(idx, 1);
-  // Reassign level numbers
   levels.forEach((l, i) => { l.level = i + 1; });
   D.settings.customLevels = levels;
   saveData();
@@ -6917,7 +8024,16 @@ function deleteCustomLevel(idx) {
 }
 
 function resetLevelsToDefault() {
-  if (!confirm('Reset all levels back to the defaults? Your custom levels will be lost.')) return;
+  showModal(`
+    <div class="modal-title">Reset Levels?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">All custom levels will be replaced with the defaults. This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doResetLevelsToDefault()">Reset</button>
+    </div>`);
+}
+
+function _doResetLevelsToDefault() {
   D.settings.customLevels = null;
   saveData();
   renderParentLevels();
@@ -6996,7 +8112,19 @@ function removeChoreBadgeTier(choreId, tierIdx) {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore || !chore.badges) return;
   const badge = chore.badges[tierIdx];
-  if (!confirm(`Delete "${badge?.name || 'this badge tier'}" from ${chore.title}?`)) return;
+  const badgeName = badge?.name || 'this badge tier';
+  showModal(`
+    <div class="modal-title">Delete Badge Tier?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${badgeName}" will be permanently removed from <strong>${chore.title}</strong>.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doRemoveChoreBadgeTier('${choreId}',${tierIdx})">Delete</button>
+    </div>`);
+}
+
+function _doRemoveChoreBadgeTier(choreId, tierIdx) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore || !chore.badges) return;
   chore.badges.splice(tierIdx, 1);
   saveData();
   renderParentLevels();
@@ -7134,7 +8262,17 @@ function savePrize(prizeId) {
 }
 
 function deletePrize(prizeId) {
-  if (!confirm('Delete this prize?')) return;
+  const prize = D.prizes.find(p => p.id === prizeId);
+  showModal(`
+    <div class="modal-title">Delete Prize?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${prize?.title || 'This prize'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doDeletePrize('${prizeId}')">Delete</button>
+    </div>`);
+}
+
+function _doDeletePrize(prizeId) {
   D.prizes = D.prizes.filter(p=>p.id!==prizeId);
   saveData();
   toast('Prize deleted');
@@ -7228,7 +8366,17 @@ function saveGoal() {
 }
 
 function clearGoal(goalId) {
-  if (!confirm('Remove this team prize?')) return;
+  const goal = (D.teamGoals||[]).find(g => g.id === goalId);
+  showModal(`
+    <div class="modal-title">Delete Team Prize?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${goal?.title || 'This team prize'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doClearGoal('${goalId}')">Delete</button>
+    </div>`);
+}
+
+function _doClearGoal(goalId) {
   D.teamGoals = (D.teamGoals||[]).filter(g => g.id !== goalId);
   saveData();
   renderParentPrizes();
@@ -7236,38 +8384,45 @@ function clearGoal(goalId) {
 
 
 // ── ADVANCED DATA EDITOR ──────────────────────────────────────
+let _advBackup = null;
+
 function showAdvancedEditor() {
+  _advBackup = JSON.parse(JSON.stringify(D));
   const root = document.getElementById('adv-editor-root');
   root.classList.add('open');
   _advRender();
+  root.scrollTop = 0;
 }
 
 function closeAdvancedEditor() {
+  _advBackup = null;
   const root = document.getElementById('adv-editor-root');
   root.classList.remove('open');
   root.innerHTML = '';
 }
 
+function cancelAdvancedEditor() {
+  if (_advBackup) {
+    D = normalizeData(_advBackup);
+    saveData();
+  }
+  closeAdvancedEditor();
+}
+
 function _advField(label, inputHtml) {
-  return `<div class="adv-field-row">
-    <span class="adv-field-label">${label}</span>
+  return `<div class="adv-row">
+    <span class="adv-label">${label}</span>
     ${inputHtml}
   </div>`;
 }
 
 function _advInput(type, val, onchange, extra='') {
   const v = val === null || val === undefined ? '' : val;
-  return `<input type="${type}" class="adv-field-input" value="${esc(String(v))}"
-    ${type==='color'?`value="${v}"`:''}
-    onchange="${onchange}" ${extra}>`;
+  return `<input type="${type}" class="adv-input" value="${esc(String(v))}" onchange="${onchange}" ${extra}>`;
 }
 
 function _advCheck(checked, onchange) {
-  return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-    <input type="checkbox" ${checked?'checked':''} onchange="${onchange}"
-      style="width:18px;height:18px;cursor:pointer">
-    <span style="font-size:0.82rem;color:#6b7280">${checked?'On':'Off'}</span>
-  </label>`;
+  return `<label class="toggle" style="flex-shrink:0"><input type="checkbox" ${checked?'checked':''} onchange="${onchange}"><span class="toggle-track"></span></label>`;
 }
 
 function advSetMember(id, field, val) {
@@ -7282,6 +8437,27 @@ function advSetMember(id, field, val) {
   }
   saveData();
   _advRefreshStatus(`Member saved`);
+}
+
+function advSetRole(memberId, val, el) {
+  if (val === 'kid' && D.family.members.filter(m => m.role === 'parent' && m.id !== memberId).length === 0) {
+    if (el) el.value = 'parent';
+    toast("Can't remove the last parent");
+    return;
+  }
+  advSetMember(memberId, 'role', val);
+}
+
+function advToggleBadge(memberId, badgeId) {
+  const m = getMember(memberId);
+  if (!m) return;
+  if (!Array.isArray(m.badges)) m.badges = [];
+  const idx = m.badges.indexOf(badgeId);
+  if (idx >= 0) m.badges.splice(idx, 1);
+  else m.badges.push(badgeId);
+  saveData();
+  _advRenderPreserving();
+  _advRefreshStatus('Badge updated');
 }
 
 function advSetChore(id, field, val) {
@@ -7303,6 +8479,20 @@ function advSetPrize(id, field, val) {
 function advClearChoreCompletions(choreId, memberId) {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore) return;
+  const member = memberId ? getMember(memberId) : null;
+  const what = member ? `${esc(member.name)}'s completions for "${esc(chore.title)}"` : `all completions for "${esc(chore.title)}"`;
+  showModal(`
+    <div class="modal-title">Clear Completions?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will permanently clear ${what}. Chore badge progress will be lost.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doAdvClearCompletions('${choreId}','${memberId||''}')">Clear</button>
+    </div>`);
+}
+
+function _doAdvClearCompletions(choreId, memberId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  if (!chore) return;
   if (memberId) {
     if (chore.completions) delete chore.completions[memberId];
   } else {
@@ -7314,7 +8504,16 @@ function advClearChoreCompletions(choreId, memberId) {
 }
 
 function advDeleteHistory(entryId) {
-  if (!confirm('Delete this history entry?')) return;
+  showModal(`
+    <div class="modal-title">Delete Entry?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This history entry will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();_doAdvDeleteHistory('${entryId}')">Delete</button>
+    </div>`);
+}
+
+function _doAdvDeleteHistory(entryId) {
   const idx = D.history.findIndex(h => h.id === entryId);
   if (idx < 0) return;
   D.history.splice(idx, 1);
@@ -7327,8 +8526,16 @@ function advDeleteHistory(entryId) {
 function _advRenderPreserving() {
   const root = document.getElementById('adv-editor-root');
   const scroll = root ? root.scrollTop : 0;
+  const openIds = new Set([...(root?.querySelectorAll('details.adv-member-card[open]') || [])]
+    .map(d => d.dataset.memberId).filter(Boolean));
   _advRender();
-  if (root) root.scrollTop = scroll;
+  if (root) {
+    root.scrollTop = scroll;
+    openIds.forEach(id => {
+      const el = root.querySelector(`details.adv-member-card[data-member-id="${id}"]`);
+      if (el) el.open = true;
+    });
+  }
 }
 
 function advApplyRawJson() {
@@ -7354,205 +8561,286 @@ function _advRefreshStatus(msg) {
   el._t = setTimeout(() => { el.textContent = ''; el.className = ''; }, 2000);
 }
 
+function _advDeleteTeamGoal(idx) {
+  const goal = (D.teamGoals||[])[idx];
+  showModal(`
+    <div class="modal-title">Delete Team Prize?</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${goal?.title || 'This team prize'}" will be permanently deleted.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="closeModal();D.teamGoals.splice(${idx},1);saveData();_advRender()">Delete</button>
+    </div>`);
+}
+
 function _advRender() {
   const root = document.getElementById('adv-editor-root');
   if (!root) return;
 
   const members = D.family.members;
-  const kids = members.filter(m => m.role === 'kid');
+  const kids = members.filter(m => m.role === 'kid' && !m.deleted);
 
   // ── Members section ──
-  const membersHtml = members.map(m => {
+  const membersHtml = kids.map(m => {
     normalizeMember(m);
-    const fields = [
-      _advField('Name',         _advInput('text',   m.name,            `advSetMember('${m.id}','name',this.value)`)),
-      _advField('Avatar',       _advInput('text',   m.avatar,          `advSetMember('${m.id}','avatar',this.value)`)),
-      _advField('Age',          _advInput('number', m.age||'',         `advSetMember('${m.id}','age',+this.value)`)),
-      _advField('Color',        _advInput('color',  m.color||'#6C63FF',`advSetMember('${m.id}','color',this.value)`)),
-      _advField('Role',         `<select class="adv-field-input" onchange="advSetMember('${m.id}','role',this.value)">
-        ${['parent','kid'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}
-      </select>`),
-      _advField('Diamonds 💎',    _advInput('number', m.diamonds||0,       `advSetMember('${m.id}','diamonds',+this.value)`)),
-      _advField('Total Earned', _advInput('number', m.totalEarned||0,  `advSetMember('${m.id}','totalEarned',+this.value)`)),
-      _advField('Savings',   _advInput('number', (m.savings||0).toFixed(2), `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`,'step="0.01"')),
-      _advField('XP 🔮',        _advInput('number', m.xp||0,           `advSetMember('${m.id}','xp',+this.value)`)),
-      _advField('Streak Current',_advInput('number', m.streak?.current||0, `advSetMember('${m.id}','streak.current',+this.value)`)),
-      _advField('Streak Best',  _advInput('number', m.streak?.best||0, `advSetMember('${m.id}','streak.best',+this.value)`)),
-      _advField('Streak Last Date', _advInput('date', m.streak?.lastDate||'', `advSetMember('${m.id}','streak.lastDate',this.value)`)),
-      _advField('NL Today Secs',_advInput('number', m.nlTodaySecs||0,  `advSetMember('${m.id}','nlTodaySecs',+this.value)`)),
-      _advField('NL Lifetime Secs',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
-      _advField('NL Date',      _advInput('date',   m.nlDate||'',      `advSetMember('${m.id}','nlDate',this.value)`)),
-      _advField('Combo Bonus Date',_advInput('date', m.comboBonusDate||'', `advSetMember('${m.id}','comboBonusDate',this.value)`)),
-      _advField('Combo Streak',    _advInput('number', m.comboStreak?.current||0, `advSetMember('${m.id}','comboStreak.current',+this.value)`)),
-      _advField('Combo Streak Best',_advInput('number', m.comboStreak?.best||0,   `advSetMember('${m.id}','comboStreak.best',+this.value)`)),
-      _advField('Combo Streak Date',_advInput('date',  m.comboStreak?.lastDate||'', `advSetMember('${m.id}','comboStreak.lastDate',this.value)`)),
-      _advField('Badges (JSON)',`<textarea class="adv-field-input" rows="2" style="resize:vertical"
-        onchange="advSetMember('${m.id}','badges',JSON.parse(this.value||'[]'))">${esc(JSON.stringify(m.badges||[]))}</textarea>`),
-    ].join('');
-    return `<details class="adv-sub-card" style="margin-bottom:8px">
-      <summary style="cursor:pointer;font-weight:700;font-size:0.9rem;list-style:none;display:flex;align-items:center;gap:8px;padding:4px 0">
-        ${m.avatar||'🙂'} ${esc(m.name)} <span style="font-size:0.75rem;color:#9ca3af;font-weight:400">${m.role}</span>
-      </summary>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${fields}</div>
-    </details>`;
-  }).join('');
+    const isKid = m.role === 'kid';
+    const roleLabel = isKid ? 'Kid' : 'Parent';
+    const subtitle = isKid ? `Kid · ${m.diamonds||0} 💎` : 'Parent · Admin';
 
-  // ── Chores section ──
+
+    const balanceFields = [
+      _advField('💎 Current',      _advInput('number', m.diamonds||0,    `advSetMember('${m.id}','diamonds',+this.value)`)),
+      _advField('💎 All Time',     _advInput('number', m.totalEarned||0, `advSetMember('${m.id}','totalEarned',+this.value)`)),
+      _advField('🔮 XP',           _advInput('number', m.xp||0,          `advSetMember('${m.id}','xp',+this.value)`)),
+    ].join('');
+
+    const savingsFields = isKid ? [
+      _advField('💰 Balance',        _advInput('number', (m.savings||0).toFixed(2),        `advSetMember('${m.id}','savings',parseFloat(this.value)||0)`, 'step="0.01"')),
+      _advField('🤝 Parent Matched', _advInput('number', (m.savingsMatched||0).toFixed(2), `advSetMember('${m.id}','savingsMatched',parseFloat(this.value)||0)`, 'step="0.01"')),
+      _advField('📈 Interest Total', _advInput('number', (m.savingsInterest||0).toFixed(2),`advSetMember('${m.id}','savingsInterest',parseFloat(this.value)||0)`, 'step="0.01"')),
+      _advField('📅 Last Claimed',   _advInput('date',   m.savingsInterestLastDate||'',    `advSetMember('${m.id}','savingsInterestLastDate',this.value)`)),
+    ].join('') : '';
+
+    const streakFields = isKid ? [
+      _advField('🔥 Current',   _advInput('number', m.streak?.current||0,  `advSetMember('${m.id}','streak.current',+this.value)`)),
+      _advField('🏅 Best Ever', _advInput('number', m.streak?.best||0,     `advSetMember('${m.id}','streak.best',+this.value)`)),
+      _advField('📅 Last Date', _advInput('date',   m.streak?.lastDate||'',`advSetMember('${m.id}','streak.lastDate',this.value)`)),
+    ].join('') : '';
+
+    const comboFields = isKid ? [
+      _advField('📅 Last Bonus Date',  _advInput('date',   m.comboBonusDate||'',         `advSetMember('${m.id}','comboBonusDate',this.value)`)),
+      _advField('⚡ Streak',           _advInput('number', m.comboStreak?.current||0,    `advSetMember('${m.id}','comboStreak.current',+this.value)`)),
+      _advField('⚡ Streak Best',      _advInput('number', m.comboStreak?.best||0,       `advSetMember('${m.id}','comboStreak.best',+this.value)`)),
+      _advField('📅 Streak Date',      _advInput('date',   m.comboStreak?.lastDate||'',  `advSetMember('${m.id}','comboStreak.lastDate',this.value)`)),
+    ].join('') : '';
+
+    const nlFields = isKid ? [
+      _advField('⏱ Today (secs)',    _advInput('number', m.nlTodaySecs||0,   `advSetMember('${m.id}','nlTodaySecs',+this.value)`)),
+      _advField('⏳ Pending (secs)', _advInput('number', m.nlPendingSecs||0, `advSetMember('${m.id}','nlPendingSecs',+this.value)`)),
+      _advField('📊 Lifetime (secs)',_advInput('number', m.nlLifetimeSecs||0,`advSetMember('${m.id}','nlLifetimeSecs',+this.value)`)),
+      _advField('📅 Last Date',      _advInput('date',   m.nlDate||'',       `advSetMember('${m.id}','nlDate',this.value)`)),
+    ].join('') : '';
+
+    const badgesField = isKid ? (() => {
+      const earned = m.badges || [];
+      const allBaseBadges = BADGE_DEFS.map(b => ({ id: b.id, icon: b.icon, name: b.name }));
+      const allChoreBadges = (D.chores || []).flatMap(c =>
+        (c.badges || []).map(b => ({ id: `cb_${b.id}`, icon: b.icon || '🏅', name: b.name || '' }))
+      );
+      const allBadges = [...allBaseBadges, ...allChoreBadges];
+      if (allBadges.length === 0) return '';
+      const pills = allBadges.map(b => {
+        const have = earned.includes(b.id);
+        return `<div class="badge-chip ${have ? 'earned' : 'badge-chip-locked'}" style="cursor:pointer"
+          onclick="advToggleBadge('${m.id}','${b.id}')">
+          <span class="badge-chip-icon">${b.icon}</span>${esc(b.name)}
+        </div>`;
+      }).join('');
+      return `<div class="adv-subhead">Badges <span style="font-weight:400;font-size:0.68rem">(tap to toggle)</span></div>
+        <div class="badge-grid">${pills}</div>`;
+    })() : '';
+
+    return `<details class="adv-member-card" data-member-id="${m.id}">
+      <summary class="adv-member-summary">
+        <span style="font-size:1.5rem;flex-shrink:0">${m.avatar||'🙂'}</span>
+        <span style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:0.95rem">${esc(m.name)}</div>
+          <div style="font-size:0.75rem;color:var(--muted)">${subtitle}</div>
+        </span>
+        <i class="ph-duotone ph-caret-down adv-caret" style="font-size:1rem"></i>
+      </summary>
+      <div class="adv-member-body">
+        ${!isKid ? `<div style="font-size:0.82rem;color:var(--muted);padding:4px 0">Parent profile — edit name, avatar, and PIN through Settings.</div>` : ''}
+        ${isKid ? `<div class="adv-subhead">Balance</div>${balanceFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Savings</div>${savingsFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Streak</div>${streakFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Daily Combo</div>${comboFields}` : ''}
+        ${isKid ? `<div class="adv-subhead">Not Listening</div>${nlFields}` : ''}
+        ${badgesField}
+      </div>
+    </details>`;
+  });
+
+  // ── Chores section — completions only ──
   const choresHtml = D.chores.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No chores yet</div>'
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No chores yet</div>'
     : D.chores.map(c => {
+      const hasCompletions = D.family.members.some(m => {
+        return normalizeCompletionEntries(c.completions?.[m.id]).length > 0;
+      });
       const completionRows = D.family.members.filter(m => {
-        const entries = normalizeCompletionEntries(c.completions?.[m.id]);
-        return entries.length > 0;
+        return normalizeCompletionEntries(c.completions?.[m.id]).length > 0;
       }).map(m => {
         const entries = normalizeCompletionEntries(c.completions[m.id]);
         const doneCount = entries.filter(e=>e.status==='done').length;
         const pendCount = entries.filter(e=>e.status==='pending').length;
         const summary = [doneCount&&`${doneCount} done`, pendCount&&`${pendCount} pending`].filter(Boolean).join(', ');
-        return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0">
-          <span style="font-size:1rem">${m.avatar||'🙂'}</span>
-          <span style="font-size:0.8rem;flex:1">${esc(m.name)}: ${summary} (${entries.length} total)</span>
-          <button onclick="advClearChoreCompletions('${c.id}','${m.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:5px;padding:2px 7px;font-size:0.72rem;cursor:pointer">Clear</button>
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <span style="font-size:1rem;flex-shrink:0">${m.avatar||'🙂'}</span>
+          <span style="font-size:0.82rem;flex:1;min-width:0">${esc(m.name)}: ${summary}</span>
+          <button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;border-radius:6px" onclick="advClearChoreCompletions('${c.id}','${m.id}')"><i class="ph-duotone ph-trash" style="font-size:0.85rem"></i></button>
         </div>`;
       }).join('');
-      return `
-        <div style="padding:6px 0;border-bottom:1px solid #f3f4f6">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:1.2rem;width:28px;text-align:center">${c.icon||'<i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF"></i>'}</span>
-            <span style="flex:1;font-size:0.85rem;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.title)}">${esc(c.title)}</span>
-            <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">💎</label>
-            <input type="number" class="adv-field-input" style="width:70px" value="${c.diamonds||0}"
-              onchange="advSetChore('${c.id}','diamonds',+this.value)">
-            <input type="text" class="adv-field-input" style="width:70px" value="${esc(c.icon||'')}" placeholder="icon"
-              onchange="advSetChore('${c.id}','icon',this.value)">
-            <input type="text" class="adv-field-input" style="flex:1;min-width:80px" value="${esc(c.title||'')}" placeholder="title"
-              onchange="advSetChore('${c.id}','title',this.value)">
-          </div>
-          ${completionRows ? `<details style="margin-top:4px"><summary style="font-size:0.72rem;color:#6b7280;cursor:pointer;padding:2px 0">Completions ▸ <span style="color:#d97706;font-weight:600">${(c.schedule||c).period==='once'?'(once — stays done until cleared)':''}</span></summary><div style="padding:4px 0 0 8px">${completionRows}</div></details>` : ''}
-        </div>`;
+      // Only render chores that have completions (or always show header, just no completions section)
+      const iconDisplay = c.icon && [...c.icon].length <= 2
+        ? c.icon
+        : '<i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF"></i>';
+      const oncePill = (c.schedule||c).period==='once'
+        ? `<span style="font-size:0.72rem;background:#FEF3C7;color:#92400E;border-radius:4px;padding:1px 5px;font-weight:600">once</span>`
+        : '';
+      return `<div style="padding:10px 0;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:1.3rem;width:28px;text-align:center;flex-shrink:0">${iconDisplay}</span>
+          <span style="font-weight:600;font-size:0.9rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.title)}</span>
+          ${oncePill}
+          <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap;flex-shrink:0">${c.diamonds||0} 💎</span>
+        </div>
+        ${completionRows
+          ? `<div style="margin-top:8px;padding-left:36px">${completionRows}</div>`
+          : `<div style="margin-top:4px;padding-left:36px;font-size:0.78rem;color:var(--muted)">No completions</div>`}
+      </div>`;
     }).join('');
 
-  // ── Prizes section ──
-  const prizesHtml = D.prizes.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No prizes yet</div>'
-    : D.prizes.map(p => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6">
-        <span style="font-size:1.2rem;width:28px;text-align:center">${p.icon||'🎁'}</span>
-        <input type="text" class="adv-field-input" style="width:60px" value="${esc(p.icon||'')}" placeholder="icon"
-          onchange="advSetPrize('${p.id}','icon',this.value)">
-        <input type="text" class="adv-field-input" style="flex:2;min-width:80px" value="${esc(p.title||'')}" placeholder="title"
-          onchange="advSetPrize('${p.id}','title',this.value)">
-        <label style="font-size:0.75rem;color:#6b7280;white-space:nowrap">cost</label>
-        <input type="number" class="adv-field-input" style="width:75px" value="${p.cost||0}"
-          onchange="advSetPrize('${p.id}','cost',+this.value)">
-      </div>`).join('');
 
-  // ── Settings section ──
+  // ── Team Goals section — read-only summary + per-kid contributions ──
+  const teamGoals = D.teamGoals || [];
+  const allKids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const goalHtml = teamGoals.length === 0
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No team prizes yet</div>'
+    : teamGoals.map((g,i) => {
+      const total = goalTotal(g);
+      const target = g.targetPoints || 0;
+      const pct = target > 0 ? Math.min(100, Math.round(total / target * 100)) : 0;
+      const contribRows = allKids.map(k => {
+        const c = (g.contributions||{})[k.id] || 0;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <span style="font-size:1rem;flex-shrink:0">${k.avatar||'🙂'}</span>
+          <span style="font-size:0.85rem;flex:1">${esc(k.name)}</span>
+          <input type="number" class="adv-input" style="width:80px;flex:none;text-align:right" value="${c}" min="0"
+            onchange="if(!D.teamGoals[${i}].contributions)D.teamGoals[${i}].contributions={};D.teamGoals[${i}].contributions['${k.id}']=+this.value;saveData();_advRefreshStatus('Saved')">
+          <span style="font-size:0.82rem;color:var(--muted);flex-shrink:0">💎</span>
+        </div>`;
+      }).join('');
+      return `<div style="padding:10px 0;border-bottom:1px solid #F3F4F6">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:1.3rem;flex-shrink:0;display:inline-flex;align-items:center">${renderIcon(g.icon, g.iconColor, 'font-size:1.4rem') || '🏆'}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.title||'')}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">${total} / ${target} 💎 · ${pct}%</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="_advDeleteTeamGoal(${i})">Delete</button>
+        </div>
+        <div style="height:5px;background:#F3F4F6;border-radius:99px;overflow:hidden;margin-bottom:8px">
+          <div style="height:100%;width:${pct}%;background:var(--teal);border-radius:99px"></div>
+        </div>
+        ${contribRows}
+      </div>`;
+    }).join('');
+
+  // ── Settings section — dev-only keys not accessible via Settings/Levels UI ──
+  const SETTINGS_HAS_UI = new Set([
+    'autoApprove','hideUnavailable','familyTimezone','lockOnBackground',
+    'savingsEnabled','diamondsPerDollar','pointsPerDollar','savingsMatchingEnabled','savingsMatchPercent',
+    'savingsInterestEnabled','interestDayNotify','savingsInterestRate','savingsInterestPeriod',
+    'savingsInterestDay','savingsInterestDayOfMonth','hereCheckEnabled',
+    'notListeningEnabled','notListeningSecs',
+    'levelingEnabled','streakEnabled','streakBonus3','streakBonus7','streakBonus14','streakBonus30',
+    'comboEnabled','comboMultiplier','comboSlots',
+    'baseBadgesEnabled','choreBadgesEnabled',
+    'currency','familyName','parentPin',
+  ]);
   const SETTING_LABELS = {
-    autoApprove:'Auto-approve chores', diamondsPerDollar:'Diamonds per dollar', parentPin:'Parent PIN',
-    levelingEnabled:'Leveling enabled', streakEnabled:'Streaks enabled',
-    streakBonus3:'Streak bonus (3d)', streakBonus7:'Streak bonus (7d)', streakBonus14:'Streak bonus (14d)', streakBonus30:'Streak bonus (30d)',
-    notListeningSecs:'NL secs per diamond', currency:'Currency symbol', familyName:'Family name',
-    lastSync:'Last sync (auto)', comboEnabled:'Combo bonus enabled', sortPrizesByValue:'Sort prizes by value',
+    betaMode: 'Beta Mode',
+    lastSync: 'Last Sync',
+    splitHouseholdEnabled: 'Split Household',
+    appVersion: 'App Version',
   };
-  const settingsHtml = Object.entries(D.settings).map(([k, v]) => {
-    const label = SETTING_LABELS[k] || k;
-    let input;
-    if (typeof v === 'boolean') {
-      input = _advCheck(v, `advSetSetting('${k}',this.checked)`);
-    } else if (typeof v === 'number') {
-      input = _advInput('number', v, `advSetSetting('${k}',+this.value)`);
-    } else {
-      input = _advInput('text', v, `advSetSetting('${k}',this.value)`);
-    }
-    return _advField(label, input);
-  }).join('');
+  const devSettings = Object.entries(D.settings).filter(([k, v]) =>
+    !SETTINGS_HAS_UI.has(k) && typeof v !== 'object'
+  );
+  const settingsHtml = devSettings.length === 0
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No dev-only settings found</div>'
+    : devSettings.map(([k, v]) => {
+      const label = SETTING_LABELS[k] || k;
+      let input;
+      if (k === 'lastSync') {
+        input = `<span style="font-size:0.85rem;color:var(--muted)">${v||'never'}</span>`;
+      } else if (typeof v === 'boolean') {
+        input = _advCheck(v, `advSetSetting('${k}',this.checked)`);
+      } else if (typeof v === 'number') {
+        input = _advInput('number', v, `advSetSetting('${k}',+this.value)`);
+      } else {
+        input = _advInput('text', v, `advSetSetting('${k}',this.value)`);
+      }
+      return _advField(label, input);
+    }).join('');
 
   // ── History section ──
-  const histItems = (D.history || []).slice(0, 40);
-  const typeIcon = { chore:'<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', prize:'<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>', penalty:'<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>', bonus:'<i class="ph-duotone ph-lightning" style="color:#D97706"></i>', level:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>' };
+  const histItems = (D.history || []).slice(0, 150);
   const histHtml = histItems.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No history yet</div>'
+    ? '<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No history yet</div>'
     : histItems.map(h => {
         const mem = getMember(h.memberId);
+        const badge = historyBadge(h);
+        const icon = historyIcon(h);
         const ptsStr = (h.diamonds||0) >= 0 ? `+${h.diamonds}` : `${h.diamonds}`;
         const ptsCol = (h.diamonds||0) >= 0 ? '#166534' : '#991b1b';
         return `<div class="adv-hist-row" data-hist-id="${h.id}">
-          <span style="width:20px;text-align:center">${typeIcon[h.type]||'<i class="ph-duotone ph-note" style="color:#9CA3AF"></i>'}</span>
-          <span style="width:24px">${mem?.avatar||'?'}</span>
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title)}</span>
-          <span style="color:${ptsCol};font-weight:700;white-space:nowrap;margin-right:6px">${ptsStr}</span>
-          <span style="color:#9ca3af;white-space:nowrap;margin-right:8px">${h.date}</span>
-          <button onclick="advDeleteHistory('${h.id}')" style="background:#FEE2E2;color:#991b1b;border:none;border-radius:6px;padding:2px 8px;font-size:0.75rem;cursor:pointer;flex-shrink:0"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+          <span style="background:${badge.bg};color:${badge.color};border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.85rem;flex-shrink:0">${icon}</span>
+          <span style="font-size:1rem;flex-shrink:0">${mem?.avatar||'?'}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:0.85rem">${esc(h.title)}</span>
+          <span style="color:${ptsCol};font-weight:700;white-space:nowrap;font-size:0.85rem">${ptsStr} 💎</span>
+          <span style="color:var(--muted);white-space:nowrap;font-size:0.75rem">${h.date}</span>
+          <button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;border-radius:6px;flex-shrink:0" onclick="advDeleteHistory('${h.id}')"><i class="ph-duotone ph-trash" style="font-size:0.9rem"></i></button>
         </div>`;
       }).join('');
 
-  // ── Team Goals section ──
-  const teamGoals = D.teamGoals || [];
-  const goalHtml = teamGoals.length === 0
-    ? '<div style="color:#9ca3af;font-size:0.85rem">No team prizes yet</div>'
-    : teamGoals.map((g,i) => `
-      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:8px">
-        ${_advField('Title',      _advInput('text',   g.title||'',       `D.teamGoals[${i}].title=this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Icon',       _advInput('text',   g.icon||'',        `D.teamGoals[${i}].icon=this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Target 💎', _advInput('number', g.targetPoints||0, `D.teamGoals[${i}].targetPoints=+this.value;saveData();_advRefreshStatus('Saved')`))}
-        ${_advField('Saved So Far', `<span style="font-size:0.85rem;font-weight:700;color:var(--teal)">${goalTotal(g)} 💎</span>`)}
-        <div style="margin-top:6px"><button class="adv-danger-btn" style="font-size:0.78rem;padding:5px 12px"
-          onclick="if(confirm('Remove this team prize?')){D.teamGoals.splice(${i},1);saveData();_advRender();}">Remove</button></div>
-      </div>`).join('');
-
   root.innerHTML = `
-    <div class="adv-editor-header">
-      <i class="ph-duotone ph-wrench" style="color:#fff;font-size:1.1rem"></i>
-      <span class="adv-editor-title">Advanced Data Editor</span>
-      <span id="adv-save-status" class="adv-status" style="margin-right:8px"></span>
-      <button class="adv-close-btn" onclick="closeAdvancedEditor()"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+    <div class="adv-header">
+      <i class="ph-duotone ph-database" style="font-size:1.3rem"></i>
+      <span class="adv-header-title">Data Editor</span>
+      <span id="adv-save-status" class="adv-status" style="margin-right:4px"></span>
+      <button style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem;font-weight:600;flex-shrink:0;margin-right:6px" onclick="cancelAdvancedEditor()">Cancel</button>
+      <button style="background:rgba(255,255,255,0.2);border:none;color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="closeAdvancedEditor()"><i class="ph-duotone ph-x" style="font-size:1rem"></i></button>
     </div>
-    <div class="adv-editor-body">
+    <div class="adv-body">
 
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-user" style="vertical-align:middle"></i> Members (${members.length})</div>
-        <div class="adv-section-body">${membersHtml}</div>
+      <div style="height:4px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="vertical-align:middle;margin-right:6px"></i>Members</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">${membersHtml.join('')}</div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-list-checks" style="vertical-align:middle;margin-right:6px"></i>Chore Completions</span></div>
+      <div class="card">${choresHtml}</div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-trophy" style="vertical-align:middle;margin-right:6px"></i>Team Prizes (${teamGoals.length})</span></div>
+      <div class="card">${goalHtml}</div>
+
+      ${devSettings.length > 0 ? `
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-gear-six" style="vertical-align:middle;margin-right:6px"></i>Dev Settings</span></div>
+      <div class="card" style="display:flex;flex-direction:column;gap:6px">${settingsHtml}</div>` : ''}
+
+      <div style="height:14px"></div>
+      <div class="section-row">
+        <span class="section-title"><i class="ph-duotone ph-scroll" style="vertical-align:middle;margin-right:6px"></i>History</span>
+        <span style="font-size:0.8rem;color:var(--muted)">(last 150)</span>
       </div>
+      <div class="card">${histHtml}</div>
 
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-list" style="vertical-align:middle"></i> Chores (${D.chores.length}) — icon · title · diamonds</div>
-        <div class="adv-section-body">${choresHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-gift" style="vertical-align:middle"></i> Prizes (${D.prizes.length}) — icon · title · cost</div>
-        <div class="adv-section-body">${prizesHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-gear-six" style="vertical-align:middle"></i> Settings</div>
-        <div class="adv-section-body">${settingsHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-trophy" style="vertical-align:middle"></i> Team Prizes (${teamGoals.length})</div>
-        <div class="adv-section-body">${goalHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-scroll" style="vertical-align:middle"></i> History — last 40 entries · tap × to delete</div>
-        <div class="adv-section-body">${histHtml}</div>
-      </div>
-
-      <div class="adv-section">
-        <div class="adv-section-heading"><i class="ph-duotone ph-code" style="vertical-align:middle"></i> Raw JSON — full database · edit with care</div>
-        <div class="adv-section-body">
-          <p style="font-size:0.78rem;color:#6b7280;margin:0 0 8px"><i class="ph-duotone ph-warning" style="color:#F59E0B;vertical-align:middle"></i> Clicking Apply overwrites all data. Invalid JSON will be rejected.</p>
-          <textarea id="adv-raw-json" class="adv-raw-textarea">${esc(JSON.stringify(D, null, 2))}</textarea>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            <button class="adv-apply-btn" onclick="advApplyRawJson()">Apply Raw JSON</button>
-            <button class="adv-apply-btn" style="background:#374151" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload</button>
-            <span id="adv-json-status" class="adv-status"></span>
-          </div>
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-code" style="vertical-align:middle;margin-right:6px"></i>Raw JSON</span></div>
+      <div class="card">
+        <p style="font-size:0.82rem;color:var(--muted);margin:0 0 10px;line-height:1.5"><i class="ph-duotone ph-warning" style="color:#F59E0B;vertical-align:middle;margin-right:4px"></i>Clicking Apply overwrites all data. Invalid JSON will be rejected.</p>
+        <textarea id="adv-raw-json" style="width:100%;min-height:240px;font-family:'Courier New',monospace;font-size:0.75rem;border:1px solid #D1D5DB;border-radius:8px;padding:10px;box-sizing:border-box;resize:vertical;line-height:1.5">${esc(JSON.stringify(D, null, 2))}</textarea>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-primary btn-sm" onclick="advApplyRawJson()">Apply</button>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('adv-raw-json').value=JSON.stringify(D,null,2)"><i class="ph-duotone ph-arrow-clockwise" style="vertical-align:middle;margin-right:4px"></i>Reload</button>
+          <span id="adv-json-status" class="adv-status"></span>
         </div>
       </div>
 
+      <div style="height:30px"></div>
     </div>`;
 }
 
@@ -7568,6 +8856,201 @@ function saveSetting(key, value) {
   saveData();
 }
 
+
+// ── ADJUST DIAMONDS / SAVINGS (Quick Actions) ─────────────────
+function showAdjustDiamondsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  if (!kids.length) { toast('No kids yet'); return; }
+  S.adjDmdsSign = 1;
+  S.adjDmdsKids = new Set();
+  showModal('<div id="adj-dmds-body"></div>');
+  _updateAdjDiamondsBody();
+}
+
+function _updateAdjDiamondsBody() {
+  const el = document.getElementById('adj-dmds-body');
+  if (!el) return;
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const sign = S.adjDmdsSign ?? 1;
+  // Preserve typed values across updates
+  const prevAmt    = document.getElementById('adj-dmds-q')?.value ?? '';
+  const prevReason = document.getElementById('adj-dmds-reason')?.value ?? '';
+  const kidChips = kids.length > 1 ? `
+    <div style="margin-bottom:16px">
+      <div class="form-label" style="margin-bottom:8px">Who</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${kids.map(k => {
+          const sel = (S.adjDmdsKids || new Set()).has(k.id);
+          return `<button onclick="_adjDmdsToggleKid('${k.id}')"
+            style="padding:8px 16px;border-radius:99px;border:2px solid ${sel?'#6C63FF':'#E5E7EB'};
+              background:${sel?'#EDE9FE':'#fff'};color:${sel?'#6C63FF':'var(--text)'};
+              font-weight:700;font-size:0.95rem;cursor:pointer">
+            ${k.avatar||'🙂'} ${esc(k.name)}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+  el.innerHTML = `
+    <div class="modal-title"><i class="ph-duotone ph-sketch-logo" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> +/− Diamonds</div>
+    <div class="toggle-row" style="margin-bottom:16px">
+      <span class="form-label" style="margin-bottom:0">Action</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="_adjDmdsSetSign(1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===1?'#6C63FF':'#E5E7EB'};
+            background:${sign===1?'#6C63FF':'#fff'};color:${sign===1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          + Add
+        </button>
+        <button onclick="_adjDmdsSetSign(-1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===-1?'#EF4444':'#E5E7EB'};
+            background:${sign===-1?'#EF4444':'#fff'};color:${sign===-1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          − Remove
+        </button>
+      </div>
+    </div>
+    ${kidChips}
+    <div class="form-group">
+      <label class="form-label">Amount (💎)</label>
+      <input type="number" id="adj-dmds-q" min="1" value="${esc(prevAmt)}" placeholder="e.g. 5" style="font-size:1.1rem">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-dmds-reason" value="${esc(prevReason)}" placeholder="${sign===1?'Bonus for helping...':'Adjustment...'}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_doAdjDiamondsQuick()">Done</button>
+    </div>`;
+}
+
+function _adjDmdsSetSign(sign) { S.adjDmdsSign = sign; _updateAdjDiamondsBody(); }
+
+function _adjDmdsToggleKid(kidId) {
+  if (!S.adjDmdsKids) S.adjDmdsKids = new Set();
+  if (S.adjDmdsKids.has(kidId)) S.adjDmdsKids.delete(kidId);
+  else S.adjDmdsKids.add(kidId);
+  _updateAdjDiamondsBody();
+}
+
+function _doAdjDiamondsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const targets = kids.filter(k => (S.adjDmdsKids || new Set()).has(k.id));
+  const amt = parseInt(document.getElementById('adj-dmds-q')?.value) || 0;
+  const reason = document.getElementById('adj-dmds-reason')?.value.trim();
+  const sign = S.adjDmdsSign ?? 1;
+  if (!targets.length) { toast('Select at least one kid'); return; }
+  if (amt <= 0) { toast('Enter an amount'); return; }
+  const dmds = sign * amt;
+  targets.forEach(m => {
+    m.diamonds = Math.max(0, (m.diamonds || 0) + dmds);
+    if (dmds > 0) m.totalEarned = (m.totalEarned || 0) + dmds;
+    const label = reason || (dmds > 0 ? 'A special bonus from your parent!' : 'Diamond adjustment');
+    addHistory('bonus', m.id, label, dmds);
+  });
+  saveData();
+  closeModal();
+  const names = targets.map(m => m.name).join(' & ');
+  toast(`${dmds > 0 ? '+' : ''}${dmds} 💎 for ${names}`);
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function showAdjustSavingsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  if (!kids.length) { toast('No kids yet'); return; }
+  S.adjSavSign = 1;
+  S.adjSavKids = new Set();
+  showModal('<div id="adj-sav-body"></div>');
+  _updateAdjSavingsBody();
+}
+
+function _updateAdjSavingsBody() {
+  const el = document.getElementById('adj-sav-body');
+  if (!el) return;
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const sign = S.adjSavSign ?? 1;
+  const cur = D.settings.currency || '$';
+  // Preserve typed values across updates
+  const prevAmt    = document.getElementById('adj-sav-q')?.value ?? '';
+  const prevReason = document.getElementById('adj-sav-reason-q')?.value ?? '';
+  const kidChips = kids.length > 1 ? `
+    <div style="margin-bottom:16px">
+      <div class="form-label" style="margin-bottom:8px">Who</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${kids.map(k => {
+          const sel = (S.adjSavKids || new Set()).has(k.id);
+          return `<button onclick="_adjSavToggleKid('${k.id}')"
+            style="padding:8px 16px;border-radius:99px;border:2px solid ${sel?'#16A34A':'#E5E7EB'};
+              background:${sel?'#DCFCE7':'#fff'};color:${sel?'#16A34A':'var(--text)'};
+              font-weight:700;font-size:0.95rem;cursor:pointer">
+            ${k.avatar||'🙂'} ${esc(k.name)}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+  el.innerHTML = `
+    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> +/− Savings</div>
+    <div class="toggle-row" style="margin-bottom:16px">
+      <span class="form-label" style="margin-bottom:0">Action</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="_adjSavSetSign(1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===1?'#16A34A':'#E5E7EB'};
+            background:${sign===1?'#16A34A':'#fff'};color:${sign===1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          + Deposit
+        </button>
+        <button onclick="_adjSavSetSign(-1)"
+          style="padding:8px 18px;border-radius:99px;border:2px solid ${sign===-1?'#EF4444':'#E5E7EB'};
+            background:${sign===-1?'#EF4444':'#fff'};color:${sign===-1?'#fff':'var(--text)'};font-weight:700;cursor:pointer">
+          − Withdraw
+        </button>
+      </div>
+    </div>
+    ${kidChips}
+    <div class="form-group">
+      <label class="form-label">Amount (${cur})</label>
+      <input type="number" id="adj-sav-q" min="0.01" step="0.01" value="${esc(prevAmt)}" placeholder="e.g. 5.00" style="font-size:1.1rem">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason <span class="form-label-hint">optional</span></label>
+      <input type="text" id="adj-sav-reason-q" value="${esc(prevReason)}" placeholder="${sign===1?'Birthday money, allowance...':'Spending...'}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="_doAdjSavingsQuick()">Done</button>
+    </div>`;
+}
+
+function _adjSavSetSign(sign) { S.adjSavSign = sign; _updateAdjSavingsBody(); }
+
+function _adjSavToggleKid(kidId) {
+  if (!S.adjSavKids) S.adjSavKids = new Set();
+  if (S.adjSavKids.has(kidId)) S.adjSavKids.delete(kidId);
+  else S.adjSavKids.add(kidId);
+  _updateAdjSavingsBody();
+}
+
+function _doAdjSavingsQuick() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  const targets = kids.filter(k => (S.adjSavKids || new Set()).has(k.id));
+  const amt = parseFloat(document.getElementById('adj-sav-q')?.value) || 0;
+  const reason = document.getElementById('adj-sav-reason-q')?.value.trim();
+  const sign = S.adjSavSign ?? 1;
+  const cur = D.settings.currency || '$';
+  if (!targets.length) { toast('Select at least one kid'); return; }
+  if (amt <= 0) { toast('Enter an amount'); return; }
+  const dollars = parseFloat((sign * amt).toFixed(2));
+  targets.forEach(m => {
+    m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
+    if (sign > 0) {
+      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, { dollars: amt });
+    } else {
+      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, { dollars: amt });
+    }
+  });
+  saveData();
+  closeModal();
+  const names = targets.map(m => m.name).join(' & ');
+  toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${names}`);
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
 
 function showAddPointsModal(memberId) {
   const m = getMember(memberId);
@@ -7672,8 +9155,21 @@ function _confirmSwitchFamily() {
 }
 
 function resetAllData() {
-  if (!confirm('This will erase ALL family data. Are you absolutely sure?')) return;
-  if (!confirm('Last chance — really reset everything?')) return;
+  showModal(`
+    <div class="modal-title" style="color:#EF4444">⚠️ Reset All Data?</div>
+    <p style="margin:0 0 12px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will <strong>permanently erase all family data</strong> — chores, prizes, history, member profiles, and settings. This cannot be undone.</p>
+    <p style="margin:0 0 10px;color:var(--muted);font-size:0.88rem">Type <strong>reset</strong> below to confirm:</p>
+    <input id="reset-type-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:20px;outline:none"
+      placeholder=""
+      oninput="document.getElementById('reset-type-btn').disabled=this.value.trim()!=='reset'">
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button id="reset-type-btn" class="btn btn-danger" disabled onclick="closeModal();_doResetAllData()">Reset Everything</button>
+    </div>`);
+}
+
+function _doResetAllData() {
   localStorage.removeItem(LS_KEY);
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   db.doc(getFamilyDoc()).delete().catch(e => console.warn('Firestore delete error:', e));
@@ -7733,16 +9229,156 @@ async function checkMaintenanceMode() {
   return false;
 }
 
+function showParentSignIn(memberId, onSuccess) {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.className = 'screen active';
+  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:40px 28px';
+  const member = getMember(memberId);
+  el.innerHTML = `
+    <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
+    <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
+    <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+      <button id="btn-google-signin" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('google','${memberId}')">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <button id="btn-apple-signin" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('apple','${memberId}')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+        Continue with Apple&nbsp;
+      </button>
+    </div>
+    <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()">← Back</button>
+    ${RC.betaMode ? `
+    <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
+      <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">🛠 Dev — skip real auth</div>
+      <div style="display:flex;gap:8px">
+        <input id="dev-parentsignin-email" type="email" placeholder="your setup email" autocomplete="off"
+          style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
+        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test →</button>
+      </div>
+    </div>` : ''}`;
+  S._parentSignInCallback = onSuccess || null;
+}
+
+function _devParentSignIn(memberId) {
+  const email = (document.getElementById('dev-parentsignin-email')?.value || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
+  const member = getMember(memberId);
+  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
+  const linked = member?.authUid === fakeUid ||
+    (member?.authProviders || []).some(p => p.email?.toLowerCase() === email || p.uid === fakeUid);
+  if (!linked) {
+    toast('That email isn\'t linked to this profile — use the email you signed up with');
+    return;
+  }
+  setParentAuthUid(fakeUid);
+  const cb = S._parentSignInCallback;
+  S._parentSignInCallback = null;
+  proceedAsParent(memberId, cb);
+}
+
+async function handleParentSignIn(provider, memberId) {
+  const btns = document.querySelectorAll('#btn-google-signin, #btn-apple-signin');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+  const firebaseUser = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+  if (!firebaseUser) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  await linkParentAuth(firebaseUser, memberId);
+  await checkAndPromptNewDevice(firebaseUser.uid, memberId);
+}
+
+async function checkAndPromptNewDevice(parentUid, memberId) {
+  try {
+    const tokenDoc = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
+    const existingTokens = tokenDoc.exists ? (tokenDoc.data().tokens || []) : [];
+    const cb = S._parentSignInCallback;
+    S._parentSignInCallback = null;
+    if (existingTokens.length === 0) {
+      // First time on any device — register silently, no prompt needed
+      proceedAsParent(memberId, cb);
+    } else {
+      showNewDevicePrompt(parentUid, memberId, cb);
+    }
+  } catch {
+    const cb = S._parentSignInCallback;
+    S._parentSignInCallback = null;
+    proceedAsParent(memberId, cb);
+  }
+}
+
+function showNewDevicePrompt(parentUid, memberId, onComplete) {
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-devices" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">New Device Detected</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Where would you like to receive notifications?</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+      <button class="btn btn-primary" onclick="registerDeviceAndProceed('this','${parentUid}','${memberId}')">Use this device</button>
+      <button class="btn btn-secondary" onclick="registerDeviceAndProceed('both','${parentUid}','${memberId}')">Use both devices</button>
+      <button class="btn btn-secondary" onclick="registerDeviceAndProceed('keep','${parentUid}','${memberId}')">Keep my other device</button>
+    </div>`);
+  S._parentSignInCallback = onComplete || null;
+}
+
+async function registerDeviceAndProceed(choice, parentUid, memberId) {
+  closeModal();
+  if (choice !== 'keep') {
+    await registerDeviceToken(parentUid, choice === 'this');
+  }
+  const cb = S._parentSignInCallback;
+  S._parentSignInCallback = null;
+  proceedAsParent(memberId, cb);
+}
+
+function proceedAsParent(memberId, onComplete) {
+  const member = getMember(memberId);
+  if (!member) { renderHome(); return; }
+  S.currentUser = member;
+  setCurrentUserId(member.id);
+  setAppUnlocked(true);
+  if (onComplete) { onComplete(member); return; }
+  routeToView(member);
+}
+
+async function registerDeviceToken(parentUid, replaceExisting) {
+  // Placeholder — will be populated when push notifications are implemented
+  // For now just records device info so the model is in place
+  try {
+    const deviceName = navigator.userAgent.includes('iPhone') ? 'iPhone'
+                     : navigator.userAgent.includes('iPad')   ? 'iPad'
+                     : 'Device';
+    const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
+    if (replaceExisting) {
+      await ref.set({ tokens: [{ token: null, deviceName, registeredAt: Date.now() }] });
+    } else {
+      const snap = await ref.get();
+      const existing = snap.exists ? (snap.data().tokens || []) : [];
+      existing.push({ token: null, deviceName, registeredAt: Date.now() });
+      await ref.set({ tokens: existing });
+    }
+  } catch(e) {
+    console.warn('Device token registration failed:', e.message);
+  }
+}
+
 function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
   el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center';
   el.innerHTML = `
+    <style>
+      @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
+    </style>
     <img src="gemsproutpadded.png" class="loading-img" style="width:160px;height:160px">
     <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.01em">GemSprout</div>
-    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:7px">
-      <i class="ph-duotone ph-hourglass" style="font-size:1.1rem"></i> Loading...
+    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:2px">
+      Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
     </div>`;
 }
 
@@ -7759,7 +9395,12 @@ function routeAfterLoad() {
         S.currentUser = rememberedUser;
         routeToView(rememberedUser);
       } else {
-        renderHome();
+        const kids = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
+        if (kids.length === 1) {
+          selectProfile(kids[0].id);
+        } else {
+          renderHome();
+        }
       }
     } else showAppPin();
   }
@@ -7767,6 +9408,13 @@ function routeAfterLoad() {
 
 function init() {
   window.speechSynthesis?.getVoices(); // prime async voice loading on iOS
+
+  // Re-render settings if it's open when Firebase auth state resolves (async on app restore).
+  // This fixes the "Link Account" flash when closing on kid profile and reopening.
+  auth.onAuthStateChanged(() => {
+    if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
+  });
+
   loadData();
   applyInterestForAllKids();
   scheduleHereCheck();
@@ -7794,7 +9442,7 @@ function init() {
         renderHome();
       }
     } else showAppPin();
-    auth.signInAnonymously()
+    ensureFirestoreAuth()
       .then(() => {
         subscribeToFirestore();
         if (_needsMigrationPush) pushToFirestore();
@@ -7804,7 +9452,7 @@ function init() {
     // Slow path: no local data (fresh install or standalone PWA first launch)
     // Wait for Firestore before routing so we don't wrongly show setup wizard
     showLoading();
-    auth.signInAnonymously()
+    ensureFirestoreAuth()
       .then(() => subscribeToFirestore(routeAfterLoad))
       .catch(err => {
         console.warn('Firestore unavailable, falling back to local data:', err);
@@ -7813,7 +9461,21 @@ function init() {
   }
 }
 
+document.addEventListener('visibilitychange', () => {
+  if (!D.settings?.lockOnBackground) return;
+  if (document.visibilityState === 'hidden') {
+    if (S.currentUser) setAppUnlocked(false);
+  } else if (document.visibilityState === 'visible') {
+    if (S.currentUser && !isAppUnlocked()) showAppPin();
+  }
+});
+
 // Start on DOM ready
+async function ensureFirestoreAuth() {
+  if (auth.currentUser) return;
+  await auth.signInAnonymously().catch(() => {});
+}
+
 async function startApp() {
   await checkBiometricAvailability();
   const inMaintenance = await checkMaintenanceMode();
@@ -7825,5 +9487,14 @@ if (document.readyState === 'loading') {
 } else {
   startApp();
 }
+
+// Scroll to top when app is foregrounded (tab/app switch back)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const kc = document.getElementById('kid-content');
+  const pc = document.getElementById('parent-content');
+  if (kc) kc.scrollTop = 0;
+  if (pc) pc.scrollTop = 0;
+});
 
 console.log('✅ GemSprout fully loaded!');

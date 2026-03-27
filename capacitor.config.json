@@ -5,6 +5,10 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com", "apple.com"]
     }
   },
   "ios": {
@@ -12,7 +16,9 @@
     "contentInset": "never",
     "infoPlist": {
       "ITSAppUsesNonExemptEncryption": false,
-      "NSCameraUsageDescription": "GemSprout uses your camera so kids can take before and after photos of completed chores."
+      "NSCameraUsageDescription": "GemSprout uses your camera so kids can take before and after photos of completed chores.",
+      "NSPhotoLibraryUsageDescription": "GemSprout may access your photo library to attach images to chores.",
+      "NSPhotoLibraryAddUsageDescription": "GemSprout may save chore photos to your photo library."
     }
   }
 }

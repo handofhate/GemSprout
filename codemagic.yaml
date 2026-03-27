@@ -6,7 +6,6 @@ workflows:
 
     cache:
       cache_paths:
-        - $HOME/Library/Caches/CocoaPods
         - $CM_BUILD_DIR/node_modules
 
     integrations:
@@ -22,7 +21,9 @@ workflows:
 
     scripts:
       - name: Install npm dependencies
-        script: npm install
+        script: |
+          npm install --legacy-peer-deps
+          npm prune --legacy-peer-deps
 
       - name: Sync Capacitor to iOS
         script: |
@@ -32,14 +33,80 @@ workflows:
           cp app.js www/
           cp manifest.json www/
           cp *.png www/
+          cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor-core.js
           npx cap add ios
+          if [ -f ios/App/Podfile ]; then
+            sed -i '' "s/platform :ios, '.*'/platform :ios, '15.5'/" ios/App/Podfile
+          fi
+          cp GoogleService-Info.plist ios/App/App/
+          # Generate iOS app icons from source image
+          mkdir -p assets
+          cp "GemSprout Icon.png" assets/icon-only.png
+          npx capacitor-assets generate --ios
           npx cap sync ios
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'GemSprout may access your photo library to attach images to chores.'" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'GemSprout may access your photo library to attach images to chores.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'GemSprout may save chore photos to your photo library.'" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'GemSprout may save chore photos to your photo library.'" "$PLIST"
+
+      - name: Add GoogleService-Info.plist to Xcode bundle resources
+        script: |
+          gem install xcodeproj --no-document
+          ruby - <<'EOF'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
+          target = project.targets.first
+          already_added = target.resources_build_phase.files.any? { |f|
+            f.file_ref&.path == 'GoogleService-Info.plist'
+          }
+          unless already_added
+            file_ref = project.main_group['App'].new_file('GoogleService-Info.plist')
+            target.add_resources([file_ref])
+            project.save
+            puts 'Added GoogleService-Info.plist to bundle resources'
+          else
+            puts 'GoogleService-Info.plist already in bundle resources'
+          end
+          EOF
+
+      - name: Add Sign In with Apple entitlement
+        script: |
+          ENTITLEMENTS="ios/App/App/App.entitlements"
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '  <key>com.apple.developer.applesignin</key>' \
+            '  <array><string>Default</string></array>' \
+            '</dict></plist>' > "$ENTITLEMENTS"
+
+      - name: Link entitlements to Xcode project
+        script: |
+          gem install xcodeproj --no-document
+          ruby - <<'EOF'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
+          target = project.targets.first
+          target.build_configurations.each do |config|
+            config.build_settings['CODE_SIGN_ENTITLEMENTS'] = 'App/App.entitlements'
+          end
+          project.save
+          puts 'Set CODE_SIGN_ENTITLEMENTS to App/App.entitlements'
+          EOF
 
       - name: Set Info.plist flags
         script: |
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
           plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
           plutil -insert NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist || plutil -replace NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist
+          plutil -insert CFBundleURLTypes -json '[{"CFBundleURLSchemes":["com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508"]}]' ios/App/App/Info.plist || true
+
+      - name: Resolve Swift packages
+        script: |
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme App
 
       - name: Set up code signing
         script: xcode-project use-profiles
@@ -64,6 +131,5 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: true
-        # Set to true when ready for full App Store submission:
+        submit_to_testflight: false
         submit_to_app_store: false
