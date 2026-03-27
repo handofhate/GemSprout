@@ -44,6 +44,11 @@ workflows:
           cp "GemSprout Icon.png" assets/icon-only.png
           npx capacitor-assets generate --ios
           npx cap sync ios
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'GemSprout may access your photo library to attach images to chores.'" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'GemSprout may access your photo library to attach images to chores.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'GemSprout may save chore photos to your photo library.'" "$PLIST" 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'GemSprout may save chore photos to your photo library.'" "$PLIST"
 
       - name: Add GoogleService-Info.plist to Xcode bundle resources
         script: |
