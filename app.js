@@ -4202,7 +4202,14 @@ async function startQRScan() {
   if (!isNative()) return;
   const BarcodeScanner = Capacitor?.Plugins?.BarcodeScanner || window.capacitorBarcodeScanner?.BarcodeScanner;
   if (!BarcodeScanner) {
-    alert('DEBUG: BarcodeScanner=' + JSON.stringify(!!Capacitor?.Plugins?.BarcodeScanner) + ' / window=' + JSON.stringify(!!window.capacitorBarcodeScanner?.BarcodeScanner));
+    alert('DEBUG2:'
+      + ' Cap=' + !!window.Capacitor
+      + ' | regPlugin=' + !!(window.Capacitor?.registerPlugin)
+      + ' | capExports=' + !!window.capacitorExports
+      + ' | capExports.reg=' + !!(window.capacitorExports?.registerPlugin)
+      + ' | capBSObj=' + !!window.capacitorBarcodeScanner
+      + ' | Plugins.BS=' + !!Capacitor?.Plugins?.BarcodeScanner
+    );
     toast('QR scanning not available — enter the code manually');
     return;
   }
