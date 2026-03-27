@@ -136,7 +136,6 @@ async function signInWithApple() {
   } catch(e) {
     if (e.message !== 'Sign in cancelled.') {
       console.warn('Apple sign-in failed:', e.message);
-      if (isNative()) alert('Apple error: ' + (e.message || e.code || JSON.stringify(e)));
     }
     return null;
   }
@@ -171,7 +170,7 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   member.authUids = member.authProviders.map(p => p.uid); // for future Firestore array-contains queries
   saveData();
   // Write UID→familyCode so returning parents can Sign In on new devices
-  db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid }, { merge: true })
+  db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
     .catch(e => console.warn('users doc write failed:', e));
 }
 
@@ -2917,8 +2916,53 @@ function openUserSettings() {
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Close</button>
         <button class="btn btn-primary" onclick="switchUserNow()">Switch User</button>
+      </div>
+      <div style="border-top:1px solid #F3F4F6;margin-top:12px;padding-top:12px">
+        <button class="btn btn-secondary btn-sm" style="width:100%;color:#EF4444;border-color:#EF4444" onclick="closeModal();showLeaveDevicePin()">
+          <i class="ph-duotone ph-sign-out" style="vertical-align:middle;margin-right:6px"></i> Leave this Device
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:6px;text-align:center">Requires parent PIN. Removes this family from the device.</div>
       </div>`);
   }
+}
+
+function showLeaveDevicePin() {
+  if (!D.settings?.parentPin) {
+    _doLeaveDevice();
+    return;
+  }
+  const saved = S.currentUser;
+  showScreen('screen-pin');
+  S.pinBuffer = '';
+  S.pinMode   = 'leaveDevice';
+  S._leaveDeviceUser = saved;
+  document.getElementById('pin-content').innerHTML = `
+    <div class="pin-avatar"><i class="ph-duotone ph-sign-out" style="color:#6C63FF;font-size:2.5rem"></i></div>
+    <div class="pin-title">Leave this Device</div>
+    <div class="pin-sub">Enter the parent PIN to confirm</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-grid">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+        <button class="pin-key${k===''?' hidden':''}" onclick="pinKey('${k}')">${k}</button>
+      `).join('')}
+    </div>
+    <div id="pin-error" class="pin-error hidden"></div>
+    <button class="btn btn-secondary mt-16" style="width:min(360px,calc(100vw - 48px))" onclick="S.currentUser=S._leaveDeviceUser;routeToView(S._leaveDeviceUser)">Cancel</button>`;
+}
+
+function _doLeaveDevice() {
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(FAMILY_CODE_KEY);
+  D = defaultData();
+  S.currentUser = null;
+  showScreen('screen-setup');
+  renderSetupGate();
 }
 
 function closeSettings() {
@@ -3646,6 +3690,7 @@ function pinKey(k) {
       if (S.pinBuffer === D.settings.parentPin) {
         S.pinBuffer = '';
         if (S.pinMode === 'pinReset') { afterPinResetVerified(); return; }
+        if (S.pinMode === 'leaveDevice') { _doLeaveDevice(); return; }
         if (S.pinMode === 'app') {
           setAppUnlocked(true);
           const rememberedUser = getMember(getCurrentUserId());
@@ -3994,6 +4039,8 @@ async function joinFamily() {
     }
     D = normalizeData(snap.data());
     setFamilyCode(code);
+    setCurrentUserId('');   // don't inherit a remembered profile from a previous session
+    setParentAuthUid(null); // don't inherit parent auth trust from a previous session
     try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
     ensureFirestoreAuth()
       .then(() => subscribeToFirestore())
@@ -4068,10 +4115,23 @@ async function _resolveSignInUser(firebaseUser) {
         const familyCode = invite.data().familyCode;
         await invite.ref.update({ used: true, usedAt: Date.now(), usedByUid: firebaseUser.uid });
         setFamilyCode(familyCode);
-        db.doc(`users/${firebaseUser.uid}`).set({ familyCode, uid: firebaseUser.uid }, { merge: true }).catch(() => {});
+        db.doc(`users/${firebaseUser.uid}`).set({ familyCode, uid: firebaseUser.uid, email }, { merge: true }).catch(() => {});
         await ensureFirestoreAuth();
         subscribeToFirestore(() => showParentBSetup(firebaseUser));
         return;
+      }
+      // 3. Email fallback — existing parent signing in with a different UID (e.g. switched provider)
+      const emailSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+      if (!emailSnap.empty) {
+        const data = emailSnap.docs[0].data();
+        if (data.familyCode) {
+          // Register this new UID so future lookups hit step 1 instead
+          db.doc(`users/${firebaseUser.uid}`).set({ familyCode: data.familyCode, uid: firebaseUser.uid, email }, { merge: true }).catch(() => {});
+          setFamilyCode(data.familyCode);
+          await ensureFirestoreAuth();
+          subscribeToFirestore(routeAfterLoad);
+          return;
+        }
       }
     }
     _showSignInNotFound();
@@ -4198,58 +4258,70 @@ async function _devResetInviteTest() {
 
 // ── QR CODE SCAN (kid device) ─────────────────────────────────
 
+let _qrStream = null, _qrAnimFrame = null;
+
 async function startQRScan() {
   if (!isNative()) return;
+  if (typeof jsQR === 'undefined') { toast('QR scanner not available — enter the code manually'); return; }
+
+  // Build fullscreen overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'qr-scan-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <video id="qr-video" playsinline muted autoplay
+      style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0"></video>
+    <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:20px;pointer-events:none">
+      <div style="width:220px;height:220px;border:3px solid rgba(255,255,255,0.8);border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45)"></div>
+      <div style="color:#fff;font-size:0.95rem;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.6)">Point at the QR code</div>
+    </div>
+    <button onclick="stopQRScan()" style="position:absolute;bottom:56px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.4);color:#fff;font-size:1rem;font-weight:600;padding:14px 36px;border-radius:50px;cursor:pointer">Cancel</button>`;
+  document.body.appendChild(overlay);
+
   try {
-    const Camera = window.capacitorExports?.registerPlugin('Camera');
-    if (!Camera) { alert('DBG: Camera plugin not found. capacitorExports=' + !!window.capacitorExports); toast('Camera not available — enter the code manually'); return; }
-    const photo = await Camera.getPhoto({
-      resultType: 'base64',
-      source: 'CAMERA',
-      quality: 85,
-      allowEditing: false,
-      correctOrientation: true,
-      saveToGallery: false,
-    });
-    if (!photo?.base64String) { alert('DBG: getPhoto returned no base64. photo=' + JSON.stringify(Object.keys(photo||{}))); toast('Could not capture photo — try again'); return; }
-    const code = await _decodeQRFromBase64(photo.base64String);
-    if (code) {
-      const input = document.getElementById('join-code-input');
-      if (input) { input.value = code; joinFamily(); }
-    } else {
-      toast('No QR code found — try again with better lighting');
-    }
+    _qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = document.getElementById('qr-video');
+    video.srcObject = _qrStream;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const scan = () => {
+      if (!document.getElementById('qr-scan-overlay')) return;
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+        if (result?.data) {
+          stopQRScan();
+          const code = result.data.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+          const input = document.getElementById('join-code-input');
+          if (input) { input.value = code; joinFamily(); }
+          return;
+        }
+      }
+      _qrAnimFrame = requestAnimationFrame(scan);
+    };
+    _qrAnimFrame = requestAnimationFrame(scan);
+
   } catch(e) {
+    stopQRScan();
     const msg = (e?.message || '').toLowerCase();
-    if (!msg.includes('cancel')) alert('DBG: startQRScan error: ' + (e?.message || e?.code || JSON.stringify(e)));
-    if (!msg.includes('cancel')) toast('Camera failed — enter the code manually');
+    if (msg.includes('permission') || msg.includes('denied')) {
+      toast('Camera permission denied — enter the code manually');
+    } else if (!msg.includes('abort')) {
+      toast('Camera unavailable — enter the code manually');
+    }
   }
 }
 
-function _decodeQRFromBase64(base64) {
-  return new Promise((resolve) => {
-    if (typeof jsQR === 'undefined') { alert('DBG: jsQR not loaded'); resolve(null); return; }
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const result = jsQR(data, width, height);
-        if (result?.data) {
-          const code = result.data.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-          resolve(code || null);
-        } else {
-          resolve(null);
-        }
-      } catch(e) { alert('DBG: decode error: ' + e?.message); resolve(null); }
-    };
-    img.onerror = (e) => { alert('DBG: image load failed'); resolve(null); };
-    img.src = 'data:image/jpeg;base64,' + base64;
-  });
+function stopQRScan() {
+  if (_qrAnimFrame) { cancelAnimationFrame(_qrAnimFrame); _qrAnimFrame = null; }
+  if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
+  const overlay = document.getElementById('qr-scan-overlay');
+  if (overlay) overlay.remove();
 }
 
 // ── QR CODE DISPLAY (parent settings) ────────────────────────
@@ -6130,17 +6202,10 @@ function renderParentView() {
   renderParentHeader();
   renderParentNav();
   renderParentTab();
-  // Prompt existing users (pre-auth update) to link their account — non-blocking
-  // TODO: remove once auth is required (next build after beta migration)
-  if (S.currentUser && !S.currentUser.authUid && !S.currentUser.authUids?.length && !S._authPromptShown) {
-    S._authPromptShown = true;
-    setTimeout(() => showLinkAccountPrompt(S.currentUser.id), 1500);
-  }
   // Prompt existing users who have no PIN set — non-blocking
-  // TODO: remove once all beta users have been migrated to required PIN
   if (S.currentUser && !D.settings.parentPin && !S._pinPromptShown) {
     S._pinPromptShown = true;
-    setTimeout(() => showRequirePinPrompt(), (S.currentUser.authUid || S.currentUser.authUids?.length) ? 1500 : 3000);
+    setTimeout(() => showRequirePinPrompt(), 1500);
   }
 }
 
@@ -6217,6 +6282,17 @@ async function linkAdditionalProvider(providerId) {
   renderSettings();
 }
 
+function _removeLastProviderAndSignOut() {
+  const member = S.currentUser;
+  if (member) {
+    member.authProviders = [];
+    member.authUids = [];
+    saveData();
+  }
+  closeSettings();
+  signOutAndGoHome();
+}
+
 function unlinkProvider(providerId) {
   const member = S.currentUser;
   if (!member?.authProviders?.length) return;
@@ -6227,7 +6303,7 @@ function unlinkProvider(providerId) {
       <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This is your only linked account. Removing it will sign you out.</p>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="closeModal();closeSettings();signOutAndGoHome()">Remove &amp; Sign Out</button>
+        <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="closeModal();_removeLastProviderAndSignOut()">Remove &amp; Sign Out</button>
       </div>`);
     return;
   }
@@ -6244,8 +6320,8 @@ function showRequirePinPrompt() {
   showModal(`
     <div style="text-align:center;padding:4px 0 8px">
       <i class="ph-duotone ph-lock-key" style="font-size:2.5rem;color:#6C63FF"></i>
-      <div class="modal-title" style="margin-top:8px">PIN Required</div>
-      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">GemSprout now requires a 4-digit PIN to protect the parent dashboard. Please set one now.</p>
+      <div class="modal-title" style="margin-top:8px">Action Required</div>
+      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Please set a 4-digit PIN and link your Google or Apple account before your next session — both are now required. If you ever lose access to your family, reach out and we'll get you back in.</p>
     </div>
     <div class="modal-actions" style="margin-top:20px">
       <button class="btn btn-secondary" onclick="closeModal()">Not Now</button>
@@ -6253,18 +6329,6 @@ function showRequirePinPrompt() {
     </div>`);
 }
 
-function showLinkAccountPrompt(memberId) {
-  showModal(`
-    <div style="text-align:center;padding:4px 0 8px">
-      <i class="ph-duotone ph-shield-check" style="font-size:2.5rem;color:#6C63FF"></i>
-      <div class="modal-title" style="margin-top:8px">Link Your Account</div>
-      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Sign in with Google or Apple to enable push notifications and secure your parent profile. Account sign-in will be required in a future update.</p>
-    </div>
-    <div class="modal-actions" style="margin-top:20px">
-      <button class="btn btn-secondary" onclick="closeModal()">Not Now</button>
-      <button class="btn btn-primary" onclick="closeModal();showParentSignIn('${memberId}')">Link Account</button>
-    </div>`);
-}
 
 function renderParentHeader() {
   const m = S.currentUser;
@@ -9331,7 +9395,12 @@ function routeAfterLoad() {
         S.currentUser = rememberedUser;
         routeToView(rememberedUser);
       } else {
-        renderHome();
+        const kids = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
+        if (kids.length === 1) {
+          selectProfile(kids[0].id);
+        } else {
+          renderHome();
+        }
       }
     } else showAppPin();
   }
