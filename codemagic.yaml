@@ -45,6 +45,14 @@ workflows:
           cp "GemSprout Icon.png" assets/icon-only.png
           npx capacitor-assets generate --ios
           npx cap sync ios
+          # Force-add barcode scanning pod if cap sync didn't discover it
+          if ! grep -q "CapacitorMlkitBarcodeScanning" ios/App/Podfile; then
+            echo "CapacitorMlkitBarcodeScanning not found in Podfile — adding manually"
+            sed -i '' "s/def capacitor_pods/def capacitor_pods\n  pod 'CapacitorMlkitBarcodeScanning', :path => '..\/..\/node_modules\/@capacitor-mlkit\/barcode-scanning'/" ios/App/Podfile
+            cd ios/App && pod install --repo-update && cd ../..
+          else
+            echo "CapacitorMlkitBarcodeScanning already in Podfile"
+          fi
 
       - name: Add GoogleService-Info.plist to Xcode bundle resources
         script: |
