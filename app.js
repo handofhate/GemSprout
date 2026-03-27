@@ -4200,57 +4200,56 @@ async function _devResetInviteTest() {
 
 async function startQRScan() {
   if (!isNative()) return;
-  const BarcodeScanner = Capacitor?.Plugins?.BarcodeScanner || window.capacitorBarcodeScanner?.BarcodeScanner;
-  if (!BarcodeScanner) {
-    alert('DEBUG2:'
-      + ' Cap=' + !!window.Capacitor
-      + ' | regPlugin=' + !!(window.Capacitor?.registerPlugin)
-      + ' | capExports=' + !!window.capacitorExports
-      + ' | capExports.reg=' + !!(window.capacitorExports?.registerPlugin)
-      + ' | capBSObj=' + !!window.capacitorBarcodeScanner
-      + ' | Plugins.BS=' + !!Capacitor?.Plugins?.BarcodeScanner
-    );
-    toast('QR scanning not available — enter the code manually');
-    return;
-  }
   try {
-    if (typeof BarcodeScanner.isSupported === 'function') {
-      const supported = await BarcodeScanner.isSupported();
-      if (supported && supported.supported === false) {
-        alert('DEBUG: isSupported returned: ' + JSON.stringify(supported));
-        toast('QR scanning not available — enter the code manually');
-        return;
-      }
-    }
-    if (typeof BarcodeScanner.checkPermissions === 'function') {
-      const perms = await BarcodeScanner.checkPermissions();
-      const status = perms?.camera || 'prompt';
-      if (status !== 'granted' && status !== 'limited') {
-        const req = await BarcodeScanner.requestPermissions();
-        const next = req?.camera || 'denied';
-        if (next !== 'granted' && next !== 'limited') {
-          toast('Camera access is required to scan a QR code');
-          return;
-        }
-      }
-    }
-    const result = await BarcodeScanner.scan({ formats: ['QR_CODE'] });
-    const barcode = result?.barcodes?.[0];
-    const raw = barcode?.rawValue || barcode?.displayValue || '';
-    if (raw) {
-      const code = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    const Camera = window.capacitorExports?.registerPlugin('Camera');
+    if (!Camera) { alert('DBG: Camera plugin not found. capacitorExports=' + !!window.capacitorExports); toast('Camera not available — enter the code manually'); return; }
+    const photo = await Camera.getPhoto({
+      resultType: 'base64',
+      source: 'CAMERA',
+      quality: 85,
+      allowEditing: false,
+      correctOrientation: true,
+      saveToGallery: false,
+    });
+    if (!photo?.base64String) { alert('DBG: getPhoto returned no base64. photo=' + JSON.stringify(Object.keys(photo||{}))); toast('Could not capture photo — try again'); return; }
+    const code = await _decodeQRFromBase64(photo.base64String);
+    if (code) {
       const input = document.getElementById('join-code-input');
       if (input) { input.value = code; joinFamily(); }
     } else {
-      toast('No QR code detected — try again');
+      toast('No QR code found — try again with better lighting');
     }
   } catch(e) {
-    if (!e.message?.includes('cancel')) {
-      const msg = e?.message || e?.errorMessage || e?.error || (typeof e === 'string' ? e : 'Unknown error');
-      alert('QR scan failed: ' + msg);
-      toast('QR scan failed — enter the code manually');
-    }
+    const msg = (e?.message || '').toLowerCase();
+    if (!msg.includes('cancel')) alert('DBG: startQRScan error: ' + (e?.message || e?.code || JSON.stringify(e)));
+    if (!msg.includes('cancel')) toast('Camera failed — enter the code manually');
   }
+}
+
+function _decodeQRFromBase64(base64) {
+  return new Promise((resolve) => {
+    if (typeof jsQR === 'undefined') { alert('DBG: jsQR not loaded'); resolve(null); return; }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const result = jsQR(data, width, height);
+        if (result?.data) {
+          const code = result.data.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+          resolve(code || null);
+        } else {
+          resolve(null);
+        }
+      } catch(e) { alert('DBG: decode error: ' + e?.message); resolve(null); }
+    };
+    img.onerror = (e) => { alert('DBG: image load failed'); resolve(null); };
+    img.src = 'data:image/jpeg;base64,' + base64;
+  });
 }
 
 // ── QR CODE DISPLAY (parent settings) ────────────────────────
