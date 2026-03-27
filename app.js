@@ -4202,6 +4202,7 @@ async function startQRScan() {
   if (!isNative()) return;
   const BarcodeScanner = Capacitor?.Plugins?.BarcodeScanner || window.capacitorBarcodeScanner?.BarcodeScanner;
   if (!BarcodeScanner) {
+    alert('DEBUG: BarcodeScanner=' + JSON.stringify(!!Capacitor?.Plugins?.BarcodeScanner) + ' / window=' + JSON.stringify(!!window.capacitorBarcodeScanner?.BarcodeScanner));
     toast('QR scanning not available — enter the code manually');
     return;
   }
@@ -4209,6 +4210,7 @@ async function startQRScan() {
     if (typeof BarcodeScanner.isSupported === 'function') {
       const supported = await BarcodeScanner.isSupported();
       if (supported && supported.supported === false) {
+        alert('DEBUG: isSupported returned: ' + JSON.stringify(supported));
         toast('QR scanning not available — enter the code manually');
         return;
       }
