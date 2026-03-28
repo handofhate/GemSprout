@@ -76,6 +76,8 @@ async function initPushNotifications(firebaseUser) {
         _handleApprovalNotificationTap();
       }
     });
+    // Schedule interest day local notification now that permissions are confirmed
+    scheduleInterestDayNotification();
   } catch(e) {
     console.warn('initPushNotifications error:', e);
   }
@@ -89,6 +91,49 @@ function _handleApprovalNotificationTap() {
     S._afterPinNav = 'overview';
   }
   // Otherwise (profile picker / no session) — the badge will be visible when they sign in
+}
+
+// ── INTEREST DAY LOCAL NOTIFICATION ───────────────────────────
+
+function _getNextInterestDayDate() {
+  const s = D.settings;
+  const period = s.savingsInterestPeriod || 'monthly';
+  const now = new Date();
+  const d = new Date(now);
+  d.setHours(9, 0, 0, 0);
+  if (period === 'weekly') {
+    const target = s.savingsInterestDay ?? 1;
+    let daysUntil = (target - d.getDay() + 7) % 7;
+    if (daysUntil === 0 && now >= d) daysUntil = 7;
+    d.setDate(d.getDate() + daysUntil);
+  } else {
+    const dom = s.savingsInterestDayOfMonth || 1;
+    d.setDate(dom);
+    if (d <= now) { d.setMonth(d.getMonth() + 1); d.setDate(dom); }
+  }
+  return d;
+}
+
+async function scheduleInterestDayNotification() {
+  if (!isNative()) return;
+  const { LocalNotifications } = Capacitor.Plugins;
+  if (!LocalNotifications) return;
+  await LocalNotifications.cancel({ notifications: [{ id: 1001 }] }).catch(() => {});
+  if (D.settings.interestDayNotify === false ||
+      !D.settings.savingsInterestEnabled ||
+      D.settings.savingsEnabled === false) return;
+  const kids = (D.family?.members || []).filter(m => m.role === 'kid' && !m.deleted && (m.savings || 0) > 0);
+  if (kids.length === 0) return;
+  const at = _getNextInterestDayDate();
+  if (at <= new Date()) return;
+  await LocalNotifications.schedule({
+    notifications: [{
+      id: 1001,
+      title: 'Interest Day! 📈',
+      body: 'Have your kids open GemSprout to claim their savings interest',
+      schedule: { at },
+    }]
+  }).catch(e => console.warn('scheduleInterestDayNotification error:', e));
 }
 
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
@@ -786,12 +831,20 @@ function checkForNewBadges(member, isWhileAway = false) {
   });
 }
 
+function _getSeenDeclineIds() {
+  try { return new Set(JSON.parse(localStorage.getItem('gemsprout.seenDeclines') || '[]')); } catch { return new Set(); }
+}
+function _markDeclineIdSeen(id) {
+  const s = _getSeenDeclineIds(); s.add(id);
+  try { localStorage.setItem('gemsprout.seenDeclines', JSON.stringify([...s])); } catch {}
+}
+
 function checkForDeclineNotifications(member, isWhileAway = false) {
   if (!D.declineNotifications) return;
-  const pending = D.declineNotifications.filter(n => n.memberId === member.id && !n.seen);
+  const seenIds = _getSeenDeclineIds();
+  const pending = D.declineNotifications.filter(n => n.memberId === member.id && !seenIds.has(n.id));
   if (pending.length === 0) return;
-  pending.forEach(n => { n.seen = true; });
-  saveData();
+  pending.forEach(n => _markDeclineIdSeen(n.id));
   const tiny = isTiny(member);
   pending.forEach(n => {
     const titleHtml = isWhileAway
@@ -914,6 +967,7 @@ function subscribeToFirestore(onFirstLoad) {
         checkForDeclineNotifications(S.currentUser, true); // check for declines while away
       }
       if (typeof onFirstLoad === 'function') onFirstLoad();
+      else if (_didUpdate) renderCurrentView(); // no custom onFirstLoad — re-render in-place with fresh data
     } else if (_didUpdate) {
       renderCurrentView();
       if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
@@ -1476,6 +1530,7 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
           familyCode: getFamilyCode(),
           kidName:    member.name || 'A kid',
           choreTitle: chore.title || 'a chore',
+          isBefore:   !!isBefore,
         }).catch(() => {}); // non-blocking — never throw
       } catch(e) {}
     }
@@ -3311,14 +3366,14 @@ function _renderSettingsMain() {
           </select>
           <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones</div>
         </div>
-        <button style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:12px 0;border-top:1px solid #F3F4F6;margin-top:8px;font:inherit" onclick="S.settingsPage='notifications';renderSettings()">
+        <button style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:12px 0;border-top:1px solid #F3F4F6;margin-top:8px;font:inherit;color:inherit" onclick="S.settingsPage='notifications';renderSettings()">
           <div>
             <div style="font-weight:600;font-size:0.9rem"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Notifications</div>
-            <div class="toggle-sub">Approval alerts, daily reminders, weekly summary</div>
+            <div class="toggle-sub">Approval alerts, interest day reminder</div>
           </div>
           <i class="ph-duotone ph-caret-right" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
         </button>
-        <button style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:12px 0;border-top:1px solid #F3F4F6;font:inherit" onclick="S.settingsPage='account';renderSettings()">
+        <button style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:12px 0;border-top:1px solid #F3F4F6;font:inherit;color:inherit" onclick="S.settingsPage='account';renderSettings()">
           <div>
             <div style="font-weight:600;font-size:0.9rem"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Account &amp; Security</div>
             <div class="toggle-sub">Sign-in, PIN, biometrics</div>
@@ -3585,31 +3640,12 @@ function _renderSettingsNotifications() {
       <div style="height:14px"></div>
       <div class="section-row"><span class="section-title"><i class="ph-duotone ph-clock" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Scheduled Reminders</span></div>
       <div class="card">
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-label">Daily reminder</div>
-            <div class="toggle-sub">Sends a notification at 6 PM on any day no chores have been completed yet</div>
-          </div>
-          <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
-        </div>
         <div class="toggle-row" style="${!interestOn ? 'opacity:0.4;pointer-events:none' : ''}">
           <div>
             <div class="toggle-label">Interest day reminder</div>
             <div class="toggle-sub">${interestOn ? 'Reminds you on interest day to have kids open the app and claim their interest' : 'Enable Savings Interest to use this'}</div>
           </div>
-          <label class="toggle"><input type="checkbox" ${s.interestDayNotify!==false?'checked':''} ${!interestOn?'disabled':''} onchange="saveSetting('interestDayNotify',this.checked)"><span class="toggle-track"></span></label>
-        </div>
-      </div>
-
-      <div style="height:14px"></div>
-      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Summaries</span></div>
-      <div class="card">
-        <div class="toggle-row" style="opacity:0.5;pointer-events:none">
-          <div>
-            <div class="toggle-label">Weekly chore summary <span style="font-size:0.72rem;color:#6C63FF;font-weight:700;margin-left:6px;background:#EEF2FF;padding:2px 7px;border-radius:99px;vertical-align:middle">Coming soon</span></div>
-            <div class="toggle-sub">A weekly recap of each kid's chore completion rate and streaks</div>
-          </div>
-          <label class="toggle"><input type="checkbox" disabled><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox" ${s.interestDayNotify!==false?'checked':''} ${!interestOn?'disabled':''} onchange="saveSetting('interestDayNotify',this.checked);scheduleInterestDayNotification()"><span class="toggle-track"></span></label>
         </div>
       </div>
 
@@ -6510,7 +6546,6 @@ function showRequirePinPrompt() {
 
 function renderParentHeader() {
   const m = S.currentUser;
-  const pending    = pendingApprovals().length + pendingSpendRequests().length;
   const inProgress = inProgressChores().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
@@ -6521,7 +6556,6 @@ function renderParentHeader() {
       </div>
     </div>
     <div class="header-actions">
-      ${pending>0    ? `<span class="header-badge" style="background:#EF4444;color:#fff" title="Needs approval"><i class="ph-duotone ph-hourglass" style="font-size:0.8rem;vertical-align:middle"></i> ${pending}</span>` : ''}
       ${inProgress>0 ? `<span class="header-badge" style="background:#3B82F6;color:#fff" title="Kid actively working"><i class="ph-duotone ph-hammer" style="font-size:0.8rem;vertical-align:middle"></i> ${inProgress}</span>` : ''}
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
     </div>`;
@@ -6543,6 +6577,10 @@ function renderParentNav() {
       <span class="nav-icon">${icon}</span>${label}
       ${id==='home'&&homeCount>0?`<span class="nav-badge">${homeCount}</span>`:''}
     </button>`).join('');
+  if (homeCount === 0 && isNative()) {
+    const { FirebaseMessaging } = Capacitor.Plugins;
+    if (FirebaseMessaging?.setBadge) FirebaseMessaging.setBadge({ count: 0 }).catch(() => {});
+  }
 }
 
 function switchParentTab(tab) {

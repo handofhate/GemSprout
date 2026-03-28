@@ -96,7 +96,7 @@ async function sendToFamily(familyCode, title, body, dataType) {
 }
 
 exports.sendApprovalNotification = onCall({ invoker: 'public' }, async (request) => {
-  const { familyCode, kidName, choreTitle } = request.data;
+  const { familyCode, kidName, choreTitle, isBefore } = request.data;
 
   if (!familyCode || typeof familyCode !== 'string' ||
       !kidName    || typeof kidName    !== 'string' ||
@@ -104,13 +104,13 @@ exports.sendApprovalNotification = onCall({ invoker: 'public' }, async (request)
     throw new HttpsError('invalid-argument', 'Missing required fields: familyCode, kidName, choreTitle');
   }
 
+  const title = isBefore ? 'Photo Submitted 📸' : 'Chore Complete! 🌱';
+  const body  = isBefore
+    ? `${kidName} submitted a before photo for "${choreTitle}" — approve to let them start`
+    : `${kidName} finished "${choreTitle}"`;
+
   try {
-    return await sendToFamily(
-      familyCode,
-      'Chore Complete! 🌱',
-      `${kidName} finished "${choreTitle}"`,
-      'approval_request'
-    );
+    return await sendToFamily(familyCode, title, body, 'approval_request');
   } catch (e) {
     console.error('sendApprovalNotification error:', e);
     throw new HttpsError('internal', e.message || 'Failed to send notification');
