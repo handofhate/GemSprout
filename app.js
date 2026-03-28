@@ -199,8 +199,8 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   saveData();
   // Write UID→familyCode so returning parents can Sign In on new devices
   db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
-  initPushNotifications(firebaseUser);
     .catch(e => console.warn('users doc write failed:', e));
+  initPushNotifications(firebaseUser);
 }
 
 function setAppUnlocked(v) {
