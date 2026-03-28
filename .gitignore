@@ -9,3 +9,5 @@ www/
 Emails/
 .claude/
 *-service-account.json
+firebase-debug.log
+.firebase/
