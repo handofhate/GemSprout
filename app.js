@@ -39,6 +39,34 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
+// ── PUSH NOTIFICATIONS ────────────────────────────────────────
+async function initPushNotifications(firebaseUser) {
+  if (!isNative()) return; // push notifications only on device, not in browser
+  try {
+    const { FirebaseMessaging } = Capacitor.Plugins;
+    if (!FirebaseMessaging) return;
+    const permResult = await FirebaseMessaging.requestPermissions();
+    if (permResult.receive !== 'granted') return;
+    const tokenResult = await FirebaseMessaging.getToken();
+    const token = tokenResult?.token;
+    if (!token || !firebaseUser?.uid) return;
+    await db.doc(`users/${firebaseUser.uid}`).set(
+      { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
+      { merge: true }
+    );
+    // Refresh token if it changes
+    FirebaseMessaging.addListener('tokenReceived', async (event) => {
+      if (!event?.token || !firebaseUser?.uid) return;
+      await db.doc(`users/${firebaseUser.uid}`).set(
+        { fcmTokens: firebase.firestore.FieldValue.arrayUnion(event.token) },
+        { merge: true }
+      ).catch(() => {});
+    });
+  } catch(e) {
+    console.warn('initPushNotifications error:', e);
+  }
+}
+
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
 const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
 const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
@@ -171,6 +199,7 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   saveData();
   // Write UID→familyCode so returning parents can Sign In on new devices
   db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
+  initPushNotifications(firebaseUser);
     .catch(e => console.warn('users doc write failed:', e));
 }
 
@@ -1413,6 +1442,16 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
     return { approved: true, diamonds: chore.diamonds };
   } else {
     saveData();
+    // Notify parents when a kid submits a chore needing approval (fire-and-forget)
+    if (S.currentUser?.role === 'kid') {
+      try {
+        firebase.functions().httpsCallable('sendApprovalNotification')({
+          familyCode: getFamilyCode(),
+          kidName:    member.name || 'A kid',
+          choreTitle: chore.title || 'a chore',
+        }).catch(() => {}); // non-blocking — never throw
+      } catch(e) {}
+    }
     return { approved: false, isBefore };
   }
 }
@@ -2806,6 +2845,62 @@ function emailDebugLogs() {
   window.location.href = `mailto:beta@gemsprout.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
 }
 
+async function devTestPushPermission() {
+  if (!isNative()) { toast('Push notifications only work on device.'); return; }
+  try {
+    const { FirebaseMessaging } = Capacitor.Plugins;
+    if (!FirebaseMessaging) { toast('FirebaseMessaging plugin not found'); return; }
+    const result = await FirebaseMessaging.requestPermissions();
+    toast('Permission status: ' + result.receive);
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function devShowPushToken() {
+  if (!isNative()) { toast('Push notifications only work on device.'); return; }
+  try {
+    const { FirebaseMessaging } = Capacitor.Plugins;
+    if (!FirebaseMessaging) { toast('FirebaseMessaging plugin not found'); return; }
+    const perm = await FirebaseMessaging.requestPermissions();
+    if (perm.receive !== 'granted') { toast('Permission not granted: ' + perm.receive); return; }
+    const result = await FirebaseMessaging.getToken();
+    const token = result?.token;
+    if (!token) { toast('No token returned'); return; }
+    const uid = getParentAuthUid();
+    if (uid) {
+      await db.doc(`users/${uid}`).set(
+        { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
+        { merge: true }
+      );
+    }
+    const escapedToken = token.replace(/'/g, "\\'");
+    showModal(`
+      <div style="padding:8px">
+        <div style="font-weight:700;margin-bottom:10px"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:6px"></i>FCM Token</div>
+        <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.6">${token}</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${uid ? 'Token saved to Firestore ✓' : 'Not signed in — token not saved'}</div>
+        <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedToken}').then(()=>toast('Copied!')).catch(()=>toast('Copy failed'))">Copy Token</button>
+      </div>`);
+  } catch(e) {
+    toast('Error: ' + e.message);
+  }
+}
+
+async function devSendTestPushNotification() {
+  try {
+    const fn = firebase.functions().httpsCallable('sendApprovalNotification');
+    const result = await fn({
+      familyCode: getFamilyCode(),
+      kidName:    'Test Kid',
+      choreTitle: 'Clean Their Room',
+    });
+    toast('Sent! Result: ' + JSON.stringify(result.data));
+  } catch(e) {
+    toast('Error: ' + (e.message || 'Cloud Function call failed'));
+  }
+}
+
 function testCameraPermission() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -3406,6 +3501,11 @@ function renderSettings() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> Test Savings Deposit</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()">🛍️ Test Spend Approved</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()">😔 Test Spend Denied</button>
+        <div style="height:10px"></div>
+        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:4px"></i> Push Notifications</div>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devTestPushPermission()"><i class="ph-duotone ph-lock-open" style="font-size:0.9rem;vertical-align:middle"></i> Request Permission</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devShowPushToken()"><i class="ph-duotone ph-identification-card" style="font-size:0.9rem;vertical-align:middle"></i> Register &amp; Show FCM Token</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
         <div style="height:10px"></div>

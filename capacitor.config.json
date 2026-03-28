@@ -9,6 +9,9 @@
     "FirebaseAuthentication": {
       "skipNativeAuth": true,
       "providers": ["google.com", "apple.com"]
+    },
+    "FirebaseMessaging": {
+      "presentationOptions": ["badge", "sound", "alert"]
     }
   },
   "ios": {
