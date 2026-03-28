@@ -462,6 +462,7 @@ let S = {            // UI state (not persisted)
   _pinPromptShown:       false,
   _parentSignInCallback: null,
   _recentParentAuth:     null,
+  settingsPage:          'main', // 'main' | 'account' | 'notifications'
 };
 
 // ── DEFAULT DATA ──────────────────────────────────────────────
@@ -1838,7 +1839,7 @@ function showSplitHouseholdModal(memberId) {
   }).join('');
 
   showModal(`
-    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split Household Schedule</div>
+    <div class="modal-title"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Split household schedule</div>
 
     <div class="form-group">
       <label class="form-label">Week 1 starts on <span class="form-label-hint">any Monday</span></label>
@@ -1953,7 +1954,7 @@ function saveSplitHousehold() {
   });
   saveData();
   closeModal();
-  toast('Split Household schedule saved');
+  toast('Split household schedule saved');
   renderSettings();
 }
 
@@ -2999,11 +3000,11 @@ function closeModalIfBg(e) {
 
 function openUserSettings() {
   if (S.currentUser?.role === 'parent') {
+    S.settingsPage = 'main';
     renderSettings();
     const sr = document.getElementById('settings-root');
     sr.classList.add('open');
     sr.scrollTop = 0;
-    loadDevicesList();
   } else {
     const name = S.currentUser?.name || 'User';
     showModal(`
@@ -3211,10 +3212,12 @@ function applyNewPin() {
 }
 
 function renderSettings() {
-  const s = D.settings;
-  const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
+  if (S.settingsPage === 'account') { _renderSettingsAccount(); return; }
+  if (S.settingsPage === 'notifications') { _renderSettingsNotifications(); return; }
+  _renderSettingsMain();
+}
 
-  // Auth providers — migrate from old single-authUid if authProviders not yet populated
+function _settingsAuthProviders() {
   let _authProviders = S.currentUser?.authProviders || [];
   if (!_authProviders.length && auth.currentUser && !auth.currentUser.isAnonymous) {
     _authProviders = auth.currentUser.providerData.map(p => ({
@@ -3222,11 +3225,15 @@ function renderSettings() {
       email: p.email || auth.currentUser.email || ''
     }));
   }
-  const _googleProv = _authProviders.find(p => p.providerId === 'google.com');
-  const _appleProv  = _authProviders.find(p => p.providerId === 'apple.com');
-  const _anyLinked  = !!(_googleProv || _appleProv);
-  const _googleIcon = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
-  const _appleIcon  = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>`;
+  return _authProviders;
+}
+
+const _GOOGLE_ICON = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
+const _APPLE_ICON  = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>`;
+
+function _renderSettingsMain() {
+  const s = D.settings;
+  const members = D.family.members.filter(m => m.role !== 'parent' && !m.deleted);
 
   const shEnabled = members.some(k => k.splitHousehold?.enabled);
   const firstKid = members[0];
@@ -3247,48 +3254,22 @@ function renderSettings() {
       </div>`;
   }).join('');
 
-  const pinLabel = D.settings.parentPin ? 'Reset PIN' : 'Set PIN';
-  const bioBtn = isBiometricSupported() ? (getBiometricCredentialId()
-    ? `<button class="btn btn-secondary btn-sm" onclick="removeBiometric();renderSettings()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Remove ${getBiometricLabel()}</button>`
-    : `<button class="btn btn-secondary btn-sm" onclick="registerBiometric()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Set Up ${getBiometricLabel()}</button>`) : '';
-
   document.getElementById('settings-root').innerHTML = `
     <div class="settings-header">
       <button class="btn-back" onclick="closeSettings()">←</button>
       <span class="settings-header-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Settings</span>
-      <button class="btn btn-secondary btn-sm" onclick="closeSettings();goHome()">Switch User</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-secondary btn-sm" onclick="showFamilyCodeModal()">Add user</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeSettings();goHome()">Switch user</button>
+      </div>
     </div>
     <div class="settings-body">
 
-      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-link" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family Code</span></div>
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
-          <div style="font-size:1.8rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${getFamilyCode()}</div>
-          <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${getFamilyCode()}').then(()=>toast('Code copied!'))">
-            <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
-          </button>
-        </div>
-        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Use these to get other family members set up on their devices.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="showKidDeviceQR()">
-            <i class="ph-duotone ph-qr-code" style="font-size:0.9rem;vertical-align:middle"></i> Add a Kid Device
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="showInviteParent()">
-            <i class="ph-duotone ph-user-plus" style="font-size:0.9rem;vertical-align:middle"></i> Invite a Parent
-          </button>
-        </div>
-        ${RC.betaMode ? `<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
-          <span style="color:var(--muted)">Install on other devices: </span>
-          <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a>
-        </div>` : ''}
-      </div>
-
-      <div style="height:14px"></div>
       <div class="section-row"><span class="section-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</span></div>
       <div class="card">
         <div class="toggle-row">
           <div><div class="toggle-label">Auto-approve chores</div>
-            <div class="toggle-sub">Kids earn diamonds instantly without parent review</div></div>
+            <div class="toggle-sub">Kids earn diamonds instantly without a final review — pre-approval photos (if set) still require manual approval</div></div>
           <label class="toggle"><input type="checkbox" ${s.autoApprove?'checked':''} onchange="saveSetting('autoApprove',this.checked);renderParentHome()"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
@@ -3297,65 +3278,28 @@ function renderSettings() {
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="form-group mb-0">
-          <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family Timezone</label>
+          <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family timezone</label>
           <select onchange="saveSetting('familyTimezone',this.value)" style="width:100%">
             ${(Intl.supportedValuesOf?.('timeZone') ?? [s.familyTimezone]).map(tz =>
               `<option value="${tz}" ${tz === (s.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) ? 'selected' : ''}>${tz.replace(/_/g,' ')}</option>`
             ).join('')}
           </select>
-          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones.</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for all chores and streaks — keeps devices in sync across time zones</div>
         </div>
-      </div>
-
-      <div style="height:14px"></div>
-      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Account &amp; Devices</span></div>
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">
-          <div style="display:flex;align-items:center;gap:10px">
-            ${_googleIcon}
-            <div>
-              ${_googleProv
-                ? `<div style="font-size:0.85rem;font-weight:600">Google</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_googleProv.email||'Linked')}</div>`
-                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Google</div>`}
-            </div>
+        <button style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:12px 0;border-top:1px solid #F3F4F6;margin-top:8px;font:inherit" onclick="S.settingsPage='notifications';renderSettings()">
+          <div>
+            <div style="font-weight:600;font-size:0.9rem"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Notifications</div>
+            <div class="toggle-sub">Approval alerts, daily reminders, weekly summary</div>
           </div>
-          ${_googleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Sign Out</button>`
-            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Sign In</button>`}
-        </div>
-        <div style="height:1px;background:#F3F4F6;margin:2px 0"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;margin-bottom:${_anyLinked?'10':'4'}px">
-          <div style="display:flex;align-items:center;gap:10px">
-            ${_appleIcon}
-            <div>
-              ${_appleProv
-                ? `<div style="font-size:0.85rem;font-weight:600">Apple</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_appleProv.email||'Linked')}</div>`
-                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Apple</div>`}
-            </div>
+          <i class="ph-duotone ph-caret-right" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
+        </button>
+        <button style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;text-align:left;padding:12px 0;border-top:1px solid #F3F4F6;font:inherit" onclick="S.settingsPage='account';renderSettings()">
+          <div>
+            <div style="font-weight:600;font-size:0.9rem"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Account &amp; Security</div>
+            <div class="toggle-sub">Sign-in, PIN, biometrics</div>
           </div>
-          ${_appleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Sign Out</button>`
-            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Sign In</button>`}
-        </div>
-        ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted)">Sign in with Google or Apple to enable push notifications and secure your profile.</div>` : ''}
-        <div style="padding-top:14px;border-top:1px solid #F3F4F6">
-          <div class="form-group">
-            <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
-              ${bioBtn}
-            </div>
-          </div>
-          ${(s.parentPin || getBiometricCredentialId()) ? `
-          <div class="toggle-row">
-            <div><div class="toggle-label">Lock when leaving app</div>
-              <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
-            <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
-          </div>` : ''}
-        </div>
-        <div style="padding-top:14px;border-top:1px solid #F3F4F6;margin-top:4px">
-          <div id="devices-list"><div style="font-size:0.82rem;color:var(--muted)">Loading devices…</div></div>
-        </div>
+          <i class="ph-duotone ph-caret-right" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
+        </button>
       </div>
 
       <div style="height:14px"></div>
@@ -3364,7 +3308,7 @@ function renderSettings() {
         <label class="toggle"><input type="checkbox" ${s.savingsEnabled!==false?'checked':''} onchange="saveSetting('savingsEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
       </div>
       <div class="card">
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px">Kids can convert diamonds into real savings.</p>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.savingsEnabled!==false?'14':'0'}px">Kids can convert diamonds into real savings</p>
         ${s.savingsEnabled !== false ? `
         <div class="form-group">
           <label class="form-label">Diamonds per dollar <span class="form-label-hint">conversion rate</span></label>
@@ -3385,12 +3329,6 @@ function renderSettings() {
             <div class="toggle-sub">Kids claim their interest as a reward on interest day</div></div>
           <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
         </div>
-        ${s.savingsInterestEnabled ? `
-        <div class="toggle-row">
-          <div><div class="toggle-label">Interest day reminder</div>
-            <div class="toggle-sub">Reminds you on interest day to have kids open the app and claim</div></div>
-          <label class="toggle"><input type="checkbox" ${s.interestDayNotify!==false?'checked':''} onchange="saveSetting('interestDayNotify',this.checked)"><span class="toggle-track"></span></label>
-        </div>` : ''}
         ${s.savingsInterestEnabled ? (() => {
           const ip = s.savingsInterestPeriod || 'monthly';
           const iDay = s.savingsInterestDay ?? 1;
@@ -3439,20 +3377,13 @@ function renderSettings() {
         <button class="btn btn-secondary btn-sm btn-full" style="margin-top:12px" onclick="closeSettings();goSetup()">Edit Family Setup</button>
         <div class="toggle-row" style="margin-top:14px">
           <div>
-            <div class="toggle-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split Household</div>
+            <div class="toggle-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split household</div>
             <div class="toggle-sub">Streaks skip days kids are at the other household</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             ${shEnabled && firstKid ? `<button class="btn btn-secondary btn-sm" onclick="showSplitHouseholdModal('${firstKid.id}')">Configure</button>` : ''}
             <label class="toggle"><input type="checkbox" ${shEnabled?'checked':''} onchange="toggleFamilySplitHousehold(this.checked)"><span class="toggle-track"></span></label>
           </div>
-        </div>
-        <div class="toggle-row" style="margin-top:8px">
-          <div>
-            <div class="toggle-label"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> 6 PM Home Check</div>
-            <div class="toggle-sub">Prompts you at 6 PM if no chores have been completed yet for the day. Also works with Split Household enabled.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
         </div>
       </div>
 
@@ -3463,25 +3394,14 @@ function renderSettings() {
       </div>
       <div class="card">
         <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.notListeningEnabled!==false?'14px':'0'}">
-          Adds a hold-to-track button on the dashboard that deducts diamonds for not listening. Seconds accumulate indefinitely — leftovers carry over until a full interval is reached.
+          Adds a hold-to-track button on the dashboard that deducts diamonds for not listening — seconds accumulate indefinitely, leftovers carry over until a full interval is reached
         </p>
         ${s.notListeningEnabled!==false ? `
         <div class="form-group mb-0">
           <label class="form-label">Seconds per diamond lost</label>
           <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
-          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Hold the button to track time, release to apply. One 💎 lost per interval — leftover seconds carry forward indefinitely, so nothing is lost between sessions.</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Hold the button to track time, release to apply — one 💎 lost per interval, leftover seconds carry forward indefinitely</div>
         </div>` : ''}
-      </div>
-
-      <div style="height:14px"></div>
-      <div class="section-row"><span class="section-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</span></div>
-      <div class="card" style="border:2px solid #FEE2E2">
-        <button class="btn btn-danger btn-sm" onclick="switchFamily()" style="width:100%;margin-bottom:8px">
-          <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
-        </button>
-        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and lets you connect to a different family using their code. Does not delete any family's data from the cloud.</div>
-        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
-        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes all family data — chores, prizes, history, and member profiles. This cannot be undone.</div>
       </div>
 
       ${RC.betaMode ? `<div style="height:14px"></div>
@@ -3520,6 +3440,153 @@ function renderSettings() {
         <div style="height:10px"></div>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>` : ''}
+
+    </div>`;
+}
+
+function _renderSettingsAccount() {
+  const s = D.settings;
+  const _authProviders = _settingsAuthProviders();
+  const _googleProv = _authProviders.find(p => p.providerId === 'google.com');
+  const _appleProv  = _authProviders.find(p => p.providerId === 'apple.com');
+  const _anyLinked  = !!(_googleProv || _appleProv);
+  const pinLabel = s.parentPin ? 'Reset PIN' : 'Set PIN';
+  const bioBtn = isBiometricSupported() ? (getBiometricCredentialId()
+    ? `<button class="btn btn-secondary btn-sm" onclick="removeBiometric();renderSettings()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Remove ${getBiometricLabel()}</button>`
+    : `<button class="btn btn-secondary btn-sm" onclick="registerBiometric()"><i class="ph-duotone ph-fingerprint" style="font-size:1rem;vertical-align:middle"></i> Set Up ${getBiometricLabel()}</button>`) : '';
+
+  document.getElementById('settings-root').innerHTML = `
+    <div class="settings-header">
+      <button class="btn-back" onclick="S.settingsPage='main';renderSettings()">←</button>
+      <span class="settings-header-title"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Account &amp; Security</span>
+      <div style="width:70px"></div>
+    </div>
+    <div class="settings-body">
+
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-user-circle" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Sign-In</span></div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${_GOOGLE_ICON}
+            <div>
+              ${_googleProv
+                ? `<div style="font-size:0.85rem;font-weight:600">Google</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_googleProv.email||'Linked')}</div>`
+                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Google</div>`}
+            </div>
+          </div>
+          ${_googleProv
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Sign Out</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Sign In</button>`}
+        </div>
+        <div style="height:1px;background:#F3F4F6;margin:2px 0"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;margin-bottom:${_anyLinked?'4':'0'}px">
+          <div style="display:flex;align-items:center;gap:10px">
+            ${_APPLE_ICON}
+            <div>
+              ${_appleProv
+                ? `<div style="font-size:0.85rem;font-weight:600">Apple</div><div style="font-size:0.78rem;color:var(--muted)">${esc(_appleProv.email||'Linked')}</div>`
+                : `<div style="font-size:0.85rem;font-weight:600;color:var(--muted)">Apple</div>`}
+            </div>
+          </div>
+          ${_appleProv
+            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Sign Out</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Sign In</button>`}
+        </div>
+        ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">Sign in with Google or Apple to enable push notifications and secure your profile</div>` : ''}
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-lock-key" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> PIN &amp; Biometric</span></div>
+      <div class="card">
+        <div class="form-group">
+          <label class="form-label">Parent PIN &amp; ${getBiometricLabel()}</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="showResetPinFlow()">${pinLabel}</button>
+            ${bioBtn}
+          </div>
+        </div>
+        ${(s.parentPin || getBiometricCredentialId()) ? `
+        <div class="toggle-row" style="margin-top:4px">
+          <div><div class="toggle-label">Lock when leaving app</div>
+            <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
+          <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
+        </div>` : ''}
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title" style="color:#EF4444"><i class="ph-duotone ph-warning" style="color:#EF4444;font-size:1rem;vertical-align:middle"></i> Danger Zone</span></div>
+      <div class="card" style="border:2px solid #FEE2E2">
+        <button class="btn btn-danger btn-sm" onclick="switchFamily()" style="width:100%;margin-bottom:8px">
+          <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and connects you to a different family — your family's cloud data is not affected</div>
+        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes all family data — chores, prizes, history, and member profiles — this cannot be undone</div>
+      </div>
+
+    </div>`;
+}
+
+function _renderSettingsNotifications() {
+  const s = D.settings;
+  const interestOn = s.savingsEnabled !== false && s.savingsInterestEnabled;
+
+  document.getElementById('settings-root').innerHTML = `
+    <div class="settings-header">
+      <button class="btn-back" onclick="S.settingsPage='main';renderSettings()">←</button>
+      <span class="settings-header-title"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Notifications</span>
+      <div style="width:70px"></div>
+    </div>
+    <div class="settings-body">
+
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-device-mobile" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Push Notifications</span></div>
+      <div class="card">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Chore approval requests</div>
+            <div class="toggle-sub">Sends a notification when a kid marks a chore complete and it's waiting for your review</div>
+          </div>
+          <label class="toggle"><input type="checkbox" ${s.notifyChoreApproval!==false?'checked':''} onchange="saveSetting('notifyChoreApproval',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Savings spend requests</div>
+            <div class="toggle-sub">Sends a notification when a kid requests to spend from their savings</div>
+          </div>
+          <label class="toggle"><input type="checkbox" ${s.notifySavingsSpend!==false?'checked':''} onchange="saveSetting('notifySavingsSpend',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-clock" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Scheduled Reminders</span></div>
+      <div class="card">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Daily reminder</div>
+            <div class="toggle-sub">Sends a notification at 6 PM on any day no chores have been completed yet</div>
+          </div>
+          <label class="toggle"><input type="checkbox" ${s.hereCheckEnabled!==false?'checked':''} onchange="saveSetting('hereCheckEnabled',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row" style="${!interestOn ? 'opacity:0.4;pointer-events:none' : ''}">
+          <div>
+            <div class="toggle-label">Interest day reminder</div>
+            <div class="toggle-sub">${interestOn ? 'Reminds you on interest day to have kids open the app and claim their interest' : 'Enable Savings Interest to use this'}</div>
+          </div>
+          <label class="toggle"><input type="checkbox" ${s.interestDayNotify!==false?'checked':''} ${!interestOn?'disabled':''} onchange="saveSetting('interestDayNotify',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-chart-bar" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Summaries</span></div>
+      <div class="card">
+        <div class="toggle-row" style="opacity:0.5;pointer-events:none">
+          <div>
+            <div class="toggle-label">Weekly chore summary <span style="font-size:0.72rem;color:#6C63FF;font-weight:700;margin-left:6px;background:#EEF2FF;padding:2px 7px;border-radius:99px;vertical-align:middle">Coming soon</span></div>
+            <div class="toggle-sub">A weekly recap of each kid's chore completion rate and streaks</div>
+          </div>
+          <label class="toggle"><input type="checkbox" disabled><span class="toggle-track"></span></label>
+        </div>
+      </div>
 
     </div>`;
 }
@@ -4418,16 +4485,49 @@ function stopQRScan() {
 
 // ── QR CODE DISPLAY (parent settings) ────────────────────────
 
+function showFamilyCodeModal() {
+  const code = getFamilyCode();
+  const escapedCode = code.replace(/'/g, "\\'");
+  showModal(`
+    <div style="text-align:center;padding:4px 0 8px">
+      <i class="ph-duotone ph-users" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">Add user</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0 6px">
+      <div style="font-size:2rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${code}</div>
+      <button onclick="navigator.clipboard.writeText('${escapedCode}').then(()=>toast('Code copied!'))" style="background:none;border:none;cursor:pointer;padding:4px;line-height:1">
+        <i class="ph-duotone ph-copy" style="font-size:1.5rem;color:#6C63FF;vertical-align:middle"></i>
+      </button>
+    </div>
+    <div style="font-size:0.8rem;color:var(--muted);text-align:center;margin-bottom:18px">Use this code to add a kid's device to your family, or use the QR code below</div>
+    <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal();showKidDeviceQR()">
+        <i class="ph-duotone ph-qr-code" style="font-size:0.9rem;vertical-align:middle"></i> Add with QR code
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal();showInviteParent()">
+        <i class="ph-duotone ph-user-plus" style="font-size:0.9rem;vertical-align:middle"></i> Invite a parent
+      </button>
+    </div>
+    ${RC.betaMode ? `<div style="padding:10px 12px;background:#F5F3FF;border-radius:10px;font-size:0.82rem">
+      <span style="color:var(--muted)">Install on other devices: </span>
+      <a href="${RC.appDownloadUrl}" target="_blank" style="font-weight:700;color:#6C63FF;text-decoration:none">${RC.appDownloadUrl}</a>
+    </div>` : ''}
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal()">Done</button>
+    </div>`);
+}
+
 function showKidDeviceQR() {
   const code = getFamilyCode();
   showModal(`
     <div style="text-align:center;padding:4px 0 8px">
-      <div class="modal-title">Add a Kid Device</div>
+      <i class="ph-duotone ph-device-mobile" style="font-size:2.5rem;color:#6C63FF"></i>
+      <div class="modal-title" style="margin-top:8px">Add a kid device</div>
       <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">On the kid's device, open GemSprout, tap <strong>I'm a Kid</strong>, then scan this QR code or type the code below.</p>
     </div>
     <div id="qr-code-container" style="display:flex;justify-content:center;margin-bottom:14px"></div>
     <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;margin-bottom:16px">${code}</div>
-    <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">Done</button>`);
+    <button class="btn btn-secondary" style="width:100%" onclick="closeModal();showFamilyCodeModal()">Done</button>`);
   setTimeout(() => {
     const el = document.getElementById('qr-code-container');
     if (!el) return;
@@ -4445,18 +4545,20 @@ function showInviteParent(testMode = false) {
   showModal(`
     <div style="text-align:center;padding:4px 0 8px">
       <i class="ph-duotone ph-user-plus" style="font-size:2.5rem;color:#6C63FF"></i>
-      <div class="modal-title" style="margin-top:8px">${testMode ? 'Test: Invite a Parent' : 'Invite a Parent'}</div>
+      <div class="modal-title" style="margin-top:8px">${testMode ? 'Test: Invite a Parent' : 'Add a parent'}</div>
       <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">${testMode
         ? 'Enter any fake email. After submitting you\'ll get a button to go to the welcome screen and test the sign-in.'
-        : 'Enter the email address your partner will use to sign in (their Google or Apple account email).'}</p>
+        : 'Enter the email they\'ll use to sign in with Google or Apple — no email will be sent, just have them open GemSprout and sign in with this account'}</p>
     </div>
-    <div id="invite-modal-body">
+    <div id="invite-modal-body" style="min-height:210px;display:flex;flex-direction:column">
       <input id="invite-email-input" type="email" placeholder="${testMode ? 'faketest@email.com' : 'partner@email.com'}" autocomplete="${testMode ? 'off' : 'email'}"
         style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:16px;outline:none">
-      <button class="btn btn-primary" style="width:100%" onclick="_submitParentInvite(${testMode})">
-        <i class="ph-duotone ph-envelope" style="vertical-align:middle;margin-right:6px"></i> ${testMode ? 'Save Test Invite' : 'Send Invite'}
-      </button>
-      <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="closeModal()">Cancel</button>
+      <div style="margin-top:auto">
+        <button class="btn btn-primary" style="width:100%" onclick="_submitParentInvite(${testMode})">
+          <i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:6px"></i> ${testMode ? 'Save Test Invite' : 'Add parent'}
+        </button>
+        <button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="closeModal();showFamilyCodeModal()">Cancel</button>
+      </div>
     </div>`);
   setTimeout(() => document.getElementById('invite-email-input')?.focus(), 100);
 }
@@ -4490,14 +4592,14 @@ async function _submitParentInvite(testMode = false) {
       body.innerHTML = `
         <div style="text-align:center;padding:8px 0">
           <i class="ph-duotone ph-check-circle" style="font-size:2rem;color:var(--green)"></i>
-          <div style="font-weight:700;margin:8px 0 4px">Invite sent!</div>
-          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px"><strong>${esc(email)}</strong> will be recognized automatically when they sign in.</div>
+          <div style="font-weight:700;margin:8px 0 4px">All set!</div>
+          <div style="font-size:0.85rem;color:var(--muted);margin-bottom:16px"><strong>${esc(email)}</strong> is ready — have them open GemSprout and sign in with this account to join your family automatically</div>
           <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">Done</button>
         </div>`;
     }
   } catch(e) {
     toast('Something went wrong — please try again');
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-envelope" style="vertical-align:middle;margin-right:6px"></i> ' + (testMode ? 'Save Test Invite' : 'Send Invite'); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:6px"></i> ' + (testMode ? 'Save Test Invite' : 'Add parent'); }
   }
 }
 
@@ -6301,59 +6403,6 @@ function renderParentView() {
   }
 }
 
-async function loadDevicesList() {
-  const el = document.getElementById('devices-list');
-  if (!el) return;
-  const parentUid = getParentAuthUid();
-  if (!parentUid) { el.innerHTML = ''; return; }
-  try {
-    const snap = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
-    const tokens = snap.exists ? (snap.data().tokens || []) : [];
-    if (tokens.length === 0) {
-      el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">No devices registered for notifications yet.</div>`;
-      return;
-    }
-    el.innerHTML = `
-      <div style="font-size:0.8rem;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Notification Devices</div>
-      ${tokens.map((t, i) => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;${i < tokens.length-1 ? 'border-bottom:1px solid var(--border)' : ''}">
-          <div>
-            <div style="font-size:0.88rem;font-weight:600">${esc(t.deviceName || 'Device')}</div>
-            <div style="font-size:0.75rem;color:var(--muted)">${t.registeredAt ? new Date(t.registeredAt).toLocaleDateString() : ''}</div>
-          </div>
-          <button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="confirmRemoveDevice(${i})">Remove</button>
-        </div>`).join('')}`;
-  } catch {
-    el.innerHTML = `<div style="font-size:0.82rem;color:var(--muted)">Could not load devices.</div>`;
-  }
-}
-
-function confirmRemoveDevice(index) {
-  showModal(`
-    <div class="modal-title">Remove Device?</div>
-    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This device will no longer receive notifications. You can re-register it by signing in again.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="removeDevice(${index})">Remove</button>
-    </div>`);
-}
-
-async function removeDevice(index) {
-  closeModal();
-  const parentUid = getParentAuthUid();
-  if (!parentUid) return;
-  try {
-    const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
-    const snap = await ref.get();
-    const tokens = snap.exists ? (snap.data().tokens || []) : [];
-    tokens.splice(index, 1);
-    await ref.set({ tokens });
-    toast('Device removed');
-    loadDevicesList();
-  } catch {
-    toast('Could not remove device');
-  }
-}
 
 function confirmSignOut() {
   showModal(`
@@ -8843,7 +8892,7 @@ function _advRender() {
   const SETTING_LABELS = {
     betaMode: 'Beta Mode',
     lastSync: 'Last Sync',
-    splitHouseholdEnabled: 'Split Household',
+    splitHouseholdEnabled: 'Split household',
     appVersion: 'App Version',
   };
   const devSettings = Object.entries(D.settings).filter(([k, v]) =>
@@ -9384,48 +9433,6 @@ async function handleParentSignIn(provider, memberId) {
     return;
   }
   await linkParentAuth(firebaseUser, memberId);
-  await checkAndPromptNewDevice(firebaseUser.uid, memberId);
-}
-
-async function checkAndPromptNewDevice(parentUid, memberId) {
-  try {
-    const tokenDoc = await db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`).get();
-    const existingTokens = tokenDoc.exists ? (tokenDoc.data().tokens || []) : [];
-    const cb = S._parentSignInCallback;
-    S._parentSignInCallback = null;
-    if (existingTokens.length === 0) {
-      // First time on any device — register silently, no prompt needed
-      proceedAsParent(memberId, cb);
-    } else {
-      showNewDevicePrompt(parentUid, memberId, cb);
-    }
-  } catch {
-    const cb = S._parentSignInCallback;
-    S._parentSignInCallback = null;
-    proceedAsParent(memberId, cb);
-  }
-}
-
-function showNewDevicePrompt(parentUid, memberId, onComplete) {
-  showModal(`
-    <div style="text-align:center;padding:4px 0 8px">
-      <i class="ph-duotone ph-devices" style="font-size:2.5rem;color:#6C63FF"></i>
-      <div class="modal-title" style="margin-top:8px">New Device Detected</div>
-      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Where would you like to receive notifications?</p>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      <button class="btn btn-primary" onclick="registerDeviceAndProceed('this','${parentUid}','${memberId}')">Use this device</button>
-      <button class="btn btn-secondary" onclick="registerDeviceAndProceed('both','${parentUid}','${memberId}')">Use both devices</button>
-      <button class="btn btn-secondary" onclick="registerDeviceAndProceed('keep','${parentUid}','${memberId}')">Keep my other device</button>
-    </div>`);
-  S._parentSignInCallback = onComplete || null;
-}
-
-async function registerDeviceAndProceed(choice, parentUid, memberId) {
-  closeModal();
-  if (choice !== 'keep') {
-    await registerDeviceToken(parentUid, choice === 'this');
-  }
   const cb = S._parentSignInCallback;
   S._parentSignInCallback = null;
   proceedAsParent(memberId, cb);
@@ -9441,26 +9448,6 @@ function proceedAsParent(memberId, onComplete) {
   routeToView(member);
 }
 
-async function registerDeviceToken(parentUid, replaceExisting) {
-  // Placeholder — will be populated when push notifications are implemented
-  // For now just records device info so the model is in place
-  try {
-    const deviceName = navigator.userAgent.includes('iPhone') ? 'iPhone'
-                     : navigator.userAgent.includes('iPad')   ? 'iPad'
-                     : 'Device';
-    const ref = db.doc(`${getFamilyDoc()}/deviceTokens/${parentUid}`);
-    if (replaceExisting) {
-      await ref.set({ tokens: [{ token: null, deviceName, registeredAt: Date.now() }] });
-    } else {
-      const snap = await ref.get();
-      const existing = snap.exists ? (snap.data().tokens || []) : [];
-      existing.push({ token: null, deviceName, registeredAt: Date.now() });
-      await ref.set({ tokens: existing });
-    }
-  } catch(e) {
-    console.warn('Device token registration failed:', e.message);
-  }
-}
 
 function showLoading() {
   showScreen('screen-auth');
