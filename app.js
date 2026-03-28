@@ -836,8 +836,10 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
 
 function subscribeToFirestore(onFirstLoad) {
   if (firestoreUnsub) firestoreUnsub();
+  const _subDoc = getFamilyDoc();
   let firstSnapshot = true;
-  firestoreUnsub = db.doc(getFamilyDoc()).onSnapshot(snap => {
+  firestoreUnsub = db.doc(_subDoc).onSnapshot(snap => {
+    let _didUpdate = false;
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
@@ -847,7 +849,6 @@ function subscribeToFirestore(onFirstLoad) {
       // Ignore snapshots arriving within 1500ms of a local save — they may be echoes
       // of a previous write that arrived after we've already moved on locally.
       const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
-      let _didUpdate = false;
       if (!isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
         _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
@@ -3054,6 +3055,9 @@ function _doLeaveDevice() {
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
+  setCurrentUserId('');
+  setParentAuthUid(null);
+  try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   D = defaultData();
   S.currentUser = null;
   showScreen('screen-setup');
@@ -3648,7 +3652,6 @@ function renderCurrentView() {
 
 // ── HOME SCREEN ───────────────────────────────────────────────
 function renderHome() {
-  loadData();
   showScreen('screen-home');
   const members = D.family.members.filter(m => !m.deleted);
   const cards = members.map(m => {
@@ -3673,18 +3676,6 @@ function renderHome() {
   const bdayBanner = anyBday
     ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> It's a birthday today! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
 
-  const homeEl = document.getElementById('home-content');
-  if (!homeEl) return;
-  homeEl.innerHTML = `
-    <div class="screen active" id="screen-home" style="background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;padding:24px;min-height:100dvh;display:flex;flex-direction:column">
-      <img class="home-logo" src="gemsproutpadded.png">
-      <div class="home-title">GemSprout</div>
-      <div class="home-family-name">${esc(D.family.name)}</div>
-      <div class="profile-grid">${cards}</div>
-      <button class="home-setup-btn" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.1rem;vertical-align:middle"></i> Edit Family</button>
-    </div>`;
-
-  // Inline — since we're modifying a child of the screen, re-render properly:
   const root = document.getElementById('screen-home');
   root.innerHTML = `
     ${bdayBanner}
@@ -4202,6 +4193,7 @@ async function _resolveSignInUser(firebaseUser) {
     const userDoc = await db.doc(`users/${firebaseUser.uid}`).get();
     if (userDoc.exists && userDoc.data().familyCode) {
       setFamilyCode(userDoc.data().familyCode);
+      setParentAuthUid(firebaseUser.uid);
       await ensureFirestoreAuth();
       subscribeToFirestore(routeAfterLoad);
       return;
@@ -9245,6 +9237,10 @@ function switchFamily() {
 
 function _confirmSwitchFamily() {
   closeModal();
+  S.currentUser = null;
+  setCurrentUserId('');
+  setParentAuthUid(null);
+  try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   closeSettings();
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
