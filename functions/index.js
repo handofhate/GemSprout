@@ -16,7 +16,7 @@ async function getAccessToken() {
 }
 
 // Shared: look up all FCM tokens for a family and send a message to each.
-async function sendToFamily(familyCode, title, body, dataType) {
+async function sendToFamily(familyCode, title, body, dataType, badgeCount) {
   const db = admin.firestore();
 
   const snapshot = await db.collection('users')
@@ -54,7 +54,10 @@ async function sendToFamily(familyCode, title, body, dataType) {
         data: { type: dataType, familyCode },
         apns: {
           payload: {
-            aps: { sound: 'default' },
+            aps: {
+              sound: 'default',
+              ...(badgeCount !== undefined && { badge: badgeCount }),
+            },
           },
         },
       },
@@ -96,7 +99,7 @@ async function sendToFamily(familyCode, title, body, dataType) {
 }
 
 exports.sendApprovalNotification = onCall({ invoker: 'public' }, async (request) => {
-  const { familyCode, kidName, choreTitle, isBefore } = request.data;
+  const { familyCode, kidName, choreTitle, isBefore, pendingCount } = request.data;
 
   if (!familyCode || typeof familyCode !== 'string' ||
       !kidName    || typeof kidName    !== 'string' ||
@@ -110,7 +113,7 @@ exports.sendApprovalNotification = onCall({ invoker: 'public' }, async (request)
     : `${kidName} finished "${choreTitle}"`;
 
   try {
-    return await sendToFamily(familyCode, title, body, 'approval_request');
+    return await sendToFamily(familyCode, title, body, 'approval_request', pendingCount);
   } catch (e) {
     console.error('sendApprovalNotification error:', e);
     throw new HttpsError('internal', e.message || 'Failed to send notification');
@@ -118,7 +121,7 @@ exports.sendApprovalNotification = onCall({ invoker: 'public' }, async (request)
 });
 
 exports.sendSpendNotification = onCall({ invoker: 'public' }, async (request) => {
-  const { familyCode, kidName, amount, reason } = request.data;
+  const { familyCode, kidName, amount, reason, pendingCount } = request.data;
 
   if (!familyCode || typeof familyCode !== 'string' ||
       !kidName    || typeof kidName    !== 'string' ||
@@ -132,7 +135,7 @@ exports.sendSpendNotification = onCall({ invoker: 'public' }, async (request) =>
     : `${kidName} wants to spend ${amountStr}`;
 
   try {
-    return await sendToFamily(familyCode, 'Spend Request 💰', body, 'spend_request');
+    return await sendToFamily(familyCode, 'Spend Request 💰', body, 'spend_request', pendingCount);
   } catch (e) {
     console.error('sendSpendNotification error:', e);
     throw new HttpsError('internal', e.message || 'Failed to send notification');

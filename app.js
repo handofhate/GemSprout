@@ -114,6 +114,19 @@ function _getNextInterestDayDate() {
   return d;
 }
 
+// ── APP ICON BADGE ─────────────────────────────────────────────
+// Badge = pending chore approvals + pending savings spend requests.
+// Called after any approve/deny action and on parent login.
+async function syncAppBadge() {
+  if (!isNative()) return;
+  try {
+    const { Badge } = Capacitor.Plugins;
+    if (!Badge) return;
+    const count = pendingApprovals().length + pendingSpendRequests().length;
+    await Badge.set({ count });
+  } catch(e) {}
+}
+
 async function scheduleInterestDayNotification() {
   if (!isNative()) return;
   const { LocalNotifications } = Capacitor.Plugins;
@@ -132,6 +145,7 @@ async function scheduleInterestDayNotification() {
       title: 'Interest Day! 📈',
       body: 'Have your kids open GemSprout to claim their savings interest',
       schedule: { at },
+      badge: 0,
     }]
   }).catch(e => console.warn('scheduleInterestDayNotification error:', e));
 }
@@ -270,6 +284,7 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
     .catch(e => console.warn('users doc write failed:', e));
   initPushNotifications(firebaseUser);
+  syncAppBadge();
 }
 
 function setAppUnlocked(v) {
@@ -1531,6 +1546,7 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
           kidName:    member.name || 'A kid',
           choreTitle: chore.title || 'a chore',
           isBefore:   !!isBefore,
+          pendingCount: pendingApprovals().length + pendingSpendRequests().length,
         }).catch(() => {}); // non-blocking — never throw
       } catch(e) {}
     }
@@ -6063,6 +6079,7 @@ function submitSpendRequest(memberId) {
         kidName:    m.name || 'A kid',
         amount:     amt,
         reason:     reason || '',
+        pendingCount: pendingApprovals().length + pendingSpendRequests().length,
       }).catch(() => {});
     } catch(e) {}
   }
@@ -6084,6 +6101,7 @@ function approveSavingsRequest(requestId) {
   saveData();
   toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
   renderParentHome(); renderParentHeader(); renderParentNav();
+  syncAppBadge();
 }
 
 function denySavingsRequest(requestId) {
@@ -6094,6 +6112,7 @@ function denySavingsRequest(requestId) {
   saveData();
   toast(`Spend request denied for ${m?.name || 'kid'}`);
   renderParentHome(); renderParentHeader(); renderParentNav();
+  syncAppBadge();
 }
 
 function showSavingsHistory(memberId) {
@@ -7295,6 +7314,7 @@ function approveChore(choreId, memberId, entryId) {
   renderParentHome();
   renderParentHeader();
   renderParentNav();
+  syncAppBadge();
 }
 
 function rejectChore(choreId, memberId, entryId) {
@@ -7323,6 +7343,7 @@ function confirmRejectChore(choreId, memberId, entryId) {
   renderParentHome();
   renderParentHeader();
   renderParentNav();
+  syncAppBadge();
 }
 
 // Parent directly marks a chore done for a kid (no kid submission required)
