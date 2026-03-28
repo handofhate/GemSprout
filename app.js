@@ -62,9 +62,33 @@ async function initPushNotifications(firebaseUser) {
         { merge: true }
       ).catch(() => {});
     });
+    // Foreground message: re-render immediately so the pending row appears without a tab switch
+    FirebaseMessaging.addListener('notificationReceived', (event) => {
+      const t = event?.notification?.data?.type;
+      if ((t === 'approval_request' || t === 'spend_request') && S.currentUser?.role === 'parent') {
+        renderCurrentView();
+      }
+    });
+    // Notification tap: navigate to the overview tab (PIN gate handled separately)
+    FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
+      const t = event?.notification?.data?.type;
+      if (t === 'approval_request' || t === 'spend_request') {
+        _handleApprovalNotificationTap();
+      }
+    });
   } catch(e) {
     console.warn('initPushNotifications error:', e);
   }
+}
+
+function _handleApprovalNotificationTap() {
+  if (S.currentUser?.role === 'parent') {
+    switchParentTab('home');
+  } else if (document.getElementById('screen-pin')?.classList.contains('active')) {
+    // App is at PIN gate — after successful unlock, land on overview
+    S._afterPinNav = 'overview';
+  }
+  // Otherwise (profile picker / no session) — the badge will be visible when they sign in
 }
 
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
@@ -458,6 +482,7 @@ let S = {            // UI state (not persisted)
   pinMode:              'app', // 'app' = gate to member picker | 'parent' = gate to parent view
   syncStatus:           'idle', // 'idle' | 'syncing' | 'ok' | 'error'
   lastLocalSave:        0,     // timestamp of last local write — suppresses stale Firestore snapshots
+  _afterPinNav:         null,  // 'overview' → navigate to parent overview after PIN/biometric unlock
   _authPromptShown:      false,
   _pinPromptShown:       false,
   _parentSignInCallback: null,
@@ -1445,7 +1470,7 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
   } else {
     saveData();
     // Notify parents when a kid submits a chore needing approval (fire-and-forget)
-    if (S.currentUser?.role === 'kid') {
+    if (S.currentUser?.role === 'kid' && D.settings.notifyChoreApproval !== false) {
       try {
         firebase.functions().httpsCallable('sendApprovalNotification')({
           familyCode: getFamilyCode(),
@@ -3854,6 +3879,7 @@ function pinKey(k) {
           const rememberedUser = getMember(getCurrentUserId());
           if (rememberedUser) {
             S.currentUser = rememberedUser;
+            if (S._afterPinNav === 'overview') { S._afterPinNav = null; S.parentTab = 'home'; }
             routeToView(rememberedUser);
           } else {
             renderHome();
@@ -4029,6 +4055,7 @@ function tryBiometricUnlock() {
       const rememberedUser = getMember(getCurrentUserId());
       if (rememberedUser) {
         S.currentUser = rememberedUser;
+        if (S._afterPinNav === 'overview') { S._afterPinNav = null; S.parentTab = 'home'; }
         routeToView(rememberedUser);
       } else {
         renderHome();
@@ -5993,6 +6020,16 @@ function submitSpendRequest(memberId) {
   saveData();
   closeModal();
   toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent! Waiting for parent approval');
+  if (D.settings.notifySavingsSpend !== false) {
+    try {
+      firebase.functions().httpsCallable('sendSpendNotification')({
+        familyCode: getFamilyCode(),
+        kidName:    m.name || 'A kid',
+        amount:     amt,
+        reason:     reason || '',
+      }).catch(() => {});
+    } catch(e) {}
+  }
   if (isTiny(m)) speak('You asked to spend some money! Waiting for your grown-up to say yes!');
   renderKidDiamonds();
 }
