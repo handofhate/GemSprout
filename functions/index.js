@@ -54,7 +54,7 @@ async function sendToFamily(familyCode, title, body, dataType) {
         data: { type: dataType, familyCode },
         apns: {
           payload: {
-            aps: { sound: 'default', badge: 1 },
+            aps: { sound: 'default' },
           },
         },
       },

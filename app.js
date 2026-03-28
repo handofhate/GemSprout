@@ -6577,10 +6577,6 @@ function renderParentNav() {
       <span class="nav-icon">${icon}</span>${label}
       ${id==='home'&&homeCount>0?`<span class="nav-badge">${homeCount}</span>`:''}
     </button>`).join('');
-  if (homeCount === 0 && isNative()) {
-    const { FirebaseMessaging } = Capacitor.Plugins;
-    if (FirebaseMessaging?.setBadge) FirebaseMessaging.setBadge({ count: 0 }).catch(() => {});
-  }
 }
 
 function switchParentTab(tab) {
