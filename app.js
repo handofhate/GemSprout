@@ -2436,51 +2436,24 @@ function _nlToggleKid(kidId) {
   _renderNL();
 }
 
-// ── NL ALARM (repeating deep bonk) ───────────────────────────
-// Single persistent AudioContext — reused across presses.
-// Each bonk fires a fresh short oscillator (self-disposing).
-let _nlAudioCtx  = null;
+// ── NL ALARM ─────────────────────────────────────────────────
 let _nlBonkTimer = null;
 
 function _nlBonk() {
-  try {
-    const ctx = _nlAudioCtx;
-    if (!ctx || ctx.state !== 'running') return;
-    const t = ctx.currentTime;
-
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.001, t);
-    gain.gain.linearRampToValueAtTime(0.65, t + 0.018); // fast attack
-    gain.gain.setValueAtTime(0.65, t + 0.15);           // short hold
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.46); // decay
-    gain.connect(ctx.destination);
-
-    const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(85, t + 0.46); // pitch drop = thud
-    osc.connect(gain);
-    osc.start(t);
-    osc.stop(t + 0.5);
-  } catch(e) {}
+  try { new Audio('alarm.wav').play(); } catch(e) {}
 }
 
 function _nlAlarmStart() {
-  try {
-    if (!_nlAudioCtx || _nlAudioCtx.state === 'closed') {
-      _nlAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (_nlAudioCtx.state === 'suspended') _nlAudioCtx.resume();
+  const offset = _nlState.accumulated % 1000;
+  const delay  = (offset === 0 ? 1000 : (1000 - offset)) + 25;
+  _nlBonkTimer = setTimeout(() => {
     _nlBonk();
-    _nlBonkTimer = setInterval(_nlBonk, 700);
-  } catch(e) {}
+    _nlBonkTimer = setInterval(_nlBonk, 1000);
+  }, delay);
 }
 
 function _nlAlarmStop() {
-  try {
-    if (_nlBonkTimer) { clearInterval(_nlBonkTimer); _nlBonkTimer = null; }
-    // Keep _nlAudioCtx alive for reuse
-  } catch(e) {}
+  if (_nlBonkTimer) { clearTimeout(_nlBonkTimer); clearInterval(_nlBonkTimer); _nlBonkTimer = null; }
 }
 
 function _nlHoldStart(evt) {
