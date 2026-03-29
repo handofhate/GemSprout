@@ -4758,7 +4758,12 @@ async function joinFamily() {
     setParentAuthUid(null); // don't inherit parent auth trust from a previous session
     try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
     ensureFirestoreAuth()
-      .then(() => subscribeToFirestore())
+      .then(() => {
+        if (auth.currentUser && !getParentAuthUid()) {
+          db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: code, role: 'kid' }, { merge: true }).catch(() => {});
+        }
+        subscribeToFirestore();
+      })
       .catch(() => {});
     routeAfterLoad();
   } catch(e) {
@@ -10228,6 +10233,10 @@ function init() {
           const safeCode = await genUniqueFamilyCode();
           setFamilyCode(safeCode);
           await pushToFirestore();
+        }
+        // Re-register kid device UID on every startup — handles reinstalls where anonymous UID changes
+        if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
+          db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
         }
         subscribeToFirestore();
       })
