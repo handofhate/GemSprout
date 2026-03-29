@@ -21,6 +21,20 @@ function genFamilyCode() {
   return code;
 }
 
+async function genUniqueFamilyCode() {
+  let code, attempts = 0;
+  do {
+    code = genFamilyCode();
+    try {
+      const snap = await db.doc(`families/${code}`).get();
+      if (!snap.exists) break;
+    } catch (_) {
+      break; // if check fails, proceed — collision is astronomically rare
+    }
+  } while (++attempts < 10);
+  return code;
+}
+
 function getFamilyCode() {
   try { return localStorage.getItem(FAMILY_CODE_KEY) || ''; } catch (_) { return ''; }
 }
@@ -197,8 +211,8 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const yCard = cardBase + `border:2px solid ${ySel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${ySel ? '0.15' : '0.07'})`;
   return `
   <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:linear-gradient(160deg,#1a0533 0%,#3b1278 55%,#6C63FF 100%);overflow:auto">
-    <div style="position:relative;text-align:center;padding:52px 24px 20px">
-      <button onclick="renderHome()" style="position:absolute;top:16px;left:16px;background:none;border:none;color:rgba(255,255,255,0.55);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+    <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
+      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(255,255,255,0.55);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
       <img src="gemsproutpadded.png" style="width:76px;height:76px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.35)">
       <div style="color:#fff;font-size:1.75rem;font-weight:800;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
       <div style="color:rgba(255,255,255,0.65);font-size:0.95rem;margin-top:6px">Everything your family needs to build great habits</div>
@@ -384,7 +398,23 @@ function showWeekReviewIfNeeded() {
     if (localStorage.getItem(WEEK_REVIEW_KEY) === todayStr) return;
     localStorage.setItem(WEEK_REVIEW_KEY, todayStr);
   } catch(_) {}
-  setTimeout(() => showWeekReview(), 1600);
+  setTimeout(() => _showWeekReviewTeaser(), 1600);
+}
+
+function _showWeekReviewTeaser() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  if (!kids.length) return;
+  showModal(`
+    <div style="text-align:center;padding:8px 0 4px">
+      <i class="ph-duotone ph-calendar-star" style="color:#7C3AED;font-size:3rem"></i>
+      <div class="modal-title" style="margin-top:10px">Your Week in Review is ready!</div>
+      <p style="color:var(--muted);font-size:0.88rem;line-height:1.5;margin:8px 0 20px">
+        See how ${kids.length === 1 ? kids[0].name : 'your family'} did this week — diamonds earned, chores crushed, badges unlocked, and more.
+      </p>
+      <button class="btn btn-primary btn-full" onclick="closeModal();showWeekReview()">Let's see it!</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:8px" onclick="closeModal()">Maybe later</button>
+      <div style="color:var(--muted);font-size:0.78rem;margin-top:14px">You can always find it on the Stats tab.</div>
+    </div>`);
 }
 
 function showWeekReview() {
@@ -531,7 +561,7 @@ function _weekReviewHTML(kidData, totalDiamonds, totalChores, totalSaved, totalB
       }
       .wr-card { animation: wr-slide-up 0.45s cubic-bezier(0.22,1,0.36,1) both; }
     </style>
-    <div style="max-width:480px;margin:0 auto;padding:0 16px 16px">
+    <div style="max-width:480px;margin:0 auto;padding:env(safe-area-inset-top,20px) 16px 16px">
       <div style="position:sticky;top:0;z-index:10;background:linear-gradient(to bottom,#0f0720 80%,transparent);padding:20px 0 12px;display:flex;align-items:flex-start;justify-content:space-between">
         <div>
           <div style="color:#fff;font-size:1.3rem;font-weight:900;letter-spacing:-0.02em">Week in Review</div>
@@ -1047,6 +1077,7 @@ function loadData() {
 function saveData() {
   S.lastLocalSave = Date.now();
   if (D.settings) D.settings.lastSync = Date.now();
+  if (D.declineNotifications?.length > 20) D.declineNotifications = D.declineNotifications.slice(-20);
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
   if (S.currentUser?.role === 'kid') savePendingSnapshot(S.currentUser.id);
   pushToFirestore();
@@ -4666,13 +4697,13 @@ async function _processNewFamilyUser(user) {
   _continueNewFamily();
 }
 
-function _continueNewFamily() {
+async function _continueNewFamily() {
   const user = S._pendingNewFamilyUser;
   S._pendingNewFamilyUser = null;
   if (!user) return;
   S._newFamilyFirebaseUser = user; // kept so finishSetup() can link auth without re-prompting
   S.newFamilyDisplayName = user.displayName || '';
-  setFamilyCode(genFamilyCode());
+  setFamilyCode(await genUniqueFamilyCode());
   document.getElementById('setup-gate').style.display = 'none';
   document.getElementById('setup-content').style.display = '';
   goSetup();
@@ -6278,12 +6309,16 @@ async function submitChorePhoto(choreId, slotId, entryType) {
   } catch(e) {
     console.warn('Photo upload failed:', e);
     toast('Upload failed — check your connection and try again.');
-    if (btn) { btn.style.opacity = '1'; btn.style.pointerEvents = 'auto'; btn.textContent = 'Submit Completion ✓'; }
+    if (btn) {
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+      btn.textContent = entryType === 'before' ? 'Submit — Request to Start ✓' : 'Submit Completion ✓';
+    }
   }
 }
 
 async function uploadChorePhoto(file) {
-  const compressed = await compressImage(file, 600, 0.65);
+  const compressed = await compressImage(file, 400, 0.5);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -7576,15 +7611,15 @@ function renderParentHome() {
     html += `<div class="card" style="border:2px solid ${borderColor}">
       <div class="card-title">${titleIcon}</div>`;
 
-    // Build a unified list in submission order: tag each item with its date so we can sort
+    // Build a unified list in submission order using the genId timestamp prefix (base36 ms)
     const allItems = [
       ...inProgress.map(item => {
         const beforeEntry = normalizeCompletionEntries(item.chore.completions?.[item.memberId])
           .find(e => e.entryType === 'before');
-        return { type: 'inprogress', date: beforeEntry?.date || today(), ...item };
+        return { type: 'inprogress', sortKey: beforeEntry?.id || '', ...item };
       }),
-      ...pending.map(item => ({ type: 'pending', date: item.entry.date, ...item })),
-    ].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      ...pending.map(item => ({ type: 'pending', sortKey: item.entry.id, ...item })),
+    ].sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
 
     allItems.forEach(item => {
       if (item.type === 'inprogress') {
@@ -10165,7 +10200,7 @@ function init() {
 
   // Migration: existing installs pre-date family codes — generate one and push immediately
   const _needsMigrationPush = !getFamilyCode() && D.setup;
-  if (_needsMigrationPush) setFamilyCode(genFamilyCode());
+  if (_needsMigrationPush) setFamilyCode(genFamilyCode()); // temp sync code so getFamilyDoc() works; replaced with unique code before push below
 
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
 
@@ -10187,9 +10222,14 @@ function init() {
       }
     } else showAppPin();
     ensureFirestoreAuth()
-      .then(() => {
+      .then(async () => {
+        if (_needsMigrationPush) {
+          // Replace the temp sync code with a collision-checked unique code before pushing
+          const safeCode = await genUniqueFamilyCode();
+          setFamilyCode(safeCode);
+          await pushToFirestore();
+        }
         subscribeToFirestore();
-        if (_needsMigrationPush) pushToFirestore();
       })
       .catch(err => console.warn('Firestore sync unavailable:', err));
   } else {
