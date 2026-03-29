@@ -148,7 +148,7 @@ async function initRevenueCat() {
   try {
     const { Purchases } = Capacitor.Plugins;
     if (!Purchases) { S.isPro = true; return; }
-    Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
+    await Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
     const customerInfo = await Purchases.getCustomerInfo();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
   } catch(e) {
@@ -196,8 +196,9 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const mCard = cardBase + `border:2px solid ${mSel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${mSel ? '0.15' : '0.07'})`;
   const yCard = cardBase + `border:2px solid ${ySel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${ySel ? '0.15' : '0.07'})`;
   return `
-  <div style="display:flex;flex-direction:column;min-height:100%;background:linear-gradient(160deg,#1a0533 0%,#3b1278 55%,#6C63FF 100%);overflow:auto">
-    <div style="text-align:center;padding:52px 24px 20px">
+  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:linear-gradient(160deg,#1a0533 0%,#3b1278 55%,#6C63FF 100%);overflow:auto">
+    <div style="position:relative;text-align:center;padding:52px 24px 20px">
+      <button onclick="renderHome()" style="position:absolute;top:16px;left:16px;background:none;border:none;color:rgba(255,255,255,0.55);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
       <img src="gemsproutpadded.png" style="width:76px;height:76px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.35)">
       <div style="color:#fff;font-size:1.75rem;font-weight:800;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
       <div style="color:rgba(255,255,255,0.65);font-size:0.95rem;margin-top:6px">Everything your family needs to build great habits</div>
@@ -273,7 +274,7 @@ async function rcStartTrial() {
 }
 
 async function rcRestorePurchases() {
-  if (!isNative()) { toast('Restore only works on device'); return; }
+  if (!isNative()) return;
   try {
     showLoading();
     const { Purchases } = Capacitor.Plugins;
@@ -290,6 +291,263 @@ async function rcRestorePurchases() {
     await showPaywall();
     toast('Restore failed — please try again');
   }
+}
+
+// ── CHANGELOG ─────────────────────────────────────────────────
+const APP_VERSION = '1.1';
+const CHANGELOG_ENTRIES = [
+  {
+    version: '1.1',
+    title: 'Subscriptions & Week in Review',
+    date: 'March 2026',
+    items: [
+      { icon: 'ph-calendar-star', color: '#7C3AED', text: 'Week in Review — celebrate your family\'s weekly wins every Sunday' },
+      { icon: 'ph-crown-simple',  color: '#D97706', text: 'GemSprout Pro — 7-day free trial, $2.99/mo or $24.99/yr' },
+      { icon: 'ph-bell-ringing',  color: '#3B82F6', text: 'Push notifications for chore approvals and savings requests' },
+      { icon: 'ph-app-window',    color: '#6C63FF', text: 'App icon badge for pending approvals' },
+      { icon: 'ph-sign-in',       color: '#16A34A', text: 'Sign in with Apple or Google — your family follows you to any device' },
+      { icon: 'ph-users',         color: '#0E7490', text: 'Parent invite flow — bring a second parent on board with a QR code' },
+    ],
+  },
+  {
+    version: '1.0',
+    title: 'Initial Release',
+    date: 'February 2026',
+    items: [
+      { icon: 'ph-check-circle', color: '#16A34A', text: 'Chore tracking with diamond rewards' },
+      { icon: 'ph-camera',       color: '#6B7280', text: 'Before & after photo proof' },
+      { icon: 'ph-piggy-bank',   color: '#16A34A', text: 'Savings banking with interest' },
+      { icon: 'ph-medal',        color: '#D97706', text: 'Badges, levels, and streaks' },
+      { icon: 'ph-storefront',   color: '#7C3AED', text: 'Prize shop' },
+    ],
+  },
+];
+const CHANGELOG_SEEN_KEY = 'gemsprout.changelogSeen';
+
+function showChangelog(markSeen = false) {
+  if (markSeen) {
+    try { localStorage.setItem(CHANGELOG_SEEN_KEY, APP_VERSION); } catch(_) {}
+  }
+  const entriesHtml = CHANGELOG_ENTRIES.map((entry, i) => `
+    <div style="margin-bottom:${i < CHANGELOG_ENTRIES.length - 1 ? '18' : '0'}px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+        <span style="font-weight:800;color:#6C63FF">${entry.title}</span>
+        <span style="font-size:0.78rem;color:var(--muted)">${entry.date}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${entry.items.map(item => `
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <i class="ph-duotone ${item.icon}" style="color:${item.color};font-size:1rem;flex-shrink:0;margin-top:1px"></i>
+            <div style="font-size:0.88rem;color:var(--text);line-height:1.4">${item.text}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+    ${i < CHANGELOG_ENTRIES.length - 1 ? '<div style="height:1px;background:#F3F4F6;margin-bottom:18px"></div>' : ''}
+  `).join('');
+  showModal(`
+    <div style="text-align:center;margin-bottom:16px">
+      <i class="ph-duotone ph-leaf" style="color:#16A34A;font-size:2.2rem"></i>
+      <div class="modal-title" style="margin-top:6px">What's New in GemSprout</div>
+    </div>
+    ${entriesHtml}
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-primary" style="width:100%" onclick="closeModal()">Awesome!</button>
+    </div>`);
+}
+
+function showChangelogIfNeeded() {
+  try {
+    const seen = localStorage.getItem(CHANGELOG_SEEN_KEY);
+    if (seen !== APP_VERSION) setTimeout(() => showChangelog(true), 1000);
+  } catch(_) {}
+}
+
+// ── WEEK IN REVIEW ─────────────────────────────────────────────
+const WEEK_REVIEW_KEY = 'gemsprout.weekReviewShown';
+
+function _getWeekRange() {
+  const todayStr = today();
+  const d = parseDateLocal(todayStr);
+  const dow = d.getDay(); // 0=Sun, 1=Mon … 6=Sat
+  const end = new Date(d);
+  end.setDate(d.getDate() - dow);         // back to most recent Sunday
+  const start = new Date(end);
+  start.setDate(end.getDate() - 6);       // Monday before that
+  return { start: formatDateLocal(start), end: formatDateLocal(end) };
+}
+
+function showWeekReviewIfNeeded() {
+  const todayStr = today();
+  const d = parseDateLocal(todayStr);
+  if (d.getDay() !== 0) return; // only auto-show on Sunday
+  try {
+    if (localStorage.getItem(WEEK_REVIEW_KEY) === todayStr) return;
+    localStorage.setItem(WEEK_REVIEW_KEY, todayStr);
+  } catch(_) {}
+  setTimeout(() => showWeekReview(), 1600);
+}
+
+function showWeekReview() {
+  const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
+  if (!kids.length) return;
+
+  const { start, end } = _getWeekRange();
+  const weekHist  = (D.history || []).filter(h => h.date >= start && h.date <= end);
+  const choreHist = weekHist.filter(h => h.type === 'chore' && !(h.title||'').startsWith('Streak bonus ('));
+  const bonusHist = weekHist.filter(h => h.type === 'bonus');
+  const badgeHist = weekHist.filter(h => h.type === 'badge');
+  const savDepHist = weekHist.filter(h => h.type === 'savings_deposit');
+  const savOn = D.settings.savingsEnabled !== false;
+  const cur = D.settings.currency || '$';
+
+  const totalDiamonds = choreHist.reduce((s, h) => s + (h.diamonds || 0), 0)
+                      + bonusHist.reduce((s, h) => s + (h.diamonds || 0), 0);
+  const totalChores = choreHist.length;
+  const totalSaved  = savDepHist.reduce((s, h) => s + (h.dollars || 0), 0);
+  const totalBadges = badgeHist.length;
+
+  const choreCounts = {};
+  choreHist.forEach(h => { choreCounts[h.title] = (choreCounts[h.title] || 0) + 1; });
+  const topChore = Object.entries(choreCounts).sort((a, b) => b[1] - a[1])[0];
+
+  const kidData = kids.map(kid => {
+    const kChore   = choreHist.filter(h => h.memberId === kid.id);
+    const kBonus   = bonusHist.filter(h => h.memberId === kid.id);
+    const kBadge   = badgeHist.filter(h => h.memberId === kid.id);
+    const kSavDep  = savDepHist.filter(h => h.memberId === kid.id);
+    const kDiamonds = kChore.reduce((s, h) => s + (h.diamonds || 0), 0)
+                    + kBonus.reduce((s, h) => s + (h.diamonds || 0), 0);
+    const kSaved    = kSavDep.reduce((s, h) => s + (h.dollars || 0), 0);
+    const kChoreCounts = {};
+    kChore.forEach(h => { kChoreCounts[h.title] = (kChoreCounts[h.title] || 0) + 1; });
+    const kTopChore = Object.entries(kChoreCounts).sort((a, b) => b[1] - a[1])[0];
+    return { kid, diamonds: kDiamonds, chores: kChore.length, saved: kSaved, topChore: kTopChore, badges: kBadge, streak: kid.streak?.current || 0 };
+  });
+
+  const overlay = document.createElement('div');
+  overlay.id = 'week-review-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0f0720;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  overlay.innerHTML = _weekReviewHTML(kidData, totalDiamonds, totalChores, totalSaved, totalBadges, topChore, start, end, savOn, cur);
+  document.body.appendChild(overlay);
+}
+
+function closeWeekReview() {
+  document.getElementById('week-review-overlay')?.remove();
+}
+
+function _weekReviewHTML(kidData, totalDiamonds, totalChores, totalSaved, totalBadges, topChore, start, end, savOn, cur) {
+  const ms = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const sd = parseDateLocal(start), ed = parseDateLocal(end);
+  const dateRange = `${ms[sd.getMonth()]} ${sd.getDate()} – ${ms[ed.getMonth()]} ${ed.getDate()}, ${ed.getFullYear()}`;
+  const isEmpty = totalChores === 0;
+
+  const kidRow = (kid, mainStat, sub) => `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(0,0,0,0.2);border-radius:14px">
+      <span style="font-size:1.8rem;line-height:1">${kid.avatar || '🙂'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;color:#fff;font-size:0.95rem">${esc(kid.name)}</div>
+        ${sub ? `<div style="font-size:0.78rem;color:rgba(255,255,255,0.5);margin-top:1px">${sub}</div>` : ''}
+      </div>
+      <div style="font-weight:900;color:#fff;font-size:1.1rem;white-space:nowrap">${mainStat}</div>
+    </div>`;
+
+  let _cardIdx = 0;
+  const sectionCard = (gradient, iconHtml, label, bigStat, subStat, rows) => {
+    const delay = `${(_cardIdx++) * 0.1}s`;
+    return `
+    <div class="wr-card" style="background:${gradient};border-radius:28px;padding:28px 24px 20px;margin-bottom:14px;animation-delay:${delay}">
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.72rem;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.6);margin-bottom:10px">${iconHtml}${label}</div>
+      <div style="font-size:clamp(3rem,14vw,5rem);font-weight:900;color:#fff;line-height:0.95;margin-bottom:6px">${bigStat}</div>
+      <div style="font-size:0.88rem;color:rgba(255,255,255,0.55);margin-bottom:${rows?'20':'4'}px">${subStat}</div>
+      ${rows ? `<div style="display:flex;flex-direction:column;gap:8px">${rows}</div>` : ''}
+    </div>`;
+  };
+
+  // Section 1: Diamonds (+ savings) — only if any diamonds earned
+  const sec1 = totalDiamonds > 0 ? (() => {
+    const savingsSub = (savOn && totalSaved > 0) ? ` · ${cur}${totalSaved.toFixed(2)} saved` : '';
+    const rows = kidData
+      .filter(({ diamonds }) => diamonds > 0)
+      .map(({ kid, diamonds, saved }) => {
+        const sub = (savOn && saved > 0) ? `${cur}${saved.toFixed(2)} saved this week` : null;
+        return kidRow(kid, `${diamonds} 💎`, sub);
+      }).join('');
+    return sectionCard('linear-gradient(145deg,#78350F 0%,#D97706 100%)',
+      '<i class="ph-duotone ph-diamond" style="color:rgba(255,255,255,0.7);font-size:0.9rem"></i>', 'Diamonds Earned',
+      `${totalDiamonds} 💎`, `across your whole family${savingsSub}`, rows);
+  })() : '';
+
+  // Section 2: Chores + Streaks — only if any chores done
+  const sec2 = totalChores > 0 ? (() => {
+    const rows = kidData
+      .filter(({ chores }) => chores > 0)
+      .map(({ kid, chores, streak }) => {
+        const sub = streak > 0 ? `<i class="ph-duotone ph-fire" style="color:rgba(255,255,255,0.6);font-size:0.85rem;vertical-align:middle"></i> ${streak}-day streak` : null;
+        return kidRow(kid, `${chores}`, sub);
+      }).join('');
+    return sectionCard('linear-gradient(145deg,#14532D 0%,#16A34A 100%)',
+      '<i class="ph-duotone ph-check-circle" style="color:rgba(255,255,255,0.7);font-size:0.9rem"></i>', 'Chores Completed',
+      totalChores, `by your whole family`, rows);
+  })() : '';
+
+  // Section 3: Top Chore — only if any chores done
+  const sec3 = topChore ? (() => {
+    const rows = kidData
+      .filter(({ topChore: kt }) => kt)
+      .map(({ kid, topChore: kt }) => kidRow(kid, `${kt[1]}×`, kt[0]))
+      .join('');
+    return sectionCard('linear-gradient(145deg,#4C1D95 0%,#7C3AED 100%)',
+      '<i class="ph-duotone ph-star" style="color:rgba(255,255,255,0.7);font-size:0.9rem"></i>', 'Top Chore of the Week',
+      topChore[0],
+      `completed ${topChore[1]} time${topChore[1]!==1?'s':''} as a family`, rows);
+  })() : '';
+
+  // Section 4: Badges — only if any earned
+  const sec4 = totalBadges > 0 ? (() => {
+    const rows = kidData
+      .filter(({ badges }) => badges.length > 0)
+      .map(({ kid, badges }) => kidRow(kid, `${badges.length}`, badges.map(b => b.title).join(', ')))
+      .join('');
+    return sectionCard('linear-gradient(145deg,#1E3A8A 0%,#3B82F6 100%)',
+      '<i class="ph-duotone ph-medal" style="color:rgba(255,255,255,0.7);font-size:0.9rem"></i>', 'Badges Earned',
+      totalBadges, `badge${totalBadges!==1?'s':''} earned this week`, rows);
+  })() : '';
+
+  const footer = isEmpty
+    ? `<div style="text-align:center;padding:20px 0 40px">
+        <i class="ph-duotone ph-moon-stars" style="color:rgba(255,255,255,0.25);font-size:3rem"></i>
+        <div style="color:rgba(255,255,255,0.4);font-size:0.9rem;margin-top:8px">Quiet week — make it count next Sunday!</div>
+      </div>`
+    : `<div style="text-align:center;padding:20px 0 40px">
+        <i class="ph-duotone ph-plant" style="color:rgba(255,255,255,0.3);font-size:3rem"></i>
+        <div style="color:rgba(255,255,255,0.55);font-size:0.9rem;margin-top:8px">Keep growing, ${kidData.map(k=>esc(k.kid.name)).join(' & ')}!</div>
+      </div>`;
+
+  return `
+    <style>
+      @keyframes wr-slide-up {
+        from { opacity:0; transform:translateY(32px) scale(0.97); }
+        to   { opacity:1; transform:translateY(0)    scale(1);    }
+      }
+      .wr-card { animation: wr-slide-up 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+    </style>
+    <div style="max-width:480px;margin:0 auto;padding:0 16px 16px">
+      <div style="position:sticky;top:0;z-index:10;background:linear-gradient(to bottom,#0f0720 80%,transparent);padding:20px 0 12px;display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div style="color:#fff;font-size:1.3rem;font-weight:900;letter-spacing:-0.02em">Week in Review</div>
+          <div style="color:rgba(255,255,255,0.4);font-size:0.8rem;margin-top:2px">${dateRange}</div>
+        </div>
+        <button onclick="closeWeekReview()" style="background:rgba(255,255,255,0.1);border:none;color:rgba(255,255,255,0.7);width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;margin-top:4px;display:flex;align-items:center;justify-content:center"><i class="ph-duotone ph-x" style="font-size:1.1rem"></i></button>
+      </div>
+      <div style="padding-top:4px">
+        ${isEmpty ? `<div style="background:rgba(255,255,255,0.06);border-radius:28px;padding:28px 24px;margin-bottom:14px;text-align:center">
+          <i class="ph-duotone ph-moon-stars" style="color:rgba(255,255,255,0.3);font-size:3rem"></i>
+          <div style="color:#fff;font-weight:800;font-size:1.1rem;margin:10px 0 6px">Nothing this week</div>
+          <div style="color:rgba(255,255,255,0.45);font-size:0.88rem;line-height:1.5">No chores were completed. Come back next Sunday and make it count!</div>
+        </div>` : ''}
+        ${sec1}${sec2}${sec3}${sec4}${footer}
+      </div>
+    </div>`;
 }
 
 function _offerInterestDayReminder() {
@@ -1075,8 +1333,14 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
   });
   // Soft notification when a before-photo gets the green light (no diamonds yet)
   if (anyBeforeApproved && totalNewDiamonds === 0) {
-    toast("Parent approved — time to do the chore!");
-    renderKidChores();
+    showCelebration({
+      icon:       '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:3rem"></i>',
+      title:      'You\'re good to go! <i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>',
+      sub:        'Your parent approved — time to do the chore!',
+      noAnimation: true,
+      btnLabel:   'Let\'s do it!',
+      onClose:    () => renderKidChores(),
+    });
     return;
   }
   if (totalNewDiamonds <= 0) return;
@@ -3097,27 +3361,28 @@ function emailDebugLogs() {
 }
 
 async function devTestPushPermission() {
-  if (!isNative()) { toast('Push notifications only work on device.'); return; }
+  if (!isNative()) { console.log('Push notifications only work on device.'); return; }
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) { toast('FirebaseMessaging plugin not found'); return; }
+    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); return; }
     const result = await FirebaseMessaging.requestPermissions();
-    toast('Permission status: ' + result.receive);
+    console.log('Permission status:', result.receive);
+    toast(`<i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Permission: ${result.receive}`);
   } catch(e) {
-    toast('Error: ' + e.message);
+    console.error('devTestPushPermission error:', e);
   }
 }
 
 async function devShowPushToken() {
-  if (!isNative()) { toast('Push notifications only work on device.'); return; }
+  if (!isNative()) { console.log('Push notifications only work on device.'); return; }
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) { toast('FirebaseMessaging plugin not found'); return; }
+    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); return; }
     const perm = await FirebaseMessaging.requestPermissions();
-    if (perm.receive !== 'granted') { toast('Permission not granted: ' + perm.receive); return; }
+    if (perm.receive !== 'granted') { console.warn('Permission not granted:', perm.receive); toast(`Permission not granted: ${perm.receive}`); return; }
     const result = await FirebaseMessaging.getToken();
     const token = result?.token;
-    if (!token) { toast('No token returned'); return; }
+    if (!token) { console.warn('No token returned'); return; }
     const uid = getParentAuthUid();
     if (uid) {
       await db.doc(`users/${uid}`).set(
@@ -3134,7 +3399,7 @@ async function devShowPushToken() {
         <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedToken}').then(()=>toast('Copied!')).catch(()=>toast('Copy failed'))">Copy Token</button>
       </div>`);
   } catch(e) {
-    toast('Error: ' + e.message);
+    console.error('devShowPushToken error:', e);
   }
 }
 
@@ -3146,9 +3411,11 @@ async function devSendTestPushNotification() {
       kidName:    'Test Kid',
       choreTitle: 'Clean Their Room',
     });
-    toast('Sent! Result: ' + JSON.stringify(result.data));
+    console.log('Test push sent:', result.data);
+    toast('<i class="ph-duotone ph-paper-plane-tilt" style="font-size:1rem;vertical-align:middle"></i> Test notification sent!');
   } catch(e) {
-    toast('Error: ' + (e.message || 'Cloud Function call failed'));
+    console.error('devSendTestPushNotification error:', e);
+    toast('Send failed — check console');
   }
 }
 
@@ -3681,7 +3948,9 @@ function _renderSettingsMain() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();routeToView(S.currentUser)"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();showPaywall()"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="closeSettings();showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle"></i> Test Week in Review</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="try{localStorage.removeItem(CHANGELOG_SEEN_KEY)}catch(_){};showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle"></i> Test What's New</button>
         <div style="height:10px"></div>
         <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
         <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="_devShowInviteTest()"><i class="ph-duotone ph-flask" style="font-size:0.9rem;vertical-align:middle"></i> Test Invite System</button>
@@ -3690,6 +3959,13 @@ function _renderSettingsMain() {
         <div style="height:10px"></div>
         <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
       </div>` : ''}
+
+      <div style="height:20px"></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-secondary btn-full" onclick="showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle;margin-right:6px"></i> Week in Review</button>
+        <button class="btn btn-secondary btn-full" onclick="showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle;margin-right:6px"></i> What's New</button>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px">GemSprout v${APP_VERSION}</div>
 
     </div>`;
 }
@@ -3774,7 +4050,7 @@ function _renderSettingsAccount() {
           ${S.isPro ? `<span style="background:#F0FDF4;color:#16A34A;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:999px">Active</span>` : `<span style="background:#FEF9C3;color:#92400E;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:999px">Inactive</span>`}
         </div>
         ${S.isPro
-          ? `<button class="btn btn-secondary btn-sm btn-full" onclick="Capacitor.Plugins.Purchases?.showManageSubscriptions?.()">Manage Subscription</button>`
+          ? `<button class="btn btn-secondary btn-sm btn-full" onclick="window.open('https://apps.apple.com/account/subscriptions','_system')">Manage Subscription</button>`
           : `<button class="btn btn-primary btn-sm btn-full" onclick="closeSettings();showPaywall()">Subscribe</button>`}
         <button class="btn btn-secondary btn-sm btn-full" style="margin-top:8px" onclick="rcRestorePurchases()">Restore Purchases</button>
       </div>
@@ -5914,28 +6190,24 @@ function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride = null)
 function choreCompleteReact(chore, m, result, evt) {
   const tiny = isTiny(m);
   if (!result.approved) {
-    toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Chore submitted! Waiting for parent approval');
-    if (tiny) speak('All done! Waiting for your grown-up to check!');
-    renderKidChores(); renderKidHeader(); renderKidNav();
+    showCelebration({
+      icon:       renderIcon(chore?.icon, chore?.iconColor, 'font-size:3rem') || '<i class="ph-duotone ph-hourglass" style="color:#6C63FF;font-size:3rem"></i>',
+      title:      'Nice work! <i class="ph-duotone ph-hourglass" style="color:#6C63FF"></i>',
+      sub:        `"${esc(chore?.title||'Chore')}" is waiting for parent approval`,
+      noAnimation: true,
+      btnLabel:   'Got it!',
+      tts:        tiny ? 'All done! Waiting for your grown-up to check!' : null,
+      onClose:    () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
   } else {
-    if (tiny) {
-      showCelebration({
-        icon: renderIcon(chore?.icon, chore?.iconColor, 'font-size:3rem') || '💎',
-        title: 'Amazing job! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
-        sub:   esc(chore?.title||'Chore'),
-        diamonds: chore?.diamonds||0,
-        tts: `Wow! You finished ${chore?.title}! You earned ${chore?.diamonds} diamonds! You are amazing!`,
-        onClose: () => { renderKidChores(); renderKidHeader(); }
-      });
-    } else {
-      if (evt) {
-        const rect = evt.target.getBoundingClientRect();
-        diamondsBurst(rect.left + rect.width/2, rect.top, chore?.diamonds||0);
-      }
-      toast(`+${chore?.diamonds} 💎! Great work! 💎`);
-      renderKidChores(); renderKidHeader();
-    }
-    renderKidNav();
+    showCelebration({
+      icon:     renderIcon(chore?.icon, chore?.iconColor, 'font-size:3rem') || '💎',
+      title:    'Amazing job! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
+      sub:      esc(chore?.title||'Chore'),
+      diamonds: chore?.diamonds||0,
+      tts:      tiny ? `Wow! You finished ${chore?.title}! You earned ${chore?.diamonds} diamonds! You are amazing!` : null,
+      onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
+    });
   }
 }
 
@@ -6297,32 +6569,36 @@ function submitSpendRequest(memberId) {
   renderKidDiamonds();
 }
 
-function approveSavingsRequest(requestId) {
+function approveSavingsRequest(requestId, btn) {
   const req = (D.savingsRequests || []).find(r => r.id === requestId);
   if (!req) return;
   const m   = getMember(req.memberId);
   const cur = D.settings.currency || '$';
   if (!m) return;
-  const actual = Math.min(req.amount, m.savings || 0);
-  m.savings = parseFloat(Math.max(0, (m.savings || 0) - actual).toFixed(2));
-  req.status = 'approved';
-  const label = req.reason ? `Spent: ${req.reason}` : 'Savings withdrawal approved';
-  addHistory('savings_withdraw', req.memberId, label, 0, { dollars: actual });
-  saveData();
-  toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
-  renderParentHome(); renderParentHeader(); renderParentNav();
-  syncAppBadge();
+  _fadeOutAdminCard(btn, () => {
+    const actual = Math.min(req.amount, m.savings || 0);
+    m.savings = parseFloat(Math.max(0, (m.savings || 0) - actual).toFixed(2));
+    req.status = 'approved';
+    const label = req.reason ? `Spent: ${req.reason}` : 'Savings withdrawal approved';
+    addHistory('savings_withdraw', req.memberId, label, 0, { dollars: actual });
+    saveData();
+    toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
+    renderParentHome(); renderParentHeader(); renderParentNav();
+    syncAppBadge();
+  });
 }
 
-function denySavingsRequest(requestId) {
+function denySavingsRequest(requestId, btn) {
   const req = (D.savingsRequests || []).find(r => r.id === requestId);
   if (!req) return;
   const m = getMember(req.memberId);
-  req.status = 'denied';
-  saveData();
-  toast(`Spend request denied for ${m?.name || 'kid'}`);
-  renderParentHome(); renderParentHeader(); renderParentNav();
-  syncAppBadge();
+  _fadeOutAdminCard(btn, () => {
+    req.status = 'denied';
+    saveData();
+    toast(`Spend request denied for ${m?.name || 'kid'}`);
+    renderParentHome(); renderParentHeader(); renderParentNav();
+    syncAppBadge();
+  });
 }
 
 function showSavingsHistory(memberId) {
@@ -6775,7 +7051,6 @@ function showRequirePinPrompt() {
 
 function renderParentHeader() {
   const m = S.currentUser;
-  const inProgress = inProgressChores().length;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
       <span class="header-avatar" onclick="parentAvatarEasterEgg()" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
@@ -6785,15 +7060,14 @@ function renderParentHeader() {
       </div>
     </div>
     <div class="header-actions">
-      ${inProgress>0 ? `<span class="header-badge" style="background:#3B82F6;color:#fff" title="Kid actively working"><i class="ph-duotone ph-hammer" style="font-size:0.8rem;vertical-align:middle"></i> ${inProgress}</span>` : ''}
+      ${S.parentTab === 'stats' ? `<button class="btn btn-secondary btn-sm" onclick="showWeekReview()">Week in Review</button>` : ''}
       <button class="btn-icon-sm" style="background:#F3F4F6" onclick="openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
     </div>`;
 }
 
 function renderParentNav() {
-  const pending    = pendingApprovals().length + pendingSpendRequests().length;
-  const inProgress = inProgressChores().length;
-  const homeCount  = pending + inProgress;
+  const pending   = pendingApprovals().length + pendingSpendRequests().length;
+  const homeCount = pending;
   const tabs = [
     ['home',    ICONS.home,     'Overview'],
     ['chores',  ICONS.chores,   'Chores'],
@@ -6810,6 +7084,7 @@ function renderParentNav() {
 
 function switchParentTab(tab) {
   S.parentTab = tab;
+  renderParentHeader();
   renderParentNav();
   renderParentTab();
   const c = document.getElementById('parent-content'); if (c) c.scrollTop = 0;
@@ -7290,11 +7565,32 @@ function renderParentHome() {
     }
   }
 
-  // Pending approvals (chores + savings spend requests)
+  // Top-of-mind card: in-progress (before approved) + pending approvals + pending spend
+  const inProgress = inProgressChores();
   let html = '';
-  if (pending.length > 0 || pendingSpend.length > 0) {
-    html += `<div class="card" style="border:2px solid var(--yellow)">
-      <div class="card-title"><i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem;vertical-align:middle"></i> Needs Approval</div>`;
+  if (inProgress.length > 0 || pending.length > 0 || pendingSpend.length > 0) {
+    const borderColor = (pending.length > 0 || pendingSpend.length > 0) ? 'var(--yellow)' : '#3B82F6';
+    const titleIcon   = (pending.length > 0 || pendingSpend.length > 0)
+      ? `<i class="ph-duotone ph-hourglass" style="color:#3B82F6;font-size:1rem;vertical-align:middle"></i> Needs Approval`
+      : `<i class="ph-duotone ph-hammer" style="color:#3B82F6;font-size:1rem;vertical-align:middle"></i> In Progress`;
+    html += `<div class="card" style="border:2px solid ${borderColor}">
+      <div class="card-title">${titleIcon}</div>`;
+
+    // In-progress items first (already actioned, just informational)
+    inProgress.forEach(({ chore, memberId }) => {
+      const mem = getMember(memberId);
+      if (!mem) return;
+      html += `
+        <div class="admin-card">
+          <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
+          <div class="admin-info" style="flex:1;min-width:0">
+            <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+            <div class="admin-meta">${mem.avatar} ${esc(mem.name)} · waiting for after photo · +${chore.diamonds} 💎</div>
+          </div>
+        </div>`;
+    });
+
+    // Pending chore approvals
     pending.forEach(({chore, memberId, entry}) => {
       const mem = getMember(memberId);
       if (!mem) return;
@@ -7319,11 +7615,13 @@ function renderParentHome() {
             ${photoHtml}
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject"  onclick="rejectChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
     });
+
+    // Pending spend requests
     pendingSpend.forEach(req => {
       const mem = getMember(req.memberId);
       if (!mem) return;
@@ -7336,8 +7634,8 @@ function renderParentHome() {
             <div style="font-size:0.8rem;color:var(--muted);margin-top:2px">Balance: ${cur}${(mem.savings||0).toFixed(2)}</div>
           </div>
           <div class="admin-actions" style="align-self:flex-start">
-            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
-            <button class="btn-icon-sm btn-icon-reject"  onclick="denySavingsRequest('${req.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+            <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-reject"  onclick="denySavingsRequest('${req.id}',this)"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
     });
@@ -7510,21 +7808,67 @@ function renderParentHome() {
 
   document.getElementById('parent-content').innerHTML = html;
   showBetaWelcomeIfNeeded(); // remove before App Store launch
+  showChangelogIfNeeded();
+  showWeekReviewIfNeeded();
 }
 
-function approveChore(choreId, memberId, entryId) {
+function _fadeOutAdminCard(btn, then) {
+  const card = btn?.closest?.('.admin-card');
+  if (!card) { then(); return; }
+  card.style.transition = 'opacity 0.2s, transform 0.2s';
+  card.style.opacity = '0';
+  card.style.transform = 'scale(0.97)';
+  setTimeout(then, 210);
+}
+
+function _flipAdminCard(btn, newInnerHTML, then) {
+  const card = btn?.closest?.('.admin-card');
+  if (!card) { then(); return; }
+  card.style.transition = 'transform 0.18s ease-in, opacity 0.18s ease-in';
+  card.style.transformOrigin = 'center';
+  card.style.transform = 'rotateY(90deg)';
+  card.style.opacity = '0.2';
+  setTimeout(() => {
+    card.innerHTML = newInnerHTML;
+    card.style.transition = 'none';
+    card.style.transform = 'rotateY(-90deg)';
+    card.offsetHeight; // force reflow
+    card.style.transition = 'transform 0.18s ease-out, opacity 0.18s ease-out';
+    card.style.transform = 'rotateY(0deg)';
+    card.style.opacity = '1';
+    setTimeout(then, 200);
+  }, 190);
+}
+
+function approveChore(choreId, memberId, entryId, btn) {
   const c = D.chores.find(x=>x.id===choreId);
   const m = getMember(memberId);
   const entry = c?.completions?.[memberId]?.find(e => e.id === entryId);
   const isBefore = entry?.entryType === 'before';
-  doApproveChore(choreId, memberId, entryId);
-  toast(isBefore
-    ? `Approved "${c?.title}" for ${m?.name} — they can start!`
-    : `Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} 💎)`);
-  renderParentHome();
-  renderParentHeader();
-  renderParentNav();
-  syncAppBadge();
+
+  if (isBefore) {
+    const inProgressInner = `
+      <span class="admin-icon">${renderIcon(c.icon, c.iconColor, 'font-size:1.6rem')}</span>
+      <div class="admin-info" style="flex:1;min-width:0">
+        <div class="admin-name">${esc(c.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+        <div class="admin-meta">${m.avatar} ${esc(m.name)} · waiting for after photo · +${c.diamonds} 💎</div>
+      </div>`;
+    _flipAdminCard(btn, inProgressInner, () => {
+      doApproveChore(choreId, memberId, entryId);
+      renderParentHeader();
+      renderParentNav();
+      syncAppBadge();
+    });
+  } else {
+    _fadeOutAdminCard(btn, () => {
+      doApproveChore(choreId, memberId, entryId);
+      toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} 💎)`);
+      renderParentHome();
+      renderParentHeader();
+      renderParentNav();
+      syncAppBadge();
+    });
+  }
 }
 
 function rejectChore(choreId, memberId, entryId) {
@@ -7555,6 +7899,7 @@ function confirmRejectChore(choreId, memberId, entryId) {
   renderParentNav();
   syncAppBadge();
 }
+
 
 // Parent directly marks a chore done for a kid (no kid submission required)
 function parentMarkChoreDone(choreId, memberId) {
