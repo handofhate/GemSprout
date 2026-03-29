@@ -9469,11 +9469,11 @@ function resetAllData() {
     </div>`);
 }
 
-function _doResetAllData() {
-  localStorage.removeItem(LS_KEY);
+async function _doResetAllData() {
+  const docPath = getFamilyDoc();
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
-  db.doc(getFamilyDoc()).delete().catch(e => console.warn('Firestore delete error:', e));
-  D = defaultData();
+  try { await db.doc(docPath).delete(); } catch(e) { console.warn('Firestore delete error:', e); }
+  localStorage.removeItem(LS_KEY);
   location.reload();
 }
 
