@@ -7576,22 +7576,34 @@ function renderParentHome() {
     html += `<div class="card" style="border:2px solid ${borderColor}">
       <div class="card-title">${titleIcon}</div>`;
 
-    // In-progress items first (already actioned, just informational)
-    inProgress.forEach(({ chore, memberId }) => {
-      const mem = getMember(memberId);
-      if (!mem) return;
-      html += `
-        <div class="admin-card">
-          <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
-          <div class="admin-info" style="flex:1;min-width:0">
-            <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
-            <div class="admin-meta">${mem.avatar} ${esc(mem.name)} · waiting for after photo · +${chore.diamonds} 💎</div>
-          </div>
-        </div>`;
-    });
+    // Build a unified list in submission order: tag each item with its date so we can sort
+    const allItems = [
+      ...inProgress.map(item => {
+        const beforeEntry = normalizeCompletionEntries(item.chore.completions?.[item.memberId])
+          .find(e => e.entryType === 'before');
+        return { type: 'inprogress', date: beforeEntry?.date || today(), ...item };
+      }),
+      ...pending.map(item => ({ type: 'pending', date: item.entry.date, ...item })),
+    ].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
-    // Pending chore approvals
-    pending.forEach(({chore, memberId, entry}) => {
+    allItems.forEach(item => {
+      if (item.type === 'inprogress') {
+        const { chore, memberId } = item;
+        const mem = getMember(memberId);
+        if (!mem) return;
+        html += `
+          <div class="admin-card">
+            <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
+            <div class="admin-info" style="flex:1;min-width:0">
+              <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+              <div class="admin-meta">${mem.avatar} ${esc(mem.name)} · waiting for after photo · +${chore.diamonds} 💎</div>
+            </div>
+          </div>`;
+        return;
+      }
+
+      // type === 'pending'
+      const {chore, memberId, entry} = item;
       const mem = getMember(memberId);
       if (!mem) return;
       const slotLabel = entry.slotId && chore.schedule?.slots
@@ -7621,7 +7633,8 @@ function renderParentHome() {
         </div>`;
     });
 
-    // Pending spend requests
+    // Spend requests (appended after chore items — no submission timestamp to sort by)
+
     pendingSpend.forEach(req => {
       const mem = getMember(req.memberId);
       if (!mem) return;
