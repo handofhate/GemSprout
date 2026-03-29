@@ -137,6 +137,161 @@ async function _enableInterestDayReminder() {
   scheduleInterestDayNotification();
 }
 
+// ── REVENUECAT ────────────────────────────────────────────────
+const RC_API_KEY     = 'appl_RquVpMOZtfpBzJLJButBHBFuolp';
+const RC_ENTITLEMENT = 'pro';
+let _rcPkgs         = { monthly: null, yearly: null };
+let _rcSelectedPlan = 'yearly';
+
+async function initRevenueCat() {
+  if (!isNative()) { S.isPro = true; return; }
+  try {
+    const { Purchases } = Capacitor.Plugins;
+    if (!Purchases) { S.isPro = true; return; }
+    Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
+    const { customerInfo } = await Purchases.getCustomerInfo();
+    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+  } catch(e) {
+    console.warn('RevenueCat init error:', e);
+    S.isPro = true; // fail open — never lock out on network errors
+  }
+}
+
+async function showPaywall() {
+  showScreen('screen-auth');
+  const el = document.getElementById('screen-auth');
+  el.className = 'screen active';
+  el.style.cssText = '';
+  el.innerHTML = _paywallHTML();
+
+  if (isNative()) {
+    try {
+      const { Purchases } = Capacitor.Plugins;
+      if (Purchases) {
+        const { offerings } = await Purchases.getOfferings();
+        const pkgs = offerings?.current?.availablePackages || [];
+        for (const pkg of pkgs) {
+          if (pkg.packageType === 'MONTHLY') _rcPkgs.monthly = pkg;
+          if (pkg.packageType === 'ANNUAL')  _rcPkgs.yearly  = pkg;
+        }
+      }
+    } catch(e) {}
+  }
+
+  const mPrice = _rcPkgs.monthly?.product?.priceString || '$2.99';
+  const yPrice = _rcPkgs.yearly?.product?.priceString  || '$24.99';
+  const trialDays = _rcPkgs.yearly?.product?.introPrice?.periodNumberOfUnits
+    || _rcPkgs.monthly?.product?.introPrice?.periodNumberOfUnits
+    || 7;
+
+  el.innerHTML = _paywallHTML(mPrice, yPrice, trialDays);
+  _rcSelectPlan(_rcSelectedPlan); // apply selected state
+}
+
+function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
+  const selPlan = _rcSelectedPlan;
+  const mSel = selPlan === 'monthly';
+  const ySel = selPlan === 'yearly';
+  const cardBase = 'border-radius:14px;padding:14px 16px;cursor:pointer;transition:border 0.15s;';
+  const mCard = cardBase + `border:2px solid ${mSel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${mSel ? '0.15' : '0.07'})`;
+  const yCard = cardBase + `border:2px solid ${ySel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${ySel ? '0.15' : '0.07'})`;
+  return `
+  <div style="display:flex;flex-direction:column;min-height:100%;background:linear-gradient(160deg,#1a0533 0%,#3b1278 55%,#6C63FF 100%);overflow:auto">
+    <div style="text-align:center;padding:52px 24px 20px">
+      <img src="gemsproutpadded.png" style="width:76px;height:76px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.35)">
+      <div style="color:#fff;font-size:1.75rem;font-weight:800;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
+      <div style="color:rgba(255,255,255,0.65);font-size:0.95rem;margin-top:6px">Everything your family needs to build great habits</div>
+    </div>
+
+    <div style="padding:0 24px;display:flex;flex-direction:column;gap:10px">
+      ${[
+        ['ph-check-circle','Chore tracking with photo proof & diamond rewards'],
+        ['ph-bell-ringing','Push notifications when kids complete chores'],
+        ['ph-piggy-bank',  'Savings banking, interest, and spend controls'],
+        ['ph-users',       'Unlimited kids, two parents, one family subscription'],
+      ].map(([icon, text]) => `
+        <div style="display:flex;align-items:center;gap:12px">
+          <i class="ph-duotone ${icon}" style="color:#C4B5FD;font-size:1.3rem;flex-shrink:0"></i>
+          <div style="color:rgba(255,255,255,0.88);font-size:0.9rem;line-height:1.4">${text}</div>
+        </div>`).join('')}
+    </div>
+
+    <div style="padding:20px 24px 0;display:flex;gap:12px">
+      <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
+        <div style="color:rgba(255,255,255,0.65);font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
+        <div style="color:#fff;font-size:1.3rem;font-weight:800;margin-top:4px">${mPrice}</div>
+        <div style="color:rgba(255,255,255,0.5);font-size:0.75rem;margin-top:2px">per month</div>
+      </div>
+      <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
+        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#F97316;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
+        <div style="color:rgba(255,255,255,0.65);font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
+        <div style="color:#fff;font-size:1.3rem;font-weight:800;margin-top:4px">${yPrice}</div>
+        <div style="color:rgba(255,255,255,0.5);font-size:0.75rem;margin-top:2px">per year</div>
+      </div>
+    </div>
+
+    <div style="padding:20px 24px 0">
+      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:#fff;color:#4C1D95;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.25)">
+        Start ${trialDays}-Day Free Trial
+      </button>
+      <div style="color:rgba(255,255,255,0.45);font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
+        Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
+      </div>
+    </div>
+
+    <div style="margin-top:auto;padding:20px 24px 36px;display:flex;justify-content:center;gap:20px">
+      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:rgba(255,255,255,0.55);font-size:0.82rem;cursor:pointer;padding:4px">Restore Purchases</button>
+      <a href="privacy.html" style="color:rgba(255,255,255,0.55);font-size:0.82rem;text-decoration:none;padding:4px">Privacy</a>
+    </div>
+  </div>`;
+}
+
+function _rcSelectPlan(type) {
+  _rcSelectedPlan = type;
+  const mCard = document.getElementById('rc-card-monthly');
+  const yCard = document.getElementById('rc-card-yearly');
+  const cardBase = 'border-radius:14px;padding:14px 16px;cursor:pointer;transition:border 0.15s;flex:1;';
+  if (mCard) mCard.style.cssText = cardBase + `border:2px solid ${type==='monthly'?'#fff':'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${type==='monthly'?'0.15':'0.07'})`;
+  if (yCard) yCard.style.cssText = cardBase + `border:2px solid ${type==='yearly'?'#fff':'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${type==='yearly'?'0.15':'0.07'});position:relative`;
+}
+
+async function rcStartTrial() {
+  if (!isNative()) return;
+  const pkg = _rcSelectedPlan === 'monthly' ? _rcPkgs.monthly : _rcPkgs.yearly;
+  if (!pkg) { toast('Could not load subscription options — try again'); return; }
+  try {
+    const { Purchases } = Capacitor.Plugins;
+    const { customerInfo } = await Purchases.purchasePackage({ aPackage: pkg });
+    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+    if (S.isPro) {
+      const member = getMember(getCurrentUserId());
+      if (member) routeToView(member); else renderHome();
+    }
+  } catch(e) {
+    if (!e.userCancelled) toast('Purchase failed — please try again');
+  }
+}
+
+async function rcRestorePurchases() {
+  if (!isNative()) { toast('Restore only works on device'); return; }
+  try {
+    showLoading();
+    const { Purchases } = Capacitor.Plugins;
+    const { customerInfo } = await Purchases.restorePurchases();
+    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+    if (S.isPro) {
+      const member = getMember(getCurrentUserId());
+      if (member) routeToView(member); else renderHome();
+    } else {
+      await showPaywall();
+      toast('No active subscription found');
+    }
+  } catch(e) {
+    await showPaywall();
+    toast('Restore failed — please try again');
+  }
+}
+
 function _offerInterestDayReminder() {
   // Only prompt the first time savings interest is enabled (if not already set)
   if (D.settings.interestDayNotify !== undefined) return;
@@ -557,6 +712,7 @@ const ALL_DAYS = WEEKDAY_OPTIONS.map(day => day.value);
 // ── APP STATE ────────────────────────────────────────────────
 let D = {};          // the live data object (mirrors localStorage)
 let S = {            // UI state (not persisted)
+  isPro:                true,  // true until RevenueCat confirms otherwise (fail open)
   currentUser:          null,
   kidTab:               'chores',
   parentTab:            'home',
@@ -3525,6 +3681,7 @@ function _renderSettingsMain() {
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();routeToView(S.currentUser)"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
         <div style="height:10px"></div>
         <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
         <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="_devShowInviteTest()"><i class="ph-duotone ph-flask" style="font-size:0.9rem;vertical-align:middle"></i> Test Invite System</button>
@@ -3604,6 +3761,22 @@ function _renderSettingsAccount() {
             <div class="toggle-sub">Require PIN or ${getBiometricLabel()} each time the app is opened or returns from the background</div></div>
           <label class="toggle"><input type="checkbox" ${s.lockOnBackground?'checked':''} onchange="saveSetting('lockOnBackground',this.checked)"><span class="toggle-track"></span></label>
         </div>` : ''}
+      </div>
+
+      <div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-crown-simple" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Subscription</span></div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <div style="font-weight:600;font-size:0.9rem">GemSprout Pro</div>
+            <div style="font-size:0.78rem;color:var(--muted)">${S.isPro ? 'Active' : 'No active subscription'}</div>
+          </div>
+          ${S.isPro ? `<span style="background:#F0FDF4;color:#16A34A;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:999px">Active</span>` : `<span style="background:#FEF9C3;color:#92400E;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:999px">Inactive</span>`}
+        </div>
+        ${S.isPro
+          ? `<button class="btn btn-secondary btn-sm btn-full" onclick="Capacitor.Plugins.Purchases?.showManageSubscriptions?.()">Manage Subscription</button>`
+          : `<button class="btn btn-primary btn-sm btn-full" onclick="closeSettings();showPaywall()">Subscribe</button>`}
+        <button class="btn btn-secondary btn-sm btn-full" style="margin-top:8px" onclick="rcRestorePurchases()">Restore Purchases</button>
       </div>
 
       <div style="height:14px"></div>
@@ -3873,6 +4046,7 @@ function selectProfile(id) {
 function routeToView(member) {
   if (member.role === 'parent') {
     if (!ensureParentAuth(member, (authedMember) => routeToView(authedMember))) return;
+    if (!S.isPro && !RC.betaMode) { showPaywall(); return; }
     renderParentView();
   } else {
     renderKidView(); // handles both 'tiny' and 'regular'
@@ -9431,6 +9605,7 @@ function resetAllData() {
   showModal(`
     <div class="modal-title" style="color:#EF4444">⚠️ Reset All Data?</div>
     <p style="margin:0 0 12px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will <strong>permanently erase all family data</strong> — chores, prizes, history, member profiles, and settings. This cannot be undone.</p>
+    <p style="margin:0 0 12px;background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#78350F;line-height:1.5"><strong>Active subscription?</strong> Resetting does not cancel your subscription. Manage billing separately in your iPhone's subscription settings.</p>
     <p style="margin:0 0 10px;color:var(--muted);font-size:0.88rem">Type <strong>reset</strong> below to confirm:</p>
     <input id="reset-type-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
       style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:20px;outline:none"
@@ -9690,7 +9865,10 @@ async function ensureFirestoreAuth() {
 async function startApp() {
   await checkBiometricAvailability();
   const inMaintenance = await checkMaintenanceMode();
-  if (!inMaintenance) init();
+  if (!inMaintenance) {
+    await initRevenueCat();
+    init();
+  }
 }
 
 if (document.readyState === 'loading') {

@@ -51,6 +51,24 @@ workflows:
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'GemSprout may save chore photos to your photo library.'" "$PLIST" 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'GemSprout may save chore photos to your photo library.'" "$PLIST"
 
+      - name: Enable In-App Purchase capability
+        script: |
+          gem install xcodeproj --no-document
+          ruby - <<'EOF'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
+          target = project.targets.first
+          unless target.frameworks_build_phase.files.any? { |f| f.file_ref&.path == 'StoreKit.framework' }
+            storekit = project.frameworks_group.new_file('System/Library/Frameworks/StoreKit.framework')
+            storekit.source_tree = 'SDKROOT'
+            target.frameworks_build_phase.add_file_reference(storekit)
+            project.save
+            puts 'Added StoreKit.framework'
+          else
+            puts 'StoreKit.framework already present'
+          end
+          EOF
+
       - name: Add GoogleService-Info.plist to Xcode bundle resources
         script: |
           gem install xcodeproj --no-document
