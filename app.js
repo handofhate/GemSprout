@@ -308,31 +308,21 @@ async function rcRestorePurchases() {
 }
 
 // ── CHANGELOG ─────────────────────────────────────────────────
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.0';
 const CHANGELOG_ENTRIES = [
   {
-    version: '1.1',
-    title: 'Subscriptions & Week in Review',
+    version: '1.0',
+    title: 'GemSprout 1.0',
     date: 'March 2026',
     items: [
+      { icon: 'ph-check-circle',  color: '#16A34A', text: 'Chore tracking with diamond rewards' },
+      { icon: 'ph-camera',        color: '#6B7280', text: 'Before & after photo proof' },
+      { icon: 'ph-piggy-bank',    color: '#16A34A', text: 'Savings banking with interest' },
+      { icon: 'ph-medal',         color: '#D97706', text: 'Badges, levels, and streaks' },
+      { icon: 'ph-storefront',    color: '#7C3AED', text: 'Prize shop' },
       { icon: 'ph-calendar-star', color: '#7C3AED', text: 'Week in Review — celebrate your family\'s weekly wins every Sunday' },
-      { icon: 'ph-crown-simple',  color: '#D97706', text: 'GemSprout Pro — 7-day free trial, $2.99/mo or $24.99/yr' },
-      { icon: 'ph-bell-ringing',  color: '#3B82F6', text: 'Push notifications for chore approvals and savings requests' },
-      { icon: 'ph-app-window',    color: '#6C63FF', text: 'App icon badge for pending approvals' },
       { icon: 'ph-sign-in',       color: '#16A34A', text: 'Sign in with Apple or Google — your family follows you to any device' },
-      { icon: 'ph-users',         color: '#0E7490', text: 'Parent invite flow — bring a second parent on board with a QR code' },
-    ],
-  },
-  {
-    version: '1.0',
-    title: 'Initial Release',
-    date: 'February 2026',
-    items: [
-      { icon: 'ph-check-circle', color: '#16A34A', text: 'Chore tracking with diamond rewards' },
-      { icon: 'ph-camera',       color: '#6B7280', text: 'Before & after photo proof' },
-      { icon: 'ph-piggy-bank',   color: '#16A34A', text: 'Savings banking with interest' },
-      { icon: 'ph-medal',        color: '#D97706', text: 'Badges, levels, and streaks' },
-      { icon: 'ph-storefront',   color: '#7C3AED', text: 'Prize shop' },
+      { icon: 'ph-house-line',    color: '#0E7490', text: 'Split household — streaks are protected on days kids are at their other home' },
     ],
   },
 ];
@@ -372,7 +362,11 @@ function showChangelog(markSeen = false) {
 function showChangelogIfNeeded() {
   try {
     const seen = localStorage.getItem(CHANGELOG_SEEN_KEY);
-    if (seen !== APP_VERSION) setTimeout(() => showChangelog(true), 1000);
+    if (seen === null) {
+      localStorage.setItem(CHANGELOG_SEEN_KEY, APP_VERSION); // fresh install — mark seen silently
+    } else if (seen !== APP_VERSION) {
+      setTimeout(() => showChangelog(true), 1000);
+    }
   } catch(_) {}
 }
 
