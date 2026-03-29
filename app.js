@@ -127,6 +127,30 @@ async function syncAppBadge() {
   } catch(e) {}
 }
 
+async function _enableInterestDayReminder() {
+  if (isNative()) {
+    try {
+      const { LocalNotifications } = Capacitor.Plugins;
+      if (LocalNotifications) await LocalNotifications.requestPermissions().catch(() => {});
+    } catch(e) {}
+  }
+  scheduleInterestDayNotification();
+}
+
+function _offerInterestDayReminder() {
+  // Only prompt the first time savings interest is enabled (if not already set)
+  if (D.settings.interestDayNotify !== undefined) return;
+  showModal(`
+    <div class="modal-title"><i class="ph-duotone ph-bell-ringing" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Interest Day Reminder</div>
+    <p style="font-size:0.88rem;color:var(--muted);line-height:1.6;margin-bottom:16px">
+      Would you like a reminder on interest day to have your kids open the app and claim their savings interest?
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="saveSetting('interestDayNotify',false);closeModal()">No thanks</button>
+      <button class="btn btn-primary" onclick="saveSetting('interestDayNotify',true);_enableInterestDayReminder();closeModal()">Yes, remind me</button>
+    </div>`);
+}
+
 async function scheduleInterestDayNotification() {
   if (!isNative()) return;
   const { LocalNotifications } = Capacitor.Plugins;
@@ -511,7 +535,7 @@ const DEFAULT_PRIZES = [
   { title:'Movie Night Pick',        icon:'film-strip',  iconColor:'#6C63FF', cost:100, type:'individual' },
   { title:'30 min Extra Screen Time',icon:'television',  iconColor:'#45B7D1', cost:50,  type:'individual' },
   { title:'Stay Up 30 min Late',     icon:'moon',        iconColor:'#6C63FF', cost:75,  type:'individual' },
-  { title:'Choose Dinner',           icon:'pizza-slice', iconColor:'#FF9A3C', cost:75,  type:'individual' },
+  { title:'Choose Dinner',           icon:'fork-knife',  iconColor:'#FF9A3C', cost:75,  type:'individual' },
   { title:'Small Toy or Book',       icon:'gift',        iconColor:'#FF6584', cost:250, type:'individual' },
   { title:'Family Ice Cream Night',  icon:'ice-cream',   iconColor:'#FFD93D', cost:400, type:'family'     },
   { title:'Family Movie Night',      icon:'film-strip',  iconColor:'#6C63FF', cost:500, type:'family'     },
@@ -3374,7 +3398,7 @@ function _renderSettingsMain() {
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="form-group mb-0">
-          <label class="form-label"><i class="ph-duotone ph-globe" style="color:#6C63FF;font-size:0.95rem;vertical-align:middle"></i> Family timezone</label>
+          <label class="form-label">Family timezone</label>
           <select onchange="saveSetting('familyTimezone',this.value)" style="width:100%">
             ${(Intl.supportedValuesOf?.('timeZone') ?? [s.familyTimezone]).map(tz =>
               `<option value="${tz}" ${tz === (s.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) ? 'selected' : ''}>${tz.replace(/_/g,' ')}</option>`
@@ -3423,7 +3447,7 @@ function _renderSettingsMain() {
         <div class="toggle-row" style="margin-top:${s.savingsMatchingEnabled?'4':'8'}px">
           <div><div class="toggle-label">Add interest</div>
             <div class="toggle-sub">Kids claim their interest as a reward on interest day</div></div>
-          <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);renderSettings()"><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox" ${s.savingsInterestEnabled?'checked':''} onchange="saveSetting('savingsInterestEnabled',this.checked);if(this.checked)_offerInterestDayReminder();renderSettings()"><span class="toggle-track"></span></label>
         </div>
         ${s.savingsInterestEnabled ? (() => {
           const ip = s.savingsInterestPeriod || 'monthly';
@@ -3473,7 +3497,7 @@ function _renderSettingsMain() {
         <button class="btn btn-secondary btn-sm btn-full" style="margin-top:12px" onclick="closeSettings();goSetup()">Edit Family Setup</button>
         <div class="toggle-row" style="margin-top:14px">
           <div>
-            <div class="toggle-label"><i class="ph-duotone ph-house" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> Split household</div>
+            <div class="toggle-label">Split household</div>
             <div class="toggle-sub">Streaks skip days kids are at the other household</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
@@ -3642,14 +3666,14 @@ function _renderSettingsNotifications() {
             <div class="toggle-label">Chore approval requests</div>
             <div class="toggle-sub">Sends a notification when a kid marks a chore complete and it's waiting for your review</div>
           </div>
-          <label class="toggle"><input type="checkbox" ${s.notifyChoreApproval!==false?'checked':''} onchange="saveSetting('notifyChoreApproval',this.checked)"><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox" ${s.notifyChoreApproval!==false?'checked':''} onchange="saveSetting('notifyChoreApproval',this.checked);if(this.checked)initPushNotifications(firebase.auth().currentUser)"><span class="toggle-track"></span></label>
         </div>
-        <div class="toggle-row">
+        <div class="toggle-row" style="${s.savingsEnabled===false?'opacity:0.4;pointer-events:none':''}">
           <div>
             <div class="toggle-label">Savings spend requests</div>
-            <div class="toggle-sub">Sends a notification when a kid requests to spend from their savings</div>
+            <div class="toggle-sub">${s.savingsEnabled===false?'Enable Savings Banking to use this':'Sends a notification when a kid requests to spend from their savings'}</div>
           </div>
-          <label class="toggle"><input type="checkbox" ${s.notifySavingsSpend!==false?'checked':''} onchange="saveSetting('notifySavingsSpend',this.checked)"><span class="toggle-track"></span></label>
+          <label class="toggle"><input type="checkbox" ${s.notifySavingsSpend!==false?'checked':''} ${s.savingsEnabled===false?'disabled':''} onchange="saveSetting('notifySavingsSpend',this.checked);if(this.checked)initPushNotifications(firebase.auth().currentUser)"><span class="toggle-track"></span></label>
         </div>
       </div>
 
@@ -4119,8 +4143,8 @@ function tryBiometricUnlock() {
 }
 
 // ── SETUP WIZARD ──────────────────────────────────────────────
-const SETUP_STEPS_NEW  = ['welcome','parents','members','chores','prizes','sync','done'];
-const SETUP_STEPS_EDIT = ['welcome','parents','members','sync','done'];
+const SETUP_STEPS_NEW  = ['welcome','parents','members','chores','prizes','appSettings','done'];
+const SETUP_STEPS_EDIT = ['welcome','parents','members','appSettings','done'];
 let SETUP_STEPS = SETUP_STEPS_NEW;
 
 function renderSetupGate() {
@@ -4702,6 +4726,10 @@ function goSetup() {
   S.setupMembers = D.family.members
     .filter(m => m.role !== 'parent' && !m.deleted)
     .map(m => ({...m}));
+  // New setup: pre-populate one blank kid so the form is ready immediately
+  if (!D.setup && S.setupMembers.length === 0) {
+    S.setupMembers.push({ id:genId(), name:'', age:null, avatar:'🦁', color:COLORS[0], displayMode:'regular', role:'kid', diamonds:0, savings:0, totalEarned:0, birthday:'' });
+  }
   showScreen('screen-setup');
   renderSetupStep();
 }
@@ -4809,28 +4837,12 @@ function renderSetupStep() {
       </div>`;
       break;
 
-    case 'sync': content = `
+    case 'appSettings': {
+      content = `
       <div class="setup-top" style="padding-top:20px">
-        <div class="setup-emoji"><i class="ph-duotone ph-cloud" style="color:#10B981;font-size:3rem"></i></div>
-        <div class="setup-title">Family Sync</div>
-        <div class="setup-sub">All devices sync automatically — nothing to configure!</div>
-      </div>
-      <div class="card" style="background:#F0FDF4;border:2px solid var(--green);margin-bottom:14px">
-        <div class="card-title"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Sync is enabled</div>
-        <p style="font-size:0.88rem;line-height:1.6;color:var(--muted)">
-          GemSprout uses Google Firestore to keep all devices in sync in real time.
-          Any change made on one device will appear on all others instantly.
-        </p>
-      </div>
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-label">Auto-approve chores</div>
-          <div class="toggle-sub">Kids earn diamonds instantly without parent approval</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="setup-auto-approve" ${D.settings.autoApprove?'checked':''}>
-          <span class="toggle-track"></span>
-        </label>
+        <div class="setup-emoji"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:3rem"></i></div>
+        <div class="setup-title">App Settings</div>
+        <div class="setup-sub">Customize GemSprout for your family. You can change these any time in Settings.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Parent PIN <span class="form-label-hint">(required)</span></label>
@@ -4838,11 +4850,47 @@ function renderSetupStep() {
         <input type="password" id="setup-pin" maxlength="4" placeholder="4 digits" inputmode="numeric" value="${esc(D.settings.parentPin||'')}">
         <div id="setup-pin-error" style="display:none;color:var(--pink);font-size:0.8rem;margin-top:4px"></div>
       </div>
-      <div class="flex gap-10 mt-8">
+      <div class="section-row" style="margin-top:4px"><span class="section-title"><i class="ph-duotone ph-sliders" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> General</span></div>
+      <div class="card">
+        <div class="toggle-row">
+          <div><div class="toggle-label">Auto-approve chores</div>
+            <div class="toggle-sub">Kids earn diamonds instantly without parent approval</div></div>
+          <label class="toggle"><input type="checkbox" id="setup-auto-approve" ${D.settings.autoApprove?'checked':''}><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Hide unavailable chores</div>
+            <div class="toggle-sub">Chores outside their time window won't show on kids' screens</div></div>
+          <label class="toggle"><input type="checkbox" id="setup-hide-unavailable" ${D.settings.hideUnavailable?'checked':''}><span class="toggle-track"></span></label>
+        </div>
+        <div class="form-group mb-0">
+          <label class="form-label">Family timezone</label>
+          <select id="setup-timezone" style="width:100%">
+            ${(Intl.supportedValuesOf?.('timeZone') ?? [D.settings.familyTimezone]).map(tz =>
+              `<option value="${tz}" ${tz === (D.settings.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone) ? 'selected' : ''}>${tz.replace(/_/g,' ')}</option>`
+            ).join('')}
+          </select>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Used to determine "today" for chores and streaks across time zones</div>
+        </div>
+      </div>
+      <div class="section-row" style="margin-top:14px"><span class="section-title"><i class="ph-duotone ph-device-mobile" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Push Notifications</span></div>
+      <div class="card">
+        <div class="toggle-row">
+          <div><div class="toggle-label">Chore approval requests</div>
+            <div class="toggle-sub">Get notified when a kid marks a chore complete and it needs your review</div></div>
+          <label class="toggle"><input type="checkbox" id="setup-notify-chore" ${D.settings.notifyChoreApproval!==false?'checked':''}><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row" style="${D.settings.savingsEnabled===false?'opacity:0.4;pointer-events:none':''}">
+          <div><div class="toggle-label">Savings spend requests</div>
+            <div class="toggle-sub">${D.settings.savingsEnabled===false?'Enable Savings Banking to use this':'Get notified when a kid requests to spend from their savings'}</div></div>
+          <label class="toggle"><input type="checkbox" id="setup-notify-spend" ${D.settings.notifySavingsSpend!==false?'checked':''} ${D.settings.savingsEnabled===false?'disabled':''}><span class="toggle-track"></span></label>
+        </div>
+      </div>
+      <div class="flex gap-10" style="margin-top:16px">
         <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()">← Back</button>
         <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Finish! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i></button>
       </div>`;
       break;
+    }
 
     case 'done': {
       const _fc = getFamilyCode();
@@ -5107,7 +5155,7 @@ function setupNext() {
       if (ni) p.name = ni.value.trim();
       setParentBday(i);
     });
-    if (S.setupParents.some(p=>!p.name)) { toast('Please give each parent a name'); return; }
+    if (S.setupParents.some(p=>!p.name)) { toast('Please give yourself a name'); return; }
   }
 
   if (stepName === 'members') {
@@ -5153,18 +5201,33 @@ function setupNext() {
     });
   }
 
-  if (stepName === 'sync') {
-    const autoEl = document.getElementById('setup-auto-approve');
-    const pinEl  = document.getElementById('setup-pin');
-    const pin    = pinEl?.value.trim() || '';
+  if (stepName === 'appSettings') {
+    const pinEl = document.getElementById('setup-pin');
+    const pin   = pinEl?.value.trim() || '';
     if (!pin || pin.length < 4) {
       const err = document.getElementById('setup-pin-error');
       if (err) { err.textContent = 'Please enter a 4-digit PIN.'; err.style.display = 'block'; }
       pinEl?.focus();
       return;
     }
-    if (autoEl) D.settings.autoApprove = autoEl.checked;
     D.settings.parentPin = pin;
+    const autoEl = document.getElementById('setup-auto-approve');
+    if (autoEl) D.settings.autoApprove = autoEl.checked;
+    const hideEl = document.getElementById('setup-hide-unavailable');
+    if (hideEl) D.settings.hideUnavailable = hideEl.checked;
+    const tzEl = document.getElementById('setup-timezone');
+    if (tzEl) D.settings.familyTimezone = tzEl.value;
+    const notifyChoreEl = document.getElementById('setup-notify-chore');
+    if (notifyChoreEl) D.settings.notifyChoreApproval = notifyChoreEl.checked;
+    const notifySpendEl = document.getElementById('setup-notify-spend');
+    if (notifySpendEl) D.settings.notifySavingsSpend = notifySpendEl.checked;
+    // Request iOS notification permission if any push toggle is on
+    if (isNative() && (D.settings.notifyChoreApproval !== false || D.settings.notifySavingsSpend !== false)) {
+      try {
+        const { FirebaseMessaging } = Capacitor.Plugins;
+        if (FirebaseMessaging) FirebaseMessaging.requestPermissions().catch(() => {});
+      } catch(e) {}
+    }
     S.setupStep++;
     if (S.setupStep >= SETUP_STEPS.length) {
       finishSetup();
@@ -9670,6 +9733,7 @@ document.addEventListener('visibilitychange', () => {
   const pc = document.getElementById('parent-content');
   if (kc) kc.scrollTop = 0;
   if (pc) pc.scrollTop = 0;
+  if (S.currentUser?.role === 'parent') syncAppBadge();
 });
 
 console.log('✅ GemSprout fully loaded!');
