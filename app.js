@@ -149,7 +149,7 @@ async function initRevenueCat() {
     const { Purchases } = Capacitor.Plugins;
     if (!Purchases) { S.isPro = true; return; }
     Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
-    const { customerInfo } = await Purchases.getCustomerInfo();
+    const customerInfo = await Purchases.getCustomerInfo();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
   } catch(e) {
     console.warn('RevenueCat init error:', e);
@@ -168,7 +168,7 @@ async function showPaywall() {
     try {
       const { Purchases } = Capacitor.Plugins;
       if (Purchases) {
-        const { offerings } = await Purchases.getOfferings();
+        const offerings = await Purchases.getOfferings();
         const pkgs = offerings?.current?.availablePackages || [];
         for (const pkg of pkgs) {
           if (pkg.packageType === 'MONTHLY') _rcPkgs.monthly = pkg;
@@ -277,7 +277,7 @@ async function rcRestorePurchases() {
   try {
     showLoading();
     const { Purchases } = Capacitor.Plugins;
-    const { customerInfo } = await Purchases.restorePurchases();
+    const customerInfo = await Purchases.restorePurchases();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
     if (S.isPro) {
       const member = getMember(getCurrentUserId());
