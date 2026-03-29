@@ -7014,11 +7014,6 @@ function renderParentView() {
   renderParentHeader();
   renderParentNav();
   renderParentTab();
-  // Prompt existing users who have no PIN set — non-blocking
-  if (S.currentUser && !D.settings.parentPin && !S._pinPromptShown) {
-    S._pinPromptShown = true;
-    setTimeout(() => showRequirePinPrompt(), 1500);
-  }
 }
 
 
@@ -7074,20 +7069,6 @@ function unlinkProvider(providerId) {
   saveData();
   renderSettings();
 }
-
-function showRequirePinPrompt() {
-  showModal(`
-    <div style="text-align:center;padding:4px 0 8px">
-      <i class="ph-duotone ph-lock-key" style="font-size:2.5rem;color:#6C63FF"></i>
-      <div class="modal-title" style="margin-top:8px">Action Required</div>
-      <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 0;line-height:1.5">Please set a 4-digit PIN and link your Google or Apple account before your next session — both are now required. If you ever lose access to your family, reach out and we'll get you back in.</p>
-    </div>
-    <div class="modal-actions" style="margin-top:20px">
-      <button class="btn btn-secondary" onclick="closeModal()">Not Now</button>
-      <button class="btn btn-primary" onclick="closeModal();showNewPinModal()">Set PIN</button>
-    </div>`);
-}
-
 
 function renderParentHeader() {
   const m = S.currentUser;
