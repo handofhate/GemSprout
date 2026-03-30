@@ -58,15 +58,23 @@ workflows:
           require 'xcodeproj'
           project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
           target = project.targets.first
+          # Add StoreKit.framework if not already present
           unless target.frameworks_build_phase.files.any? { |f| f.file_ref&.path == 'StoreKit.framework' }
             storekit = project.frameworks_group.new_file('System/Library/Frameworks/StoreKit.framework')
             storekit.source_tree = 'SDKROOT'
             target.frameworks_build_phase.add_file_reference(storekit)
-            project.save
             puts 'Added StoreKit.framework'
           else
             puts 'StoreKit.framework already present'
           end
+          # Enable In-App Purchase system capability
+          attrs = project.root_object.attributes
+          attrs['TargetAttributes'] ||= {}
+          attrs['TargetAttributes'][target.uuid] ||= {}
+          attrs['TargetAttributes'][target.uuid]['SystemCapabilities'] ||= {}
+          attrs['TargetAttributes'][target.uuid]['SystemCapabilities']['com.apple.InAppPurchase'] = { 'enabled' => '1' }
+          project.save
+          puts 'Enabled In-App Purchase system capability'
           EOF
 
       - name: Add GoogleService-Info.plist to Xcode bundle resources

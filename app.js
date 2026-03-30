@@ -189,7 +189,7 @@ async function showPaywall() {
           if (pkg.packageType === 'ANNUAL')  _rcPkgs.yearly  = pkg;
         }
       }
-    } catch(e) {}
+    } catch(e) { toast('RC error: ' + (e?.message || JSON.stringify(e))); }
   }
 
   const mPrice = _rcPkgs.monthly?.product?.priceString || '$2.99';
