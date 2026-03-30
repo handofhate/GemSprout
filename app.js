@@ -295,6 +295,12 @@ async function rcRestorePurchases() {
     const { customerInfo } = await Purchases.restorePurchases();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
     if (S.isPro) {
+      if (document.getElementById('settings-root')?.classList.contains('open')) {
+        showScreen('screen-parent');
+        renderSettings();
+        toast('Subscription restored!');
+        return;
+      }
       const member = getMember(getCurrentUserId());
       if (member) routeToView(member); else renderHome();
     } else {
