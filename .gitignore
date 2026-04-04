@@ -11,3 +11,7 @@ Emails/
 *-service-account.json
 firebase-debug.log
 .firebase/
+app.js.bak_*
+app.js.pre_*
+APP_STORE_COPY.md
+PIVOT_NOTES.md

@@ -1,23 +1,23 @@
 {
   "name": "gemsprout",
   "version": "1.0.0",
-  "description": "",
+  "description": "Family routines, photo proof, savings, and weekly growth across one home or two",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/handofhate/Family-Hub.git"
+    "url": "git+https://github.com/handofhate/GemSprout.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/handofhate/Family-Hub/issues"
+    "url": "https://github.com/handofhate/GemSprout/issues"
   },
-  "homepage": "https://github.com/handofhate/Family-Hub#readme",
+  "homepage": "https://github.com/handofhate/GemSprout#readme",
   "devDependencies": {
     "@capacitor/assets": "^3.0.0"
   },

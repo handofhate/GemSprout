@@ -1,7 +1,7 @@
 {
   "name": "GemSprout",
   "short_name": "GemSprout",
-  "description": "Chores, rewards, and goals for the whole family",
+  "description": "Family routines, photo proof, savings, and weekly growth across one home or two",
   "start_url": "/GemSprout/",
   "display": "standalone",
   "background_color": "#F0F4FF",
