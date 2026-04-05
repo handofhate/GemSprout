@@ -4,6 +4,7 @@
   "description": "Family routines, photo proof, savings, and weekly growth across one home or two",
   "main": "index.js",
   "scripts": {
+    "dev": "http-server . -a 0.0.0.0 -p 4173 -c-1",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -19,7 +20,8 @@
   },
   "homepage": "https://github.com/handofhate/GemSprout#readme",
   "devDependencies": {
-    "@capacitor/assets": "^3.0.0"
+    "@capacitor/assets": "^3.0.0",
+    "http-server": "^14.1.1"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.1.0",

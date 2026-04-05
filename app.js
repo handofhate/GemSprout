@@ -415,6 +415,7 @@ function _getWeekRange() {
   const dow = d.getDay();
   const end = new Date(d);
   end.setDate(d.getDate() - dow);         // back to most recent Sunday
+  if (dow === 0) end.setDate(end.getDate() - 7); // on Sunday, show the last fully completed week
   const start = new Date(end);
   start.setDate(end.getDate() - 6);       // Monday before that
   return { start: formatDateLocal(start), end: formatDateLocal(end) };
@@ -499,7 +500,7 @@ function showWeekReview() {
     : 0;
   const timingScale = _weekReviewTimingScale(kids.length);
   const slideMs = WEEK_REVIEW_SLIDE_MS;
-  _weekReviewStory = { slides, index: previewIndex, timer: null, paused: WEEK_REVIEW_PREVIEW_MODE, remainingMs: slideMs, slideMs, timingScale, slideStartedAt: 0, audioSlideIndex: -1 };
+  _weekReviewStory = { slides, index: previewIndex, timer: null, paused: WEEK_REVIEW_PREVIEW_MODE, remainingMs: slideMs, slideMs, timingScale, slideStartedAt: 0, audioSlideIndex: -1, lastAdvanceFromTimer: false };
   _renderWeekReviewStory();
 }
 
@@ -582,11 +583,11 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     bigStat: coverDateRange,
     dateRangeText: dateRange,
     subStat: introSub,
-    rows: previewCoverData.map(({ kid, streak }) => ({
-      avatar: kid.avatar || '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>',
+    rows: previewCoverData.map(({ kid, chores }) => ({
+      avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'),
       name: kid.name,
       stat: kid.role === 'kid' ? `${kid.diamonds || 0} total gems` : 'Parent profile',
-      sub: streak > 0 ? `${streak} day streak` : 'Ready for next week'
+      sub: chores > 0 ? `${chores} task${chores === 1 ? '' : 's'} this week` : 'Ready for next week'
     }))
   });
 
@@ -604,7 +605,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
         const sub = (savOn && saved > 0)
           ? `${cur}${saved.toFixed(2)} saved this week`
           : '';
-        return { avatar: kid.avatar || '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>', name: kid.name, sub, stat: `${diamonds} gems` };
+        return { avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'), name: kid.name, sub, stat: `${diamonds} gems` };
       })
     });
   }
@@ -619,7 +620,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
       rows: (previewSlideRows || kidData
       .filter(({ chores }) => chores > 0))
       .map(({ kid, chores }) => {
-        return { avatar: kid.avatar || '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>', name: kid.name, stat: choresLabel(chores) };
+        return { avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'), name: kid.name, stat: choresLabel(chores) };
       })
     });
   }
@@ -634,7 +635,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
       rows: (previewSlideRows || kidData
       .filter(({ topChore: kt }) => kt))
       .map(({ kid, topChore: kt }) => ({
-        avatar: kid.avatar || '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>',
+        avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'),
         name: kid.name,
         stat: kt[0],
         sub: timesLabel(kt[1])
@@ -739,24 +740,37 @@ function _weekReviewSyncAudio() {
   if (!slide?.audioSrc) return;
   const resolvedSrc = new URL(slide.audioSrc, window.location.href).href;
   const changedSlide = state.audioSlideIndex !== state.index;
-
-  if (!_weekReviewAudio || _weekReviewAudio.src !== resolvedSrc) {
-    _weekReviewStopAudio();
+  if (!_weekReviewAudio) {
     _weekReviewAudio = new Audio(slide.audioSrc);
     _weekReviewAudio.preload = 'auto';
+    _weekReviewAudio.loop = true;
+    _weekReviewAudio.load();
+  } else if (_weekReviewAudio.src !== resolvedSrc) {
+    _weekReviewAudio.pause();
+    _weekReviewAudio.src = slide.audioSrc;
+    _weekReviewAudio.load();
   }
 
   if (changedSlide && _weekReviewAudio.currentTime > 0.05) {
     _weekReviewAudio.currentTime = 0;
   }
   state.audioSlideIndex = state.index;
+  state.lastAdvanceFromTimer = false;
 
   if (state.paused) {
     _weekReviewAudio.pause();
     return;
   }
   if (changedSlide) _weekReviewAudio.currentTime = 0;
-  _weekReviewAudio.play().catch(() => {});
+  _weekReviewAudio.play().catch(() => {
+    const overlay = document.getElementById('week-review-overlay');
+    if (!overlay) return;
+    const retry = () => {
+      if (_weekReviewStory?.paused) return;
+      _weekReviewAudio?.play().catch(() => {});
+    };
+    overlay.addEventListener('pointerdown', retry, { once: true });
+  });
 }
 
 function _weekReviewStopAudio() {
@@ -892,7 +906,7 @@ function _renderWeekReviewStory() {
         position: absolute;
         top: 0;
         bottom: 0;
-        width: 34%;
+        width: 24%;
         z-index: 5;
       }
       .wr-tap-left { left: 0; }
@@ -1052,9 +1066,9 @@ function _renderWeekReviewStory() {
         </div>
       </div>
       <div class="wr-scene">
-        <button class="wr-tap wr-tap-left" aria-label="Previous story" onpointerdown="_weekReviewPause()" onpointerup="_weekReviewResume()" onpointercancel="_weekReviewResume()" onpointerleave="_weekReviewResume()" onclick="_weekReviewPrev()"></button>
-        <button class="wr-tap wr-tap-right" aria-label="Next story" onpointerdown="_weekReviewPause()" onpointerup="_weekReviewResume()" onpointercancel="_weekReviewResume()" onpointerleave="_weekReviewResume()" onclick="_weekReviewNext()"></button>
-        <div class="wr-slide">
+        <button class="wr-tap wr-tap-left" aria-label="Previous story" onpointerdown="return handleWeekReviewPress('prev', event)" onpointerup="handleWeekReviewRelease('prev')" onpointercancel="handleWeekReviewRelease('prev')" onpointerleave="handleWeekReviewRelease('prev')" onclick="return handleWeekReviewTap('prev', event)"></button>
+        <button class="wr-tap wr-tap-right" aria-label="Next story" onpointerdown="return handleWeekReviewPress('next', event)" onpointerup="handleWeekReviewRelease('next')" onpointercancel="handleWeekReviewRelease('next')" onpointerleave="handleWeekReviewRelease('next')" onclick="return handleWeekReviewTap('next', event)"></button>
+        <div class="wr-slide" onpointerdown="return handleWeekReviewCardPress(event)" onpointerup="handleWeekReviewCardRelease()" onpointercancel="handleWeekReviewCardRelease()" onpointerleave="handleWeekReviewCardRelease()">
           <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}" style="background:${slide.gradient}">
             ${slide.type === 'finale' ? `<div class="wr-finale-icon wr-reveal" style="--wr-delay:1s">${slide.icon}</div>` : ''}
             <div class="wr-card-label wr-reveal" style="--wr-delay:1s">${slide.icon}${slide.label}</div>
@@ -1121,6 +1135,7 @@ function _weekReviewNext(fromTimer = false) {
   state.index += 1;
   state.remainingMs = state.slideMs || WEEK_REVIEW_SLIDE_MS;
   state.paused = false;
+  state.lastAdvanceFromTimer = !!fromTimer;
   _renderWeekReviewStory();
 }
 
@@ -1130,12 +1145,14 @@ function _weekReviewPrev() {
   if (state.index <= 0) {
     state.remainingMs = state.slideMs || WEEK_REVIEW_SLIDE_MS;
     state.paused = false;
+    state.lastAdvanceFromTimer = false;
     _renderWeekReviewStory();
     return;
   }
   state.index -= 1;
   state.remainingMs = state.slideMs || WEEK_REVIEW_SLIDE_MS;
   state.paused = false;
+  state.lastAdvanceFromTimer = false;
   _renderWeekReviewStory();
 }
 
@@ -1347,6 +1364,8 @@ function _weekReviewHTML(slides, currentIndex) {
         padding: env(safe-area-inset-top,20px) 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
         display: flex;
         flex-direction: column;
+        user-select: none;
+        -webkit-user-select: none;
       }
       .wr-top { padding: 4px 0 10px; }
       .wr-progress-row { display:flex; gap:6px; margin-bottom:16px; }
@@ -1360,11 +1379,11 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-head-actions { display:flex; align-items:center; gap:8px; }
       .wr-close { background:rgba(255,253,248,0.14); border:1px solid rgba(255,253,248,0.18); color:rgba(255,248,239,0.78); width:38px; height:38px; border-radius:999px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 18px rgba(15,29,25,0.14); }
       .wr-scene { position:relative; flex:1; display:flex; align-items:center; min-height:0; }
-      .wr-tap { position:absolute; top:0; bottom:0; width:34%; z-index:5; border:none; background:transparent; }
+      .wr-tap { position:absolute; top:0; bottom:0; width:24%; z-index:5; border:none; background:transparent; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation; }
       .wr-tap-left { left:0; }
       .wr-tap-right { right:0; }
       .wr-slide { position:relative; width:100%; display:flex; flex-direction:column; justify-content:center; animation:wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-      .wr-card { width:100%; border-radius:30px; padding:26px 24px 26px; box-shadow:0 18px 40px rgba(34, 28, 20, 0.14); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; }
+      .wr-card { width:100%; border-radius:30px; padding:26px 24px 26px; box-shadow:0 18px 40px rgba(34, 28, 20, 0.14); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
       .wr-reveal { opacity:1; --wr-from-x:0px; --wr-from-y:0px; transform:translate3d(var(--wr-from-x), var(--wr-from-y), 0) scale(1); will-change:transform; animation: wr-reveal ${revealDuration}s cubic-bezier(0.16,1,0.3,1) both; animation-delay: var(--wr-delay, 0s); }
       .wr-reveal[data-preview="1"] { opacity:1; animation:none; transform:none; }
       #week-review-overlay.wr-paused .wr-progress-fill.active,
@@ -1485,9 +1504,9 @@ function _weekReviewHTML(slides, currentIndex) {
         </div>
       </div>
       <div class="wr-scene">
-        <button class="wr-tap wr-tap-left" aria-label="Previous story" onclick="_weekReviewPrev()"></button>
-        <button class="wr-tap wr-tap-right" aria-label="Next story" onclick="_weekReviewNext()"></button>
-        <div class="wr-slide">
+        <button class="wr-tap wr-tap-left" aria-label="Previous story" onpointerdown="return handleWeekReviewPress('prev', event)" onpointerup="handleWeekReviewRelease('prev')" onpointercancel="handleWeekReviewRelease('prev')" onpointerleave="handleWeekReviewRelease('prev')" onclick="return handleWeekReviewTap('prev', event)"></button>
+        <button class="wr-tap wr-tap-right" aria-label="Next story" onpointerdown="return handleWeekReviewPress('next', event)" onpointerup="handleWeekReviewRelease('next')" onpointercancel="handleWeekReviewRelease('next')" onpointerleave="handleWeekReviewRelease('next')" onclick="return handleWeekReviewTap('next', event)"></button>
+        <div class="wr-slide" onpointerdown="return handleWeekReviewCardPress(event)" onpointerup="handleWeekReviewCardRelease()" onpointercancel="handleWeekReviewCardRelease()" onpointerleave="handleWeekReviewCardRelease()">
           ${_weekReviewCardBodyHTML(slide, { previewAttr, totalDiamonds, totalSaved, totalBadges })}
         </div>
       </div>
@@ -1826,6 +1845,14 @@ function renderAvatarHtml(a, fallback = '<i class="ph-duotone ph-smiley" style="
   return colorOverride ? _applyAvatarColor(src, colorOverride) : src;
 }
 
+function renderMemberAvatarHtml(member, fallback = '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>') {
+  if (!member) return fallback;
+  const defaultFallback = member.role === 'parent'
+    ? '<i class="ph-duotone ph-user-circle" style="color:#9CA3AF"></i>'
+    : fallback;
+  return renderAvatarHtml(member.avatar, defaultFallback, member.avatarColor || member.color || '');
+}
+
 const ICONS = {
   home:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M14 4L3 13h3v10h6v-6h4v6h6V13h3L14 4z" fill="#6C63FF" fill-opacity=".18" stroke="#6C63FF" stroke-width="1.8" stroke-linejoin="round"/><rect x="11.5" y="17" width="5" height="6" rx="1.2" fill="#6C63FF" opacity=".5"/></svg>`,
   chores:   `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="6" y="5" width="16" height="20" rx="3" fill="#6BCB77" fill-opacity=".18" stroke="#6BCB77" stroke-width="1.8"/><rect x="10" y="3.5" width="8" height="4" rx="2" fill="#6BCB77"/><line x1="10" y1="12" x2="18" y2="12" stroke="#6BCB77" stroke-width="1.6" stroke-linecap="round"/><line x1="10" y1="16" x2="18" y2="16" stroke="#6BCB77" stroke-width="1.6" stroke-linecap="round"/><polyline points="10,21.5 12.5,24 18,18" stroke="#6BCB77" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
@@ -2096,6 +2123,11 @@ function saveData() {
   syncGemAliases();
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
   if (S.currentUser?.role === 'kid') savePendingSnapshot(S.currentUser.id);
+  if (S.currentUser?.id) {
+    const fresh = getMember(S.currentUser.id);
+    if (fresh) S.currentUser = fresh;
+  }
+  renderCurrentView();
   pushToFirestore();
 }
 
@@ -2435,11 +2467,12 @@ function subscribeToFirestore(onFirstLoad) {
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
-      const incomingSync = normalizedIncoming.settings?.lastSync || 0;
-      const localSync = D.settings?.lastSync || 0;
-      const isOlderThanLocal = incomingSync && localSync && incomingSync < localSync;
+      const incomingSync = Number(normalizedIncoming.settings?.lastSync || 0);
+      const localSync = Number(D.settings?.lastSync || 0);
+      const incomingMissingSync = !incomingSync && !!localSync;
+      const isOlderThanLocal = !!localSync && (!incomingSync || incomingSync < localSync);
       const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
-      if (!isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
+      if (!incomingMissingSync && !isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
         _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
@@ -3312,7 +3345,7 @@ function renderActivityRow(h) {
   const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral';
   const metaBits = [];
 
-  if (mem) metaBits.push(`${mem.avatar} ${esc(mem.name)}`);
+  if (mem) metaBits.push(`${renderMemberAvatarHtml(mem)} ${esc(mem.name)}`);
   else metaBits.push('Former member');
 
   if (h.choreTitle) metaBits.push(esc(h.choreTitle));
@@ -3676,13 +3709,12 @@ function addShOverride() {
 }
 
 function removeShOverride(date) {
-  showQuickActionModal(`
-    <div class="modal-title">Remove Exception?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">The schedule exception for <strong>${date}</strong> will be removed.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doRemoveShOverride('${date}')">Remove</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Remove Exception?',
+    message: `The schedule exception for <strong>${date}</strong> will be removed.`,
+    confirmLabel: 'Remove',
+    onConfirm: () => _doRemoveShOverride(date),
+  });
 }
 
 function _doRemoveShOverride(date) {
@@ -3717,7 +3749,7 @@ function saveSplitHousehold() {
 function showHereCheckModal(members) {
   const rows = members.map(m => `
     <div class="here-check-member-row">
-      <span style="font-size:1.8rem">${m.avatar}</span>
+      <span style="font-size:1.8rem">${renderMemberAvatarHtml(m)}</span>
       <span style="font-weight:600;flex:1">${esc(m.name)}</span>
       <div class="here-check-btns">
         <button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="markHereToday('${m.id}')">Here <i class="ph-duotone ph-check" style="font-size:0.9rem;vertical-align:middle"></i></button>
@@ -4012,10 +4044,10 @@ let _nlState = {
   selectedKids: [], rafId: null,
 };
 
-function showNotListening() {
+function showNotListening(preselectKidId = '') {
   const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   _nlState = { isHolding: false, holdStart: null, accumulated: 0, diamondsLost: 0,
-    selectedKids: kids.length === 1 ? [kids[0].id] : [], rafId: null };
+    selectedKids: preselectKidId ? [preselectKidId] : kids.length === 1 ? [kids[0].id] : [], rafId: null };
   showQuickActionModal('<div id="nl-modal-body" class="nl-modal-shell"></div>', 'quick-action-modal-wide');
   _renderNL();
 }
@@ -4220,7 +4252,7 @@ function previewMemberVoice(i) {
 
 if (window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
-    if (SETUP_STEPS[S.setupStep] === 'members') renderSetupStep();
+    if (SETUP_STEPS[S.setupStep] === 'members') renderSetupStep({ preserveScroll: true });
   };
 }
 
@@ -4704,6 +4736,52 @@ function showModal(html, opts = {}) {
   _initModalSwipe();
 }
 
+let _weekReviewPress = null;
+
+function handleWeekReviewCardPress(ev) {
+  ev?.preventDefault?.();
+  _weekReviewPress = {
+    dir: 'hold',
+    startedAt: Date.now(),
+    suppressNav: true,
+  };
+  _weekReviewPause();
+  return false;
+}
+
+function handleWeekReviewCardRelease() {
+  if (_weekReviewPress?.dir === 'hold') _weekReviewPress = null;
+  _weekReviewResume();
+}
+
+function handleWeekReviewPress(dir, ev) {
+  ev?.preventDefault?.();
+  _weekReviewPress = {
+    dir,
+    startedAt: Date.now(),
+    suppressNav: false,
+  };
+  _weekReviewPause();
+  return false;
+}
+
+function handleWeekReviewRelease(dir) {
+  if (_weekReviewPress?.dir === dir) {
+    _weekReviewPress.suppressNav = (Date.now() - _weekReviewPress.startedAt) > 180;
+  }
+  _weekReviewResume();
+}
+
+function handleWeekReviewTap(dir, ev) {
+  ev?.preventDefault?.();
+  const press = _weekReviewPress;
+  _weekReviewPress = null;
+  if (press?.dir === dir && press.suppressNav) return false;
+  if (dir === 'prev') _weekReviewPrev();
+  else _weekReviewNext();
+  return false;
+}
+
 function _inferModalLaunchOrigin() {
   const el = document.activeElement;
   if (!el || typeof el.getBoundingClientRect !== 'function') return null;
@@ -4747,6 +4825,89 @@ function replaceQuickActionModal(html, modalClass = '') {
       <span aria-hidden="true">&times;</span>
     </button>
     ${html}`;
+}
+
+let _confirmModalNonce = 0;
+const _confirmModalActions = new Map();
+const _confirmModalSecondSteps = new Map();
+
+function _registerConfirmModalAction(fn) {
+  const id = `confirm_${Date.now()}_${++_confirmModalNonce}`;
+  _confirmModalActions.set(id, fn);
+  return id;
+}
+
+function _runConfirmModalAction(id) {
+  const fn = _confirmModalActions.get(id);
+  _confirmModalActions.delete(id);
+  _confirmModalSecondSteps.delete(id);
+  if (typeof fn !== 'function') return;
+  closeModal();
+  fn();
+}
+
+function _storeConfirmSecondStep(id, opts) {
+  _confirmModalSecondSteps.set(id, opts || {});
+}
+
+function _openConfirmSecondStep(id) {
+  _showConfirmSecondStep(id, _confirmModalSecondSteps.get(id) || {});
+}
+
+function _showConfirmSecondStep(id, opts = {}) {
+  const {
+    title = 'Are you absolutely sure?',
+    message = 'This action cannot be undone.',
+    confirmLabel = 'Delete',
+    confirmText = 'delete',
+    modalClass = 'quick-action-modal-wide',
+  } = opts;
+  const safePhrase = String(confirmText || 'delete');
+  replaceQuickActionModal(`
+    <div class="modal-title">${title}</div>
+    <p style="margin:0 0 12px;color:var(--muted);font-size:0.95rem;line-height:1.5">${message}</p>
+    <p style="margin:0 0 10px;color:var(--muted);font-size:0.88rem">Type <strong>${esc(safePhrase)}</strong> below to continue:</p>
+    <input id="confirm-modal-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:20px;outline:none"
+      oninput="document.getElementById('confirm-modal-btn').disabled=this.value.trim().toLowerCase()!=='${safePhrase.toLowerCase()}'">
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button id="confirm-modal-btn" class="btn btn-danger" disabled onclick="_runConfirmModalAction('${id}')">${confirmLabel}</button>
+    </div>`, modalClass);
+}
+
+function showDangerConfirm(opts = {}) {
+  const {
+    title = 'Are you sure?',
+    message = 'This action cannot be undone.',
+    confirmLabel = 'Delete',
+    onConfirm = () => {},
+    modalClass = 'quick-action-modal-wide',
+    doubleConfirm = false,
+    doubleConfirmTitle = 'Are you absolutely sure?',
+    doubleConfirmMessage = message,
+    confirmText = 'delete',
+  } = opts;
+  const actionId = _registerConfirmModalAction(onConfirm);
+  if (doubleConfirm) {
+    _storeConfirmSecondStep(actionId, {
+      title: doubleConfirmTitle,
+      message: doubleConfirmMessage,
+      confirmLabel,
+      confirmText,
+      modalClass,
+    });
+  }
+  const nextStep = doubleConfirm
+    ? `_openConfirmSecondStep('${actionId}')`
+    : `_runConfirmModalAction('${actionId}')`;
+  showQuickActionModal(`
+    <div class="modal-title">${title}</div>
+    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">${message}</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="${nextStep}">${confirmLabel}</button>
+    </div>`, modalClass);
 }
 
 function _initModalSwipe() {
@@ -5514,6 +5675,8 @@ function renderCurrentView() {
     if (home?.classList.contains('active')) renderHome();
     return;
   }
+  const freshCurrentUser = getMember(S.currentUser.id);
+  if (freshCurrentUser) S.currentUser = freshCurrentUser;
   if (S.currentUser.role === 'parent') {
     renderParentHeader();
     renderParentNav();
@@ -5638,7 +5801,7 @@ function renderHome() {
       <button class="profile-card${bday ? ' bday-card' : ''}" style="--member-color:${m.color || '#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
         ${bday ? `<span class="bday-badge"><i class="ph-duotone ph-cake" style="font-size:0.9rem"></i></span>` : ''}
-        <span class="profile-avatar">${renderAvatarHtml(m.avatar)}</span>
+        <span class="profile-avatar">${renderMemberAvatarHtml(m)}</span>
         <span class="profile-name">${esc(m.name)}</span>
         <span class="profile-diamonds">${ptsLabel}</span>
       </button>`;
@@ -5674,7 +5837,7 @@ function renderHome() {
         <div class="home-section-head">
           <div class="home-section-title">Choose your place in the family</div>
         </div>
-        <div class="profile-grid" style="max-width:980px;width:100%;padding:0">${cards}</div>
+        <div class="profile-grid">${cards}</div>
         <button class="home-setup-btn" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#1D6B57;font-size:1.1rem;vertical-align:middle"></i> Edit family setup</button>
       </div>
     </div>`;
@@ -5749,7 +5912,7 @@ function renderPin() {
   const m = S.currentUser;
   const _pinAvEl = m.avatar && /\.(png|jpe?g)$/i.test(m.avatar)
     ? `<img class="pin-avatar" src="${m.avatar}">`
-    : `<div class="pin-avatar">${m.avatar||'<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>'}</div>`;
+    : `<div class="pin-avatar">${renderMemberAvatarHtml(m, '<i class="ph-duotone ph-user" style="color:#6C63FF;font-size:2.5rem"></i>')}</div>`;
   document.getElementById('pin-content').innerHTML = `
     ${_pinAvEl}
     <div class="pin-title">Welcome back, ${esc(m.name)}!</div>
@@ -6586,7 +6749,8 @@ function startTestOnboarding() {
     snapshotParentTab: S.parentTab,
   };
   closeSettings();
-  goSetup({ testMode: true });
+  showScreen('screen-setup');
+  renderSetupGate();
 }
 
 function _exitTestOnboarding(message = '') {
@@ -6612,6 +6776,7 @@ function goSetup(opts = {}) {
   S._setupBiometricDecisionRequired = false;
   S._setupBiometricOfferAnswered = false;
   const testMode = !!opts.testMode;
+  if (!testMode && S._testOnboarding?.active) S._testOnboarding = null;
   if (testMode) {
     D = normalizeData(defaultData());
     D.family.name = '';
@@ -6638,7 +6803,12 @@ function goSetup(opts = {}) {
   renderSetupStep();
 }
 
-function renderSetupStep() {
+function renderSetupStep(opts = {}) {
+  const preserveScroll = !!opts.preserveScroll;
+  const existingScreen = document.getElementById('screen-setup');
+  const existingContent = document.getElementById('setup-content');
+  const savedScreenScroll = preserveScroll ? (existingScreen?.scrollTop || 0) : 0;
+  const savedContentScroll = preserveScroll ? (existingContent?.scrollTop || 0) : 0;
   const step  = S.setupStep;
   const total = SETUP_STEPS.length;
   const dots  = SETUP_STEPS.map((_,i) =>
@@ -6835,11 +7005,20 @@ function renderSetupStep() {
   document.getElementById('setup-content').innerHTML = `
     <div class="step-indicator" style="padding-top:16px">${dots}</div>
     <div class="setup-step active">${content}</div>`;
-  const screen = document.getElementById('screen-setup');
-  const contentEl = document.getElementById('setup-content');
-  if (screen) screen.scrollTop = 0;
-  if (contentEl) contentEl.scrollTop = 0;
-  window.scrollTo(0, 0);
+  const nextScreen = document.getElementById('screen-setup');
+  const nextContent = document.getElementById('setup-content');
+  const restore = () => {
+    if (preserveScroll) {
+      if (nextScreen) nextScreen.scrollTop = savedScreenScroll;
+      if (nextContent) nextContent.scrollTop = savedContentScroll;
+      return;
+    }
+    if (nextScreen) nextScreen.scrollTop = 0;
+    if (nextContent) nextContent.scrollTop = 0;
+    window.scrollTo(0, 0);
+  };
+  restore();
+  if (preserveScroll) requestAnimationFrame(restore);
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -6923,7 +7102,7 @@ function memberSetupCard(mem, i) {
         if (!voices.length) return `
       <div class="form-group">
         <label class="form-label"><i class="ph-duotone ph-speaker-high" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Voice</label>
-        <button class="btn btn-secondary btn-sm" onclick="window.speechSynthesis?.getVoices();renderSetupStep()">Load voice options</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.speechSynthesis?.getVoices();renderSetupStep({ preserveScroll: true })">Load voice options</button>
       </div>`;
         const current = mem.ttsVoice || voices.find(v=>v.name==='Samantha')?.name || voices[0]?.name;
         const opts = voices.map(v => `<option value="${esc(v.name)}"${v.name===current?' selected':''}>${esc(v.name)}</option>`).join('');
@@ -7018,17 +7197,19 @@ function addMemberCard() {
     displayMode: 'regular', role:'kid',
     gems:0, savings:0, totalEarned:0, birthday:'',
   });
-  renderSetupStep();
+  renderSetupStep({ preserveScroll: true });
 }
 
 function removeMemberCard(i) {
-  showQuickActionModal(`
-    <div class="modal-title">Remove Member?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This family member will be removed from setup.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();S.setupMembers.splice(${i},1);renderSetupStep()">Remove</button>
-    </div>`, 'quick-action-modal-wide');
+  showDangerConfirm({
+    title: 'Remove Member?',
+    message: 'This family member will be removed from setup.',
+    confirmLabel: 'Remove',
+    onConfirm: () => {
+      S.setupMembers.splice(i, 1);
+      renderSetupStep({ preserveScroll: true });
+    },
+  });
 }
 
 function setMemberField(i, field, value, rerender=false) {
@@ -7043,7 +7224,7 @@ function setMemberField(i, field, value, rerender=false) {
       const ni = document.getElementById(`mname-${j}`);
       if (ni) S.setupMembers[j].name = ni.value;
     });
-    renderSetupStep();
+    renderSetupStep({ preserveScroll: true });
   }
 }
 
@@ -7063,17 +7244,19 @@ function addParentCard() {
     '<i class="ph-duotone ph-user-circle" style="color:#FF9A3C"></i>'
   ];
   S.setupParents.push({ id:genId(), name:'', avatar:parentAvatars[i % parentAvatars.length], color:parentColors[i % parentColors.length], avatarColor: parentColors[i % parentColors.length], role:'parent', gems:0, savings:0, totalEarned:0, birthday:'' });
-  renderSetupStep();
+  renderSetupStep({ preserveScroll: true });
 }
 
 function removeParentCard(i) {
-  showQuickActionModal(`
-    <div class="modal-title">Remove Parent?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This parent will be removed from setup.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();S.setupParents.splice(${i},1);renderSetupStep()">Remove</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Remove Parent?',
+    message: 'This parent will be removed from setup.',
+    confirmLabel: 'Remove',
+    onConfirm: () => {
+      S.setupParents.splice(i, 1);
+      renderSetupStep({ preserveScroll: true });
+    },
+  });
 }
 
 function setParentField(i, field, value, rerender=false) {
@@ -7088,7 +7271,7 @@ function setParentField(i, field, value, rerender=false) {
       const ni = document.getElementById(`pname-${j}`);
       if (ni) S.setupParents[j].name = ni.value;
     });
-    renderSetupStep();
+    renderSetupStep({ preserveScroll: true });
   }
 }
 
@@ -7267,13 +7450,13 @@ function finishSetup() {
   }
   saveData();
   ensureFirestoreAuth().then(() => subscribeToFirestore());
+  clearScrollMemory();
+  resetPrimaryTabs();
+  S._activeViewUserId = '';
+  S._activeViewRole = '';
   S.currentUser = null;
   setCurrentUserId('');
-  loadData();
-  if (wasSetup) {
-    location.reload(true);
-    return;
-  }
+  if (wasSetup) toast('Family updated');
   renderHome();
 }
 
@@ -7345,7 +7528,7 @@ function renderKidHeader() {
     : `Hi ${m.name}. You have ${dmds} gems and no tasks in today's rhythm yet.`;
   document.getElementById('kid-header').innerHTML = `
     <div class="header-left"${tiny ? ` onclick="speak('${headerTts.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"` : ''}>
-      <span class="header-avatar" onclick="kidAvatarEasterEgg(event)" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
+      <span class="header-avatar" onclick="kidAvatarEasterEgg(event)" style="cursor:pointer">${renderMemberAvatarHtml(m)}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
         <div class="header-sub"><i class="ph-duotone ph-check-square-offset" style="color:#1D6B57;font-size:0.85rem;vertical-align:middle"></i> ${routineLabel}</div>
@@ -7486,7 +7669,7 @@ function renderKidChores() {
             </div>
           </div>
           <div class="kid-chores-title-utility">
-            <div class="kid-chores-avatar">${pct===100?'<i class="ph-duotone ph-seal-check" style="color:#e8c76a"></i>':m.avatar||'<i class="ph-duotone ph-leaf" style="color:#e8c76a"></i>'}</div>
+            <div class="kid-chores-avatar">${pct===100?'<i class="ph-duotone ph-seal-check" style="color:#e8c76a"></i>':renderMemberAvatarHtml(m, '<i class="ph-duotone ph-leaf" style="color:#e8c76a"></i>')}</div>
           </div>
         </div>
         <div class="kid-chores-progress-line">
@@ -8812,13 +8995,12 @@ function unlinkProvider(providerId) {
   if (!member?.authProviders?.length) return;
   const remaining = member.authProviders.filter(p => p.providerId !== providerId);
   if (remaining.length === 0) {
-    showQuickActionModal(`
-      <div class="modal-title">Remove Account?</div>
-      <p style="font-size:0.9rem;color:var(--muted);margin-bottom:16px">This is your only linked account. Removing it will sign you out.</p>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" style="background:#EF4444;border-color:#EF4444" onclick="closeModal();_removeLastProviderAndSignOut()">Remove &amp; Sign Out</button>
-      </div>`);
+    showDangerConfirm({
+      title: 'Remove Account?',
+      message: 'This is your only linked account. Removing it will sign you out.',
+      confirmLabel: 'Remove &amp; Sign Out',
+      onConfirm: () => _removeLastProviderAndSignOut(),
+    });
     return;
   }
   member.authProviders = remaining;
@@ -8834,7 +9016,7 @@ function renderParentHeader() {
   const m = S.currentUser;
   document.getElementById('parent-header').innerHTML = `
     <div class="header-left">
-      <span class="header-avatar" onclick="parentAvatarEasterEgg(event)" style="cursor:pointer">${renderAvatarHtml(m.avatar)}</span>
+      <span class="header-avatar" onclick="parentAvatarEasterEgg(event)" style="cursor:pointer">${renderMemberAvatarHtml(m)}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
         <div class="header-sub">${esc(D.family.name)}</div>
@@ -9205,7 +9387,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   return `
     <div class="stats-panel-card" style="--stats-accent:${color}">
       <div ${headerClick}>
-        <span style="font-size:2.5rem;width:2.5rem;text-align:center;flex-shrink:0">${member.avatar||'<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>'}</span>
+        <span style="font-size:2.5rem;width:2.5rem;text-align:center;flex-shrink:0">${renderMemberAvatarHtml(member)}</span>
         <div>
           <div class="stats-panel-header-title">${esc(member.name)}</div>
           <div class="stats-panel-header-sub">${D.settings.levelingEnabled !== false ? `${s.currentLevel.icon} ${s.currentLevel.name} &middot; ` : ''}${s.totalEarned} total gems earned</div>
@@ -9293,39 +9475,63 @@ function renderFamilyStatsLaunchCard(kids, histIdx) {
   const choreHist = allHist.filter(h => h.type === 'chore');
   const totalDiamonds = kids.reduce((s, k) => s + (k.totalEarned || 0), 0);
   const totalPrizes = D.prizes.reduce((s, p) => s + (p.redemptions || []).length, 0);
+  const totalSavings = kids.reduce((s, k) => s + (k.savings || 0), 0);
+  const cur = D.settings.currency || '$';
   return `
-    <button class="snapshot-summary-card stats-launch-card stats-launch-card-family" type="button" onclick="openStatsDetailPanel('family')">
-      <div class="snapshot-summary-top">
-        <div class="snapshot-summary-avatar"><img src="gemsproutpadded.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
-        <div class="snapshot-summary-pct">${kids.length} kids</div>
+    <button class="snapshot-summary-card stats-launch-card stats-launch-card-family" type="button" onclick="openStatsDetailPanel('family')" style="--stats-accent:#365e4f">
+      <div class="stats-launch-head">
+        <div class="stats-launch-avatar stats-launch-avatar-family"><img src="gemsproutpadded.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
+        <div class="stats-launch-hero">
+          <div class="stats-launch-name">${esc(D.family.name || 'The Family')}</div>
+          <div class="stats-launch-sub">Family snapshot</div>
+        </div>
       </div>
-      <div class="snapshot-summary-name-row">
-        <div class="snapshot-summary-name">${esc(D.family.name || 'The Family')}</div>
+      <div class="stats-launch-spotlight-grid">
+        <div class="stats-launch-spotlight">
+          <div class="stats-launch-spotlight-value">${totalDiamonds}</div>
+          <div class="stats-launch-spotlight-label">Gems earned across the family</div>
+        </div>
+        <div class="stats-launch-spotlight">
+          <div class="stats-launch-spotlight-value">${cur}${totalSavings.toFixed(2)}</div>
+          <div class="stats-launch-spotlight-label">Current family savings</div>
+        </div>
       </div>
-      <div class="snapshot-summary-sub">Combined lifetime stats across the whole household.</div>
-      <div class="snapshot-summary-chips">
-        <span class="snapshot-summary-chip"><strong>${choreHist.length}</strong><small>tasks</small></span>
-        <span class="snapshot-summary-chip"><strong>${totalDiamonds}</strong><small>gems</small></span>
-        <span class="snapshot-summary-chip"><strong>${totalPrizes}</strong><small>prizes</small></span>
+      <div class="stats-launch-gridline">
+        <span class="stats-launch-chip"><strong>${choreHist.length}</strong><small>Tasks</small></span>
+        <span class="stats-launch-chip"><strong>${totalPrizes}</strong><small>Prizes</small></span>
+        <span class="stats-launch-chip"><strong>${kids.length}</strong><small>Kids</small></span>
       </div>
     </button>`;
 }
 
 function renderMemberStatsLaunchCard(member, histIdx, side = 'left') {
   const s = buildMemberStats(member, histIdx);
+  const streakValue = D.settings.streakEnabled !== false ? (member.streak?.current || 0) : 0;
+  const cur = D.settings.currency || '$';
   return `
-    <button class="snapshot-summary-card stats-launch-card" type="button" onclick="openStatsDetailPanel('kid','${member.id}','${side}')">
-      <div class="snapshot-summary-top">
-        <div class="snapshot-summary-avatar">${member.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>'}</div>
+    <button class="snapshot-summary-card stats-launch-card" type="button" onclick="openStatsDetailPanel('kid','${member.id}','${side}')" style="--stats-accent:${member.color || '#6C63FF'}">
+      <div class="stats-launch-head">
+        <div class="stats-launch-avatar">${renderMemberAvatarHtml(member)}</div>
+        <div class="stats-launch-hero">
+          <div class="stats-launch-name">${esc(member.name)}</div>
+          <div class="stats-launch-sub">
+            ${D.settings.levelingEnabled !== false ? `${s.currentLevel.icon}<span>${s.currentLevel.name}</span>` : `${s.choreDone} tasks completed`}
+          </div>
+        </div>
       </div>
-      <div class="snapshot-summary-name-row">
-        <div class="snapshot-summary-name">${esc(member.name)}</div>
+      <div class="stats-launch-spotlight">
+        <div class="stats-launch-spotlight-value">${s.diamondsEarned}</div>
+        <div class="stats-launch-spotlight-label">Lifetime gems earned</div>
       </div>
-      <div class="snapshot-summary-sub">${D.settings.levelingEnabled !== false ? `${s.currentLevel.icon} ${s.currentLevel.name}` : `${s.choreDone} tasks completed`}</div>
-      <div class="snapshot-summary-chips">
-        <span class="snapshot-summary-chip"><strong>${s.choreDone}</strong><small>tasks</small></span>
-        <span class="snapshot-summary-chip"><strong>${s.diamondsEarned}</strong><small>gems</small></span>
-        <span class="snapshot-summary-chip"><strong>${s.rewardCount}</strong><small>prizes</small></span>
+      <div class="stats-launch-spotlight">
+        <div class="stats-launch-spotlight-value">${cur}${(s.savings || 0).toFixed(2)}</div>
+        <div class="stats-launch-spotlight-label">Current savings</div>
+      </div>
+      <div class="stats-launch-gridline stats-launch-gridline-2x2">
+        <span class="stats-launch-chip"><strong>${s.choreDone}</strong><small>Tasks</small></span>
+        <span class="stats-launch-chip"><strong>${streakValue}</strong><small>Streak</small></span>
+        <span class="stats-launch-chip"><strong>${s.rewardCount}</strong><small>Prizes</small></span>
+        <span class="stats-launch-chip"><strong>${s.totalXP}</strong><small>Total XP</small></span>
       </div>
     </button>`;
 }
@@ -9353,7 +9559,7 @@ function renderStatsDetailPanel(kind, memberId = '') {
     <div class="snapshot-panel-head stats-panel-head" style="--snapshot-accent:${member.color || '#6C63FF'}">
       <button class="snapshot-panel-close" onclick="closeFamilySnapshot()"><i class="ph-duotone ph-arrow-left"></i></button>
       <div class="snapshot-panel-person">
-        <div class="snapshot-panel-avatar">${member.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>'}</div>
+        <div class="snapshot-panel-avatar">${renderMemberAvatarHtml(member)}</div>
         <div>
           <div class="snapshot-panel-name">${esc(member.name)}</div>
           <div class="snapshot-panel-sub">Lifetime stats</div>
@@ -9485,7 +9691,7 @@ function renderFamilySnapshotPanel(kidId) {
       <button class="snapshot-panel-close" onclick="closeFamilySnapshot()"><i class="ph-duotone ph-arrow-left"></i></button>
       <div>
         <div class="snapshot-panel-person">
-          <div class="snapshot-panel-avatar">${kid.avatar||'??'}</div>
+          <div class="snapshot-panel-avatar">${renderMemberAvatarHtml(kid, '??')}</div>
           <div>
             <div class="snapshot-panel-name">${esc(kid.name)}</div>
             <div class="snapshot-panel-sub">${doneCount}/${myChores.length} tasks wrapped up${pendCount>0?` ? ${pendCount} waiting`:''}</div>
@@ -9730,44 +9936,83 @@ function handleSnapshotCardTap(ev, id) {
 function startSnapshotSwipe(ev, id) {
   const shell = ev.currentTarget?.closest?.('.snapshot-routine-shell');
   if (!shell) return;
+  ev.currentTarget?.setPointerCapture?.(ev.pointerId);
+  const card = shell.querySelector('.snapshot-routine-card');
   closeAllSnapshotSwipes(shell.dataset.swipeId);
   _snapshotSwipeSession = {
     id,
     shell,
+    card,
     startX: ev.clientX,
     startY: ev.clientY,
+    lastX: ev.clientX,
+    lastT: Date.now(),
+    velocityX: 0,
     revealedAtStart: shell.classList.contains('revealed'),
-    dragging: false
+    dragging: false,
+    dx: 0
   };
 }
 function moveSnapshotSwipe(ev) {
   if (!_snapshotSwipeSession) return;
   const dx = ev.clientX - _snapshotSwipeSession.startX;
   const dy = ev.clientY - _snapshotSwipeSession.startY;
+  const now = Date.now();
+  const dt = Math.max(1, now - (_snapshotSwipeSession.lastT || now));
+  const stepDx = ev.clientX - (_snapshotSwipeSession.lastX ?? ev.clientX);
+  _snapshotSwipeSession.velocityX = stepDx / dt;
+  _snapshotSwipeSession.lastX = ev.clientX;
+  _snapshotSwipeSession.lastT = now;
   if (!_snapshotSwipeSession.dragging) {
-    if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy)) return;
+    if (Math.abs(dx) < 1 || Math.abs(dx) < Math.abs(dy) * 0.18) return;
     _snapshotSwipeSession.dragging = true;
+  }
+  const shell = _snapshotSwipeSession.shell;
+  const card = _snapshotSwipeSession.card;
+  const shift = parseFloat(getComputedStyle(shell).getPropertyValue('--snapshot-reveal-shift')) || 100;
+  const base = _snapshotSwipeSession.revealedAtStart ? -shift : 0;
+  const clampedDx = _snapshotSwipeSession.revealedAtStart
+    ? Math.max(shift * -0.2, Math.min(dx, shift))
+    : Math.max(-shift, Math.min(dx, shift * 0.24));
+  _snapshotSwipeSession.dx = clampedDx;
+  if (card) {
+    card.style.transition = 'none';
+    card.style.transform = `translateX(${base + clampedDx}px)`;
   }
   ev.preventDefault?.();
 }
 function endSnapshotSwipe(ev) {
   if (!_snapshotSwipeSession) return;
-  const dx = ev.clientX - _snapshotSwipeSession.startX;
+  const dx = _snapshotSwipeSession.dragging
+    ? _snapshotSwipeSession.dx
+    : ev.clientX - _snapshotSwipeSession.startX;
   const shell = _snapshotSwipeSession.shell;
+  const card = _snapshotSwipeSession.card;
+  const resetCard = () => {
+    if (!card) return;
+    card.style.removeProperty('transition');
+    card.style.removeProperty('transform');
+  };
   if (_snapshotSwipeSession.dragging) {
     _snapshotSwipeSuppressTapUntil = Date.now() + 320;
-    if (dx < -36) {
+    if (dx < 0) {
       closeAllSnapshotSwipes(shell.dataset.swipeId);
       shell.classList.add('revealed');
-    } else if (dx > 24) {
+    } else if (dx > 0) {
       shell.classList.remove('revealed');
     } else {
       shell.classList.toggle('revealed', _snapshotSwipeSession.revealedAtStart);
     }
   }
+  requestAnimationFrame(resetCard);
   _snapshotSwipeSession = null;
 }
 function cancelSnapshotSwipe() {
+  const card = _snapshotSwipeSession?.card;
+  if (card) {
+    card.style.removeProperty('transition');
+    card.style.removeProperty('transform');
+  }
   _snapshotSwipeSession = null;
 }
 function closeAllSnapshotSummaryReveals(exceptId = null) {
@@ -9800,14 +10045,18 @@ function handleSnapshotSummaryOpen(kidId, side) {
 function startSnapshotSummarySwipe(ev, id) {
   const shell = ev.currentTarget?.closest?.('.snapshot-summary-shell');
   if (!shell) return;
+  ev.currentTarget?.setPointerCapture?.(ev.pointerId);
+  const card = shell.querySelector('.snapshot-summary-card');
   closeAllSnapshotSummaryReveals(shell.dataset.summaryId);
   _snapshotSummarySwipeSession = {
     id,
     shell,
+    card,
     startX: ev.clientX,
     startY: ev.clientY,
     revealedAtStart: shell.classList.contains('revealed'),
-    dragging: false
+    dragging: false,
+    dy: 0
   };
 }
 function moveSnapshotSummarySwipe(ev) {
@@ -9815,30 +10064,55 @@ function moveSnapshotSummarySwipe(ev) {
   const dx = ev.clientX - _snapshotSummarySwipeSession.startX;
   const dy = ev.clientY - _snapshotSummarySwipeSession.startY;
   if (!_snapshotSummarySwipeSession.dragging) {
-    if (dy < 10 || dy < Math.abs(dx)) return;
+    if (dy < 8 || dy < Math.abs(dx)) return;
     _snapshotSummarySwipeSession.dragging = true;
+  }
+  const card = _snapshotSummarySwipeSession.card;
+  const shift = 85;
+  const base = _snapshotSummarySwipeSession.revealedAtStart ? shift : 0;
+  const clampedDy = _snapshotSummarySwipeSession.revealedAtStart
+    ? Math.max(-shift, Math.min(dy, 0))
+    : Math.max(0, Math.min(dy, shift));
+  _snapshotSummarySwipeSession.dy = clampedDy;
+  if (card) {
+    card.style.transition = 'none';
+    card.style.transform = `translateY(${base + clampedDy}px)`;
   }
   ev.preventDefault?.();
 }
 function endSnapshotSummarySwipe(ev) {
   if (!_snapshotSummarySwipeSession) return;
-  const dy = ev.clientY - _snapshotSummarySwipeSession.startY;
+  const dy = _snapshotSummarySwipeSession.dragging
+    ? _snapshotSummarySwipeSession.dy
+    : ev.clientY - _snapshotSummarySwipeSession.startY;
   const shell = _snapshotSummarySwipeSession.shell;
+  const card = _snapshotSummarySwipeSession.card;
+  const resetCard = () => {
+    if (!card) return;
+    card.style.removeProperty('transition');
+    card.style.removeProperty('transform');
+  };
   if (_snapshotSummarySwipeSession.dragging) {
-    if (dy > 34) {
+    if (dy > 24) {
       closeAllSnapshotSummaryReveals(shell.dataset.summaryId);
       shell.classList.add('revealed');
       _snapshotSummaryReveal.add(shell.dataset.summaryId);
-    } else if (dy < -20) {
+    } else if (dy < -18) {
       shell.classList.remove('revealed');
       _snapshotSummaryReveal.delete(shell.dataset.summaryId);
     } else {
       shell.classList.toggle('revealed', _snapshotSummarySwipeSession.revealedAtStart);
     }
   }
+  requestAnimationFrame(resetCard);
   _snapshotSummarySwipeSession = null;
 }
 function cancelSnapshotSummarySwipe() {
+  const card = _snapshotSummarySwipeSession?.card;
+  if (card) {
+    card.style.removeProperty('transition');
+    card.style.removeProperty('transform');
+  }
   _snapshotSummarySwipeSession = null;
 }
 function setOverviewTodayStatus(memberId, isHere) {
@@ -10095,12 +10369,12 @@ function renderParentHome() {
         <div class="parent-summary-tile">
           <div class="parent-summary-label">Finished Today</div>
           <div class="parent-summary-value">${finishedToday}</div>
-          <div class="parent-summary-sub">across ${kids.length || 0} kids</div>
+          <div class="parent-summary-sub">across all kids</div>
         </div>
         <div class="parent-summary-tile">
           <div class="parent-summary-label">Gem Balance</div>
           <div class="parent-summary-value">${totalDiamonds}</div>
-          <div class="parent-summary-sub">ready across all kids</div>
+          <div class="parent-summary-sub">across all kids</div>
         </div>
         <div class="parent-summary-tile">
           <div class="parent-summary-label">Family Savings</div>
@@ -10136,7 +10410,7 @@ function renderParentHome() {
             <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
             <div class="admin-info" style="flex:1;min-width:0">
               <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
-              <div class="admin-meta">${mem.avatar} ${esc(mem.name)} &middot; waiting for after photo &middot; +${chore.diamonds} gems</div>
+              <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; waiting for after photo &middot; ${chore.diamonds} gems</div>
             </div>
           </div>`;
         return;
@@ -10151,17 +10425,17 @@ function renderParentHome() {
         : entry.entryType === 'after'
         ? `<span style="background:#DCFCE7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">DONE</span>`
         : '';
-      const ptsLabel = isBefore ? 'Approve to start' : `+${chore.diamonds} gems`;
+      const ptsLabel = isBefore ? 'Approve to start' : `${chore.diamonds} gems`;
       const photoHtml = entry.photoUrl ? `<img src="${entry.photoUrl}" class="photo-approval-thumb" onclick="viewPhoto('${entry.photoUrl}')" alt="Photo" title="Click to view full size">` : '';
       html += `
         <div class="admin-card" style="flex-wrap:wrap;gap:10px">
           <span class="admin-icon">${renderIcon(chore.icon,chore.iconColor,'font-size:1.6rem')}</span>
           <div class="admin-info" style="flex:1;min-width:0">
             <div class="admin-name">${esc(chore.title)}${entryBadge}${slotLabel?` <span style="font-size:0.8rem;color:var(--muted)">(${esc(slotLabel)})</span>`:''}</div>
-            <div class="admin-meta">${mem.avatar} ${esc(mem.name)} &middot; ${ptsLabel} &middot; ${fmtDate(entry.date)}</div>
+            <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; ${ptsLabel} &middot; ${fmtDate(entry.date)}</div>
             ${photoHtml}
           </div>
-          <div class="admin-actions" style="align-self:flex-start">
+          <div class="admin-actions">
             <button class="btn-icon-sm btn-icon-approve" onclick="approveChore('${chore.id}','${memberId}','${entry.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject" onclick="rejectChore('${chore.id}','${memberId}','${entry.id}')"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
@@ -10176,10 +10450,10 @@ function renderParentHome() {
           <span class="admin-icon"><i class="ph-duotone ph-shopping-cart" style="color:#6C63FF;font-size:1.6rem"></i></span>
           <div class="admin-info" style="flex:1;min-width:0">
             <div class="admin-name">Spend Request <span style="background:#EDE9FE;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">${cur}${req.amount.toFixed(2)}</span></div>
-            <div class="admin-meta">${mem.avatar} ${esc(mem.name)}${req.reason ? ` &middot; "${esc(req.reason)}"` : ''} &middot; ${fmtDate(req.date)}</div>
+            <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)}${req.reason ? ` &middot; "${esc(req.reason)}"` : ''} &middot; ${fmtDate(req.date)}</div>
             <div style="font-size:0.8rem;color:var(--muted);margin-top:2px">Balance: ${cur}${(mem.savings||0).toFixed(2)}</div>
           </div>
-          <div class="admin-actions" style="align-self:flex-start">
+          <div class="admin-actions">
             <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject" onclick="denySavingsRequest('${req.id}',this)"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
@@ -10239,7 +10513,7 @@ function renderParentHome() {
         <button class="snapshot-summary-card" style="--snapshot-accent:${kid.color||'#6C63FF'}" type="button" onclick="handleSnapshotSummaryOpen('${kid.id}','${side}')" onpointerdown="startSnapshotSummarySwipe(event,'${summaryId}')" onpointermove="moveSnapshotSummarySwipe(event)" onpointerup="endSnapshotSummarySwipe(event)" onpointercancel="cancelSnapshotSummarySwipe()">
           <div class="snapshot-summary-name-row">
             <div class="snapshot-summary-name">${esc(kid.name)}</div>
-            <span class="snapshot-summary-avatar">${kid.avatar||'??'}</span>
+            <span class="snapshot-summary-avatar">${renderMemberAvatarHtml(kid, '??')}</span>
           </div>
           <div class="snapshot-summary-sub">${summaryStatuses}</div>
           <div class="snapshot-summary-chips">
@@ -10261,7 +10535,7 @@ function renderParentHome() {
     const pendingSecs = k.nlPendingSecs || 0;
     const pct = Math.min(100, Math.round(pendingSecs / secsPerDmd * 100));
     const wholeMinutes = Math.floor(todaySecs / 60);
-    return `<div class="nl-meter-card">
+      return `<button class="nl-meter-card" type="button" onclick="showNotListening('${k.id}')">
       <div class="nl-ring-wrap">
         <div class="nl-ring" style="--nl-progress:${pct}%">
           <div class="nl-ring-center">
@@ -10271,7 +10545,7 @@ function renderParentHome() {
           </div>
         </div>
       </div>
-    </div>`;
+    </button>`;
   }).join('');
   if (D.settings.notListeningEnabled !== false) {
     html += `
@@ -10353,7 +10627,7 @@ function approveChore(choreId, memberId, entryId, btn) {
       <span class="admin-icon">${renderIcon(c.icon, c.iconColor, 'font-size:1.6rem')}</span>
       <div class="admin-info" style="flex:1;min-width:0">
         <div class="admin-name">${esc(c.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
-        <div class="admin-meta">${m.avatar} ${esc(m.name)} &middot; waiting for after photo &middot; +${c.diamonds} gems</div>
+        <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
     _flipAdminCard(btn, inProgressInner, () => {
       doApproveChore(choreId, memberId, entryId);
@@ -10764,8 +11038,9 @@ function showChoreModal(choreId, opts = {}) {
   const hasSlots = _editSlots.length > 0;
 
   const modalHtml = `
-    <input type="hidden" id="cm-icon" value="${c.icon}">
-    <input type="hidden" id="cm-icon-color" value="${choreColor}">
+    <div class="modal-title" style="margin-bottom:14px">${choreId ? 'Edit Task' : 'Add Task'}</div>
+    <input type="hidden" id="cm-icon" value="${esc(String(c.icon || ''))}">
+    <input type="hidden" id="cm-icon-color" value="${esc(String(choreColor || ''))}">
     <div class="form-group">
       <label class="form-label">Task name</label>
       <input type="text" id="cm-title" placeholder="e.g. Brush Teeth" value="${esc(c.title)}">
@@ -11001,13 +11276,12 @@ function saveChore(choreId) {
 
 function deleteChore(choreId) {
   const chore = D.chores.find(c => c.id === choreId);
-  showQuickActionModal(`
-    <div class="modal-title">Delete Chore?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${chore?.title || 'This task'}" will be permanently deleted.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doDeleteChore('${choreId}')">Delete</button>
-    </div>`, 'quick-action-modal-wide');
+  showDangerConfirm({
+    title: 'Delete Task?',
+    message: `"${esc(chore?.title || 'This task')}" will be permanently deleted.`,
+    confirmLabel: 'Delete',
+    onConfirm: () => _doDeleteChore(choreId),
+  });
 }
 
 function _doDeleteChore(choreId) {
@@ -11377,13 +11651,12 @@ function deleteCustomLevel(idx) {
   const levels = getLevels().map(l => ({...l}));
   if (levels.length <= 2) { toast('Need at least 2 levels'); return; }
   const levelName = levels[idx]?.name || 'this level';
-  showQuickActionModal(`
-    <div class="modal-title">Delete Level?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${levelName}" will be permanently removed.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doDeleteCustomLevel(${idx})">Delete</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Delete Level?',
+    message: `"${esc(levelName)}" will be permanently removed.`,
+    confirmLabel: 'Delete',
+    onConfirm: () => _doDeleteCustomLevel(idx),
+  });
 }
 
 function _doDeleteCustomLevel(idx) {
@@ -11396,13 +11669,12 @@ function _doDeleteCustomLevel(idx) {
 }
 
 function resetLevelsToDefault() {
-  showQuickActionModal(`
-    <div class="modal-title">Reset Levels?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">All custom levels will be replaced with the defaults. This cannot be undone.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doResetLevelsToDefault()">Reset</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Reset Levels?',
+    message: 'All custom levels will be replaced with the defaults. This cannot be undone.',
+    confirmLabel: 'Reset',
+    onConfirm: () => _doResetLevelsToDefault(),
+  });
 }
 
 function _doResetLevelsToDefault() {
@@ -11485,13 +11757,12 @@ function removeChoreBadgeTier(choreId, tierIdx) {
   if (!chore || !chore.badges) return;
   const badge = chore.badges[tierIdx];
   const badgeName = badge?.name || 'this badge tier';
-  showQuickActionModal(`
-    <div class="modal-title">Delete Badge Tier?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${badgeName}" will be permanently removed from <strong>${chore.title}</strong>.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doRemoveChoreBadgeTier('${choreId}',${tierIdx})">Delete</button>
-      </div>`);
+  showDangerConfirm({
+    title: 'Delete Badge Tier?',
+    message: `"${esc(badgeName)}" will be permanently removed from <strong>${esc(chore.title)}</strong>.`,
+    confirmLabel: 'Delete',
+    onConfirm: () => _doRemoveChoreBadgeTier(choreId, tierIdx),
+  });
 }
 
 function _doRemoveChoreBadgeTier(choreId, tierIdx) {
@@ -11637,13 +11908,12 @@ function savePrize(prizeId) {
 
 function deletePrize(prizeId) {
   const prize = D.prizes.find(p => p.id === prizeId);
-  showQuickActionModal(`
-    <div class="modal-title">Delete Prize?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${prize?.title || 'This prize'}" will be permanently deleted.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doDeletePrize('${prizeId}')">Delete</button>
-    </div>`, 'quick-action-modal-wide');
+  showDangerConfirm({
+    title: 'Delete Prize?',
+    message: `"${esc(prize?.title || 'This prize')}" will be permanently deleted.`,
+    confirmLabel: 'Delete',
+    onConfirm: () => _doDeletePrize(prizeId),
+  });
 }
 
 function _doDeletePrize(prizeId) {
@@ -11780,13 +12050,12 @@ function saveGoal() {
 
 function clearGoal(goalId) {
   const goal = (D.teamGoals||[]).find(g => g.id === goalId);
-  showQuickActionModal(`
-    <div class="modal-title">Delete Team Prize?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${goal?.title || 'This team prize'}" will be permanently deleted.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doClearGoal('${goalId}')">Delete</button>
-    </div>`, 'quick-action-modal-wide');
+  showDangerConfirm({
+    title: 'Delete Team Prize?',
+    message: `"${esc(goal?.title || 'This team prize')}" will be permanently deleted.`,
+    confirmLabel: 'Delete',
+    onConfirm: () => _doClearGoal(goalId),
+  });
 }
 
 function _doClearGoal(goalId) {
@@ -11893,13 +12162,12 @@ function advClearChoreCompletions(choreId, memberId) {
   if (!chore) return;
   const member = memberId ? getMember(memberId) : null;
   const what = member ? `${esc(member.name)}'s completions for "${esc(chore.title)}"` : `all completions for "${esc(chore.title)}"`;
-    showQuickActionModal(`
-    <div class="modal-title">Clear Completions?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will permanently clear ${what}. Task badge progress will be lost.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doAdvClearCompletions('${choreId}','${memberId||''}')">Clear</button>
-      </div>`);
+  showDangerConfirm({
+    title: 'Clear Completions?',
+    message: `This will permanently clear ${what}. Task badge progress will be lost.`,
+    confirmLabel: 'Clear',
+    onConfirm: () => _doAdvClearCompletions(choreId, memberId || ''),
+  });
 }
 
 function _doAdvClearCompletions(choreId, memberId) {
@@ -11936,13 +12204,12 @@ function advUpdateCompletion(choreId, memberId, entryId, field, rawValue) {
 function advDeleteCompletion(choreId, memberId, entryId) {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore) return;
-  showQuickActionModal(`
-    <div class="modal-title">Delete Completion?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This completion entry will be permanently deleted.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doAdvDeleteCompletion('${choreId}','${memberId}','${entryId}')">Delete</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Delete Completion?',
+    message: 'This completion entry will be permanently deleted.',
+    confirmLabel: 'Delete',
+    onConfirm: () => _doAdvDeleteCompletion(choreId, memberId, entryId),
+  });
 }
 
 function _doAdvDeleteCompletion(choreId, memberId, entryId) {
@@ -11956,13 +12223,12 @@ function _doAdvDeleteCompletion(choreId, memberId, entryId) {
 }
 
 function advDeleteHistory(entryId) {
-  showQuickActionModal(`
-    <div class="modal-title">Delete Entry?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">This history entry will be permanently deleted.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();_doAdvDeleteHistory('${entryId}')">Delete</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Delete Entry?',
+    message: 'This history entry will be permanently deleted.',
+    confirmLabel: 'Delete',
+    onConfirm: () => _doAdvDeleteHistory(entryId),
+  });
 }
 
 function _doAdvDeleteHistory(entryId) {
@@ -12015,13 +12281,16 @@ function _advRefreshStatus(msg) {
 
 function _advDeleteTeamGoal(idx) {
   const goal = (D.teamGoals||[])[idx];
-  showQuickActionModal(`
-    <div class="modal-title">Delete Team Prize?</div>
-    <p style="margin:0 0 20px;color:var(--muted);font-size:0.95rem;line-height:1.5">"${goal?.title || 'This team prize'}" will be permanently deleted.</p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="closeModal();D.teamGoals.splice(${idx},1);saveData();_advRender()">Delete</button>
-    </div>`);
+  showDangerConfirm({
+    title: 'Delete Team Prize?',
+    message: `"${esc(goal?.title || 'This team prize')}" will be permanently deleted.`,
+    confirmLabel: 'Delete',
+    onConfirm: () => {
+      D.teamGoals.splice(idx, 1);
+      saveData();
+      _advRender();
+    },
+  });
 }
 
 function _advRender() {
@@ -12102,7 +12371,7 @@ function _advRender() {
 
     return `<details class="adv-member-card" data-member-id="${m.id}">
       <summary class="adv-member-summary">
-        <span style="font-size:1.5rem;flex-shrink:0">${m.avatar||'<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>'}</span>
+        <span style="font-size:1.5rem;flex-shrink:0">${renderMemberAvatarHtml(m)}</span>
         <span style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:0.95rem">${esc(m.name)}</div>
           <div style="font-size:0.75rem;color:var(--muted)">${subtitle}</div>
@@ -12156,7 +12425,7 @@ function _advRender() {
         }).join('');
         return `<div style="padding:6px 0">
           <div style="display:flex;align-items:center;gap:8px;padding:2px 0 6px">
-            <span style="font-size:1rem;flex-shrink:0">${m.avatar||'<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>'}</span>
+            <span style="font-size:1rem;flex-shrink:0">${renderMemberAvatarHtml(m)}</span>
             <span style="font-size:0.84rem;font-weight:700;flex:1;min-width:0">${esc(m.name)}</span>
             <button class="btn-icon-sm btn-icon-delete" style="width:28px;height:28px;border-radius:6px" onclick="advClearChoreCompletions('${c.id}','${m.id}')"><i class="ph-duotone ph-trash" style="font-size:0.85rem"></i></button>
           </div>
@@ -12581,15 +12850,12 @@ function doAdjustSavings(memberId, sign) {
 }
 
 function switchFamily() {
-  showQuickActionModal(`
-    <div class="modal-title"><i class="ph-duotone ph-link-break" style="color:#EF4444;font-size:1.2rem;vertical-align:middle"></i> Join Different Family?</div>
-    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:16px">
-      This will disconnect this device from your current family. Your family's data stays safe in the cloud; you'll just need the family code to rejoin.
-    </p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="_confirmSwitchFamily()">Continue</button>
-    </div>`);
+  showDangerConfirm({
+    title: '<i class="ph-duotone ph-link-break" style="color:#EF4444;font-size:1.2rem;vertical-align:middle"></i> Join Different Family?',
+    message: `This will disconnect this device from your current family. Your family's data stays safe in the cloud; you'll just need the family code to rejoin.`,
+    confirmLabel: 'Continue',
+    onConfirm: () => _confirmSwitchFamily(),
+  });
 }
 
 function _confirmSwitchFamily() {
@@ -12608,19 +12874,16 @@ function _confirmSwitchFamily() {
 }
 
 function resetAllData() {
-  showQuickActionModal(`
-    <div class="modal-title"><i class="ph-duotone ph-warning-circle" style="color:#DC2626;font-size:1.2rem;vertical-align:middle"></i> Reset All Data?</div>
-    <p style="margin:0 0 12px;color:var(--muted);font-size:0.95rem;line-height:1.5">This will <strong>permanently erase all family data</strong>, including tasks, prizes, history, member profiles, and settings. This cannot be undone.</p>
-    <p style="margin:0 0 12px;background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#78350F;line-height:1.5"><strong>Active subscription?</strong> Resetting does not cancel your subscription. Manage billing separately in your iPhone's subscription settings.</p>
-    <p style="margin:0 0 10px;color:var(--muted);font-size:0.88rem">Type <strong>reset</strong> below to confirm:</p>
-    <input id="reset-type-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
-      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #E5E7EB;border-radius:10px;font-size:1rem;margin-bottom:20px;outline:none"
-      placeholder=""
-      oninput="document.getElementById('reset-type-btn').disabled=this.value.trim()!=='reset'">
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button id="reset-type-btn" class="btn btn-danger" disabled onclick="closeModal();_doResetAllData()">Reset Everything</button>
-    </div>`);
+  showDangerConfirm({
+    title: '<i class="ph-duotone ph-warning-circle" style="color:#DC2626;font-size:1.2rem;vertical-align:middle"></i> Reset All Data?',
+    message: 'This will <strong>permanently erase all family data</strong>, including tasks, prizes, history, member profiles, and settings. This cannot be undone.<br><br><span style="display:block;background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#78350F;line-height:1.5"><strong>Active subscription?</strong> Resetting does not cancel your subscription. Manage billing separately in your iPhone\'s subscription settings.</span>',
+    confirmLabel: 'Continue',
+    onConfirm: () => _doResetAllData(),
+    doubleConfirm: true,
+    doubleConfirmTitle: 'Final Reset Confirmation',
+    doubleConfirmMessage: 'This will permanently erase everything in this family on this device and in cloud sync.',
+    confirmText: 'reset',
+  });
 }
 
 async function _doResetAllData() {
