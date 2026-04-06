@@ -304,21 +304,19 @@ async function rcRestorePurchases() {
   }
 }
 
-const APP_VERSION = '1.0';
+const APP_VERSION = '1.1';
 const CHANGELOG_ENTRIES = [
   {
-    version: '1.0',
-    title: 'GemSprout 1.0',
-    date: 'March 2026',
+    version: '1.1',
+    title: 'GemSprout 1.1',
+    date: 'April 2026',
     items: [
-      { icon: 'ph-check-circle',  color: '#16A34A', text: 'Task tracking with gem rewards' },
-      { icon: 'ph-camera',        color: '#6B7280', text: 'Before & after photo proof' },
-      { icon: 'ph-piggy-bank',    color: '#16A34A', text: 'Savings banking with interest' },
-      { icon: 'ph-medal',         color: '#D97706', text: 'Badges, levels, and streaks' },
-      { icon: 'ph-storefront',    color: '#7C3AED', text: 'Prize shop' },
-      { icon: 'ph-calendar-star', color: '#7C3AED', text: 'Week in Review - celebrate your family\'s weekly wins every Sunday' },
-      { icon: 'ph-sign-in',       color: '#16A34A', text: 'Sign in with Apple or Google - your family follows you to any device' },
-      { icon: 'ph-house-line',    color: '#0E7490', text: 'Split household - streaks are protected on days kids are at their other home' },
+      { icon: 'ph-paint-brush',   color: '#1D6B57', text: 'Complete UI overhaul with the new GemSprout 2.0 look and feel' },
+      { icon: 'ph-sparkle',       color: '#D97706', text: 'Refreshed theme, colors, icons, and cleaner onboarding throughout the app' },
+      { icon: 'ph-calendar-star', color: '#7C3AED', text: 'Week in Review now feels more like a real story and adapts better across devices' },
+      { icon: 'ph-bell-ringing',  color: '#0E7490', text: 'Notifications and stacked celebration moments are smoother and easier to manage' },
+      { icon: 'ph-user-circle-gear', color: '#6C63FF', text: 'Kids can now edit their own profile, avatar, and colors from Settings' },
+      { icon: 'ph-device-mobile', color: '#16A34A', text: 'Lots of layout polish for smaller phones, safer scrolling, and better iPhone fit' },
     ],
   },
 ];
