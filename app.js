@@ -596,7 +596,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     slides.push({
       gradient: 'linear-gradient(160deg,#2f7f88 0%,#1f5f6a 54%,#173f49 100%)',
       label: 'Gems Earned',
-      icon: '<i class="ph-duotone ph-diamond" style="color:rgba(244,239,228,0.82);font-size:0.9rem"></i>',
+      icon: '<i class="ph-duotone ph-sketch-logo" style="color:rgba(244,239,228,0.82);font-size:0.9rem"></i>',
       bigStat: `${totalDiamonds} gems`,
       subStat: `earned by the whole family${savingsSub}`,
       rows: (previewSlideRows || kidData
@@ -687,28 +687,82 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
         rows: []
       });
 
-  return slides;
+  return _weekReviewSplitOverflowSlides(slides);
+}
+
+function _weekReviewSlideRowLimit(slide) {
+  const rows = Array.isArray(slide?.rows) ? slide.rows : [];
+  if (!rows.length) return 0;
+  if (slide.type === 'cover') return 4;
+  if (rows.some(row => Array.isArray(row.badgesDisplay) && row.badgesDisplay.length)) return 3;
+  if (rows.some(row => row.sub)) return 4;
+  return 4;
+}
+
+function _weekReviewSplitOverflowSlides(slides) {
+  if (!Array.isArray(slides) || !slides.length) return [];
+  const expanded = [];
+  slides.forEach(slide => {
+    const rows = Array.isArray(slide?.rows) ? slide.rows : [];
+    const rowLimit = _weekReviewSlideRowLimit(slide);
+    if (!rowLimit || rows.length <= rowLimit) {
+      expanded.push(slide);
+      return;
+    }
+    const chunks = [];
+    for (let i = 0; i < rows.length; i += rowLimit) {
+      chunks.push(rows.slice(i, i + rowLimit));
+    }
+    chunks.forEach((chunk, index) => {
+      expanded.push({
+        ...slide,
+        rows: chunk,
+        label: `${slide.label} ${index + 1}/${chunks.length}`,
+      });
+    });
+  });
+  return expanded;
 }
 
 function _assignWeekReviewAudio(slides, weekSeed) {
   if (!Array.isArray(slides) || !slides.length) return;
   const base = 'assets/week-review-audio/';
+  const introTrack = `${base}1.wav`;
   const middlePool = _weekReviewShuffle([
     `${base}2.wav`,
     `${base}3.wav`,
     `${base}4.wav`,
     `${base}5.wav`
   ], weekSeed || today());
-  const middleSlides = slides.filter(slide => slide.type !== 'cover' && slide.type !== 'finale');
-  slides.forEach((slide, index) => {
-    if (index === 0 || index === slides.length - 1 || slide.type === 'cover' || slide.type === 'finale') {
-      slide.audioSrc = `${base}1.wav`;
-      return;
+  const allTracks = [introTrack, ...middlePool];
+  let middleIndex = 0;
+  let previousTrack = '';
+
+  const nextMiddleTrack = () => {
+    for (let i = 0; i < middlePool.length; i++) {
+      const candidate = middlePool[(middleIndex + i) % middlePool.length];
+      if (candidate !== previousTrack) {
+        middleIndex = (middleIndex + i + 1) % middlePool.length;
+        return candidate;
+      }
     }
-    slide.audioSrc = middlePool.shift() || `${base}1.wav`;
-  });
-  middleSlides.forEach((slide, index) => {
-    slide.audioSrc = slide.audioSrc || middlePool[index] || `${base}1.wav`;
+    return middlePool[0] || introTrack;
+  };
+
+  const nextNonRepeatingTrack = (preferredTrack) => {
+    if (preferredTrack && preferredTrack !== previousTrack) return preferredTrack;
+    return allTracks.find(track => track !== previousTrack) || preferredTrack || introTrack;
+  };
+
+  slides.forEach((slide, index) => {
+    if (index === 0 || slide.type === 'cover') {
+      slide.audioSrc = nextNonRepeatingTrack(introTrack);
+    } else if (index === slides.length - 1 || slide.type === 'finale') {
+      slide.audioSrc = nextNonRepeatingTrack(introTrack);
+    } else {
+      slide.audioSrc = nextMiddleTrack();
+    }
+    previousTrack = slide.audioSrc;
   });
 }
 
@@ -1076,7 +1130,7 @@ function _renderWeekReviewStory() {
             <div class="wr-card-sub wr-reveal" style="--wr-delay:3s">${slide.subStat}</div>
             ${slide.type === 'cover' ? `
               <div class="wr-cover-chip-row">
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:4s"><i class="ph-duotone ph-diamond" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
+                <div class="wr-cover-chip wr-reveal" style="--wr-delay:4s"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
                 <div class="wr-cover-chip wr-reveal" style="--wr-delay:5.1s"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSaved.toFixed(2)} saved</div>
                 <div class="wr-cover-chip wr-reveal" style="--wr-delay:6.2s"><i class="ph-duotone ph-medal" style="font-size:1rem"></i> ${totalBadges} badges</div>
               </div>
@@ -1235,7 +1289,7 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
     : '';
   const coverChips = [];
   if (gemCount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-diamond" style="font-size:1rem"></i> ${totalDiamonds} gems</div>`);
+    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>`);
   }
   if (savingsAmount > 0) {
     coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${totalSaved} saved</div>`);
@@ -1294,18 +1348,31 @@ function _weekReviewApplyUniformCardHeight(overlay, slides, totals) {
   overlay.style.setProperty('--wr-card-uniform-height', `${maxHeight}px`);
 }
 
+function _weekReviewShouldUseUniformCardHeight() {
+  const viewportHeight = Math.max(
+    window.visualViewport?.height || 0,
+    window.innerHeight || 0,
+    document.documentElement?.clientHeight || 0
+  );
+  return viewportHeight > 760;
+}
+
+function _weekReviewFindSlideByLabelPrefix(slides, labelPrefix) {
+  return (slides || []).find(slide => String(slide?.label || '').startsWith(labelPrefix));
+}
+
 function _renderWeekReviewStory() {
   const overlay = document.getElementById('week-review-overlay');
   if (!overlay || !_weekReviewStory) return;
   overlay.innerHTML = _weekReviewHTML(_weekReviewStory.slides, _weekReviewStory.index);
   const slides = _weekReviewStory.slides || [];
-  const totalDiamonds = slides.find(s => s.label === 'Gems Earned')?.bigStat?.split(' ')[0] || '0';
+  const totalDiamonds = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.bigStat?.split(' ')[0] || '0';
   const totalSaved = (() => {
-    const s = slides.find(s => s.label === 'Gems Earned')?.subStat || '';
+    const s = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.subStat || '';
     const m = s.match(/-\s([^ ]+\d[\d.,]*)\s+saved/);
     return m ? m[1] : `${D.settings.currency || '$'}0.00`;
   })();
-  const totalBadges = slides.find(s => s.label === 'Badges Earned')?.bigStat || '0';
+  const totalBadges = _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0';
   _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
 }
 
@@ -1313,13 +1380,13 @@ function _weekReviewHTML(slides, currentIndex) {
   const state = _weekReviewStory;
   if (!state) return '';
   state.index = currentIndex;
-  const totalDiamonds = slides.find(s => s.label === 'Gems Earned')?.bigStat?.split(' ')[0] || '0';
+  const totalDiamonds = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.bigStat?.split(' ')[0] || '0';
   const totalSaved = (() => {
-    const s = slides.find(s => s.label === 'Gems Earned')?.subStat || '';
+    const s = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.subStat || '';
     const m = s.match(/-\s([^ ]+\d[\d.,]*)\s+saved/);
     return m ? m[1] : `${D.settings.currency || '$'}0.00`;
   })();
-  const totalBadges = slides.find(s => s.label === 'Badges Earned')?.bigStat || '0';
+  const totalBadges = _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0';
   const dateRange = slides[0]?.dateRangeText || '';
   const slide = slides[currentIndex];
   const slideMs = state.slideMs || WEEK_REVIEW_SLIDE_MS;
@@ -1382,8 +1449,8 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-tap { position:absolute; top:0; bottom:0; width:24%; z-index:5; border:none; background:transparent; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation; }
       .wr-tap-left { left:0; }
       .wr-tap-right { right:0; }
-      .wr-slide { position:relative; width:100%; display:flex; flex-direction:column; justify-content:center; animation:wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-      .wr-card { width:100%; border-radius:30px; padding:26px 24px 26px; box-shadow:0 18px 40px rgba(34, 28, 20, 0.14); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
+      .wr-slide { position:relative; width:100%; min-height:0; display:flex; flex-direction:column; justify-content:center; animation:wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+      .wr-card { width:100%; max-height:100%; border-radius:30px; padding:26px 24px 26px; box-shadow:0 18px 40px rgba(34, 28, 20, 0.14); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
       .wr-reveal { opacity:1; --wr-from-x:0px; --wr-from-y:0px; transform:translate3d(var(--wr-from-x), var(--wr-from-y), 0) scale(1); will-change:transform; animation: wr-reveal ${revealDuration}s cubic-bezier(0.16,1,0.3,1) both; animation-delay: var(--wr-delay, 0s); }
       .wr-reveal[data-preview="1"] { opacity:1; animation:none; transform:none; }
       #week-review-overlay.wr-paused .wr-progress-fill.active,
@@ -1488,6 +1555,45 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-cover-chip { width: 104px; min-width: 104px; padding: 8px 6px; font-size: 0.65rem; gap: 4px; }
         .wr-bottom-note { left: 18px; right: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); font-size: 0.76rem; }
       }
+      @media (max-width: 420px) and (max-height: 760px) {
+        .wr-shell { padding: env(safe-area-inset-top,20px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); }
+        .wr-top { padding: 2px 0 8px; }
+        .wr-progress-row { margin-bottom: 12px; gap: 5px; }
+        .wr-head { padding: 4px 0 6px; gap: 10px; }
+        .wr-title { font-size: 1.12rem; }
+        .wr-date { font-size: 0.74rem; margin-top: 2px; }
+        .wr-close { width: 34px; height: 34px; }
+        .wr-scene { align-items: stretch; }
+        .wr-slide { flex: 1 1 auto; min-height: 0; justify-content: stretch; }
+        .wr-card { min-height: 0; height: 100%; max-height: none; padding: 18px 16px 18px; border-radius: 24px; }
+        .wr-card-label { font-size: 0.72rem; margin-bottom: 12px; gap: 6px; }
+        .wr-card-body { justify-content: flex-start; gap: 10px; padding-bottom: 0; }
+        .wr-card-big { font-size: clamp(2.3rem, 11.5vw, 3.4rem); margin-bottom: 8px; }
+        .wr-card-sub { font-size: 0.88rem; line-height: 1.32; max-width: 18rem; }
+        .wr-cover-chip-row { gap: 5px; margin-top: 4px; }
+        .wr-cover-chip { width: 92px; min-width: 92px; padding: 6px 5px; font-size: 0.58rem; gap: 3px; }
+        .wr-kid-list { gap: 8px; margin-top: 6px; }
+        .wr-kid-list-compact { gap: 6px; margin-top: 10px; }
+        .wr-kid-row { min-height: 88px; padding: 10px 8px; gap: 6px; border-radius: 16px; }
+        .wr-kid-row-badge { gap: 6px; }
+        .wr-kid-avatar { width: 34px; height: 34px; border-radius: 11px; font-size: 1.15rem; }
+        .wr-kid-copy { min-height: 0; gap: 2px; }
+        .wr-kid-name, .wr-kid-stat { font-size: 0.8rem; line-height: 1.02; }
+        .wr-kid-sub { font-size: 0.66rem; line-height: 1.18; }
+        .wr-kid-badge-grid { min-width: 44px; gap: 3px 4px; }
+        .wr-kid-badge-icon { width: 28px; height: 28px; border-radius: 9px; font-size: 0.86rem; }
+        .wr-kid-badge-name { font-size: 0.52rem; line-height: 1.05; }
+        .wr-kid-list-count-3 .wr-kid-row:last-child,
+        .wr-kid-list-count-5 .wr-kid-row:last-child { width: min(52%, 140px); }
+        .wr-finale { min-height: 0; height: 100%; }
+        .wr-finale .wr-card-body { justify-content: center; padding-top: 4px; padding-bottom: 10px; gap: 12px; }
+        .wr-finale-stage-two { margin-top: 12px; }
+        .wr-finale-icon { font-size: 6.2rem; margin: -44px 0 -6px; }
+        .wr-finale-icon i { transform: translateY(-14px); }
+        .wr-finale-message { font-size: clamp(1.8rem, 8.6vw, 2.6rem); }
+        .wr-finale .wr-card-sub { margin-top: 8px; font-size: 0.9rem; line-height: 1.28; }
+        .wr-bottom-note { font-size: 0.68rem; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+      }
     </style>
     <div class="wr-shell">
       <div class="wr-top">
@@ -1519,14 +1625,18 @@ function _renderWeekReviewStory() {
   if (!overlay || !_weekReviewStory) return;
   overlay.innerHTML = _weekReviewHTML(_weekReviewStory.slides, _weekReviewStory.index);
   const slides = _weekReviewStory.slides || [];
-  const totalDiamonds = slides.find(s => s.label === 'Gems Earned')?.bigStat?.split(' ')[0] || '0';
+  const totalDiamonds = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.bigStat?.split(' ')[0] || '0';
   const totalSaved = (() => {
-    const s = slides.find(s => s.label === 'Gems Earned')?.subStat || '';
+    const s = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.subStat || '';
     const m = s.match(/-\s([^ ]+\d[\d.,]*)\s+saved/);
     return m ? m[1] : `${D.settings.currency || '$'}0.00`;
   })();
-  const totalBadges = slides.find(s => s.label === 'Badges Earned')?.bigStat || '0';
-  _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
+  const totalBadges = _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0';
+  if (_weekReviewShouldUseUniformCardHeight()) {
+    _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
+  } else {
+    overlay.style.removeProperty('--wr-card-uniform-height');
+  }
   overlay.classList.toggle('wr-paused', !!_weekReviewStory.paused);
   _weekReviewSyncAudio();
   if (_weekReviewStory.paused) {
@@ -1856,7 +1966,7 @@ function renderMemberAvatarHtml(member, fallback = '<i class="ph-duotone ph-smil
 const ICONS = {
   home:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M14 4L3 13h3v10h6v-6h4v6h6V13h3L14 4z" fill="#6C63FF" fill-opacity=".18" stroke="#6C63FF" stroke-width="1.8" stroke-linejoin="round"/><rect x="11.5" y="17" width="5" height="6" rx="1.2" fill="#6C63FF" opacity=".5"/></svg>`,
   chores:   `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><rect x="6" y="5" width="16" height="20" rx="3" fill="#6BCB77" fill-opacity=".18" stroke="#6BCB77" stroke-width="1.8"/><rect x="10" y="3.5" width="8" height="4" rx="2" fill="#6BCB77"/><line x1="10" y1="12" x2="18" y2="12" stroke="#6BCB77" stroke-width="1.6" stroke-linecap="round"/><line x1="10" y1="16" x2="18" y2="16" stroke="#6BCB77" stroke-width="1.6" stroke-linecap="round"/><polyline points="10,21.5 12.5,24 18,18" stroke="#6BCB77" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
-  diamond:  `<i class="ph-duotone ph-diamond" style="color:#6C63FF"></i>`,
+  diamond:  `<i class="ph-duotone ph-sketch-logo" style="color:#6C63FF"></i>`,
   shop:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M6 11h16l-1.5 15H7.5L6 11z" fill="#FFD93D" fill-opacity=".28" stroke="#FF9A3C" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 11V8.5C10 5.9 11.8 4 14 4s4 1.9 4 4.5V11" stroke="#FF9A3C" stroke-width="1.9" stroke-linecap="round" fill="none"/><line x1="9.5" y1="18.5" x2="18.5" y2="18.5" stroke="#FF9A3C" stroke-width="1.5" stroke-linecap="round" opacity=".6"/></svg>`,
   team:     `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><path d="M9 4h10v12c0 2.8-2.2 5-5 5s-5-2.2-5-5V4z" fill="#FFD93D" fill-opacity=".3" stroke="#FFD93D" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8H5v4c0 2.2 1.8 4 4 4" stroke="#FFD93D" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 8h4v4c0 2.2-1.8 4-4 4" stroke="#FFD93D" stroke-width="1.8" stroke-linecap="round" fill="none"/><line x1="14" y1="21" x2="14" y2="24" stroke="#FFD93D" stroke-width="1.8" stroke-linecap="round"/><line x1="10" y1="24" x2="18" y2="24" stroke="#FFD93D" stroke-width="2.2" stroke-linecap="round"/></svg>`,
   stats:    `<svg viewBox="0 0 28 28" fill="none" width="1em" height="1em"><circle cx="14" cy="14" r="9.5" fill="#45B7D1" fill-opacity=".16" stroke="#45B7D1" stroke-width="1.8"/><path d="M14 4.5a9.5 9.5 0 0 1 8.86 6.06L14 14V4.5z" fill="#45B7D1" fill-opacity=".85"/><path d="M14 14l-5.9 7.44A9.5 9.5 0 0 1 4.5 14H14z" fill="#45B7D1" fill-opacity=".38"/><circle cx="14" cy="14" r="2.3" fill="#45B7D1"/></svg>`,
@@ -2853,7 +2963,7 @@ function choreMetaChips(chore) {
   const chip = (text, bg, color) =>
     `<span style="display:inline-flex;align-items:center;background:${bg};color:${color};border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:700;white-space:nowrap">${text}</span>`;
   const chips = [];
-  chips.push(chip(`<i class="ph-duotone ph-diamond" style="font-size:0.8rem;vertical-align:middle"></i> ${chore.diamonds}`, '#FEF9C3', '#92400E'));
+  chips.push(chip(`<i class="ph-duotone ph-sketch-logo" style="font-size:0.8rem;vertical-align:middle"></i> ${chore.diamonds}`, '#FEF9C3', '#92400E'));
   if (schedule.period === 'once') {
     chips.push(chip('one-time', '#F3F4F6', '#4B5563'));
     return chips.join('');
@@ -3366,8 +3476,8 @@ function renderActivityRow(h) {
 
 const DEFAULT_LEVELS = [
   { level:1, name:'Rookie',  icon:'<i class="ph-duotone ph-leaf" style="color:#22C55E"></i>',         minXp:0    },
-  { level:2, name:'Helper',  icon:'<i class="ph-duotone ph-diamond" style="color:#3B82F6"></i>',       minXp:50   },
-  { level:3, name:'Gem', icon:'<i class="ph-duotone ph-diamond" style="color:#7C3AED"></i>',       minXp:150  },
+  { level:2, name:'Helper',  icon:'<i class="ph-duotone ph-sketch-logo" style="color:#3B82F6"></i>',       minXp:50   },
+  { level:3, name:'Gem', icon:'<i class="ph-duotone ph-sketch-logo" style="color:#7C3AED"></i>',       minXp:150  },
   { level:4, name:'Champ',   icon:'<i class="ph-duotone ph-trophy" style="color:#D97706"></i>',        minXp:300  },
   { level:5, name:'Legend',  icon:'<i class="ph-duotone ph-fire" style="color:#EF4444"></i>',          minXp:500  },
   { level:6, name:'Hero',    icon:'<i class="ph-duotone ph-shield-star" style="color:#6C63FF"></i>',   minXp:800  },
@@ -3418,8 +3528,8 @@ const BADGE_DEFS = [
   { id:'streak_7',     icon:'<i class="ph-duotone ph-waves" style="color:#3B82F6"></i>',          name:'Week Warrior',      desc:'7-day streak' },
   { id:'streak_14',    icon:'<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>',      name:'Unstoppable',       desc:'14-day streak' },
   { id:'streak_30',    icon:'<i class="ph-duotone ph-medal" style="color:#D97706"></i>',          name:'Monthly Hero',      desc:'30-day streak' },
-  { id:'dmds_50',      icon:'<i class="ph-duotone ph-diamond" style="color:#3B82F6"></i>',        name:'Gem Collector', desc:'Earn 50 gems total' },
-  { id:'dmds_200',     icon:'<i class="ph-duotone ph-diamond" style="color:#7C3AED"></i>',  name:'Gem Hoarder',   desc:'Earn 200 gems total' },
+  { id:'dmds_50',      icon:'<i class="ph-duotone ph-sketch-logo" style="color:#3B82F6"></i>',        name:'Gem Collector', desc:'Earn 50 gems total' },
+  { id:'dmds_200',     icon:'<i class="ph-duotone ph-sketch-logo" style="color:#7C3AED"></i>',  name:'Gem Hoarder',   desc:'Earn 200 gems total' },
   { id:'dmds_500',     icon:'<i class="ph-duotone ph-piggy-bank" style="color:#10B981"></i>',     name:'Gem Mogul',     desc:'Earn 500 gems total' },
   { id:'dmds_1000',    icon:'<i class="ph-duotone ph-crown" style="color:#D97706"></i>',          name:'Gem Club',      desc:'Earn 1000 gems total' },
   { id:'level_up',     icon:'<i class="ph-duotone ph-rocket-launch" style="color:#6C63FF"></i>',  name:'Level Up!',         desc:'Reach level 2 or higher' },
@@ -4315,8 +4425,8 @@ function diamondsBurst(x, y, diamonds) {
   setTimeout(() => el.remove(), 1700);
 }
 
-function _startRain(pieces) {
-  const wrap = document.getElementById('confetti-root');
+function _startRain(pieces, wrap = null) {
+  wrap = wrap || document.getElementById('confetti-root');
   if (!wrap) return;
   const batchId = Date.now() + Math.random();
   pieces.forEach(el => { el.dataset.batch = batchId; wrap.appendChild(el); });
@@ -4327,6 +4437,7 @@ function _startRain(pieces) {
 
 function launchRain(factory, count = 55, opts = {}) {
   const pieces = [];
+  const rootElement = opts.rootElement || null;
   const minSize = opts.minSize ?? 28;
   const maxSize = opts.maxSize ?? 62;
   const minDuration = opts.minDuration ?? 1.8;
@@ -4360,10 +4471,10 @@ function launchRain(factory, count = 55, opts = {}) {
     `;
     pieces.push(el);
   }
-  _startRain(pieces);
+  _startRain(pieces, rootElement);
 }
 
-function launchBadgeRain(iconHtml, count = 110) {
+function launchBadgeRain(iconHtml, count = 110, rootElement = null) {
   const isHtml = iconHtml.includes('<');
   launchRain(({ size }) => {
     const el = document.createElement('div');
@@ -4371,7 +4482,7 @@ function launchBadgeRain(iconHtml, count = 110) {
     else el.textContent = iconHtml;
     el.style.cssText = `font-size:${Math.max(1, size / 20).toFixed(2)}rem;`;
     return el;
-  }, count, { minSize: 20, maxSize: 48, minDuration: 1.5, durationRange: 2, maxDelay: 1.6 });
+  }, count, { rootElement, minSize: 20, maxSize: 48, minDuration: 1.5, durationRange: 2, maxDelay: 1.6 });
 }
 
 const _rapidTapState = {};
@@ -4439,22 +4550,24 @@ function launchGemsproutRain(count = 80) {
   launchAvatarRain('gemsproutpadded.png', count);
 }
 
-function launchConfetti(count = 100, emoji = '*') {
+function launchConfetti(count = 100, emoji = '*', rootElement = null) {
   launchRain(({ size }) => {
     const el = document.createElement('div');
-    el.textContent = emoji;
-    el.style.cssText = `font-size:${Math.max(1, size / 18).toFixed(2)}rem;`;
+    el.innerHTML = '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57"></i>';
+    el.style.cssText = `font-size:${Math.max(1, size / 18).toFixed(2)}rem;line-height:1;`;
     return el;
-  }, count, { minSize: 18, maxSize: 52, minDuration: 1.4, durationRange: 2, maxDelay: 1.4 });
+  }, count, { rootElement, minSize: 18, maxSize: 52, minDuration: 1.4, durationRange: 2, maxDelay: 1.4 });
 }
 
-function launchMixedRain(count = 240) {
+function launchMixedRain(count = 100, rootElement = null) {
   launchRain(({ index, size }) => {
     const el = document.createElement('div');
-    el.textContent = index % 3 === 0 ? '*' : '+';
-    el.style.cssText = `font-size:${Math.max(1, size / 18).toFixed(2)}rem;`;
+    el.innerHTML = index % 3 === 0
+      ? '<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i>'
+      : '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57"></i>';
+    el.style.cssText = `font-size:${Math.max(1, size / 18).toFixed(2)}rem;line-height:1;`;
     return el;
-  }, count, { minSize: 18, maxSize: 52, minDuration: 1.4, durationRange: 2, maxDelay: 1.4 });
+  }, count, { rootElement, minSize: 18, maxSize: 52, minDuration: 1.4, durationRange: 2, maxDelay: 1.4 });
 }
 
 function kidAvatarEasterEgg(ev) {
@@ -4477,14 +4590,15 @@ function parentAvatarEasterEgg(ev) {
   });
 }
 
-function launchDollarRain(count = 160) {
-  const bills = ['$','$','$','$','$'];
+function launchDollarRain(count = 160, rootElement = null) {
   launchRain(({ index, size }) => {
     const el = document.createElement('div');
-    el.textContent = bills[index % bills.length];
-    el.style.cssText = `font-size:${Math.max(1, size / 18).toFixed(2)}rem;`;
+    el.innerHTML = index % 2 === 0
+      ? '<i class="ph-duotone ph-money-wavy" style="color:#16A34A"></i>'
+      : '<i class="ph-duotone ph-currency-circle-dollar" style="color:#E8C76A"></i>';
+    el.style.cssText = `font-size:${Math.max(1, size / 18).toFixed(2)}rem;line-height:1;`;
     return el;
-  }, count, { minSize: 18, maxSize: 52, minDuration: 1.4, durationRange: 2, maxDelay: 1.4 });
+  }, count, { rootElement, minSize: 18, maxSize: 52, minDuration: 1.4, durationRange: 2, maxDelay: 1.4 });
 }
 
 const _celebQueue = [];
@@ -4502,7 +4616,7 @@ function _showNextCelebration() {
   _renderCelebration(_celebQueue.shift());
 }
 
-function _renderCelebration({ icon='<i class="ph-duotone ph-confetti" style="color:#F97316;font-size:3rem"></i>', title='Great job!', sub='', diamonds=null, dollars=null, cur='$', noAnimation=false, badgeIcon=null, btnLabel=null, tts=null, onClose=null }) {
+function _renderCelebration({ icon='<i class="ph-duotone ph-confetti" style="color:#F97316;font-size:3rem"></i>', title='Great job!', sub='', diamonds=null, dollars=null, cur='$', noAnimation=false, badgeIcon=null, btnLabel=null, tts=null, onClose=null, rainType='auto' }) {
   const root = document.getElementById('celebration-root');
   const ptsHtml = diamonds !== null
     ? `<div class="cel-gems">+${diamonds} gems</div>`
@@ -4513,9 +4627,13 @@ function _renderCelebration({ icon='<i class="ph-duotone ph-confetti" style="col
   const moreHtml = remaining > 0
     ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${remaining} more notification${remaining > 1 ? 's' : ''} waiting...</div>`
     : '';
+  const dismissAllHtml = remaining > 0
+    ? `<button class="btn btn-secondary btn-full" style="margin-top:10px" onclick="dismissAllCelebrations()">Dismiss All</button>`
+    : '';
 
   root.innerHTML = `
     <div class="celebration-overlay" id="cel-overlay">
+      <div class="celebration-rain-layer" id="cel-confetti-root"></div>
       <div class="celebration-box">
         <div class="cel-icon">${icon}</div>
         <div class="cel-title">${title}</div>
@@ -4523,13 +4641,16 @@ function _renderCelebration({ icon='<i class="ph-duotone ph-confetti" style="col
         ${ptsHtml}
         ${moreHtml}
         <button class="btn btn-primary btn-full" onclick="closeCelebration()">${btnLabel ?? 'Yay! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i>'}</button>
+        ${dismissAllHtml}
       </div>
     </div>`;
 
   if (!noAnimation) {
-    if (badgeIcon !== null) launchBadgeRain(badgeIcon);
-    else if (dollars !== null) launchDollarRain();
-    else launchConfetti();
+    const rainRoot = document.getElementById('cel-confetti-root');
+    if (rainType === 'badge' || (rainType === 'auto' && badgeIcon !== null)) launchBadgeRain(badgeIcon, 110, rainRoot);
+    else if (rainType === 'dollar' || (rainType === 'auto' && dollars !== null)) launchDollarRain(160, rainRoot);
+    else if (rainType === 'combo') launchMixedRain(100, rainRoot);
+    else launchConfetti(100, '*', rainRoot);
   }
   if (tts) speak(tts);
   window._celebOnClose = onClose;
@@ -4544,12 +4665,38 @@ function closeCelebration() {
   if (_celebQueue.length > 0) setTimeout(_showNextCelebration, 300);
 }
 
+function dismissAllCelebrations() {
+  _celebQueue.length = 0;
+  closeCelebration();
+}
+
 function testWhileAwayModal() {
   showCelebration({
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned gems!',
     diamonds: 5,
+    onClose:  () => {},
+  });
+}
+
+function testGemCelebration() {
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57;font-size:3rem"></i>',
+    title:    '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57"></i> Gems Earned!',
+    sub:      'You knocked out a task and earned some fresh gems.',
+    diamonds: 12,
+    onClose:  () => {},
+  });
+}
+
+function testComboCelebration() {
+  showCelebration({
+    icon:     '<i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:3rem"></i>',
+    title:    '<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i> Daily Combo Complete!',
+    sub:      'Three tasks in one day. Bonus gems unlocked.',
+    diamonds: 18,
+    rainType: 'combo',
     onClose:  () => {},
   });
 }
@@ -4587,6 +4734,17 @@ function testSavingsDeposit() {
     dollars: 20,
     cur,
     onClose: () => {},
+  });
+}
+
+function testBadgeCelebration() {
+  const badgeIcon = '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>';
+  showCelebration({
+    icon:      '<i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:3rem"></i>',
+    title:     '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i> New Badge!',
+    sub:       'You unlocked Shiny Helper.',
+    badgeIcon,
+    onClose:   () => {},
   });
 }
 
@@ -5015,16 +5173,117 @@ function openUserSettings() {
       <div class="modal-title"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Settings</div>
       <p style="color:var(--muted);font-size:0.95rem;margin-bottom:16px">Signed in as <strong>${esc(name)}</strong>.</p>
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-        <button class="btn btn-primary" onclick="switchUserNow()">Switch User</button>
+        <button class="btn btn-secondary" style="min-height:56px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.15;text-align:center" onclick="openKidProfileLookModal({ replace: true })"><i class="ph-duotone ph-user-circle-gear" style="vertical-align:middle"></i><span>Edit<br>Profile</span></button>
+        <button class="btn btn-primary" style="min-height:56px;display:flex;align-items:center;justify-content:center;gap:6px;line-height:1.15;text-align:center" onclick="switchUserNow()"><i class="ph-duotone ph-users" style="vertical-align:middle"></i><span>Switch<br>User</span></button>
       </div>
-      <div style="border-top:1px solid #F3F4F6;margin-top:12px;padding-top:12px">
-        <button class="btn btn-secondary btn-sm" style="width:100%;color:#EF4444;border-color:#EF4444" onclick="closeModal();showLeaveDevicePin()">
-          <i class="ph-duotone ph-sign-out" style="vertical-align:middle;margin-right:6px"></i> Leave this Device
-        </button>
-        <div style="font-size:0.78rem;color:var(--muted);margin-top:6px;text-align:center">Requires parent PIN. Removes this family from the device.</div>
-      </div>`);
+      <button style="width:100%;background:none;border:none;padding:10px 0 0;color:#7A8580;font-size:0.92rem;font-weight:700;cursor:pointer;margin-top:40px" onclick="closeModal();showLeaveDevicePin()">
+        <i class="ph-duotone ph-sign-out" style="vertical-align:middle;margin-right:6px"></i> Leave this Device
+      </button>`);
   }
+}
+
+function _kidProfileAvatarOptionsHtml(draft) {
+  return [
+    `<div class="avatar-opt${'<i class="ph-duotone ph-leaf" style="color:#16A34A"></i>'===draft.avatar?' sel':''}" onclick="_setKidProfileLookAvatar(decodeURIComponent('%3Ci%20class%3D%22ph-duotone%20ph-leaf%22%20style%3D%22color%3A%2316A34A%22%3E%3C%2Fi%3E'),this)"><i class="ph-duotone ph-leaf" style="color:#16A34A"></i></div>`,
+    ...AVATARS.slice(0, 23).map(a => {
+      const encoded = encodeURIComponent(a);
+      return `<div class="avatar-opt${a===draft.avatar?' sel':''}" onclick="_setKidProfileLookAvatar(decodeURIComponent('${encoded}'),this)">${a}</div>`;
+    })
+  ].join('');
+}
+
+function _refreshKidProfileLookPreview() {
+  const preview = document.getElementById('kid-profile-look-preview');
+  const avatarEl = document.getElementById('kid-profile-look-preview-avatar');
+  if (!preview || !avatarEl) return;
+  const draft = S._kidProfileDraft || {};
+  const member = S.currentUser || {};
+  const accent = draft.color || member.color || COLORS[0];
+  const avatarColor = draft.avatarColor || accent;
+  preview.style.background = `linear-gradient(160deg, ${accent}22 0%, ${accent}12 100%)`;
+  preview.style.borderColor = `${accent}55`;
+  avatarEl.innerHTML = renderAvatarHtml(
+    draft.avatar || member.avatar,
+    '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>',
+    avatarColor
+  );
+}
+
+function _setKidProfileLookAvatar(avatar, el) {
+  if (!S._kidProfileDraft) return;
+  S._kidProfileDraft.avatar = avatar;
+  el?.closest('.avatar-grid')?.querySelectorAll('.avatar-opt').forEach(node => node.classList.remove('sel'));
+  el?.classList.add('sel');
+  _refreshKidProfileLookPreview();
+}
+
+function _setKidProfileLookColor(field, color, el) {
+  if (!S._kidProfileDraft) return;
+  S._kidProfileDraft[field] = color;
+  el?.closest('.color-row')?.querySelectorAll('.color-swatch').forEach(node => node.classList.remove('sel'));
+  el?.classList.add('sel');
+  _refreshKidProfileLookPreview();
+}
+
+function saveKidProfileLook() {
+  const member = S.currentUser;
+  const draft = S._kidProfileDraft;
+  if (!member || member.role !== 'kid' || !draft) return;
+  normalizeMember(member);
+  member.avatar = draft.avatar || member.avatar;
+  member.avatarColor = draft.avatarColor || member.avatarColor || member.color;
+  member.color = draft.color || member.color;
+  saveData();
+  closeModal();
+  renderCurrentView();
+  toast('Profile updated');
+}
+
+function openKidProfileLookModal(opts = {}) {
+  const member = S.currentUser;
+  if (!member || member.role !== 'kid') return;
+  normalizeMember(member);
+  S._kidProfileDraft = {
+    avatar: member.avatar || AVATARS[0],
+    avatarColor: member.avatarColor || member.color || COLORS[0],
+    color: member.color || COLORS[0],
+  };
+  const draft = S._kidProfileDraft;
+  const avatarOpts = _kidProfileAvatarOptionsHtml(draft);
+  const avatarColorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c===(draft.avatarColor || draft.color)?' sel':''}" style="background:${c}" onclick="_setKidProfileLookColor('avatarColor','${c}',this)"></div>`
+  ).join('');
+  const profileColorSwatches = COLORS.map(c =>
+    `<div class="color-swatch${c===draft.color?' sel':''}" style="background:${c}" onclick="_setKidProfileLookColor('color','${c}',this)"></div>`
+  ).join('');
+  const modalHtml = `
+    <div class="modal-title"><i class="ph-duotone ph-user-circle-gear" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Edit Profile</div>
+    <div id="kid-profile-look-preview" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:18px;border:1px solid #DDE7E1;margin-bottom:18px;background:#F7FAF8">
+      <div id="kid-profile-look-preview-avatar" style="width:54px;height:54px;border-radius:16px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:1.9rem;box-shadow:0 8px 20px rgba(17,28,24,0.08)"></div>
+      <div>
+        <div style="font-weight:800;color:#24352E">${esc(member.name || 'Kid')}</div>
+        <div style="font-size:0.88rem;color:var(--muted)">Pick an avatar and your favorite colors.</div>
+      </div>
+    </div>
+    <div class="form-group mt-8">
+      <label class="form-label">Avatar</label>
+      <div class="avatar-grid">${avatarOpts}</div>
+    </div>
+    <div class="form-group" style="position:relative;padding-bottom:18px">
+      <label class="form-label">Avatar Color</label>
+      <div class="color-row">${avatarColorSwatches}</div>
+    </div>
+    <div class="form-group" style="position:relative;padding-bottom:18px">
+      <label class="form-label">Profile Color</label>
+      <div class="color-row">${profileColorSwatches}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="${opts.replace ? 'openUserSettings()' : 'closeModal()'}">Cancel</button>
+      <button class="btn btn-primary" onclick="saveKidProfileLook()">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>
+    </div>`;
+  if (opts.replace) replaceQuickActionModal(modalHtml, 'quick-action-modal-wide');
+  else showQuickActionModal(modalHtml, 'quick-action-modal-wide');
+  _refreshKidProfileLookPreview();
 }
 
 let _settingsNavTimer = null;
@@ -5425,7 +5684,6 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
       <div class="section-row"><span class="section-title"><i class="ph-duotone ph-users-three" style="color:#6C63FF;font-size:1rem;vertical-align:middle"></i> Family</span></div>
       <div class="card">
         ${familyHtml || '<div class="empty-state"><div class="empty-text">No kids yet</div></div>'}
-        <button class="btn btn-secondary btn-sm btn-full" style="margin-top:12px" onclick="closeSettings();goSetup()">Edit Family Setup</button>
         <div class="toggle-row" style="margin-top:14px">
           <div>
             <div class="toggle-label">Split household</div>
@@ -5436,6 +5694,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
             <label class="toggle"><input type="checkbox" ${shEnabled?'checked':''} onchange="toggleFamilySplitHousehold(this.checked)"><span class="toggle-track"></span></label>
           </div>
         </div>
+        <button class="btn btn-secondary btn-sm btn-full" style="margin-top:14px" onclick="closeSettings();goSetup()">Edit Family Setup</button>
       </div>
 
       <div style="height:14px"></div>
@@ -5469,11 +5728,12 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           </div>
           ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
         </div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchConfetti(60)"><i class="ph-duotone ph-diamond" style="font-size:1rem;vertical-align:middle"></i> Test Gem Rain</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="launchMixedRain()"><i class="ph-duotone ph-lightning" style="font-size:1rem;vertical-align:middle"></i> Test Combo Rain</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testGemCelebration()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> Test Gem Celebration</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testComboCelebration()"><i class="ph-duotone ph-lightning" style="font-size:1rem;vertical-align:middle"></i> Test Combo Celebration</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Test While You Were Away</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()"><i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Test Queued Notifications (3)</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> Test Savings Deposit</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testBadgeCelebration()"><i class="ph-duotone ph-medal" style="font-size:1rem;vertical-align:middle"></i> Test Badge Celebration</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()"><i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Test Spend Approved</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()"><i class="ph-duotone ph-x-circle" style="font-size:1rem;vertical-align:middle"></i> Test Spend Denied</button>
         <div style="height:10px"></div>
@@ -5796,7 +6056,7 @@ function renderHome() {
     const bday = isBirthday(m);
     const ptsLabel = m.role === 'parent'
       ? '<i class="ph-duotone ph-gear-six" style="font-size:0.9rem;vertical-align:middle"></i> Parent tools'
-      : `<i class="ph-duotone ph-diamond" style="font-size:0.9rem;vertical-align:middle"></i> ${m.gems || 0} gems`;
+      : `<i class="ph-duotone ph-sketch-logo" style="font-size:0.9rem;vertical-align:middle"></i> ${m.gems || 0} gems`;
     return `
       <button class="profile-card${bday ? ' bday-card' : ''}" style="--member-color:${m.color || '#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
@@ -5827,7 +6087,7 @@ function renderHome() {
         <div class="home-hero-meta">
           <div class="home-subtitle">A quick look at how the family is doing right now.</div>
           <div class="home-pill-row">
-            <div class="home-pill"><i class="ph-duotone ph-diamond" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
+            <div class="home-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
             <div class="home-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSavings.toFixed(2)} saved</div>
             <div class="home-pill"><i class="ph-duotone ph-clock-countdown" style="font-size:1rem"></i> ${pendingCount} pending</div>
           </div>
@@ -5837,8 +6097,9 @@ function renderHome() {
         <div class="home-section-head">
           <div class="home-section-title">Choose your place in the family</div>
         </div>
-        <div class="profile-grid">${cards}</div>
-        <button class="home-setup-btn" onclick="goSetup()"><i class="ph-duotone ph-gear-six" style="color:#1D6B57;font-size:1.1rem;vertical-align:middle"></i> Edit family setup</button>
+        <div class="home-member-list">
+          <div class="profile-grid">${cards}</div>
+        </div>
       </div>
     </div>`;
   if (WEEK_REVIEW_PREVIEW_MODE && !_weekReviewPreviewShown) {
@@ -6155,23 +6416,32 @@ let SETUP_STEPS = SETUP_STEPS_NEW;
 function renderSetupGate() {
   const gate = document.getElementById('setup-gate');
   const content = document.getElementById('setup-content');
+  const isPreview = !!S._testOnboarding?.active;
   gate.style.display = 'flex';
   content.style.display = 'none';
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:24px;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutpadded.png" style="width:120px;height:120px">
-      <div style="color:#fff;font-size:2rem;font-weight:800;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,0.2)">Welcome to GemSprout</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:1rem;text-align:center;max-width:280px">Rhythms, rewards, and goals for the whole family.</div>
-      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
-        <button class="btn btn-primary" style="font-size:1.05rem;padding:16px;background:#fff;color:#6C63FF;border:none" onclick="startNewFamily()">
-          <i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:6px"></i> Get Started
-        </button>
-        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.4)" onclick="showSignInFlow()">
-          <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Sign In
-        </button>
-        <button class="btn btn-secondary" style="font-size:1rem;padding:14px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.85);border:1.5px solid rgba(255,255,255,0.25)" onclick="showKidEntry()">
-          <i class="ph-duotone ph-smiley" style="vertical-align:middle;margin-right:6px"></i> I'm a Kid
-        </button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card">
+        <img src="gemsproutpadded.png" class="setup-gate-mark" alt="GemSprout">
+        <div class="setup-gate-kicker"><i class="ph-duotone ph-plant" style="font-size:0.95rem"></i> Family rhythms, rewards, and growth</div>
+        <div class="setup-gate-title">Welcome to GemSprout</div>
+        <div class="setup-gate-sub">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two.'}</div>
+        <div class="setup-gate-pill-row">
+          <div class="setup-gate-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> Gems</div>
+          <div class="setup-gate-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> Savings</div>
+          <div class="setup-gate-pill"><i class="ph-duotone ph-users-three" style="font-size:1rem"></i> Family goals</div>
+        </div>
+        <div class="setup-gate-actions">
+          <button class="setup-gate-btn setup-gate-btn-primary" onclick="${isPreview ? `goSetup({ testMode: true })` : `startNewFamily()`}">
+            <i class="ph-duotone ph-sparkle" style="vertical-align:middle"></i> Get Started
+          </button>
+          <button class="setup-gate-btn setup-gate-btn-secondary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Sign In is disabled during onboarding preview')` : `showSignInFlow()`}">
+            <i class="ph-duotone ph-sign-in" style="vertical-align:middle"></i> Sign In
+          </button>
+          <button class="setup-gate-btn setup-gate-btn-muted ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Kid entry is disabled during onboarding preview')` : `showKidEntry()`}">
+            <i class="ph-duotone ph-smiley" style="vertical-align:middle"></i> I'm a Kid
+          </button>
+        </div>
       </div>
     </div>`;
 }
@@ -6599,7 +6869,7 @@ function showFamilyCodeModal(triggerEl = null, opts = {}) {
       <div class="modal-title" style="margin-top:8px">Add user</div>
     </div>
     <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0 6px">
-      <div style="font-size:2rem;font-weight:800;letter-spacing:0.18em;color:#6C63FF;font-family:monospace">${code}</div>
+      <div style="font-size:2rem;font-weight:900;letter-spacing:0.18em;color:#6C63FF;font-family:'Jost','Avenir Next','Segoe UI',system-ui,sans-serif">${code}</div>
       <button onclick="navigator.clipboard.writeText('${escapedCode}').then(()=>toast('Code copied!'))" style="background:none;border:none;cursor:pointer;padding:4px;line-height:1">
         <i class="ph-duotone ph-copy" style="font-size:1.5rem;color:#6C63FF;vertical-align:middle"></i>
       </button>
@@ -6637,7 +6907,7 @@ function showKidDeviceQR(triggerEl = null, opts = {}) {
     <div style="display:flex;justify-content:center;margin-bottom:14px">
       <div id="qr-code-container" style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid rgba(76,29,149,0.08);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.8)"></div>
     </div>
-    <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:monospace;margin-bottom:16px">${code}</div>
+    <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:'Jost','Avenir Next','Segoe UI',system-ui,sans-serif;margin-bottom:16px">${code}</div>
     <button class="btn btn-secondary" style="width:100%" onclick="showFamilyCodeModal(null, { replace: true })">Done</button>`;
   if (opts.replace) replaceQuickActionModal(modalHtml, 'quick-action-modal-wide');
   else showQuickActionModal(modalHtml, 'quick-action-modal-wide');
@@ -6806,6 +7076,7 @@ function goSetup(opts = {}) {
 function renderSetupStep(opts = {}) {
   const preserveScroll = !!opts.preserveScroll;
   const existingScreen = document.getElementById('screen-setup');
+  const existingGate = document.getElementById('setup-gate');
   const existingContent = document.getElementById('setup-content');
   const savedScreenScroll = preserveScroll ? (existingScreen?.scrollTop || 0) : 0;
   const savedContentScroll = preserveScroll ? (existingContent?.scrollTop || 0) : 0;
@@ -6979,7 +7250,7 @@ function renderSetupStep(opts = {}) {
         <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em"><i class="ph-duotone ph-smiley" style="vertical-align:middle;margin-right:4px"></i> Adding your kids</div>
         <p style="font-size:0.83rem;color:var(--muted);line-height:1.5;margin-bottom:10px">On each kid's device, open GemSprout and tap <strong>I'm a Kid</strong>. Next, enter your Family Code found below or scan the QR code found in <strong>Settings &middot; Add user</strong>.</p>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:1.8rem;font-weight:900;letter-spacing:0.18em;color:#4C1D95;font-family:monospace;flex:1">${_fc}</div>
+          <div style="font-size:1.8rem;font-weight:900;letter-spacing:0.18em;color:#4C1D95;font-family:'Jost','Avenir Next','Segoe UI',system-ui,sans-serif;flex:1">${_fc}</div>
           <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${_fc}').then(()=>toast('Code copied!'))">
             <i class="ph-duotone ph-copy" style="font-size:0.9rem;vertical-align:middle"></i> Copy
           </button>
@@ -7002,6 +7273,8 @@ function renderSetupStep(opts = {}) {
     }
   }
 
+  if (existingGate) existingGate.style.display = 'none';
+  if (existingContent) existingContent.style.display = '';
   document.getElementById('setup-content').innerHTML = `
     <div class="step-indicator" style="padding-top:16px">${dots}</div>
     <div class="setup-step active">${content}</div>`;
@@ -7514,33 +7787,33 @@ function renderKidHeader() {
   const m = S.currentUser;
   if (!m) return;
   const tiny = isTiny(m);
-  const dmds = m.gems || 0;
   normalizeMember(m);
+  const dmds = m.gems || 0;
+  const accent = m.color || COLORS[0];
+  const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
   const myChores = D.chores.filter(c => c.assignedTo?.includes(m.id)).sort((a,b) => (a.diamonds||0)-(b.diamonds||0) || (a.title||'').localeCompare(b.title||''));
   const progressMap = new Map(myChores.map(chore => [chore.id, getChoreProgress(chore, m.id)]));
   const totalUnits = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.targetCount || 0), 0);
   const doneUnits = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.doneCount || 0), 0);
-  const routineLabel = totalUnits > 0
-    ? `${doneUnits} / ${totalUnits} tasks in today's rhythm`
-    : 'No tasks in today\'s rhythm';
   const headerTts = totalUnits > 0
     ? `Hi ${m.name}. You have ${dmds} gems, and ${doneUnits} out of ${totalUnits} tasks complete today.`
     : `Hi ${m.name}. You have ${dmds} gems and no tasks in today's rhythm yet.`;
   document.getElementById('kid-header').innerHTML = `
-    <div class="header-left"${tiny ? ` onclick="speak('${headerTts.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"` : ''}>
+    <div class="header-left kid-themed-header-left" style="${themeVars}"${tiny ? ` onclick="speak('${headerTts.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"` : ''}>
       <span class="header-avatar" onclick="kidAvatarEasterEgg(event)" style="cursor:pointer">${renderMemberAvatarHtml(m)}</span>
       <div>
         <div class="header-name">Hi, ${esc(m.name)}!</div>
-        <div class="header-sub"><i class="ph-duotone ph-check-square-offset" style="color:#1D6B57;font-size:0.85rem;vertical-align:middle"></i> ${routineLabel}</div>
       </div>
     </div>
     <div class="header-actions">
-      <div class="header-badge"${tiny ? ` onclick="speak('You have ${dmds} gems.')"` : ''}><i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:0.95rem;vertical-align:middle"></i> ${dmds}</div>
-      <button class="btn-icon-sm" style="background:#F3F4F6" onclick="${tiny ? `speak('Settings');` : ''}openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:#6C63FF;font-size:1.15rem"></i></button>
+      <div class="header-badge kid-themed-header-badge" style="${themeVars}"${tiny ? ` onclick="speak('You have ${dmds} gems.')"` : ''}><i class="ph-duotone ph-sketch-logo" style="color:${accent};font-size:0.95rem;vertical-align:middle"></i> ${dmds}</div>
+      <button class="btn-icon-sm kid-themed-settings-btn" style="${themeVars}" onclick="${tiny ? `speak('Settings');` : ''}openUserSettings()" title="Settings"><i class="ph-duotone ph-gear-six" style="color:${accent};font-size:1.15rem"></i></button>
     </div>`;
 }
 
 function renderKidNav() {
+  const accent = S.currentUser?.color || COLORS[0];
+  const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
   const tabs = [
     ['chores',  ICONS.chores,  'Rhythm'],
     ['diamonds', ICONS.diamond, 'Gems'],
@@ -7549,7 +7822,7 @@ function renderKidNav() {
     ['stats',   ICONS.stats,   'Stats'],
   ];
   document.getElementById('kid-nav').innerHTML = tabs.map(([id,icon,label]) => `
-    <button class="nav-item${S.kidTab===id?' active':''}" onclick="switchKidTab('${id}')">
+    <button class="nav-item kid-themed-nav-item${S.kidTab===id?' active':''}" style="${themeVars}" onclick="switchKidTab('${id}')">
       <span class="nav-icon">${icon}</span>${label}
     </button>`).join('');
 }
@@ -8249,10 +8522,12 @@ function viewPhoto(url) {
 
 function renderKidDiamonds() {
   const m   = S.currentUser;
+  normalizeMember(m);
   const dmds = m.diamonds || 0;
   const sav = m.savings || 0;
-  normalizeMember(m);
   const tiny = isTiny(m);
+  const accent = m.color || COLORS[0];
+  const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
   const _savSpeech = fmtCurrencySpeech(sav, D.settings.currency || '$');
 
   const kidHistory = D.history.filter(h=>h.memberId===m.id);
@@ -8264,8 +8539,8 @@ function renderKidDiamonds() {
     : `${D.settings.currency||'$'}${sav.toFixed(2)}`;
   let html = `
     <div class="stats-grid kid-gems-top-stats kid-gems-top-stats-${_savOn ? 2 : 1}">
-      <div class="stat-card kid-gems-top-card"${tiny ? ` onclick="speak('You have ${dmds} gems.')"` : ''}><div class="stat-val">${dmds}</div><div class="stat-label"><i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:0.95rem;vertical-align:middle"></i> Gems</div></div>
-      ${_savOn ? `<div class="stat-card kid-gems-top-card"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}><div class="stat-val">${savingsDisplay}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>` : ''}
+      <div class="stat-card kid-gems-top-card kid-themed-stat-card" style="${themeVars}"${tiny ? ` onclick="speak('You have ${dmds} gems.')"` : ''}><div class="stat-val" style="color:${accent}">${dmds}</div><div class="stat-label"><i class="ph-duotone ph-sketch-logo" style="color:${accent};font-size:0.95rem;vertical-align:middle"></i> Gems</div></div>
+      ${_savOn ? `<div class="stat-card kid-gems-top-card kid-themed-stat-card" style="${themeVars}"${tiny ? ` onclick="speak('You have ${_savSpeech} in savings.')"` : ''}><div class="stat-val" style="color:${accent}">${savingsDisplay}</div><div class="stat-label"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:0.95rem;vertical-align:middle"></i> Savings</div></div>` : ''}
     </div>`;
 
   const summaryCards = [];
@@ -8288,7 +8563,7 @@ function renderKidDiamonds() {
              <div class="kid-gems-summary-sub">${xpIntoLevel}/${xpNeeded} XP</div>`
           : `<div class="level-xp-bar kid-gems-level-bar"><div class="level-xp-fill" style="width:100%"></div></div>
              <div class="kid-gems-summary-sub">Max level reached</div>`}
-      </div>`, 'quick-action-modal-wide');
+      </div>`);
   }
 
   // Streak row
@@ -8743,7 +9018,7 @@ function renderKidShop() {
         <div class="kid-shop-prize-top">
           <span class="prize-icon kid-shop-prize-icon">${renderIcon(p.icon,p.iconColor)}</span>
           <span class="kid-shop-prize-cost">
-            <i class="ph-duotone ph-diamond" style="font-size:0.95rem;vertical-align:middle"></i>
+            <i class="ph-duotone ph-sketch-logo" style="font-size:0.95rem;vertical-align:middle"></i>
             ${p.cost}
           </span>
         </div>
@@ -9227,7 +9502,7 @@ function renderFamilyStatsCard(kids, histIdx, expandedOverride = null) {
 
   const overviewSection = _statSection('Family Overview',
     _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', 'Tasks Done', totalChores, '#166534', 'all time, all kids') +
-    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>', 'Gems Earned', totalDiamonds, '#92400e', 'all time, all kids') +
+    _statTile('<i class="ph-duotone ph-sketch-logo" style="color:#D97706"></i>', 'Gems Earned', totalDiamonds, '#92400e', 'all time, all kids') +
     _statTile('<i class="ph-duotone ph-gift" style="color:#1D4ED8"></i>', 'Prizes Redeemed', totalPrizes, '#1e40af', 'all time, all kids')
   );
 
@@ -9285,7 +9560,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
 
   const choresSection = _statSection('Routine & Gems',
     _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>','Tasks Done', s.choreDone, '#166534', '', tts(`${s.choreDone} tasks done.`)) +
-    _statTile('<i class="ph-duotone ph-diamond" style="color:#D97706"></i>','Gems Earned', s.diamondsEarned, '#92400e', '', tts(`You have earned ${s.diamondsEarned} gems.`)) +
+    _statTile('<i class="ph-duotone ph-sketch-logo" style="color:#D97706"></i>','Gems Earned', s.diamondsEarned, '#92400e', '', tts(`You have earned ${s.diamondsEarned} gems.`)) +
     _statTile('<i class="ph-duotone ph-sparkle" style="color:#7C3AED"></i>','Total XP', s.totalXP, '#4c1d95', '', tts(`You have ${s.totalXP} total X P.`))
   );
 
@@ -9337,7 +9612,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
 
   const penaltySection = _statSection('Penalties',
     _statTile('<i class="ph-duotone ph-speaker-slash" style="color:#991B1B"></i>','Penalties', s.penaltyCount, '#991b1b', '', tts(`You have had ${s.penaltyCount} penalty${s.penaltyCount !== 1 ? 's' : ''}.`)) +
-    _statTile('<i class="ph-duotone ph-diamond" style="color:#EF4444"></i>','Gems Deducted', s.penaltyAmount, '#991b1b', '', tts(`You have had ${s.penaltyAmount} gems deducted.`)) +
+    _statTile('<i class="ph-duotone ph-sketch-logo" style="color:#EF4444"></i>','Gems Deducted', s.penaltyAmount, '#991b1b', '', tts(`You have had ${s.penaltyAmount} gems deducted.`)) +
     _statTile('<i class="ph-duotone ph-timer" style="color:#B45309"></i>','NL Time', s.nlFmt, '#b45309', 'lifetime', tts((() => {
       const ns = s.nlLifetimeSecs || 0;
       if (ns === 0) return 'No not-listening time. Great job!';
@@ -10150,7 +10425,7 @@ function _parentQuickActions() {
   return [
     { id: 'listening', label: 'Not Listening', icon: 'ph-speaker-slash', tint: '#f6b4a8', enabled: D.settings.notListeningEnabled !== false, run: showNotListening },
     { id: 'savings', label: 'Savings', icon: 'ph-piggy-bank', tint: '#a8e6c0', enabled: D.settings.savingsEnabled !== false, run: showAdjustSavingsQuick },
-    { id: 'diamonds', label: 'Gems', icon: 'ph-diamond', tint: '#f4d58d', enabled: true, run: showAdjustDiamondsQuick }
+    { id: 'diamonds', label: 'Gems', icon: 'ph-sketch-logo', tint: '#f4d58d', enabled: true, run: showAdjustDiamondsQuick }
   ].filter(action => action.enabled);
 }
 function _clearParentQuickHold() {
@@ -11038,7 +11313,6 @@ function showChoreModal(choreId, opts = {}) {
   const hasSlots = _editSlots.length > 0;
 
   const modalHtml = `
-    <div class="modal-title" style="margin-bottom:14px">${choreId ? 'Edit Task' : 'Add Task'}</div>
     <input type="hidden" id="cm-icon" value="${esc(String(c.icon || ''))}">
     <input type="hidden" id="cm-icon-color" value="${esc(String(choreColor || ''))}">
     <div class="form-group">
@@ -11121,7 +11395,7 @@ function showChoreModal(choreId, opts = {}) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveChore('${choreId||''}')">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      <button class="btn btn-primary" onclick="saveChore('${choreId||''}')">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>
     </div>`;
   if (opts.quickAction) showQuickActionModal(modalHtml, 'quick-action-modal-wide chore-editor-modal');
   else showQuickActionModal(modalHtml, 'quick-action-modal-wide chore-editor-modal');
@@ -11417,8 +11691,8 @@ function renderParentPrizes() {
 
 const LEVEL_ICON_OPTIONS = [
   { label:'Leaf',       html:'<i class="ph-duotone ph-leaf" style="color:#22C55E;font-size:1.4rem"></i>' },
-  { label:'Gem',    html:'<i class="ph-duotone ph-diamond" style="color:#3B82F6;font-size:1.4rem"></i>' },
-  { label:'Gem',        html:'<i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:1.4rem"></i>' },
+  { label:'Gem',    html:'<i class="ph-duotone ph-sketch-logo" style="color:#3B82F6;font-size:1.4rem"></i>' },
+  { label:'Gem',        html:'<i class="ph-duotone ph-sketch-logo" style="color:#7C3AED;font-size:1.4rem"></i>' },
   { label:'Trophy',     html:'<i class="ph-duotone ph-trophy" style="color:#D97706;font-size:1.4rem"></i>' },
   { label:'Fire',       html:'<i class="ph-duotone ph-fire" style="color:#EF4444;font-size:1.4rem"></i>' },
   { label:'Shield',     html:'<i class="ph-duotone ph-shield-star" style="color:#6C63FF;font-size:1.4rem"></i>' },
@@ -11439,7 +11713,7 @@ const LEVEL_ICON_OPTIONS = [
   { label:'Flame',      html:'<i class="ph-duotone ph-fire" style="color:#F97316;font-size:1.4rem"></i>' },
   { label:'Rainbow',    html:'<i class="ph-duotone ph-rainbow" style="color:#14B8A6;font-size:1.4rem"></i>' },
   { label:'Moon',       html:'<i class="ph-duotone ph-moon-stars" style="color:#6366F1;font-size:1.4rem"></i>' },
-  { label:'Gem',    html:'<i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:1.4rem"></i>' },
+  { label:'Gem',    html:'<i class="ph-duotone ph-sketch-logo" style="color:#7C3AED;font-size:1.4rem"></i>' },
 ];
 
 function renderParentLevels() {
@@ -11552,7 +11826,7 @@ function renderParentLevels() {
             <input type="number" value="${s[key]||def}" min="0"
               style="width:64px;font-size:0.9rem;padding:6px 8px;border:1px solid #E5E7EB;border-radius:8px;text-align:center"
               onchange="saveSetting('${key}',parseInt(this.value)||0)">
-            <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap"><i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:0.9rem;vertical-align:middle"></i> bonus</span>
+            <span style="font-size:0.8rem;color:var(--muted);white-space:nowrap"><i class="ph-duotone ph-sketch-logo" style="color:#7C3AED;font-size:0.9rem;vertical-align:middle"></i> bonus</span>
           </div>`).join('')}
       </div>` : ''}
     </div>
@@ -11574,7 +11848,7 @@ function renderParentLevels() {
             <input type="number" value="${multiplier}" min="2" max="10"
               style="width:48px;font-size:0.9rem;padding:4px 6px;border:1.5px solid #FDE68A;border-radius:8px;text-align:center;font-weight:700;color:#92400E;background:white"
               onchange="saveSetting('comboMultiplier',Math.max(2,parseInt(this.value)||2));renderParentLevels()">
-            <span style="font-size:0.85rem;color:#92400E;white-space:nowrap">x <i class="ph-duotone ph-diamond" style="color:#7C3AED;font-size:0.95rem;vertical-align:middle"></i></span>
+            <span style="font-size:0.85rem;color:#92400E;white-space:nowrap">x <i class="ph-duotone ph-sketch-logo" style="color:#7C3AED;font-size:0.95rem;vertical-align:middle"></i></span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 14px">
           ${kids.map(kid => {
@@ -11857,7 +12131,7 @@ function showPrizeModal(prizeId, opts = {}) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="savePrize('${prizeId||''}')">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      <button class="btn btn-primary" onclick="savePrize('${prizeId||''}')">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>
     </div>`;
   if (opts.quickAction) {
     showQuickActionModal(modalHtml, 'quick-action-modal-wide prize-editor-modal');
@@ -12769,7 +13043,6 @@ function showAddPointsModal(memberId, triggerEl = null) {
   const rect = triggerEl?.getBoundingClientRect?.();
   if (rect) _modalLaunchOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   showQuickActionModal(`
-    <div class="modal-title">Adjust Gems &mdash; ${esc(m.name)}</div>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${m.gems||0} gems</strong></p>
     <div class="form-group">
       <label class="form-label">Amount</label>
@@ -12808,7 +13081,6 @@ function showAdjustSavingsModal(memberId, triggerEl = null) {
   const rect = triggerEl?.getBoundingClientRect?.();
   if (rect) _modalLaunchOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   showQuickActionModal(`
-    <div class="modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Adjust Savings for ${esc(m.name)}</div>
     <p style="color:var(--muted);font-size:0.9rem;margin-bottom:16px">Current balance: <strong>${cur}${(m.savings||0).toFixed(2)}</strong></p>
     <div class="form-group">
       <label class="form-label">Amount (${cur})</label>
