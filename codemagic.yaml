@@ -33,6 +33,7 @@ workflows:
           cp app.js www/
           cp manifest.json www/
           cp *.png www/
+          cp *.wav www/
           cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor-core.js
           npx cap add ios
           if [ -f ios/App/Podfile ]; then
@@ -49,6 +50,32 @@ workflows:
           /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription 'GemSprout may access your photo library to attach images to chores.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'GemSprout may save chore photos to your photo library.'" "$PLIST" 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryAddUsageDescription 'GemSprout may save chore photos to your photo library.'" "$PLIST"
+
+      - name: Enable In-App Purchase capability
+        script: |
+          gem install xcodeproj --no-document
+          ruby - <<'EOF'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
+          target = project.targets.first
+          # Add StoreKit.framework if not already present
+          unless target.frameworks_build_phase.files.any? { |f| f.file_ref&.path == 'StoreKit.framework' }
+            storekit = project.frameworks_group.new_file('System/Library/Frameworks/StoreKit.framework')
+            storekit.source_tree = 'SDKROOT'
+            target.frameworks_build_phase.add_file_reference(storekit)
+            puts 'Added StoreKit.framework'
+          else
+            puts 'StoreKit.framework already present'
+          end
+          # Enable In-App Purchase system capability
+          attrs = project.root_object.attributes
+          attrs['TargetAttributes'] ||= {}
+          attrs['TargetAttributes'][target.uuid] ||= {}
+          attrs['TargetAttributes'][target.uuid]['SystemCapabilities'] ||= {}
+          attrs['TargetAttributes'][target.uuid]['SystemCapabilities']['com.apple.InAppPurchase'] = { 'enabled' => '1' }
+          project.save
+          puts 'Enabled In-App Purchase system capability'
+          EOF
 
       - name: Add GoogleService-Info.plist to Xcode bundle resources
         script: |
@@ -79,6 +106,8 @@ workflows:
             '<plist version="1.0"><dict>' \
             '  <key>com.apple.developer.applesignin</key>' \
             '  <array><string>Default</string></array>' \
+            '  <key>aps-environment</key>' \
+            '  <string>production</string>' \
             '</dict></plist>' > "$ENTITLEMENTS"
 
       - name: Link entitlements to Xcode project
@@ -101,6 +130,7 @@ workflows:
           plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
           plutil -insert NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist || plutil -replace NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist
           plutil -insert CFBundleURLTypes -json '[{"CFBundleURLSchemes":["com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508"]}]' ios/App/App/Info.plist || true
+          plutil -insert NSUserNotificationsUsageDescription -string "GemSprout sends notifications to alert parents when kids complete chores." ios/App/App/Info.plist || plutil -replace NSUserNotificationsUsageDescription -string "GemSprout sends notifications to alert parents when kids complete chores." ios/App/App/Info.plist
 
       - name: Resolve Swift packages
         script: |
