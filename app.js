@@ -5865,9 +5865,9 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
-          <div><div class="toggle-label">Show period-locked prizes</div>
-            <div class="toggle-sub">Keep daily, weekly, and monthly prizes visible in kid shop after they've been redeemed for the current period</div></div>
-          <label class="toggle"><input type="checkbox" ${s.showLockedRecurringPrizes!==false?'checked':''} onchange="saveSetting('showLockedRecurringPrizes',this.checked)"><span class="toggle-track"></span></label>
+          <div><div class="toggle-label">Hide unavailable prizes</div>
+            <div class="toggle-sub">Daily, weekly, and monthly prizes will be hidden in the shop tab after they've been redeemed</div></div>
+          <label class="toggle"><input type="checkbox" ${s.showLockedRecurringPrizes===false?'checked':''} onchange="saveSetting('showLockedRecurringPrizes',!this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
           <div><div class="toggle-label">Show swipe hints</div>
@@ -7496,6 +7496,11 @@ function renderSetupStep(opts = {}) {
             <div class="toggle-sub">Tasks outside their time window won't show on kids' screens</div></div>
           <label class="toggle"><input type="checkbox" id="setup-hide-unavailable" ${D.settings.hideUnavailable?'checked':''}><span class="toggle-track"></span></label>
         </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Hide unavailable prizes</div>
+            <div class="toggle-sub">Daily, weekly, and monthly prizes will be hidden in the shop tab after they've been redeemed</div></div>
+          <label class="toggle"><input type="checkbox" id="setup-hide-unavailable-prizes" ${D.settings.showLockedRecurringPrizes===false?'checked':''}><span class="toggle-track"></span></label>
+        </div>
         <div class="form-group mb-0">
           <label class="form-label">Family timezone</label>
           <select id="setup-timezone" style="width:100%">
@@ -7924,6 +7929,8 @@ function setupNext() {
     if (autoEl) D.settings.autoApprove = autoEl.checked;
     const hideEl = document.getElementById('setup-hide-unavailable');
     if (hideEl) D.settings.hideUnavailable = hideEl.checked;
+    const hideUnavailablePrizesEl = document.getElementById('setup-hide-unavailable-prizes');
+    if (hideUnavailablePrizesEl) D.settings.showLockedRecurringPrizes = !hideUnavailablePrizesEl.checked;
     const tzEl = document.getElementById('setup-timezone');
     if (tzEl) D.settings.familyTimezone = tzEl.value;
     const notifyChoreEl = document.getElementById('setup-notify-chore');
