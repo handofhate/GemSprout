@@ -3693,9 +3693,10 @@
       color: #67726a;
       max-width: 18ch;
       white-space: pre-line;
+      padding-left: 24px;
     }
     .snapshot-panel-chore-copy {
-      margin-left: 6px;
+      margin-left: 0;
     }
     .snapshot-panel-chore-meta {
       max-width: none;

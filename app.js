@@ -1,4 +1,4 @@
-const FIREBASE_CONFIG = {
+﻿const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU",
   authDomain:        "gemsprout1.firebaseapp.com",
   projectId:         "gemsprout1",
@@ -197,16 +197,16 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const selPlan = _rcSelectedPlan;
   const mSel = selPlan === 'monthly';
   const ySel = selPlan === 'yearly';
-  const cardBase = 'border-radius:14px;padding:14px 16px;cursor:pointer;transition:border 0.15s;';
-  const mCard = cardBase + `border:2px solid ${mSel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${mSel ? '0.15' : '0.07'})`;
-  const yCard = cardBase + `border:2px solid ${ySel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${ySel ? '0.15' : '0.07'})`;
+  const cardBase = 'border-radius:16px;padding:14px 16px;cursor:pointer;transition:border 0.15s,transform 0.15s,background 0.15s;box-shadow:0 10px 24px rgba(39,66,57,0.12);';
+  const mCard = cardBase + `border:2px solid ${mSel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${mSel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
+  const yCard = cardBase + `border:2px solid ${ySel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${ySel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   return `
-  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:linear-gradient(160deg,#1a0533 0%,#3b1278 55%,#6C63FF 100%);overflow:auto">
+  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 58%,#e9ddc8 58%,#f4efe4 100%);overflow:auto">
     <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
-      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(255,255,255,0.55);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
-      <img src="gemsproutpadded.png" style="width:76px;height:76px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.35)">
-      <div style="color:#fff;font-size:1.75rem;font-weight:800;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
-      <div style="color:rgba(255,255,255,0.65);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
+      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+      <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
+      <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
+      <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
     </div>
 
     <div style="padding:0 24px;display:flex;flex-direction:column;gap:10px">
@@ -216,38 +216,38 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
         ['ph-piggy-bank',  'Savings, matching, interest, and spend requests in one place'],
         ['ph-users',       'Built for modern families, including split-household rhythms'],
       ].map(([icon, text]) => `
-        <div style="display:flex;align-items:center;gap:12px">
-          <i class="ph-duotone ${icon}" style="color:#C4B5FD;font-size:1.3rem;flex-shrink:0"></i>
-          <div style="color:rgba(255,255,255,0.88);font-size:0.9rem;line-height:1.4">${text}</div>
+        <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
+          <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
+          <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
         </div>`).join('')}
     </div>
 
     <div style="padding:20px 24px 0;display:flex;gap:12px">
       <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
-        <div style="color:rgba(255,255,255,0.65);font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
-        <div style="color:#fff;font-size:1.3rem;font-weight:800;margin-top:4px">${mPrice}</div>
-        <div style="color:rgba(255,255,255,0.5);font-size:0.75rem;margin-top:2px">per month</div>
+        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
+        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
+        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per month</div>
       </div>
       <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
-        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#F97316;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
-        <div style="color:rgba(255,255,255,0.65);font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
-        <div style="color:#fff;font-size:1.3rem;font-weight:800;margin-top:4px">${yPrice}</div>
-        <div style="color:rgba(255,255,255,0.5);font-size:0.75rem;margin-top:2px">per year</div>
+        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
+        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
+        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${yPrice}</div>
+        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per year</div>
       </div>
     </div>
 
     <div style="padding:20px 24px 0">
-      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:#fff;color:#4C1D95;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.25)">
+      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
         Start ${trialDays}-Day Free Trial
       </button>
-      <div style="color:rgba(255,255,255,0.45);font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
+      <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
         Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
       </div>
     </div>
 
     <div style="margin-top:auto;padding:20px 24px 36px;display:flex;justify-content:center;gap:20px">
-      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:rgba(255,255,255,0.55);font-size:0.82rem;cursor:pointer;padding:4px">Restore Purchases</button>
-      <a href="privacy.html" style="color:rgba(255,255,255,0.55);font-size:0.82rem;text-decoration:none;padding:4px">Privacy</a>
+      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
+      <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
     </div>
   </div>`;
 }
@@ -256,9 +256,9 @@ function _rcSelectPlan(type) {
   _rcSelectedPlan = type;
   const mCard = document.getElementById('rc-card-monthly');
   const yCard = document.getElementById('rc-card-yearly');
-  const cardBase = 'border-radius:14px;padding:14px 16px;cursor:pointer;transition:border 0.15s;flex:1;';
-  if (mCard) mCard.style.cssText = cardBase + `border:2px solid ${type==='monthly'?'#fff':'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${type==='monthly'?'0.15':'0.07'})`;
-  if (yCard) yCard.style.cssText = cardBase + `border:2px solid ${type==='yearly'?'#fff':'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${type==='yearly'?'0.15':'0.07'});position:relative`;
+  const cardBase = 'border-radius:16px;padding:14px 16px;cursor:pointer;transition:border 0.15s,transform 0.15s,background 0.15s;flex:1;box-shadow:0 10px 24px rgba(39,66,57,0.12);';
+  if (mCard) mCard.style.cssText = cardBase + `border:2px solid ${type==='monthly'?'#2a7560':'rgba(39,66,57,0.16)'};background:${type==='monthly'?'rgba(231,245,238,0.95)':'rgba(255,251,244,0.88)'}`;
+  if (yCard) yCard.style.cssText = cardBase + `border:2px solid ${type==='yearly'?'#2a7560':'rgba(39,66,57,0.16)'};background:${type==='yearly'?'rgba(231,245,238,0.95)':'rgba(255,251,244,0.88)'};position:relative`;
 }
 
 async function rcStartTrial() {
@@ -369,49 +369,31 @@ const WEEK_REVIEW_SLIDE_MS = 10000;
 const WEEK_REVIEW_PREVIEW_MODE = false;
 const WEEK_REVIEW_PREVIEW_SLIDE_INDEX = 1;
 const WEEK_REVIEW_PREVIEW_KID_COUNT = 0;
+const DEBUG_FORCE_LOADING_PREVIEW = false; // TEMP: force loading-screen preview at startup
+const DEBUG_FORCE_LOADING_PREVIEW_MS = 3500;
 let _weekReviewStory = null;
 let _weekReviewAudio = null;
 let _weekReviewPreviewShown = false;
-const WEEK_REVIEW_AUDIO_PREFERS_M4A = (() => {
-  try {
-    const audio = document.createElement('audio');
-    const support = audio?.canPlayType?.('audio/mp4; codecs="mp4a.40.2"') || '';
-    return support === 'probably' || support === 'maybe';
-  } catch (_) {
-    return false;
-  }
-})();
+let _weekReviewPrimeToken = 0;
 
 function _weekReviewTrackPath(trackNumber) {
   const base = 'assets/week-review-audio/';
-  const ext = WEEK_REVIEW_AUDIO_PREFERS_M4A ? 'm4a' : 'wav';
-  return `${base}${trackNumber}.${ext}`;
-}
-
-function _weekReviewFallbackTrackPath(src) {
-  if (typeof src !== 'string') return src;
-  return src.endsWith('.m4a') ? src.replace(/\.m4a$/i, '.wav') : src;
+  return `${base}${trackNumber}.wav`;
 }
 
 function _weekReviewEnsureAudioElement(src = '') {
   if (!_weekReviewAudio) {
     _weekReviewAudio = new Audio(src || '');
     _weekReviewAudio.playsInline = true;
-    _weekReviewAudio.crossOrigin = 'anonymous';
     _weekReviewAudio.preload = 'auto';
     _weekReviewAudio.loop = true;
-    _weekReviewAudio._wrPreferredSrc = src || '';
     _weekReviewAudio.addEventListener('error', () => {
-      const preferred = _weekReviewAudio?._wrPreferredSrc || '';
-      const fallback = _weekReviewFallbackTrackPath(preferred);
-      if (!fallback || fallback === preferred || !_weekReviewAudio) return;
-      _weekReviewAudio._wrPreferredSrc = fallback;
-      _weekReviewAudio.pause();
-      _weekReviewAudio.src = fallback;
-      _weekReviewAudio.load();
+      const errCode = _weekReviewAudio?.error?.code ?? 'unknown';
+      const errMsg = _weekReviewAudio?.error?.message || '';
+      const currentSrc = _weekReviewAudio?.currentSrc || _weekReviewAudio?.src || src || '';
+      console.warn('[WeekReview audio] load/play error', { code: errCode, message: errMsg, src: currentSrc });
     });
   } else if (src && _weekReviewAudio.src !== new URL(src, window.location.href).href) {
-    _weekReviewAudio._wrPreferredSrc = src;
     _weekReviewAudio.pause();
     _weekReviewAudio.src = src;
   }
@@ -421,19 +403,24 @@ function _weekReviewEnsureAudioElement(src = '') {
 function _weekReviewPrimeAudio(src) {
   if (!src || WEEK_REVIEW_PREVIEW_MODE) return;
   const audio = _weekReviewEnsureAudioElement(src);
+  const token = ++_weekReviewPrimeToken;
   const previousMuted = !!audio.muted;
-  const previousVolume = Number.isFinite(audio.volume) ? audio.volume : 1;
-  audio.muted = false;
-  audio.volume = 0.001;
+  audio.muted = true;
+  audio.currentTime = 0;
   audio.load();
   audio.play().then(() => {
-    audio.pause();
-    audio.currentTime = 0;
+    if (token !== _weekReviewPrimeToken) {
+      audio.muted = previousMuted;
+      return;
+    }
+    // Avoid pausing if the story has already started real playback.
+    if (!_weekReviewStory || _weekReviewStory.audioSlideIndex < 0 || _weekReviewStory.paused) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
     audio.muted = previousMuted;
-    audio.volume = previousVolume;
   }).catch(() => {
     audio.muted = previousMuted;
-    audio.volume = previousVolume;
   });
 }
 
@@ -866,6 +853,7 @@ function _weekReviewSyncAudio() {
   const state = _weekReviewStory;
   const slide = state?.slides?.[state.index];
   if (!slide?.audioSrc) return;
+  _weekReviewPrimeToken++;
   const resolvedSrc = new URL(slide.audioSrc, window.location.href).href;
   const changedSlide = state.audioSlideIndex !== state.index;
   _weekReviewEnsureAudioElement(slide.audioSrc);
@@ -887,14 +875,44 @@ function _weekReviewSyncAudio() {
   }
   _weekReviewAudio.muted = false;
   if (changedSlide) _weekReviewAudio.currentTime = 0;
-  _weekReviewAudio.play().catch(() => {
-    const overlay = document.getElementById('week-review-overlay');
-    if (!overlay) return;
-    _weekReviewBindAudioRetry(overlay);
-  });
+  const attemptPlay = () => {
+    if (!_weekReviewStory || _weekReviewStory.paused || _weekReviewStory.audioSlideIndex !== _weekReviewStory.index) return;
+    _weekReviewAudio.play().catch(() => {
+      const overlay = document.getElementById('week-review-overlay');
+      if (!overlay) return;
+      _weekReviewBindAudioRetry(overlay);
+    });
+  };
+  if (_weekReviewAudio.readyState < 2) {
+    _weekReviewAudio.addEventListener('canplay', attemptPlay, { once: true });
+  }
+  attemptPlay();
+}
+
+function _devPreviewMaintenanceScreen() {
+  closeSettings();
+  showMaintenanceScreen(
+    'Scheduled Maintenance',
+    'Preview mode for the maintenance experience shown when Remote Config enables downtime.',
+    'Open Status Page',
+    'https://gemsprout.com'
+  );
+}
+
+function _devPreviewParentSignInScreen() {
+  const parent = (S.currentUser?.role === 'parent' && !S.currentUser.deleted)
+    ? S.currentUser
+    : (D.family?.members || []).find(m => m.role === 'parent' && !m.deleted);
+  if (!parent) {
+    toast('Add at least one parent profile first');
+    return;
+  }
+  closeSettings();
+  showParentSignIn(parent.id, () => {});
 }
 
 function _weekReviewStopAudio() {
+  _weekReviewPrimeToken++;
   if (!_weekReviewAudio) return;
   _weekReviewAudio.pause();
   _weekReviewAudio.currentTime = 0;
@@ -931,282 +949,214 @@ function _renderWeekReviewStory() {
       }
       @keyframes wr-scene-in {
         from { opacity:0; transform:translateY(20px) scale(0.985); }
-        to   { opacity:1; transform:translateY(0) scale(1); }
+        to { opacity:1; transform:translateY(0) scale(1); }
       }
       @keyframes wr-progress {
-        from { transform: scaleX(0); }
-        to { transform: scaleX(1); }
+        from { transform:scaleX(0); }
+        to { transform:scaleX(1); }
       }
-      @keyframes wr-reveal {
-        from { opacity: 1; transform: translate3d(var(--wr-from-x, 0px), var(--wr-from-y, 18px), 0) scale(1); }
-        to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+      @keyframes wr-reveal-up {
+        from { opacity:0; transform:translateY(16px) scale(0.99); }
+        to { opacity:1; transform:translateY(0) scale(1); }
       }
-      .wr-reveal-from-bottom { --wr-from-x:0px; --wr-from-y:calc(100vh + 120px); }
-      .wr-reveal-from-bottom-card { --wr-from-x:0px; --wr-from-y:calc(100vh + 160px); }
-      .wr-reveal-from-left { --wr-from-x:calc(-100vw - 160px); --wr-from-y:0px; }
-      .wr-reveal-from-right { --wr-from-x:calc(100vw + 160px); --wr-from-y:0px; }
+      @keyframes wr-reveal-left {
+        from { opacity:0; transform:translateX(-20px); }
+        to { opacity:1; transform:translateX(0); }
+      }
+      @keyframes wr-reveal-right {
+        from { opacity:0; transform:translateX(20px); }
+        to { opacity:1; transform:translateX(0); }
+      }
+      @keyframes wr-subtle-float {
+        0%,100% { transform:translateY(0); }
+        50% { transform:translateY(-4px); }
+      }
+      @keyframes wr-badge-pop {
+        0% { transform:scale(0.7); opacity:0; }
+        60% { transform:scale(1.08); opacity:1; }
+        100% { transform:scale(1); opacity:1; }
+      }
       .wr-shell {
-        max-width: 520px;
-        margin: 0 auto;
-        min-height: 100dvh;
-        padding: env(safe-area-inset-top,20px) 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
-        display: flex;
-        flex-direction: column;
-        position: relative;
+        position:relative;
+        min-height:100vh;
+        display:flex;
+        flex-direction:column;
+        padding:calc(env(safe-area-inset-top, 16px) + 10px) 16px calc(env(safe-area-inset-bottom, 12px) + 12px);
+        box-sizing:border-box;
       }
       .wr-top {
-        padding: 4px 0 10px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:8px;
+        margin-bottom:10px;
       }
-      .wr-progress-row {
-        display: flex;
-        gap: 6px;
-        margin-bottom: 16px;
+      .wr-progress {
+        flex:1;
+        display:flex;
+        gap:6px;
       }
       .wr-progress-track {
-        flex: 1;
-        height: 4px;
-        border-radius: 999px;
-        overflow: hidden;
-        background: rgba(255,253,248,0.24);
+        flex:1;
+        height:4px;
+        border-radius:999px;
+        background:rgba(255,255,255,0.32);
+        overflow:hidden;
       }
       .wr-progress-fill {
-        display: block;
-        width: 100%;
-        height: 100%;
-        transform-origin: left center;
-        transform: scaleX(0);
-        background: rgba(255,248,239,0.92);
-        border-radius: inherit;
+        display:block;
+        width:100%;
+        height:100%;
+        transform-origin:left;
+        transform:scaleX(0);
+        background:linear-gradient(90deg, #e8c76a, #f5d980);
       }
-      .wr-progress-fill.done {
-        transform: scaleX(1);
-      }
-      .wr-progress-fill.active {
-        animation: wr-progress linear forwards;
-      }
-      .wr-head {
-        padding: 8px 0 8px;
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 12px;
-      }
-      .wr-title {
-        color: #fff8ef;
-        font-size: 1.28rem;
-        font-weight: 900;
-        letter-spacing: -0.03em;
-      }
-      .wr-date {
-        color: rgba(244,239,228,0.62);
-        font-size: 0.82rem;
-        margin-top: 4px;
-      }
+      .wr-progress-fill.done { transform:scaleX(1); }
+      .wr-progress-fill.active { animation:wr-progress ${WEEK_REVIEW_SLIDE_MS}ms linear forwards; }
       .wr-close {
-        background: rgba(255,253,248,0.14);
-        border: 1px solid rgba(255,253,248,0.18);
-        color: rgba(255,248,239,0.78);
-        width: 38px;
-        height: 38px;
-        border-radius: 999px;
-        cursor: pointer;
-        flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 10px 18px rgba(15,29,25,0.14);
+        border:none;
+        background:rgba(255,255,255,0.2);
+        color:#f4efe4;
+        width:34px;height:34px;border-radius:12px;
+        display:grid;place-items:center;
+        cursor:pointer;
       }
-      .wr-scene {
-        position: relative;
-        flex: 1;
-        display: flex;
-        align-items: stretch;
-        min-height: 0;
-      }
-      .wr-tap {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 24%;
-        z-index: 5;
-      }
-      .wr-tap-left { left: 0; }
-      .wr-tap-right { right: 0; }
-      .wr-slide {
-        position: relative;
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        animation: wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both;
+      .wr-card-wrap {
+        position:relative;
+        flex:1;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        min-height:0;
       }
       .wr-card {
-        border-radius: 30px;
-        padding: 34px 24px 22px;
-        box-shadow: 0 18px 40px rgba(34, 28, 20, 0.14);
-        min-height: min(76dvh, 720px);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        width:min(620px, 100%);
+        max-height:100%;
+        overflow:hidden;
+        border-radius:28px;
+        background:rgba(255,252,246,0.9);
+        border:1px solid rgba(39,66,57,0.14);
+        box-shadow:0 20px 46px rgba(31,54,46,0.24);
+        animation:wr-scene-in .38s ease both;
       }
-      .wr-reveal {
-        opacity: 0;
-        animation: wr-reveal 0.55s cubic-bezier(0.22,1,0.36,1) forwards;
-        animation-delay: var(--wr-delay, 0s);
+      .wr-card-inner { padding:18px 16px 16px; }
+      .wr-date {
+        text-align:center;
+        color:#5f746a;
+        font-size:0.76rem;
+        font-weight:800;
+        letter-spacing:.08em;
+        text-transform:uppercase;
+        margin-bottom:10px;
       }
-      .wr-card-label {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 0.72rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: rgba(255,248,239,0.64);
-        margin-bottom: 14px;
+      .wr-title {
+        text-align:center;
+        color:#24453c;
+        font-size:1.34rem;
+        font-weight:900;
+        letter-spacing:-.02em;
+        line-height:1.15;
+        margin:0;
       }
+      .wr-subtitle {
+        text-align:center;
+        color:#4f675d;
+        margin-top:6px;
+        font-size:0.93rem;
+        line-height:1.35;
+      }
+      .wr-list {
+        margin-top:14px;
+        display:grid;
+        gap:10px;
+      }
+      .wr-row {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        background:rgba(241,248,244,0.86);
+        border:1px solid rgba(39,66,57,0.11);
+        border-radius:14px;
+        padding:10px 11px;
+      }
+      .wr-row-main { display:flex;align-items:center;gap:10px;min-width:0; }
+      .wr-row-icon {
+        width:36px;height:36px;border-radius:11px;
+        display:grid;place-items:center;
+        background:linear-gradient(180deg,#2a7560,#1f5f4f);
+        color:#f7fbf8;font-size:1.05rem;
+        flex-shrink:0;
+      }
+      .wr-row-label { color:#27423a;font-size:0.9rem;font-weight:700;line-height:1.3;word-break:break-word; }
+      .wr-row-value { color:#1f3932;font-size:0.95rem;font-weight:900;white-space:nowrap; }
       .wr-card-big {
-        font-size: clamp(3rem,14vw,5rem);
-        font-weight: 900;
-        color: #fff9f1;
-        line-height: 0.95;
-        letter-spacing: -0.05em;
-        margin-bottom: 8px;
-        text-wrap: balance;
+        margin-top:14px;
+        text-align:center;
+        color:#1f3932;
+        font-size:2.1rem;
+        line-height:1.05;
+        font-weight:900;
+        letter-spacing:-.03em;
       }
       .wr-card-sub {
-        font-size: 0.9rem;
-        color: rgba(255,246,238,0.68);
-        line-height: 1.45;
-        max-width: 24rem;
+        text-align:center;
+        color:#5f746a;
+        font-size:0.92rem;
+        margin-top:6px;
       }
-      .wr-kid-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-top: 6px;
+      .wr-reveal { opacity:0; animation:wr-reveal-up .44s ease forwards; animation-delay:var(--wr-delay, 0s); }
+      .wr-reveal-from-left { animation-name:wr-reveal-left; }
+      .wr-reveal-from-right { animation-name:wr-reveal-right; }
+      .wr-finale-icon { font-size:2.4rem; text-align:center; animation:wr-badge-pop .5s ease forwards, wr-subtle-float 2.6s ease-in-out infinite .7s; }
+      .wr-finale-message { text-align:center; color:#36554b; font-size:0.98rem; margin-top:8px; line-height:1.45; }
+      .wr-nav {
+        position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr; z-index:3;
       }
-      .wr-kid-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 11px 14px;
-        background: rgba(255,253,248,0.18);
-        border: 1px solid rgba(255,253,248,0.16);
-        border-radius: 18px;
-        backdrop-filter: blur(8px);
+      .wr-hit {
+        border:none; background:transparent; cursor:pointer; -webkit-tap-highlight-color:transparent;
       }
-      .wr-kid-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255,250,243,0.78);
-        color: #31453e;
-        font-size: 1.55rem;
-        line-height: 1;
-        flex-shrink: 0;
-        overflow: hidden;
+      .wr-bottom {
+        margin-top:10px;
+        display:flex;
+        justify-content:center;
+        color:rgba(244,252,248,0.88);
+        font-size:0.78rem;
+        font-weight:700;
       }
-      .wr-kid-name {
-        font-weight: 800;
-        color: #fff9f1;
-        font-size: 0.95rem;
-      }
-      .wr-kid-sub {
-        font-size: 0.79rem;
-        color: rgba(255,246,238,0.62);
-        margin-top: 2px;
-        line-height: 1.35;
-      }
-      .wr-kid-stat {
-        font-weight: 900;
-        color: #fff9f1;
-        font-size: 1.04rem;
-        white-space: nowrap;
-      }
-      .wr-finale {
-        text-align: center;
-        align-items: center;
-      }
-      .wr-finale .wr-card-sub {
-        max-width: 18rem;
-        text-align: center;
-      }
-      .wr-finale-icon {
-        font-size: 3.2rem;
-        color: rgba(255,255,255,0.58);
-        margin-bottom: 18px;
-      }
-      .wr-cover-chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 20px;
-      }
-      .wr-cover-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 9px 12px;
-        border-radius: 999px;
-        background: rgba(255,253,248,0.16);
-        border: 1px solid rgba(255,253,248,0.16);
-        color: rgba(255,248,239,0.9);
-        font-size: 0.8rem;
-        font-weight: 700;
-      }
-      .wr-bottom-note {
-        text-align: center;
-        color: rgba(255,255,255,0.78);
-        font-size: 0.84rem;
-        font-weight: 700;
-        padding-top: 14px;
-      }
-      @media (max-width: 640px) {
-        .wr-card {
-          min-height: calc(100dvh - env(safe-area-inset-top,20px) - env(safe-area-inset-bottom,0px) - 104px);
-          padding: 30px 22px 20px;
-        }
-        .wr-card-big {
-          font-size: clamp(2.8rem, 13vw, 4.5rem);
-        }
+      @media (max-width: 420px) {
+        .wr-shell { padding-left:12px; padding-right:12px; }
+        .wr-card { border-radius:24px; }
+        .wr-card-inner { padding:16px 14px 14px; }
+        .wr-title { font-size:1.22rem; }
+        .wr-card-big { font-size:1.88rem; }
       }
     </style>
     <div class="wr-shell">
       <div class="wr-top">
-        <div class="wr-progress-row">${progress}</div>
-        <div class="wr-head">
-          <div>
-            <div class="wr-title">Week in Review</div>
-            <div class="wr-date">${slides.length > 1 ? `Story ${state.index + 1} of ${slides.length} · ` : ''}${slide.type === 'cover' ? 'This past week' : dateRange}</div>
-          </div>
-          <button onclick="closeWeekReview()" class="wr-close"><i class="ph-duotone ph-x" style="font-size:1.1rem"></i></button>
-        </div>
+        <div class="wr-progress">${progress}</div>
+        <button onclick="closeWeekReview()" class="wr-close" aria-label="Close week in review"><i class="ph-duotone ph-x" style="font-size:1rem"></i></button>
+        <button onclick="_weekReviewTogglePause()" class="wr-close wr-pause-btn" aria-label="${state.paused ? 'Resume story' : 'Pause story'}"><i class="ph-duotone ${state.paused ? 'ph-play' : 'ph-pause'}" style="font-size:1rem"></i></button>
       </div>
-      <div class="wr-scene">
-        <button class="wr-tap wr-tap-left" aria-label="Previous story" onpointerdown="return handleWeekReviewPress('prev', event)" onpointerup="handleWeekReviewRelease('prev')" onpointercancel="handleWeekReviewRelease('prev')" onpointerleave="handleWeekReviewRelease('prev')" onclick="return handleWeekReviewTap('prev', event)"></button>
-        <button class="wr-tap wr-tap-right" aria-label="Next story" onpointerdown="return handleWeekReviewPress('next', event)" onpointerup="handleWeekReviewRelease('next')" onpointercancel="handleWeekReviewRelease('next')" onpointerleave="handleWeekReviewRelease('next')" onclick="return handleWeekReviewTap('next', event)"></button>
-        <div class="wr-slide" onpointerdown="return handleWeekReviewCardPress(event)" onpointerup="handleWeekReviewCardRelease()" onpointercancel="handleWeekReviewCardRelease()" onpointerleave="handleWeekReviewCardRelease()">
-          <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}" style="background:${slide.gradient}">
-            ${slide.type === 'finale' ? `<div class="wr-finale-icon wr-reveal" style="--wr-delay:1s">${slide.icon}</div>` : ''}
-            <div class="wr-card-label wr-reveal" style="--wr-delay:1s">${slide.icon}${slide.label}</div>
-            <div class="wr-card-big wr-reveal" style="--wr-delay:2s">${slide.bigStat}</div>
-            <div class="wr-card-sub wr-reveal" style="--wr-delay:3s">${slide.subStat}</div>
-            ${slide.type === 'cover' ? `
-              <div class="wr-cover-chip-row">
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:4s"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:5.1s"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSaved.toFixed(2)} saved</div>
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:6.2s"><i class="ph-duotone ph-medal" style="font-size:1rem"></i> ${totalBadges} badges</div>
-              </div>
-            ` : ''}
-            ${(slide.rows || []).length ? `<div class="wr-kid-list">${rowsHtml}</div>` : ''}
+      <div class="wr-card-wrap">
+        <div class="wr-card">
+          <div class="wr-card-inner">
+            <div class="wr-date">${slide.date || ''}</div>
+            <h2 class="wr-title">${slide.title || ''}</h2>
+            ${slide.subTitle ? `<div class="wr-subtitle">${slide.subTitle}</div>` : ''}
+            ${_weekReviewCardBodyHTML(slide, { previewAttr: '', totalDiamonds: _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.bigStat?.split(' ')[0] || '0', totalSaved: (() => {
+              const s = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.subStat || '';
+              const m = s.match(/saved\\s+([^\\s]+)/i);
+              return m ? m[1] : '$0.00';
+            })(), totalBadges: _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0' })}
           </div>
         </div>
+        <div class="wr-nav">
+          <button class="wr-hit" aria-label="Previous slide" onpointerdown="_weekReviewPressStartDir(event, 'prev')" onpointerup="_weekReviewPressEndDir(event, 'prev')" onpointercancel="_weekReviewPressCancelDir(event, 'prev')" onclick="_weekReviewPressClickDir(event, 'prev')"></button>
+          <button class="wr-hit" aria-label="Next slide" onpointerdown="_weekReviewPressStartDir(event, 'next')" onpointerup="_weekReviewPressEndDir(event, 'next')" onpointercancel="_weekReviewPressCancelDir(event, 'next')" onclick="_weekReviewPressClickDir(event, 'next')"></button>
+        </div>
       </div>
-      ${slide.type === 'finale' ? `<div class="wr-bottom-note wr-reveal" style="--wr-delay:4.8s">Tap anywhere to close or let the story finish.</div>` : ''}
+      <div class="wr-bottom">${state.index + 1} of ${slides.length}</div>
     </div>`;
 }
 
@@ -1946,7 +1896,7 @@ function showAppPin() {
   S.pinBuffer = '';
   S.pinMode   = 'app';
   document.getElementById('pin-content').innerHTML = `
-    <img class="pin-avatar" src="gemsproutpadded.png">
+    <img class="pin-avatar" src="gemsproutcream.png">
     <div class="pin-title">GemSprout</div>
     <div class="pin-sub">Enter parent PIN to continue</div>
     <div class="pin-dots" id="pin-dots">
@@ -4860,12 +4810,12 @@ function easterEggTap() {
   handleRapidTap('egg-gem', {
     pulseEl: document.getElementById('egg-gem'),
     idleOpacity: 0.25,
-    onTrigger: () => launchAvatarRain('gemsproutpadded.png', 80),
+    onTrigger: () => launchAvatarRain('gemsprout.png', 80),
   });
 }
 
 function launchGemsproutRain(count = 80) {
-  launchAvatarRain('gemsproutpadded.png', count);
+  launchAvatarRain('gemsprout.png', count);
 }
 
 function launchConfetti(count = 100, emoji = '*', rootElement = null) {
@@ -6083,6 +6033,8 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();showPaywall()"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="startTestOnboarding()"><i class="ph-duotone ph-rocket-launch" style="font-size:1rem;vertical-align:middle"></i> Test Onboarding</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="closeSettings();showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle"></i> Test Week in Review</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewMaintenanceScreen()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Preview Maintenance Screen</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewParentSignInScreen()"><i class="ph-duotone ph-sign-in" style="font-size:1rem;vertical-align:middle"></i> Preview Parent Sign-In</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="try{localStorage.removeItem(CHANGELOG_SEEN_KEY)}catch(_){};showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle"></i> Test What's New</button>
         <div style="height:10px"></div>
         <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
@@ -6420,7 +6372,7 @@ function renderHome() {
             <div class="home-family-line home-family-line-bottom">Family</div>
           </div>
         </div>
-        <img class="home-logo" src="gemsproutpadded.png" alt="GemSprout">
+        <img class="home-logo" src="gemsprout.png" alt="GemSprout">
         <div class="home-hero-meta">
           <div class="home-subtitle">A quick look at how the family is doing right now.</div>
           <div class="home-pill-row">
@@ -6759,7 +6711,7 @@ function renderSetupGate() {
   gate.innerHTML = `
     <div class="setup-gate-shell">
       <div class="setup-gate-card">
-        <img src="gemsproutpadded.png" class="setup-gate-mark" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark" alt="GemSprout">
         <div class="setup-gate-kicker"><i class="ph-duotone ph-plant" style="font-size:0.95rem"></i> Family rhythms, rewards, and growth</div>
         <div class="setup-gate-title">Welcome to GemSprout</div>
         <div class="setup-gate-sub">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two.'}</div>
@@ -6787,7 +6739,7 @@ function startNewFamily() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutpadded.png" style="width:90px;height:90px">
+      <img src="gemsproutcream.png" style="width:90px;height:90px">
       <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
       <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
       <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
@@ -6934,7 +6886,7 @@ function showSignInFlow() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
+      <img src="gemsproutcream.png" style="width:90px;height:90px;margin-bottom:16px">
       <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
       <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
       <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
@@ -9491,7 +9443,7 @@ function renderKidTeam() {
           </div>
         </div>
         <div class="goal-bar-bg kid-team-goal-bar-bg"><div class="goal-bar-fill kid-team-goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' • Goal reached!' : ''}</div>
+        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' â€¢ Goal reached!' : ''}</div>
         ${kids.length>1?`<div class="kid-team-contrib-list">${contribs}</div>`:''}
         ${!reached?`
           <div class="kid-team-goal-action">
@@ -9902,7 +9854,7 @@ function renderFamilyStatsCard(kids, histIdx, expandedOverride = null) {
   return `
     <div class="stats-panel-card stats-panel-family-card">
       <div ${headerAttrs}>
-        <img src="gemsproutpadded.png" style="width:2.75rem;height:2.75rem;border-radius:14px;flex-shrink:0">
+        <img src="gemsprout.png" style="width:2.75rem;height:2.75rem;border-radius:14px;flex-shrink:0">
         <div>
           <div class="stats-panel-header-title">${esc(D.family.name || 'The Family')}</div>
           <div class="stats-panel-header-sub">${kids.length} kid${kids.length !== 1 ? 's' : ''} &middot; all-time combined stats</div>
@@ -10082,7 +10034,7 @@ function renderStatsPage(container) {
 
   html += `
     <div class="tab-end-cap tab-end-cap-gem" aria-hidden="true">
-      <img src="gemsproutpadded.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
+      <img src="gemsprout.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
     </div>
   </div>`;
   container.innerHTML = html;
@@ -10116,7 +10068,7 @@ function renderFamilyStatsLaunchCard(kids, histIdx) {
   return `
     <button class="snapshot-summary-card stats-launch-card stats-launch-card-family" type="button" onclick="openStatsDetailPanel('family')" style="--stats-accent:#365e4f">
       <div class="stats-launch-head">
-        <div class="stats-launch-avatar stats-launch-avatar-family"><img src="gemsproutpadded.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
+        <div class="stats-launch-avatar stats-launch-avatar-family"><img src="gemsprout.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
         <div class="stats-launch-hero">
           <div class="stats-launch-name">${esc(D.family.name || 'The Family')}</div>
           <div class="stats-launch-sub">Family snapshot</div>
@@ -10180,7 +10132,7 @@ function renderStatsDetailPanel(kind, memberId = '') {
       <div class="snapshot-panel-head stats-panel-head" style="--snapshot-accent:#6C63FF">
         <button class="snapshot-panel-close" onclick="closeFamilySnapshot()"><i class="ph-duotone ph-arrow-left"></i></button>
         <div class="snapshot-panel-person">
-          <div class="snapshot-panel-avatar"><img src="gemsproutpadded.png" alt="" style="width:100%;height:100%;border-radius:20px"></div>
+          <div class="snapshot-panel-avatar"><img src="gemsprout.png" alt="" style="width:100%;height:100%;border-radius:20px"></div>
           <div>
             <div class="snapshot-panel-name">${esc(D.family.name || 'The Family')}</div>
             <div class="snapshot-panel-sub">Combined lifetime stats</div>
@@ -10928,7 +10880,7 @@ function showBetaWelcomeIfNeeded() {
   try { localStorage.setItem(BETA_WELCOME_KEY, '1'); } catch(_) {}
   showQuickActionModal(`
     <div style="text-align:center;margin-bottom:16px">
-      <img src="gemsproutpadded.png" style="width:72px;height:72px;margin-bottom:8px">
+      <img src="gemsprout.png" style="width:72px;height:72px;margin-bottom:8px">
       <div class="modal-title" style="margin-bottom:6px">Welcome to the GemSprout Beta!</div>
       <p style="color:var(--muted);font-size:0.88rem;line-height:1.5;margin-bottom:14px">
         Thank you so much for helping us shape GemSprout. Your feedback during this beta means everything.
@@ -11578,6 +11530,7 @@ function renderParentChores() {
               <div class="snapshot-routine-title-row">
                 <div class="parent-chore-copy">
                   <div class="snapshot-routine-title">${esc(chore.title)}</div>
+                  <div class="parent-chore-meta">${esc(parentChoreMetaSummary(chore))}</div>
                 </div>
                 <div class="snapshot-routine-diamond-badge">
                   <span class="snapshot-routine-glyph-main">${renderIcon(chore.icon,chore.iconColor)}</span>
@@ -12016,18 +11969,18 @@ function renderParentPrizes() {
     html += `
       <div class="snapshot-routine-shell parent-prize-shell" data-swipe-id="${swipeKey}">
         <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal ${isComplete ? 'has-reset' : ''}">
-          <button class="snapshot-reveal-btn snapshot-reveal-btn-secondary parent-prize-reveal-btn" type="button" title="Edit team prize" onpointerdown="event.preventDefault();event.stopPropagation();openGoalEditor('${g.id}', this);return false;" onclick="return false;">
-            <i class="ph-duotone ph-pencil-simple"></i>
-            <span>Edit</span>
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete team prize" onpointerdown="event.preventDefault();event.stopPropagation();clearGoal('${g.id}');return false;" onclick="return false;">
+            <i class="ph-duotone ph-trash"></i>
+            <span>Delete</span>
           </button>
           ${isComplete ? `
           <button class="snapshot-reveal-btn snapshot-reveal-btn-approve parent-prize-reveal-btn" type="button" title="Reset team prize" onpointerdown="event.preventDefault();event.stopPropagation();resetGoal('${g.id}');return false;" onclick="return false;">
             <i class="ph-duotone ph-arrow-counter-clockwise"></i>
             <span>Reset</span>
           </button>` : ''}
-          <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete team prize" onpointerdown="event.preventDefault();event.stopPropagation();clearGoal('${g.id}');return false;" onclick="return false;">
-            <i class="ph-duotone ph-trash"></i>
-            <span>Delete</span>
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-secondary parent-prize-reveal-btn" type="button" title="Edit team prize" onpointerdown="event.preventDefault();event.stopPropagation();openGoalEditor('${g.id}', this);return false;" onclick="return false;">
+            <i class="ph-duotone ph-pencil-simple"></i>
+            <span>Edit</span>
           </button>
         </div>
         <div class="snapshot-routine-card parent-prize-card" onpointerdown="startSnapshotSwipe(event,'${swipeKey}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'${swipeKey}')">
@@ -13763,13 +13716,15 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center;padding:32px';
+  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:24px';
   const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
   el.innerHTML = `
-    <img src="gemsproutpadded.png" class="loading-img" style="width:120px;height:120px">
-    <div style="color:#fff;font-size:1.6rem;font-weight:800;letter-spacing:-0.01em">${title}</div>
-    <div style="color:rgba(255,255,255,0.85);font-size:1rem;max-width:300px;line-height:1.5">${message}</div>
-    ${btnText ? `<button onclick="${btnAction}" style="margin-top:8px;padding:12px 28px;border-radius:12px;border:none;background:#fff;color:#6C63FF;font-weight:700;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}`;
+    <div style="width:min(360px,calc(100vw - 44px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+      <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
+      <div style="color:#24453c;font-size:1.5rem;font-weight:900;letter-spacing:-0.01em">${title}</div>
+      <div style="color:#4f675d;font-size:0.98rem;max-width:300px;line-height:1.5;margin:8px auto 0">${message}</div>
+      ${btnText ? `<button onclick="${btnAction}" style="margin-top:14px;padding:12px 28px;border-radius:12px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-weight:800;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}
+    </div>`;
 }
 
 // Global Remote Config values populated on startup, safe to read anywhere after startApp()
@@ -13811,13 +13766,14 @@ function showParentSignIn(memberId, onSuccess) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:40px 28px';
+  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 44%,#e9ddc8 44%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:26px 22px';
   const member = getMember(memberId);
   el.innerHTML = `
-    <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
-    <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
-    <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
-    <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+    <div style="width:min(420px,calc(100vw - 28px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <img src="gemsprout.png" style="width:88px;height:88px;margin:0 auto 14px;display:block">
+    <div style="color:#24453c;font-size:1.6rem;font-weight:900;margin-bottom:6px;text-align:center">Welcome back!</div>
+    <div style="color:#4f675d;font-size:0.95rem;margin-bottom:20px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin:0 auto">
       <button id="btn-google-signin" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('google','${memberId}')">
         <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
         Continue with Google
@@ -13827,16 +13783,17 @@ function showParentSignIn(memberId, onSuccess) {
         Continue with Apple&nbsp;
       </button>
     </div>
-    <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.9rem;font-weight:700;cursor:pointer;display:block;margin-left:auto;margin-right:auto" onclick="renderHome()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
     ${RC.betaMode ? `
-    <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
-      <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
+    <div style="margin:20px auto 0;padding-top:16px;border-top:1px solid rgba(39,66,57,0.14);width:100%;max-width:320px">
+      <div style="color:#628073;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
       <div style="display:flex;gap:8px">
         <input id="dev-parentsignin-email" type="email" placeholder="your setup email" autocomplete="off"
-          style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
-        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test Sign In</button>
+          style="flex:1;padding:10px 12px;border:1px solid rgba(39,66,57,0.18);border-radius:10px;font-size:0.9rem;background:#fff;color:#1f3932;outline:none">
+        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:#2a7560;color:#fff;border:none;font-size:0.85rem;font-weight:700;cursor:pointer;white-space:nowrap">Test Sign In</button>
       </div>
-    </div>` : ''}`;
+    </div>` : ''}
+    </div>`;
   S._parentSignInCallback = onSuccess || null;
 }
 
@@ -13886,14 +13843,17 @@ function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center';
+  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:20px';
   el.innerHTML = `
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
-    <img src="gemsproutpadded.png" class="loading-img" style="width:160px;height:160px">
-    <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.01em">GemSprout</div>
-    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:2px">
+    <div style="width:min(320px,calc(100vw - 48px));background:rgba(255,252,246,0.88);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24);backdrop-filter:blur(4px)">
+      <img src="gemsprout.png" class="loading-img" style="width:124px;height:124px;display:block;margin:0 auto 10px">
+      <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
+      <div style="margin-top:5px;color:#5d7368;font-size:0.9rem;font-weight:700;letter-spacing:0.01em;text-transform:uppercase">Family rhythms and rewards</div>
+    </div>
+    <div class="loading-text" style="color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;gap:2px">
       Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
     </div>`;
 }
@@ -13936,6 +13896,11 @@ function init() {
   loadData();
   applyInterestForAllKids();
   scheduleHereCheck();
+  if (DEBUG_FORCE_LOADING_PREVIEW && !isE2EMode()) {
+    showLoading();
+    setTimeout(() => routeAfterLoad(), DEBUG_FORCE_LOADING_PREVIEW_MS);
+    return;
+  }
 
   const _needsMigrationPush = !getFamilyCode() && D.setup;
   if (_needsMigrationPush) setFamilyCode(genFamilyCode()); // temp sync code so getFamilyDoc() works; replaced with unique code before push below

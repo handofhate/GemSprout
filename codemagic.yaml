@@ -28,12 +28,14 @@ workflows:
       - name: Sync Capacitor to iOS
         script: |
           mkdir -p www
+          rm -rf www/assets
           cp index.html www/
           cp style.css www/
           cp app.js www/
           cp manifest.json www/
           cp *.png www/
           cp *.wav www/
+          cp -R assets www/assets
           cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor-core.js
           npx cap add ios
           if [ -f ios/App/Podfile ]; then

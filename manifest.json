@@ -9,7 +9,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "gemsproutpadded.png",
+      "src": "gemsprout.png",
       "sizes": "700x700",
       "type": "image/png",
       "purpose": "any maskable"
