@@ -304,11 +304,24 @@ async function rcRestorePurchases() {
   }
 }
 
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2.0-beta';
 const CHANGELOG_ENTRIES = [
   {
+    version: '1.2.0-beta',
+    title: 'GemSprout Beta 1.2',
+    date: 'April 2026',
+    items: [
+      { icon: 'ph-gift', color: '#1D6B57', text: 'Prizes can now require task-based unlocks in addition to gems, including total tasks, Daily Combo, or specific tasks' },
+      { icon: 'ph-repeat', color: '#0E7490', text: 'Recurring prize controls are improved with cleaner lock states and clearer reset/edit flow for repeat redemptions' },
+      { icon: 'ph-users-three', color: '#6C63FF', text: 'Team prizes now support reset from parent controls so family goals can be repeated without recreating the prize' },
+      { icon: 'ph-music-notes-simple', color: '#D97706', text: 'Week in Review audio playback is more reliable on the first story card and includes better failure logging' },
+      { icon: 'ph-sliders', color: '#5f8f63', text: 'New setting: Hide unavailable prizes, with matching setup option during onboarding for consistent behavior from day one' },
+      { icon: 'ph-flask', color: '#7C3AED', text: 'Dev Settings now include quick preview buttons for Maintenance and Parent Sign-In screens' },
+    ],
+  },
+  {
     version: '1.1',
-    title: 'GemSprout 1.1',
+    title: 'GemSprout Beta 1.1',
     date: 'April 2026',
     items: [
       { icon: 'ph-paint-brush',   color: '#1D6B57', text: 'Complete UI overhaul with the new GemSprout 2.0 look and feel' },
@@ -345,7 +358,7 @@ function showChangelog(markSeen = false) {
   showQuickActionModal(`
     <div style="text-align:center;margin-bottom:16px">
       <i class="ph-duotone ph-leaf" style="color:#16A34A;font-size:2.2rem"></i>
-      <div class="modal-title" style="margin-top:6px">What's New in GemSprout</div>
+      <div class="modal-title" style="margin-top:6px">What's New in GemSprout Beta</div>
     </div>
     ${entriesHtml}
     <div class="modal-actions" style="margin-top:16px">
