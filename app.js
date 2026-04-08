@@ -372,6 +372,76 @@ const WEEK_REVIEW_PREVIEW_KID_COUNT = 0;
 let _weekReviewStory = null;
 let _weekReviewAudio = null;
 let _weekReviewPreviewShown = false;
+const WEEK_REVIEW_AUDIO_PREFERS_M4A = (() => {
+  try {
+    const audio = document.createElement('audio');
+    const support = audio?.canPlayType?.('audio/mp4; codecs="mp4a.40.2"') || '';
+    return support === 'probably' || support === 'maybe';
+  } catch (_) {
+    return false;
+  }
+})();
+
+function _weekReviewTrackPath(trackNumber) {
+  const base = 'assets/week-review-audio/';
+  const ext = WEEK_REVIEW_AUDIO_PREFERS_M4A ? 'm4a' : 'wav';
+  return `${base}${trackNumber}.${ext}`;
+}
+
+function _weekReviewFallbackTrackPath(src) {
+  if (typeof src !== 'string') return src;
+  return src.endsWith('.m4a') ? src.replace(/\.m4a$/i, '.wav') : src;
+}
+
+function _weekReviewEnsureAudioElement(src = '') {
+  if (!_weekReviewAudio) {
+    _weekReviewAudio = new Audio(src || '');
+    _weekReviewAudio.preload = 'auto';
+    _weekReviewAudio.loop = true;
+    _weekReviewAudio._wrPreferredSrc = src || '';
+    _weekReviewAudio.addEventListener('error', () => {
+      const preferred = _weekReviewAudio?._wrPreferredSrc || '';
+      const fallback = _weekReviewFallbackTrackPath(preferred);
+      if (!fallback || fallback === preferred || !_weekReviewAudio) return;
+      _weekReviewAudio._wrPreferredSrc = fallback;
+      _weekReviewAudio.pause();
+      _weekReviewAudio.src = fallback;
+      _weekReviewAudio.load();
+    });
+  } else if (src && _weekReviewAudio.src !== new URL(src, window.location.href).href) {
+    _weekReviewAudio._wrPreferredSrc = src;
+    _weekReviewAudio.pause();
+    _weekReviewAudio.src = src;
+  }
+  return _weekReviewAudio;
+}
+
+function _weekReviewPrimeAudio(src) {
+  if (!src || WEEK_REVIEW_PREVIEW_MODE) return;
+  const audio = _weekReviewEnsureAudioElement(src);
+  const previousMuted = !!audio.muted;
+  audio.muted = true;
+  audio.load();
+  audio.play().then(() => {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.muted = previousMuted;
+  }).catch(() => {
+    audio.muted = previousMuted;
+  });
+}
+
+function _weekReviewBindAudioRetry(overlay) {
+  if (!overlay || overlay.dataset.wrAudioRetryBound === '1') return;
+  const retry = () => {
+    if (_weekReviewStory?.paused) return;
+    _weekReviewAudio?.play().catch(() => {});
+  };
+  overlay.addEventListener('pointerdown', retry, { passive: true });
+  overlay.addEventListener('touchstart', retry, { passive: true });
+  overlay.addEventListener('click', retry, { passive: true });
+  overlay.dataset.wrAudioRetryBound = '1';
+}
 
 function _weekReviewTimingScale(kidCount) {
   const normalizedCount = Math.max(0, Math.floor(Number(kidCount) || 0));
@@ -499,6 +569,7 @@ function showWeekReview() {
   const timingScale = _weekReviewTimingScale(kids.length);
   const slideMs = WEEK_REVIEW_SLIDE_MS;
   _weekReviewStory = { slides, index: previewIndex, timer: null, paused: WEEK_REVIEW_PREVIEW_MODE, remainingMs: slideMs, slideMs, timingScale, slideStartedAt: 0, audioSlideIndex: -1, lastAdvanceFromTimer: false };
+  if (!WEEK_REVIEW_PREVIEW_MODE) _weekReviewPrimeAudio(slides[previewIndex]?.audioSrc);
   _renderWeekReviewStory();
 }
 
@@ -724,13 +795,12 @@ function _weekReviewSplitOverflowSlides(slides) {
 
 function _assignWeekReviewAudio(slides, weekSeed) {
   if (!Array.isArray(slides) || !slides.length) return;
-  const base = 'assets/week-review-audio/';
-  const introTrack = `${base}1.wav`;
+  const introTrack = _weekReviewTrackPath(1);
   const middlePool = _weekReviewShuffle([
-    `${base}2.wav`,
-    `${base}3.wav`,
-    `${base}4.wav`,
-    `${base}5.wav`
+    _weekReviewTrackPath(2),
+    _weekReviewTrackPath(3),
+    _weekReviewTrackPath(4),
+    _weekReviewTrackPath(5)
   ], weekSeed || today());
   const allTracks = [introTrack, ...middlePool];
   let middleIndex = 0;
@@ -792,12 +862,8 @@ function _weekReviewSyncAudio() {
   if (!slide?.audioSrc) return;
   const resolvedSrc = new URL(slide.audioSrc, window.location.href).href;
   const changedSlide = state.audioSlideIndex !== state.index;
-  if (!_weekReviewAudio) {
-    _weekReviewAudio = new Audio(slide.audioSrc);
-    _weekReviewAudio.preload = 'auto';
-    _weekReviewAudio.loop = true;
-    _weekReviewAudio.load();
-  } else if (_weekReviewAudio.src !== resolvedSrc) {
+  _weekReviewEnsureAudioElement(slide.audioSrc);
+  if (_weekReviewAudio.src !== resolvedSrc) {
     _weekReviewAudio.pause();
     _weekReviewAudio.src = slide.audioSrc;
     _weekReviewAudio.load();
@@ -813,15 +879,12 @@ function _weekReviewSyncAudio() {
     _weekReviewAudio.pause();
     return;
   }
+  _weekReviewAudio.muted = false;
   if (changedSlide) _weekReviewAudio.currentTime = 0;
   _weekReviewAudio.play().catch(() => {
     const overlay = document.getElementById('week-review-overlay');
     if (!overlay) return;
-    const retry = () => {
-      if (_weekReviewStory?.paused) return;
-      _weekReviewAudio?.play().catch(() => {});
-    };
-    overlay.addEventListener('pointerdown', retry, { once: true });
+    _weekReviewBindAudioRetry(overlay);
   });
 }
 
@@ -1688,6 +1751,36 @@ const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
 const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
 const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
 const PARENT_AUTH_PROVIDER_KEY = 'gemsprout.parentAuthProvider';
+const E2E_MODE_KEY = 'gemsprout.e2eMode';
+const DEBUG_FORCE_PRIZE_STATE_PREVIEW = false; // TEMP: visual preview for locked/redeemed prize states
+
+function isE2EMode() {
+  try {
+    if (window.__GEMSPROUT_E2E__ === true) return true;
+  } catch {}
+  try {
+    if (localStorage.getItem(E2E_MODE_KEY) === '1') return true;
+  } catch {}
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    return params.get('e2e') === '1';
+  } catch {}
+  return false;
+}
+
+function getPrizeStatusForKidView(prize, memberId) {
+  const status = getPrizeRedeemStatus(prize, memberId);
+  if (!DEBUG_FORCE_PRIZE_STATE_PREVIEW || isE2EMode() || prize?.type !== 'individual') return status;
+  if (status.reason === 'one_time_locked') return status;
+  return {
+    ...status,
+    ok: false,
+    reason: 'window_locked',
+    message: 'This prize will be available again tomorrow',
+    canAfford: true,
+    gemsNeeded: 0,
+  };
+}
 
 function getParentAuthUid() {
   try { return localStorage.getItem(PARENT_AUTH_KEY) || null; } catch { return null; }
@@ -2175,6 +2268,7 @@ function defaultData() {
       parentPin:        '',
       autoApprove:      false,
       hideUnavailable:  false,
+      showLockedRecurringPrizes: true,
       tooltipBounceEnabled: true,
       diamondsPerDollar:  10,
       currency:         '$',
@@ -2236,11 +2330,12 @@ function saveData() {
     if (fresh) S.currentUser = fresh;
   }
   renderCurrentView();
-  pushToFirestore();
+  if (!isE2EMode()) pushToFirestore();
 }
 
 async function pushToFirestore() {
   if (S._testOnboarding?.active) return;
+  if (isE2EMode()) return;
   try {
     await db.doc(getFamilyDoc()).set(D);
   } catch(e) {
@@ -2560,6 +2655,10 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
 }
 
 function subscribeToFirestore(onFirstLoad) {
+  if (isE2EMode()) {
+    if (typeof onFirstLoad === 'function') onFirstLoad();
+    return;
+  }
   if (firestoreUnsub) firestoreUnsub();
   const _subDoc = getFamilyDoc();
   let firstSnapshot = true;
@@ -2845,6 +2944,206 @@ function syncGemAliases() {
   });
 }
 
+const PRIZE_REQUIREMENT_TYPES = ['none', 'task_count', 'combo', 'specific_tasks'];
+const PRIZE_RECURRENCE_TYPES = ['anytime', 'daily', 'weekly', 'monthly', 'one_time'];
+
+function getPrizePeriodKey(recurrence, dateStr = today()) {
+  if (recurrence === 'one_time') return 'one_time';
+  if (recurrence === 'daily') return dateStr;
+  if (recurrence === 'weekly') return `w:${startOfWeekDate(dateStr)}`;
+  if (recurrence === 'monthly') return `m:${dateStr.slice(0, 7)}`;
+  return 'anytime';
+}
+
+function formatPrizeRecurrence(recurrence) {
+  if (recurrence === 'one_time') return 'Once';
+  if (recurrence === 'daily') return 'Once per day';
+  if (recurrence === 'weekly') return 'Once per week';
+  if (recurrence === 'monthly') return 'Once per month';
+  return 'Unlimited';
+}
+
+function getDaysUntilDate(dateStr) {
+  const now = parseDateLocal(today());
+  const target = parseDateLocal(dateStr);
+  const ms = target.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
+function getPrizeLockedWindowMessage(recurrence, redemptionDate = today()) {
+  if (recurrence === 'daily') return 'This prize will be available again tomorrow';
+  if (recurrence === 'weekly') {
+    const nextDate = addDaysToDate(startOfWeekDate(redemptionDate), 7);
+    const days = getDaysUntilDate(nextDate);
+    if (days <= 1) return 'This prize will be available again tomorrow';
+    return `This prize will be available again in ${days} days`;
+  }
+  if (recurrence === 'monthly') {
+    const nextDate = addMonthsToDate(`${redemptionDate.slice(0, 7)}-01`, 1);
+    const days = getDaysUntilDate(nextDate);
+    if (days <= 1) return 'This prize will be available again tomorrow';
+    return `This prize will be available again in ${days} days`;
+  }
+  return 'This prize is not available right now';
+}
+
+function normalizePrize(prize) {
+  const p = prize && typeof prize === 'object' ? prize : {};
+  const cost = Math.max(0, Number(p.cost) || 0);
+  const requirementType = PRIZE_REQUIREMENT_TYPES.includes(p.requirementType)
+    ? p.requirementType
+    : PRIZE_REQUIREMENT_TYPES.includes(p.extraRequirementType) ? p.extraRequirementType : 'none';
+  const recurrence = PRIZE_RECURRENCE_TYPES.includes(p.recurrence) ? p.recurrence : 'anytime';
+  const requirementTaskCount = Math.max(1, parseInt(p.requirementTaskCount, 10) || 1);
+  const requirementTaskIds = Array.from(new Set(Array.isArray(p.requirementTaskIds) ? p.requirementTaskIds.filter(Boolean) : []));
+  const redemptions = Array.isArray(p.redemptions) ? p.redemptions
+    .map(r => {
+      const date = typeof r?.date === 'string' && r.date ? r.date : today();
+      const memberId = typeof r?.memberId === 'string' ? r.memberId : '';
+      return {
+        ...r,
+        memberId,
+        date,
+        cost: Math.max(0, Number(r?.cost ?? cost) || 0),
+        periodKey: typeof r?.periodKey === 'string' && r.periodKey ? r.periodKey : getPrizePeriodKey(recurrence, date),
+      };
+    })
+    .filter(r => r.memberId) : [];
+  return {
+    icon: 'gift',
+    iconColor: '#FF6584',
+    type: 'individual',
+    recurrence: 'anytime',
+    requirementType: 'none',
+    requirementTaskCount: 1,
+    requirementTaskIds: [],
+    redemptions: [],
+    ...p,
+    cost,
+    recurrence,
+    requirementType,
+    requirementTaskCount,
+    requirementTaskIds,
+    redemptions,
+  };
+}
+
+function getMemberCompletedTaskIdsOnDate(memberId, dateStr = today(), opts = {}) {
+  const requireFullCompletion = opts.requireFullCompletion === true;
+  const done = [];
+  for (const chore of D.chores || []) {
+    if (!chore?.id) continue;
+    const entriesToday = normalizeCompletionEntries(chore?.completions?.[memberId])
+      .filter(entry => entry.status === 'done' && entry.date === dateStr);
+    if (!entriesToday.length) continue;
+    if (!requireFullCompletion) { done.push(chore.id); continue; }
+    const progress = getChoreProgress(chore, memberId, dateStr);
+    if (progress.status === 'done') done.push(chore.id);
+  }
+  return done;
+}
+
+function isTaskCountedForDailyCombo(chore, memberId, dateStr = today()) {
+  if (!chore || !memberId) return false;
+  const entriesToday = normalizeCompletionEntries(chore.completions?.[memberId])
+    .filter(entry => entry.status === 'done' && entry.date === dateStr);
+  return entriesToday.length > 0;
+}
+
+function getPrizeRequirementSummary(prize) {
+  const p = normalizePrize(prize);
+  if (p.requirementType === 'task_count') {
+    return `Requires ${p.requirementTaskCount} task${p.requirementTaskCount === 1 ? '' : 's'} done today`;
+  }
+  if (p.requirementType === 'combo') return 'Requires Daily Combo complete today';
+  if (p.requirementType === 'specific_tasks') {
+    const names = p.requirementTaskIds
+      .map(id => D.chores.find(c => c.id === id)?.title)
+      .filter(Boolean);
+    if (!names.length) return 'Requires specific tasks today';
+    if (names.length <= 2) return `Requires: ${names.join(' + ')}`;
+    return `Requires ${names.length} specific tasks today`;
+  }
+  return '';
+}
+
+function getPrizeRequirementStatus(prize, memberId, dateStr = today()) {
+  const p = normalizePrize(prize);
+  const member = getMember(memberId);
+  if (!member) return { ok: false, reason: 'member_missing', message: 'Member not found.' };
+  if (p.requirementType === 'none') return { ok: true, reason: 'none', message: '' };
+
+  const completedIds = new Set(getMemberCompletedTaskIdsOnDate(memberId, dateStr, { requireFullCompletion: false }));
+
+  if (p.requirementType === 'task_count') {
+    const doneCount = completedIds.size;
+    const required = p.requirementTaskCount;
+    if (doneCount >= required) return { ok: true, reason: 'task_count', message: '' };
+    const remaining = required - doneCount;
+    return {
+      ok: false,
+      reason: 'task_count',
+      message: `${remaining} more task${remaining === 1 ? '' : 's'} needed today`,
+    };
+  }
+
+  if (p.requirementType === 'combo') {
+    if (D.settings.comboEnabled === false) return { ok: false, reason: 'combo_disabled', message: 'Daily Combo is currently off' };
+    const combo = getDailyCombo(memberId);
+    if (combo.length < 3) return { ok: false, reason: 'combo_missing', message: 'Daily Combo not ready yet' };
+    const missing = combo.filter(id => !completedIds.has(id));
+    if (!missing.length) return { ok: true, reason: 'combo', message: '' };
+    return { ok: false, reason: 'combo', message: 'Finish today\'s Daily Combo first' };
+  }
+
+  if (p.requirementType === 'specific_tasks') {
+    const required = p.requirementTaskIds.filter(id => D.chores.some(c => c.id === id));
+    if (!required.length) return { ok: false, reason: 'specific_tasks_missing', message: 'Required tasks are no longer available' };
+    const missing = required.filter(id => !completedIds.has(id));
+    if (!missing.length) return { ok: true, reason: 'specific_tasks', message: '' };
+    const firstName = D.chores.find(c => c.id === missing[0])?.title || 'required tasks';
+    return {
+      ok: false,
+      reason: 'specific_tasks',
+      message: missing.length === 1 ? `Finish "${firstName}" today` : `Finish ${missing.length} required tasks today`,
+    };
+  }
+
+  return { ok: true, reason: 'none', message: '' };
+}
+
+function getPrizeScheduleStatus(prize, memberId, dateStr = today()) {
+  const p = normalizePrize(prize);
+  if (p.recurrence === 'one_time') {
+    const redeemed = (p.redemptions || []).some(r => r.memberId === memberId);
+    if (!redeemed) return { ok: true, reason: 'one_time_open', periodKey: 'one_time', message: '' };
+    return { ok: false, reason: 'one_time_locked', periodKey: 'one_time', message: 'This one-time prize has already been redeemed' };
+  }
+  if (p.recurrence === 'anytime') return { ok: true, reason: 'anytime', periodKey: 'anytime', message: '' };
+  const periodKey = getPrizePeriodKey(p.recurrence, dateStr);
+  const lastRedemption = (p.redemptions || []).find(r => r.memberId === memberId && getPrizePeriodKey(p.recurrence, r.date) === periodKey);
+  const alreadyRedeemed = !!lastRedemption;
+  if (!alreadyRedeemed) return { ok: true, reason: 'window_open', periodKey, message: '' };
+  const msg = getPrizeLockedWindowMessage(p.recurrence, lastRedemption?.date || dateStr);
+  return { ok: false, reason: 'window_locked', periodKey, message: msg };
+}
+
+function getPrizeRedeemStatus(prize, memberId, dateStr = today()) {
+  const p = normalizePrize(prize);
+  const member = getMember(memberId);
+  if (!p || !member) return { ok: false, reason: 'missing', message: 'Prize or member missing' };
+  const cost = Math.max(0, Number(p.cost) || 0);
+  const balance = Math.max(0, Number(member.gems) || 0);
+  const schedule = getPrizeScheduleStatus(p, memberId, dateStr);
+  const requirement = getPrizeRequirementStatus(p, memberId, dateStr);
+  const canAfford = balance >= cost;
+  const gemsNeeded = Math.max(0, cost - balance);
+  if (!schedule.ok) return { ok: false, reason: schedule.reason, message: schedule.message, schedule, requirement, canAfford, gemsNeeded };
+  if (!requirement.ok) return { ok: false, reason: requirement.reason, message: requirement.message, schedule, requirement, canAfford, gemsNeeded };
+  if (!canAfford) return { ok: false, reason: 'gems', message: gemsNeeded > 0 ? `${gemsNeeded} more gems needed` : 'Not enough gems', schedule, requirement, canAfford, gemsNeeded };
+  return { ok: true, reason: 'ok', message: '', schedule, requirement, canAfford, gemsNeeded };
+}
+
 function normalizeData(data) {
   const normalized = data && typeof data === 'object' ? data : defaultData();
   normalized.settings = { ...defaultData().settings, ...(normalized.settings || {}) };
@@ -2854,7 +3153,7 @@ function normalizeData(data) {
     : [];
   normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(c => normalizeChore(c)) : [];
   normalized.prizes = Array.isArray(normalized.prizes)
-    ? normalized.prizes.map(p => ({ icon:'gift', iconColor:'#FF6584', ...p }))
+    ? normalized.prizes.map(normalizePrize)
     : [];
   normalized.history         = Array.isArray(normalized.history)         ? normalized.history         : [];
   normalized.savingsRequests = Array.isArray(normalized.savingsRequests) ? normalized.savingsRequests : [];
@@ -3344,14 +3643,29 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
 function doRedeemPrize(prizeId, memberId) {
   const prize  = D.prizes.find(p => p.id === prizeId);
   const member = getMember(memberId);
-  if (!prize || !member) return false;
-  if ((member.gems||0) < prize.cost) return false;
-  member.gems -= prize.cost;
-  addHistory('prize', memberId, prize.title, -prize.cost);
+  if (!prize || !member) return { ok: false, reason: 'missing' };
+  const status = getPrizeRedeemStatus(prize, memberId);
+  if (!status.ok) return status;
+  const normalizedPrize = normalizePrize(prize);
+  const cost = Math.max(0, Number(normalizedPrize.cost) || 0);
+  member.gems = Math.max(0, (member.gems || 0) - cost);
+  addHistory('prize', memberId, normalizedPrize.title, -cost);
   if (!prize.redemptions) prize.redemptions = [];
-  prize.redemptions.push({ memberId, date:today() });
+  const redemptionDate = today();
+  prize.redemptions.push({
+    memberId,
+    date: redemptionDate,
+    cost,
+    periodKey: getPrizePeriodKey(normalizedPrize.recurrence, redemptionDate),
+    requirementSnapshot: {
+      type: normalizedPrize.requirementType,
+      taskCount: normalizedPrize.requirementTaskCount,
+      taskIds: [...(normalizedPrize.requirementTaskIds || [])],
+      recurrence: normalizedPrize.recurrence,
+    },
+  });
   saveData();
-  return true;
+  return { ok: true };
 }
 
 function goalTotal(goal) {
@@ -4099,7 +4413,7 @@ function checkComboBonus(memberId) {
 
   const allDone = combo.every(id => {
     const chore = D.chores.find(c => c.id === id);
-    return chore && getChoreProgress(chore, memberId).status === 'done';
+    return chore && isTaskCountedForDailyCombo(chore, memberId, today());
   });
   if (!allDone) return;
 
@@ -4520,7 +4834,7 @@ function handleRapidTap(key, opts = {}) {
   _rapidTapState[key] = state;
 }
 
-function launchAvatarRain(avatar, count = 80) {
+function launchAvatarRain(avatar, count = 80, avatarColor = '') {
   const isImage = !!avatar && /\.(png|jpe?g|gif|webp)$/i.test(avatar);
   launchRain(({ size }) => {
     const el = isImage ? document.createElement('img') : document.createElement('div');
@@ -4529,7 +4843,7 @@ function launchAvatarRain(avatar, count = 80) {
       el.alt = '';
       el.style.cssText = `width:${size}px;height:${size}px;`;
     } else {
-      el.innerHTML = avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>';
+      el.innerHTML = renderAvatarHtml(avatar, '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>', avatarColor);
       el.style.cssText = `font-size:${Math.max(1.2, size / 24).toFixed(2)}rem;`;
     }
     return el;
@@ -4574,7 +4888,11 @@ function kidAvatarEasterEgg(ev) {
   const m = S.currentUser;
   handleRapidTap('header-avatar', {
     pulseEl: document.querySelector('#kid-header .header-avatar'),
-    onTrigger: () => launchAvatarRain(m?.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>', 84),
+    onTrigger: () => launchAvatarRain(
+      m?.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>',
+      84,
+      m?.avatarColor || m?.color || ''
+    ),
   });
 }
 
@@ -4584,7 +4902,11 @@ function parentAvatarEasterEgg(ev) {
   const m = S.currentUser;
   handleRapidTap('header-avatar', {
     pulseEl: document.querySelector('#parent-header .header-avatar'),
-    onTrigger: () => launchAvatarRain(m?.avatar || '<i class="ph-duotone ph-user-circle" style="color:#9CA3AF"></i>', 84),
+    onTrigger: () => launchAvatarRain(
+      m?.avatar || '<i class="ph-duotone ph-user-circle" style="color:#9CA3AF"></i>',
+      84,
+      m?.avatarColor || m?.color || ''
+    ),
   });
 }
 
@@ -5224,23 +5546,29 @@ function _setKidProfileLookColor(field, color, el) {
 }
 
 function saveKidProfileLook() {
-  const member = S.currentUser;
+  const current = S.currentUser;
   const draft = S._kidProfileDraft;
-  if (!member || member.role !== 'kid' || !draft) return;
+  if (!current || current.role !== 'kid' || !draft) return;
+  const member = getMember(current.id) || current;
+  if (!member || member.role !== 'kid') return;
   normalizeMember(member);
-  member.avatar = draft.avatar || member.avatar;
-  member.avatarColor = draft.avatarColor || member.avatarColor || member.color;
-  member.color = draft.color || member.color;
+  member.avatar = draft.avatar || member.avatar || AVATARS[0];
+  member.avatarColor = draft.avatarColor || member.avatarColor || member.color || COLORS[0];
+  member.color = draft.color || member.color || COLORS[0];
+  S.currentUser = member;
   saveData();
+  S._kidProfileDraft = null;
   closeModal();
-  renderCurrentView();
   toast('Profile updated');
 }
 
 function openKidProfileLookModal(opts = {}) {
-  const member = S.currentUser;
+  const current = S.currentUser;
+  if (!current || current.role !== 'kid') return;
+  const member = getMember(current.id) || current;
   if (!member || member.role !== 'kid') return;
   normalizeMember(member);
+  S.currentUser = member;
   S._kidProfileDraft = {
     avatar: member.avatar || AVATARS[0],
     avatarColor: member.avatarColor || member.color || COLORS[0],
@@ -5579,6 +5907,11 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           <div><div class="toggle-label">Hide unavailable tasks</div>
             <div class="toggle-sub">Tasks outside their allowed time window won't show on kids' screens</div></div>
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Show period-locked prizes</div>
+            <div class="toggle-sub">Keep daily, weekly, and monthly prizes visible in kid shop after they've been redeemed for the current period</div></div>
+          <label class="toggle"><input type="checkbox" ${s.showLockedRecurringPrizes!==false?'checked':''} onchange="saveSetting('showLockedRecurringPrizes',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
           <div><div class="toggle-label">Show swipe hints</div>
@@ -7606,7 +7939,7 @@ function setupNext() {
     DEFAULT_PRIZES.forEach((p,i) => {
       const cb = document.getElementById('sp'+i);
       if (cb && cb.checked && !D.prizes.find(x=>x.title===p.title)) {
-        D.prizes.push({ id:genId(), title:p.title, icon:p.icon, cost:p.cost, type:p.type, redemptions:[] });
+        D.prizes.push(normalizePrize({ id:genId(), title:p.title, icon:p.icon, iconColor:p.iconColor, cost:p.cost, type:p.type, recurrence:'anytime', redemptions:[] }));
       }
     });
   }
@@ -7850,7 +8183,7 @@ function switchKidTab(tab) {
     const streak = m.streak?.current || 0;
     speak(`You currently have ${dmds} gems, you are level ${lvl.level}, and have a ${streak} day streak.`);
   } else if (tab === 'shop') {
-    const affordable = D.prizes.filter(p => p.type === 'individual' && (p.cost || 0) <= dmds).length;
+    const affordable = D.prizes.filter(p => p.type === 'individual' && getPrizeStatusForKidView(p, m.id).ok).length;
     speak(`You have ${dmds} gems to spend and can afford ${affordable} prize${affordable === 1 ? '' : 's'}.`);
   } else if (tab === 'team') {
     speak('Spend your gems towards team prizes.');
@@ -7905,7 +8238,7 @@ function renderKidChores() {
 
   const comboIds  = D.settings.comboEnabled !== false ? new Set(getDailyCombo(m.id)) : new Set();
   const comboChores = [...comboIds].map(id => D.chores.find(c => c.id === id)).filter(Boolean);
-  const comboCompleted = comboChores.filter(c => progressMap.get(c.id)?.status === 'done').length;
+  const comboCompleted = comboChores.filter(c => isTaskCountedForDailyCombo(c, m.id, today())).length;
   const comboBonusAlreadyAwarded = m.comboBonusDate === today();
 
   const tiny = isTiny(m);
@@ -7998,7 +8331,7 @@ function renderKidChores() {
         </div>
         <div class="combo-chore-list">
           ${comboChores.map(c => {
-            const isDone = progressMap.get(c.id)?.status === 'done';
+            const isDone = isTaskCountedForDailyCombo(c, m.id, today());
             return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
               <span class="combo-chore-item-check">${isDone ? '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1.1rem"></i>' : '<i class="ph-duotone ph-circle" style="color:#D1D5DB;font-size:1.1rem"></i>'}</span>
               <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} <span class="combo-item-title">${esc(c.title)}</span></span>
@@ -8991,25 +9324,47 @@ function claimInterest(memberId) {
 // Kept for any legacy calls; now a no-op since kids claim interactively
 function applyInterestForAllKids() {}
 
+function formatPrizeRedeemStatusMessage(status) {
+  if (!status || status.ok) return '';
+  if (status.message) return status.message;
+  if (status.reason === 'gems') return `${status.gemsNeeded || 0} more gems needed`;
+  return 'This prize is not ready yet';
+}
+
 function renderKidShop() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
   const dmds  = m.gems || 0;
-  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort((a,b) => (a.cost||0)-(b.cost||0) || (a.title||'').localeCompare(b.title||''));
+  const showLockedRecurringPrizes = D.settings.showLockedRecurringPrizes !== false;
+  const indiv = D.prizes
+    .filter(p => p.type === 'individual')
+    .filter(p => {
+      const status = getPrizeStatusForKidView(p, m.id);
+      if (status.reason === 'one_time_locked') return false;
+      if (showLockedRecurringPrizes) return true;
+      return status.reason !== 'window_locked';
+    })
+    .slice()
+    .sort((a,b) => (a.cost||0)-(b.cost||0) || (a.title||'').localeCompare(b.title||''));
 
   if (indiv.length === 0) {
     document.getElementById('kid-content').innerHTML = `
       <div class="empty-state">
         <div class="empty-icon"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:3rem"></i></div>
-        <div class="empty-text">No prizes yet! Ask a parent to add some.</div>
+        <div class="empty-text">${showLockedRecurringPrizes ? 'No prizes yet! Ask a parent to add some.' : 'No prizes available right now. Check back later!'}</div>
       </div>`;
     return;
   }
 
   const renderPrizeCard = (p) => {
-    const canAfford = dmds >= p.cost;
-    const cls = canAfford ? 'can-afford' : '';
-    const tts  = `${p.title}. Costs ${p.cost} gems.${canAfford?' You can get this!':` You need ${p.cost-dmds} more gems.`}`;
+    const status = getPrizeStatusForKidView(p, m.id);
+    const canAfford = status.canAfford;
+    const cls = `${status.ok ? 'can-afford' : ''} ${status.reason === 'window_locked' ? 'locked-window' : ''}`.trim();
+    const blockedReason = formatPrizeRedeemStatusMessage(status);
+    const note = status.ok ? 'Ready!' : blockedReason;
+    const requirementSummary = getPrizeRequirementSummary(p);
+    const recurrenceSummary = formatPrizeRecurrence(p.recurrence);
+    const tts  = `${p.title}. Costs ${p.cost} gems.${status.ok ? ' You can get this now!' : ` ${blockedReason}.`}`;
     return `
       <div class="prize-card kid-shop-prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
@@ -9022,10 +9377,9 @@ function renderKidShop() {
         </div>
         <div class="prize-name kid-shop-prize-name">${esc(p.title)}</div>
         <div class="kid-shop-prize-note">
-          ${canAfford
-            ? `Ready!`
-            : `${p.cost-dmds} more gems needed`}
+          ${esc(note)}
         </div>
+        <div style="margin-top:4px;font-size:0.74rem;color:var(--muted)">${esc(recurrenceSummary)}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}</div>
       </div>`;
   };
 
@@ -9042,17 +9396,20 @@ function kidRedeemPrize(prizeId, evt) {
   const prize = D.prizes.find(p=>p.id===prizeId);
   if (!m || !prize) return;
 
-  const dmds = m.gems||0;
-  if (dmds < prize.cost) {
-    const need = prize.cost - dmds;
-    if (isTiny(m)) speak(`You need ${need} more gems for this prize!`);
-    else toast(`Need ${need} more gems for "${prize.title}"`);
+  const status = getPrizeStatusForKidView(prize, m.id);
+  if (!status.ok) {
+    const msg = formatPrizeRedeemStatusMessage(status);
+    if (isTiny(m)) speak(msg);
+    else toast(msg);
     return;
   }
+  const dmds = m.gems||0;
+  const requirementSummary = getPrizeRequirementSummary(prize);
 
   showQuickActionModal(`
     <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} Redeem Prize?</div>
     <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your ${dmds} gems?</p>
+    <p style="margin-top:-10px;margin-bottom:20px;font-size:0.82rem;color:var(--muted)">${esc(formatPrizeRecurrence(prize.recurrence))}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
       <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></button>
@@ -9064,8 +9421,8 @@ function confirmRedeem(prizeId) {
   const prize = D.prizes.find(p=>p.id===prizeId);
   closeModal();
   if (!prize) { toast('Prize no longer available'); return; }
-  const ok = doRedeemPrize(prizeId, m?.id);
-  if (!ok) { toast('Could not redeem - not enough gems'); return; }
+  const result = doRedeemPrize(prizeId, m?.id);
+  if (!result?.ok) { toast(formatPrizeRedeemStatusMessage(result)); return; }
 
   showCelebration({
     icon:   renderIcon(prize.icon, prize.iconColor, 'font-size:3.5rem'),
@@ -11581,25 +11938,36 @@ function renderParentPrizes() {
 
   html += `<div class="parent-prize-list">`;
   indiv.forEach(p => {
+    const recurrenceLabel = formatPrizeRecurrence(p.recurrence);
+    const requirementSummary = getPrizeRequirementSummary(p);
+    const oneTimeRedeemed = (p.recurrence === 'one_time' && (p.redemptions || []).length > 0)
+      || (DEBUG_FORCE_PRIZE_STATE_PREVIEW && !isE2EMode() && p.type === 'individual');
+    const redeemedByCount = Math.max(1, new Set((p.redemptions || []).map(r => r.memberId).filter(Boolean)).size || 0);
     const swipeKey = `parent_prize_${p.id}`;
     html += `
       <div class="snapshot-routine-shell parent-prize-shell" data-swipe-id="${swipeKey}">
-        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal">
+        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal ${oneTimeRedeemed ? 'has-reset' : ''}">
           <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete prize" onpointerdown="event.preventDefault();event.stopPropagation();deletePrize('${p.id}');return false;" onclick="return false;">
             <i class="ph-duotone ph-trash"></i>
             <span>Delete</span>
           </button>
+          ${oneTimeRedeemed ? `
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-approve parent-prize-reveal-btn" type="button" title="Reset prize" onpointerdown="event.preventDefault();event.stopPropagation();resetPrize('${p.id}');return false;" onclick="return false;">
+            <i class="ph-duotone ph-arrow-counter-clockwise"></i>
+            <span>Reset</span>
+          </button>` : ''}
           <button class="snapshot-reveal-btn snapshot-reveal-btn-secondary parent-prize-reveal-btn" type="button" title="Edit prize" onpointerdown="event.preventDefault();event.stopPropagation();openPrizeEditor('${p.id}', this);return false;" onclick="return false;">
             <i class="ph-duotone ph-pencil-simple"></i>
             <span>Edit</span>
           </button>
         </div>
-        <div class="snapshot-routine-card parent-prize-card" onpointerdown="startSnapshotSwipe(event,'${swipeKey}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'${swipeKey}')">
+        <div class="snapshot-routine-card parent-prize-card ${oneTimeRedeemed ? 'one-time-redeemed' : ''}" onpointerdown="startSnapshotSwipe(event,'${swipeKey}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'${swipeKey}')">
           <div class="snapshot-routine-top">
             <div class="snapshot-routine-main">
               <div class="snapshot-routine-title-row">
                 <div class="parent-chore-copy">
                   <div class="snapshot-routine-title">${esc(p.title)}</div>
+                  <div class="parent-chore-meta">${esc(recurrenceLabel)}${requirementSummary ? `\n${requirementSummary}` : ''}${oneTimeRedeemed ? `\nRedeemed by ${redeemedByCount} kid${redeemedByCount === 1 ? '' : 's'} - reset to make available again` : ''}</div>
                 </div>
                 <div class="snapshot-routine-diamond-badge">
                   <span class="snapshot-routine-glyph-main">${renderIcon(p.icon,p.iconColor)}</span>
@@ -12099,9 +12467,60 @@ function selBadgeIcon(el, name) {
   renderParentLevels();
 }
 
+function renderPrizeTaskRequirementChecks(selectedIds = []) {
+  const selected = new Set(selectedIds);
+  const chores = (D.chores || []).slice().sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  if (!chores.length) {
+    return '<div style="font-size:0.82rem;color:var(--muted)">No tasks available yet. Add tasks first.</div>';
+  }
+  return chores.map(chore => `
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0;padding:8px 10px;border:1px solid #E5E7EB;border-radius:10px;background:#fff">
+      <span style="display:flex;align-items:center;gap:8px;min-width:0">
+        <span>${renderIcon(chore.icon, chore.iconColor, 'font-size:0.95rem;vertical-align:middle')}</span>
+        <span style="font-size:0.88rem;line-height:1.25">${esc(chore.title)}</span>
+      </span>
+      <span class="toggle" style="flex-shrink:0">
+        <input type="checkbox" class="pm-req-task" value="${chore.id}" ${selected.has(chore.id) ? 'checked' : ''}>
+        <span class="toggle-track"></span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function getPrizeRequirementBuilderText(reqType, amount = 1) {
+  if (reqType === 'task_count') return `Require ${Math.max(1, amount)} daily tasks to be completed before this prize is available.`;
+  if (reqType === 'combo') return 'Require the Daily Combo to be completed before this prize is available.';
+  if (reqType === 'specific_tasks') return 'Require the following daily tasks to be completed before this prize is available.';
+  return '';
+}
+
+function onPrizeRequirementToggleChanged(enabled) {
+  const fields = document.getElementById('pm-requirement-fields');
+  const reqType = document.getElementById('pm-requirement-type');
+  if (fields) fields.style.display = enabled ? 'block' : 'none';
+  if (!reqType) return;
+  if (!enabled) reqType.value = 'task_count';
+  onPrizeRequirementTypeChanged();
+}
+
+function onPrizeRequirementTypeChanged() {
+  const reqType = document.getElementById('pm-requirement-type')?.value || 'task_count';
+  const countInput = document.getElementById('pm-task-count');
+  const countWrap = document.getElementById('pm-task-count-wrap');
+  const tasksWrap = document.getElementById('pm-specific-tasks-wrap');
+  const helper = document.getElementById('pm-requirement-helper');
+  if (countWrap) countWrap.style.display = reqType === 'task_count' ? 'block' : 'none';
+  if (tasksWrap) tasksWrap.style.display = reqType === 'specific_tasks' ? 'block' : 'none';
+  if (helper) helper.textContent = getPrizeRequirementBuilderText(reqType, Math.max(1, parseInt(countInput?.value, 10) || 1));
+}
+
+function onPrizeTaskCountChanged() {
+  onPrizeRequirementTypeChanged();
+}
+
 function showPrizeModal(prizeId, opts = {}) {
   const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
-  const p     = prize || { title:'', icon:'gift', iconColor:'#FF6584', cost:100, type:'individual' };
+  const p = normalizePrize(prize || { title:'', icon:'gift', iconColor:'#FF6584', cost:100, type:'individual', recurrence:'anytime', requirementType:'none', requirementTaskCount:1, requirementTaskIds:[] });
 
   const prizeColor = p.iconColor || '#FF6584';
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
@@ -12110,6 +12529,11 @@ function showPrizeModal(prizeId, opts = {}) {
   const colorSwatches = COLORS.map(col =>
     `<div class="icon-color-swatch${col===prizeColor?' sel':''}" style="background:${col}" onclick="selPrizeColor(this,'${col}')"></div>`
   ).join('');
+  const requirementEnabled = p.requirementType !== 'none';
+  const requirementType = requirementEnabled ? p.requirementType : 'task_count';
+  const specificTasksHtml = renderPrizeTaskRequirementChecks(p.requirementTaskIds);
+  const oneTimeRedeemed = (p.recurrence === 'one_time' && (p.redemptions || []).length > 0)
+    || (DEBUG_FORCE_PRIZE_STATE_PREVIEW && !isE2EMode() && p.type === 'individual');
 
   const modalHtml = `
     <input type="hidden" id="pm-icon" value="${p.icon}">
@@ -12125,11 +12549,64 @@ function showPrizeModal(prizeId, opts = {}) {
     </div>
     <div class="form-group">
       <label class="form-label">Gems cost</label>
-      <input type="number" id="pm-cost" min="1" value="${p.cost}">
+      <input type="number" id="pm-cost" min="0" value="${p.cost}">
     </div>
+    <div class="form-group">
+      <label class="form-label">Redemption frequency</label>
+      <div style="font-size:0.78rem;color:var(--muted);margin:2px 0 8px">How often this prize can be redeemed.</div>
+      <select id="pm-recurrence">
+        <option value="one_time" ${p.recurrence==='one_time'?'selected':''}>Once</option>
+        <option value="anytime" ${p.recurrence==='anytime'?'selected':''}>Unlimited</option>
+        <option value="daily" ${p.recurrence==='daily'?'selected':''}>Once per day</option>
+        <option value="weekly" ${p.recurrence==='weekly'?'selected':''}>Once per week</option>
+        <option value="monthly" ${p.recurrence==='monthly'?'selected':''}>Once per month</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>
+          <div class="form-label" style="margin:0">Additional requirements</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Add task-based requirements</div>
+        </span>
+        <span class="toggle" style="flex-shrink:0">
+          <input type="checkbox" id="pm-requirement-enabled" ${requirementEnabled ? 'checked' : ''} onchange="onPrizeRequirementToggleChanged(this.checked)">
+          <span class="toggle-track"></span>
+        </span>
+      </label>
+      <div id="pm-requirement-fields" style="display:${requirementEnabled ? 'block' : 'none'};margin-top:10px;padding:10px;border:1px solid #E5E7EB;border-radius:12px;background:#F8FAFC">
+      <select id="pm-requirement-type" onchange="onPrizeRequirementTypeChanged()">
+        <option value="task_count" ${requirementType==='task_count'?'selected':''}>Total tasks completed</option>
+        <option value="combo" ${requirementType==='combo'?'selected':''}>Daily Combo completed</option>
+        <option value="specific_tasks" ${requirementType==='specific_tasks'?'selected':''}>Specific tasks completed</option>
+      </select>
+      <div id="pm-task-count-wrap" style="margin-top:8px;display:${requirementType==='task_count' ? 'block' : 'none'}">
+        <input type="number" id="pm-task-count" min="1" value="${Math.max(1, p.requirementTaskCount || 1)}" oninput="onPrizeTaskCountChanged()">
+      </div>
+      <div id="pm-requirement-helper" style="font-size:0.8rem;color:#475569;line-height:1.45;margin-top:8px">${esc(getPrizeRequirementBuilderText(requirementType, Math.max(1, p.requirementTaskCount || 1)))}</div>
+      <div id="pm-specific-tasks-wrap" style="margin-top:8px;display:${requirementType==='specific_tasks' ? 'block' : 'none'}">
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:6px">Tasks required before this prize unlocks:</div>
+        <div style="max-height:220px;overflow:auto;padding:2px 2px 0">${specificTasksHtml}</div>
+      </div>
+      </div>
+    </div>
+    ${oneTimeRedeemed ? `<div class="form-group" style="margin-top:-4px">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>
+          <div class="form-label" style="margin:0">Save and reset redemptions</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Makes this one-time prize available again after saving changes</div>
+        </span>
+        <span class="toggle" style="flex-shrink:0">
+          <input type="checkbox" id="pm-reset-on-save" checked>
+          <span class="toggle-track"></span>
+        </span>
+      </label>
+    </div>` : '<input type="hidden" id="pm-reset-on-save" value="">'}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="savePrize('${prizeId||''}')">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      ${oneTimeRedeemed
+        ? `<button class="btn btn-secondary" onclick="savePrize('${prizeId||''}', false)">Save</button>
+           <button class="btn btn-primary" onclick="savePrize('${prizeId||''}', true)">Save &amp; Reset <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>`
+        : `<button class="btn btn-primary" onclick="savePrize('${prizeId||''}', false)">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>`}
     </div>`;
   if (opts.quickAction) {
     showQuickActionModal(modalHtml, 'quick-action-modal-wide prize-editor-modal');
@@ -12159,18 +12636,59 @@ function filterPrizeIcons(query) {
   }
 }
 
-function savePrize(prizeId) {
+function savePrize(prizeId, forceReset = false) {
   const title     = document.getElementById('pm-title')?.value.trim();
   const icon      = document.getElementById('pm-icon')?.value || 'gift';
   const iconColor = document.getElementById('pm-icon-color')?.value || '#FF6584';
-  const cost      = parseInt(document.getElementById('pm-cost')?.value)||100;
+  const costRaw   = parseInt(document.getElementById('pm-cost')?.value, 10);
+  const cost      = Math.max(0, Number.isFinite(costRaw) ? costRaw : 0);
+  const recurrence = PRIZE_RECURRENCE_TYPES.includes(document.getElementById('pm-recurrence')?.value)
+    ? document.getElementById('pm-recurrence')?.value
+    : 'anytime';
+  const requirementEnabled = !!document.getElementById('pm-requirement-enabled')?.checked;
+  const pickedRequirement = document.getElementById('pm-requirement-type')?.value || 'none';
+  const requirementType = requirementEnabled && PRIZE_REQUIREMENT_TYPES.includes(pickedRequirement) ? pickedRequirement : 'none';
+  const requirementTaskCount = Math.max(1, parseInt(document.getElementById('pm-task-count')?.value, 10) || 1);
+  const requirementTaskIds = [...document.querySelectorAll('.pm-req-task:checked')].map(el => el.value).filter(Boolean);
+  const shouldResetOneTime = forceReset || !!document.getElementById('pm-reset-on-save')?.checked;
   if (!title) { toast('Enter a prize name'); return; }
+  if (requirementType === 'specific_tasks' && requirementTaskIds.length === 0) {
+    toast('Select at least one required task');
+    return;
+  }
 
   if (prizeId) {
     const p = D.prizes.find(x=>x.id===prizeId);
-    if (p) Object.assign(p, { title, icon, iconColor, cost, type:'individual' });
+    if (p) {
+      const existing = normalizePrize(p);
+      Object.assign(p, normalizePrize({
+        ...existing,
+        title,
+        icon,
+        iconColor,
+        cost,
+        recurrence,
+        requirementType,
+        requirementTaskCount,
+        requirementTaskIds,
+        type: 'individual',
+      }));
+      if (shouldResetOneTime) p.redemptions = [];
+    }
   } else {
-    D.prizes.push({ id:genId(), title, icon, iconColor, cost, type:'individual', redemptions:[] });
+    D.prizes.push(normalizePrize({
+      id: genId(),
+      title,
+      icon,
+      iconColor,
+      cost,
+      type: 'individual',
+      recurrence,
+      requirementType,
+      requirementTaskCount,
+      requirementTaskIds,
+      redemptions: [],
+    }));
   }
   saveData();
   closeModal();
@@ -12186,6 +12704,27 @@ function deletePrize(prizeId) {
     confirmLabel: 'Delete',
     onConfirm: () => _doDeletePrize(prizeId),
   });
+}
+
+function resetPrize(prizeId) {
+  const prize = D.prizes.find(p => p.id === prizeId);
+  if (!prize) return;
+  const redemptionCount = (prize.redemptions || []).length;
+  showDangerConfirm({
+    title: 'Reset Prize Availability?',
+    message: `This will clear ${redemptionCount} redemption${redemptionCount === 1 ? '' : 's'} for <strong>${esc(prize.title)}</strong> and make it available again.`,
+    confirmLabel: 'Reset',
+    onConfirm: () => _doResetPrize(prizeId),
+  });
+}
+
+function _doResetPrize(prizeId) {
+  const prize = D.prizes.find(p => p.id === prizeId);
+  if (!prize) return;
+  prize.redemptions = [];
+  saveData();
+  toast('Prize reset');
+  renderParentPrizes();
 }
 
 function _doDeletePrize(prizeId) {
@@ -13334,9 +13873,11 @@ function init() {
 
   // Re-render settings if it's open when Firebase auth state resolves (async on app restore).
   // This fixes the "Link Account" flash when closing on kid profile and reopening.
-  auth.onAuthStateChanged(() => {
-    if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
-  });
+  if (!isE2EMode()) {
+    auth.onAuthStateChanged(() => {
+      if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
+    });
+  }
 
   loadData();
   applyInterestForAllKids();
@@ -13346,6 +13887,7 @@ function init() {
   if (_needsMigrationPush) setFamilyCode(genFamilyCode()); // temp sync code so getFamilyDoc() works; replaced with unique code before push below
 
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
+  const skipFirestore = isE2EMode();
 
   if (hasLocalData) {
     if (isAppUnlocked()) {
@@ -13363,30 +13905,36 @@ function init() {
         renderHome();
       }
     } else showAppPin();
-    ensureFirestoreAuth()
-      .then(async () => {
-        if (_needsMigrationPush) {
-          // Replace the temp sync code with a collision-checked unique code before pushing
-          const safeCode = await genUniqueFamilyCode();
-          setFamilyCode(safeCode);
-          await pushToFirestore();
-        }
-        if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
-          db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
-        }
-        subscribeToFirestore();
-      })
-      .catch(err => console.warn('Firestore sync unavailable:', err));
+    if (!skipFirestore) {
+      ensureFirestoreAuth()
+        .then(async () => {
+          if (_needsMigrationPush) {
+            // Replace the temp sync code with a collision-checked unique code before pushing
+            const safeCode = await genUniqueFamilyCode();
+            setFamilyCode(safeCode);
+            await pushToFirestore();
+          }
+          if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
+            db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
+          }
+          subscribeToFirestore();
+        })
+        .catch(err => console.warn('Firestore sync unavailable:', err));
+    }
   } else {
     // Slow path: no local data (fresh install or standalone PWA first launch)
     // Wait for Firestore before routing so we don't wrongly show setup wizard
-    showLoading();
-    ensureFirestoreAuth()
-      .then(() => subscribeToFirestore(routeAfterLoad))
-      .catch(err => {
-        console.warn('Firestore unavailable, falling back to local data:', err);
-        routeAfterLoad();
-      });
+    if (skipFirestore) {
+      routeAfterLoad();
+    } else {
+      showLoading();
+      ensureFirestoreAuth()
+        .then(() => subscribeToFirestore(routeAfterLoad))
+        .catch(err => {
+          console.warn('Firestore unavailable, falling back to local data:', err);
+          routeAfterLoad();
+        });
+    }
   }
 }
 
@@ -13401,6 +13949,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Start on DOM ready
 async function ensureFirestoreAuth() {
+  if (isE2EMode()) return;
   if (auth.currentUser) return;
   await auth.signInAnonymously().catch(() => {});
 }

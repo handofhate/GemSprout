@@ -11,6 +11,9 @@ Emails/
 *-service-account.json
 firebase-debug.log
 .firebase/
+playwright-report/
+test-results/
+blob-report/
 app.js.bak_*
 app.js.pre_*
 APP_STORE_COPY.md
