@@ -396,6 +396,8 @@ function _weekReviewFallbackTrackPath(src) {
 function _weekReviewEnsureAudioElement(src = '') {
   if (!_weekReviewAudio) {
     _weekReviewAudio = new Audio(src || '');
+    _weekReviewAudio.playsInline = true;
+    _weekReviewAudio.crossOrigin = 'anonymous';
     _weekReviewAudio.preload = 'auto';
     _weekReviewAudio.loop = true;
     _weekReviewAudio._wrPreferredSrc = src || '';
@@ -420,14 +422,18 @@ function _weekReviewPrimeAudio(src) {
   if (!src || WEEK_REVIEW_PREVIEW_MODE) return;
   const audio = _weekReviewEnsureAudioElement(src);
   const previousMuted = !!audio.muted;
-  audio.muted = true;
+  const previousVolume = Number.isFinite(audio.volume) ? audio.volume : 1;
+  audio.muted = false;
+  audio.volume = 0.001;
   audio.load();
   audio.play().then(() => {
     audio.pause();
     audio.currentTime = 0;
     audio.muted = previousMuted;
+    audio.volume = previousVolume;
   }).catch(() => {
     audio.muted = previousMuted;
+    audio.volume = previousVolume;
   });
 }
 
@@ -3053,7 +3059,7 @@ function isTaskCountedForDailyCombo(chore, memberId, dateStr = today()) {
 function getPrizeRequirementSummary(prize) {
   const p = normalizePrize(prize);
   if (p.requirementType === 'task_count') {
-    return `Requires ${p.requirementTaskCount} task${p.requirementTaskCount === 1 ? '' : 's'} done today`;
+    return `Requires ${p.requirementTaskCount} task${p.requirementTaskCount === 1 ? '' : 's'} completed`;
   }
   if (p.requirementType === 'combo') return 'Requires Daily Combo complete today';
   if (p.requirementType === 'specific_tasks') {
@@ -9663,7 +9669,7 @@ function renderParentNav() {
   const homeCount = pending;
   const tabs = [
     ['home',    ICONS.home,     'Overview'],
-    ['chores',  ICONS.chores,   'Rhythm'],
+    ['chores',  ICONS.chores,   'Tasks'],
     ['prizes',  ICONS.prizes,   'Prizes'],
     ['levels',  ICONS.levels,   'Levels'],
     ['stats',   ICONS.stats,    'Stats'],
@@ -10281,6 +10287,7 @@ function renderFamilySnapshotPanel(kidId) {
     : `<div class="kid-overview-list snapshot-chore-stack">${myChores.map(chore => {
         const progress = getChoreProgress(chore, kid.id);
         const status = progress.status;
+        const metaSummary = parentChoreMetaSummary(chore);
         const isDone = status === 'done';
         const isCombo = kidCombo.has(chore.id);
         const swipeKey = `snapshot_${kid.id}_${chore.id}`;
@@ -10303,7 +10310,10 @@ function renderFamilySnapshotPanel(kidId) {
               <div class="snapshot-routine-top">
                 <div class="snapshot-routine-main">
                   <div class="snapshot-routine-title-row">
-                    <div class="snapshot-routine-title">${esc(chore.title)}</div>
+                    <div class="parent-chore-copy snapshot-panel-chore-copy">
+                      <div class="snapshot-routine-title">${esc(chore.title)}</div>
+                      <div class="parent-chore-meta snapshot-panel-chore-meta">${esc(metaSummary)}</div>
+                    </div>
                     <div class="snapshot-routine-diamond-badge"><span class="snapshot-routine-glyph-main">${renderIcon(chore.icon,chore.iconColor)}</span><span class="snapshot-routine-glyph-badge">${chore.diamonds || 0}</span></div>
                     <div class="snapshot-routine-utility">
                       <button class="snapshot-routine-swipe-hint" type="button" aria-label="Reveal action" onclick="event.stopPropagation();toggleSnapshotSwipe('${swipeKey}')">
@@ -11568,7 +11578,6 @@ function renderParentChores() {
               <div class="snapshot-routine-title-row">
                 <div class="parent-chore-copy">
                   <div class="snapshot-routine-title">${esc(chore.title)}</div>
-                  <div class="parent-chore-meta">${esc(parentChoreMetaSummary(chore))}</div>
                 </div>
                 <div class="snapshot-routine-diamond-badge">
                   <span class="snapshot-routine-glyph-main">${renderIcon(chore.icon,chore.iconColor)}</span>
@@ -12002,17 +12011,23 @@ function renderParentPrizes() {
   goals.forEach(g => {
     const total = goalTotal(g);
     const pct   = Math.min(100,Math.round(total/(g.targetPoints||1)*100));
+    const isComplete = (g.targetPoints || 0) > 0 && total >= (g.targetPoints || 0);
     const swipeKey = `team_prize_${g.id}`;
     html += `
       <div class="snapshot-routine-shell parent-prize-shell" data-swipe-id="${swipeKey}">
-        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal">
-          <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete team prize" onpointerdown="event.preventDefault();event.stopPropagation();clearGoal('${g.id}');return false;" onclick="return false;">
-            <i class="ph-duotone ph-trash"></i>
-            <span>Delete</span>
-          </button>
+        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal ${isComplete ? 'has-reset' : ''}">
           <button class="snapshot-reveal-btn snapshot-reveal-btn-secondary parent-prize-reveal-btn" type="button" title="Edit team prize" onpointerdown="event.preventDefault();event.stopPropagation();openGoalEditor('${g.id}', this);return false;" onclick="return false;">
             <i class="ph-duotone ph-pencil-simple"></i>
             <span>Edit</span>
+          </button>
+          ${isComplete ? `
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-approve parent-prize-reveal-btn" type="button" title="Reset team prize" onpointerdown="event.preventDefault();event.stopPropagation();resetGoal('${g.id}');return false;" onclick="return false;">
+            <i class="ph-duotone ph-arrow-counter-clockwise"></i>
+            <span>Reset</span>
+          </button>` : ''}
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete team prize" onpointerdown="event.preventDefault();event.stopPropagation();clearGoal('${g.id}');return false;" onclick="return false;">
+            <i class="ph-duotone ph-trash"></i>
+            <span>Delete</span>
           </button>
         </div>
         <div class="snapshot-routine-card parent-prize-card" onpointerdown="startSnapshotSwipe(event,'${swipeKey}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'${swipeKey}')">
@@ -12021,7 +12036,7 @@ function renderParentPrizes() {
               <div class="snapshot-routine-title-row">
                 <div class="parent-chore-copy">
                   <div class="snapshot-routine-title">${esc(g.title)}</div>
-                  <div class="parent-chore-meta">${esc(`${total} / ${g.targetPoints} gems\n${pct}% complete`)}</div>
+                  <div class="parent-chore-meta">${esc(`${total} / ${g.targetPoints} gems\n${pct}% complete`)}${isComplete ? '\nFully funded - reset to start again' : ''}</div>
                 </div>
                 <div class="snapshot-routine-diamond-badge">
                   <span class="snapshot-routine-glyph-main">${renderIcon(g.icon,g.iconColor)}</span>
@@ -12773,6 +12788,7 @@ function openGoalEditor(goalId, triggerEl) {
 function showGoalModal(goalId, opts = {}) {
   const existing = goalId ? D.teamGoals?.find(g => g.id === goalId) : null;
   const g = existing || { title:'', icon:'trophy', iconColor:'#FFD93D', targetPoints:500 };
+  const isComplete = !!existing && (existing.targetPoints || 0) > 0 && goalTotal(existing) >= (existing.targetPoints || 0);
   const goalColor = g.iconColor || '#FFD93D';
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
     `<div class="icon-opt${n===g.icon?' sel':''}" onclick="selGoalIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
@@ -12798,9 +12814,13 @@ function showGoalModal(goalId, opts = {}) {
       <label class="form-label">Gems target</label>
       <input type="number" id="gm-target" min="1" value="${g.targetPoints||500}">
     </div>
+    ${isComplete ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:-4px;margin-bottom:12px">Save and reset makes this team prize available again</div>` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-teal" onclick="saveGoal()">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      ${isComplete
+        ? `<button class="btn btn-secondary" onclick="saveGoal(false)">Save</button>
+           <button class="btn btn-teal" onclick="saveGoal(true)">Save &amp; Reset <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>`
+        : `<button class="btn btn-teal" onclick="saveGoal(false)">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>`}
     </div>`;
   if (opts.quickAction) {
     showQuickActionModal(modalHtml, 'quick-action-modal-wide prize-editor-modal');
@@ -12838,7 +12858,12 @@ function filterGoalIcons(query) {
   }
 }
 
-function saveGoal() {
+function _clearTeamGoalInboxDismissed(goalId) {
+  if (!goalId || !Array.isArray(D.teamGoalInboxDismissed)) return;
+  D.teamGoalInboxDismissed = D.teamGoalInboxDismissed.filter(id => id !== goalId);
+}
+
+function saveGoal(forceReset = false) {
   const goalId = document.getElementById('gm-id')?.value;
   const title  = document.getElementById('gm-title')?.value.trim();
   const icon      = document.getElementById('gm-icon')?.value || 'trophy';
@@ -12849,13 +12874,42 @@ function saveGoal() {
   if (!D.teamGoals) D.teamGoals = [];
   if (goalId) {
     const g = D.teamGoals.find(x => x.id === goalId);
-    if (g) Object.assign(g, { title, icon, iconColor, targetPoints: target });
+    if (g) {
+      Object.assign(g, { title, icon, iconColor, targetPoints: target });
+      if (forceReset) {
+        g.contributions = {};
+        _clearTeamGoalInboxDismissed(goalId);
+      }
+    }
   } else {
     D.teamGoals.push({ id: genId(), title, icon, iconColor, targetPoints: target, contributions: {} });
   }
   saveData();
   closeModal();
-  toast(goalId ? 'Team prize updated!' : 'Team prize added!');
+  if (goalId && forceReset) toast('Team prize updated and reset');
+  else toast(goalId ? 'Team prize updated!' : 'Team prize added!');
+  renderParentPrizes();
+}
+
+function resetGoal(goalId) {
+  const goal = (D.teamGoals||[]).find(g => g.id === goalId);
+  if (!goal) return;
+  const total = goalTotal(goal);
+  showDangerConfirm({
+    title: 'Reset Team Prize?',
+    message: `This will clear <strong>${total}</strong> contributed gem${total === 1 ? '' : 's'} for "${esc(goal.title)}" and make it available again.`,
+    confirmLabel: 'Reset',
+    onConfirm: () => _doResetGoal(goalId),
+  });
+}
+
+function _doResetGoal(goalId) {
+  const goal = (D.teamGoals||[]).find(g => g.id === goalId);
+  if (!goal) return;
+  goal.contributions = {};
+  _clearTeamGoalInboxDismissed(goalId);
+  saveData();
+  toast('Team prize reset');
   renderParentPrizes();
 }
 

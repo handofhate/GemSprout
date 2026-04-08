@@ -3694,6 +3694,13 @@
       max-width: 18ch;
       white-space: pre-line;
     }
+    .snapshot-panel-chore-copy {
+      margin-left: 6px;
+    }
+    .snapshot-panel-chore-meta {
+      max-width: none;
+      margin-top: 4px;
+    }
     .parent-prize-progress {
       margin-top: 10px;
       height: 8px;
