@@ -1,4 +1,4 @@
-const FIREBASE_CONFIG = {
+﻿const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU",
   authDomain:        "gemsprout1.firebaseapp.com",
   projectId:         "gemsprout1",
@@ -197,16 +197,16 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const selPlan = _rcSelectedPlan;
   const mSel = selPlan === 'monthly';
   const ySel = selPlan === 'yearly';
-  const cardBase = 'border-radius:14px;padding:14px 16px;cursor:pointer;transition:border 0.15s;';
-  const mCard = cardBase + `border:2px solid ${mSel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${mSel ? '0.15' : '0.07'})`;
-  const yCard = cardBase + `border:2px solid ${ySel ? '#fff' : 'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${ySel ? '0.15' : '0.07'})`;
+  const cardBase = 'border-radius:16px;padding:14px 16px;cursor:pointer;transition:border 0.15s,transform 0.15s,background 0.15s;box-shadow:0 10px 24px rgba(39,66,57,0.12);';
+  const mCard = cardBase + `border:2px solid ${mSel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${mSel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
+  const yCard = cardBase + `border:2px solid ${ySel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${ySel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   return `
-  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:linear-gradient(160deg,#1a0533 0%,#3b1278 55%,#6C63FF 100%);overflow:auto">
+  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 58%,#e9ddc8 58%,#f4efe4 100%);overflow:auto">
     <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
-      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(255,255,255,0.55);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
-      <img src="gemsproutpadded.png" style="width:76px;height:76px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,0.35)">
-      <div style="color:#fff;font-size:1.75rem;font-weight:800;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
-      <div style="color:rgba(255,255,255,0.65);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
+      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+      <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
+      <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
+      <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
     </div>
 
     <div style="padding:0 24px;display:flex;flex-direction:column;gap:10px">
@@ -216,38 +216,38 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
         ['ph-piggy-bank',  'Savings, matching, interest, and spend requests in one place'],
         ['ph-users',       'Built for modern families, including split-household rhythms'],
       ].map(([icon, text]) => `
-        <div style="display:flex;align-items:center;gap:12px">
-          <i class="ph-duotone ${icon}" style="color:#C4B5FD;font-size:1.3rem;flex-shrink:0"></i>
-          <div style="color:rgba(255,255,255,0.88);font-size:0.9rem;line-height:1.4">${text}</div>
+        <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
+          <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
+          <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
         </div>`).join('')}
     </div>
 
     <div style="padding:20px 24px 0;display:flex;gap:12px">
       <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
-        <div style="color:rgba(255,255,255,0.65);font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
-        <div style="color:#fff;font-size:1.3rem;font-weight:800;margin-top:4px">${mPrice}</div>
-        <div style="color:rgba(255,255,255,0.5);font-size:0.75rem;margin-top:2px">per month</div>
+        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
+        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
+        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per month</div>
       </div>
       <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
-        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#F97316;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
-        <div style="color:rgba(255,255,255,0.65);font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
-        <div style="color:#fff;font-size:1.3rem;font-weight:800;margin-top:4px">${yPrice}</div>
-        <div style="color:rgba(255,255,255,0.5);font-size:0.75rem;margin-top:2px">per year</div>
+        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
+        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
+        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${yPrice}</div>
+        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per year</div>
       </div>
     </div>
 
     <div style="padding:20px 24px 0">
-      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:#fff;color:#4C1D95;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.25)">
+      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
         Start ${trialDays}-Day Free Trial
       </button>
-      <div style="color:rgba(255,255,255,0.45);font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
+      <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
         Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
       </div>
     </div>
 
     <div style="margin-top:auto;padding:20px 24px 36px;display:flex;justify-content:center;gap:20px">
-      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:rgba(255,255,255,0.55);font-size:0.82rem;cursor:pointer;padding:4px">Restore Purchases</button>
-      <a href="privacy.html" style="color:rgba(255,255,255,0.55);font-size:0.82rem;text-decoration:none;padding:4px">Privacy</a>
+      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
+      <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
     </div>
   </div>`;
 }
@@ -256,9 +256,9 @@ function _rcSelectPlan(type) {
   _rcSelectedPlan = type;
   const mCard = document.getElementById('rc-card-monthly');
   const yCard = document.getElementById('rc-card-yearly');
-  const cardBase = 'border-radius:14px;padding:14px 16px;cursor:pointer;transition:border 0.15s;flex:1;';
-  if (mCard) mCard.style.cssText = cardBase + `border:2px solid ${type==='monthly'?'#fff':'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${type==='monthly'?'0.15':'0.07'})`;
-  if (yCard) yCard.style.cssText = cardBase + `border:2px solid ${type==='yearly'?'#fff':'rgba(255,255,255,0.25)'};background:rgba(255,255,255,${type==='yearly'?'0.15':'0.07'});position:relative`;
+  const cardBase = 'border-radius:16px;padding:14px 16px;cursor:pointer;transition:border 0.15s,transform 0.15s,background 0.15s;flex:1;box-shadow:0 10px 24px rgba(39,66,57,0.12);';
+  if (mCard) mCard.style.cssText = cardBase + `border:2px solid ${type==='monthly'?'#2a7560':'rgba(39,66,57,0.16)'};background:${type==='monthly'?'rgba(231,245,238,0.95)':'rgba(255,251,244,0.88)'}`;
+  if (yCard) yCard.style.cssText = cardBase + `border:2px solid ${type==='yearly'?'#2a7560':'rgba(39,66,57,0.16)'};background:${type==='yearly'?'rgba(231,245,238,0.95)':'rgba(255,251,244,0.88)'};position:relative`;
 }
 
 async function rcStartTrial() {
@@ -304,11 +304,24 @@ async function rcRestorePurchases() {
   }
 }
 
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2.0-beta';
 const CHANGELOG_ENTRIES = [
   {
+    version: '1.2.0-beta',
+    title: 'GemSprout Beta 1.2',
+    date: 'April 2026',
+    items: [
+      { icon: 'ph-gift', color: '#1D6B57', text: 'Prizes can now require task-based unlocks in addition to gems, including total tasks, Daily Combo, or specific tasks' },
+      { icon: 'ph-repeat', color: '#0E7490', text: 'Recurring prize controls are improved with cleaner lock states and clearer reset/edit flow for repeat redemptions' },
+      { icon: 'ph-users-three', color: '#6C63FF', text: 'Team prizes now support reset from parent controls so family goals can be repeated without recreating the prize' },
+      { icon: 'ph-music-notes-simple', color: '#D97706', text: 'Week in Review audio playback is more reliable on the first story card and includes better failure logging' },
+      { icon: 'ph-sliders', color: '#5f8f63', text: 'New setting: Hide unavailable prizes, with matching setup option during onboarding for consistent behavior from day one' },
+      { icon: 'ph-flask', color: '#7C3AED', text: 'Dev Settings now include quick preview buttons for Maintenance and Parent Sign-In screens' },
+    ],
+  },
+  {
     version: '1.1',
-    title: 'GemSprout 1.1',
+    title: 'GemSprout Beta 1.1',
     date: 'April 2026',
     items: [
       { icon: 'ph-paint-brush',   color: '#1D6B57', text: 'Complete UI overhaul with the new GemSprout 2.0 look and feel' },
@@ -345,7 +358,7 @@ function showChangelog(markSeen = false) {
   showQuickActionModal(`
     <div style="text-align:center;margin-bottom:16px">
       <i class="ph-duotone ph-leaf" style="color:#16A34A;font-size:2.2rem"></i>
-      <div class="modal-title" style="margin-top:6px">What's New in GemSprout</div>
+      <div class="modal-title" style="margin-top:6px">What's New in GemSprout Beta</div>
     </div>
     ${entriesHtml}
     <div class="modal-actions" style="margin-top:16px">
@@ -369,9 +382,72 @@ const WEEK_REVIEW_SLIDE_MS = 10000;
 const WEEK_REVIEW_PREVIEW_MODE = false;
 const WEEK_REVIEW_PREVIEW_SLIDE_INDEX = 1;
 const WEEK_REVIEW_PREVIEW_KID_COUNT = 0;
+const DEBUG_FORCE_LOADING_PREVIEW = false; // TEMP: force loading-screen preview at startup
+const DEBUG_FORCE_LOADING_PREVIEW_MS = 3500;
 let _weekReviewStory = null;
 let _weekReviewAudio = null;
 let _weekReviewPreviewShown = false;
+let _weekReviewPrimeToken = 0;
+
+function _weekReviewTrackPath(trackNumber) {
+  const base = 'assets/week-review-audio/';
+  return `${base}${trackNumber}.wav`;
+}
+
+function _weekReviewEnsureAudioElement(src = '') {
+  if (!_weekReviewAudio) {
+    _weekReviewAudio = new Audio(src || '');
+    _weekReviewAudio.playsInline = true;
+    _weekReviewAudio.preload = 'auto';
+    _weekReviewAudio.loop = true;
+    _weekReviewAudio.addEventListener('error', () => {
+      const errCode = _weekReviewAudio?.error?.code ?? 'unknown';
+      const errMsg = _weekReviewAudio?.error?.message || '';
+      const currentSrc = _weekReviewAudio?.currentSrc || _weekReviewAudio?.src || src || '';
+      console.warn('[WeekReview audio] load/play error', { code: errCode, message: errMsg, src: currentSrc });
+    });
+  } else if (src && _weekReviewAudio.src !== new URL(src, window.location.href).href) {
+    _weekReviewAudio.pause();
+    _weekReviewAudio.src = src;
+  }
+  return _weekReviewAudio;
+}
+
+function _weekReviewPrimeAudio(src) {
+  if (!src || WEEK_REVIEW_PREVIEW_MODE) return;
+  const audio = _weekReviewEnsureAudioElement(src);
+  const token = ++_weekReviewPrimeToken;
+  const previousMuted = !!audio.muted;
+  audio.muted = true;
+  audio.currentTime = 0;
+  audio.load();
+  audio.play().then(() => {
+    if (token !== _weekReviewPrimeToken) {
+      audio.muted = previousMuted;
+      return;
+    }
+    // Avoid pausing if the story has already started real playback.
+    if (!_weekReviewStory || _weekReviewStory.audioSlideIndex < 0 || _weekReviewStory.paused) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+    audio.muted = previousMuted;
+  }).catch(() => {
+    audio.muted = previousMuted;
+  });
+}
+
+function _weekReviewBindAudioRetry(overlay) {
+  if (!overlay || overlay.dataset.wrAudioRetryBound === '1') return;
+  const retry = () => {
+    if (_weekReviewStory?.paused) return;
+    _weekReviewAudio?.play().catch(() => {});
+  };
+  overlay.addEventListener('pointerdown', retry, { passive: true });
+  overlay.addEventListener('touchstart', retry, { passive: true });
+  overlay.addEventListener('click', retry, { passive: true });
+  overlay.dataset.wrAudioRetryBound = '1';
+}
 
 function _weekReviewTimingScale(kidCount) {
   const normalizedCount = Math.max(0, Math.floor(Number(kidCount) || 0));
@@ -499,6 +575,7 @@ function showWeekReview() {
   const timingScale = _weekReviewTimingScale(kids.length);
   const slideMs = WEEK_REVIEW_SLIDE_MS;
   _weekReviewStory = { slides, index: previewIndex, timer: null, paused: WEEK_REVIEW_PREVIEW_MODE, remainingMs: slideMs, slideMs, timingScale, slideStartedAt: 0, audioSlideIndex: -1, lastAdvanceFromTimer: false };
+  if (!WEEK_REVIEW_PREVIEW_MODE) _weekReviewPrimeAudio(slides[previewIndex]?.audioSrc);
   _renderWeekReviewStory();
 }
 
@@ -724,13 +801,12 @@ function _weekReviewSplitOverflowSlides(slides) {
 
 function _assignWeekReviewAudio(slides, weekSeed) {
   if (!Array.isArray(slides) || !slides.length) return;
-  const base = 'assets/week-review-audio/';
-  const introTrack = `${base}1.wav`;
+  const introTrack = _weekReviewTrackPath(1);
   const middlePool = _weekReviewShuffle([
-    `${base}2.wav`,
-    `${base}3.wav`,
-    `${base}4.wav`,
-    `${base}5.wav`
+    _weekReviewTrackPath(2),
+    _weekReviewTrackPath(3),
+    _weekReviewTrackPath(4),
+    _weekReviewTrackPath(5)
   ], weekSeed || today());
   const allTracks = [introTrack, ...middlePool];
   let middleIndex = 0;
@@ -790,14 +866,11 @@ function _weekReviewSyncAudio() {
   const state = _weekReviewStory;
   const slide = state?.slides?.[state.index];
   if (!slide?.audioSrc) return;
+  _weekReviewPrimeToken++;
   const resolvedSrc = new URL(slide.audioSrc, window.location.href).href;
   const changedSlide = state.audioSlideIndex !== state.index;
-  if (!_weekReviewAudio) {
-    _weekReviewAudio = new Audio(slide.audioSrc);
-    _weekReviewAudio.preload = 'auto';
-    _weekReviewAudio.loop = true;
-    _weekReviewAudio.load();
-  } else if (_weekReviewAudio.src !== resolvedSrc) {
+  _weekReviewEnsureAudioElement(slide.audioSrc);
+  if (_weekReviewAudio.src !== resolvedSrc) {
     _weekReviewAudio.pause();
     _weekReviewAudio.src = slide.audioSrc;
     _weekReviewAudio.load();
@@ -813,19 +886,46 @@ function _weekReviewSyncAudio() {
     _weekReviewAudio.pause();
     return;
   }
+  _weekReviewAudio.muted = false;
   if (changedSlide) _weekReviewAudio.currentTime = 0;
-  _weekReviewAudio.play().catch(() => {
-    const overlay = document.getElementById('week-review-overlay');
-    if (!overlay) return;
-    const retry = () => {
-      if (_weekReviewStory?.paused) return;
-      _weekReviewAudio?.play().catch(() => {});
-    };
-    overlay.addEventListener('pointerdown', retry, { once: true });
-  });
+  const attemptPlay = () => {
+    if (!_weekReviewStory || _weekReviewStory.paused || _weekReviewStory.audioSlideIndex !== _weekReviewStory.index) return;
+    _weekReviewAudio.play().catch(() => {
+      const overlay = document.getElementById('week-review-overlay');
+      if (!overlay) return;
+      _weekReviewBindAudioRetry(overlay);
+    });
+  };
+  if (_weekReviewAudio.readyState < 2) {
+    _weekReviewAudio.addEventListener('canplay', attemptPlay, { once: true });
+  }
+  attemptPlay();
+}
+
+function _devPreviewMaintenanceScreen() {
+  closeSettings();
+  showMaintenanceScreen(
+    'Scheduled Maintenance',
+    'Preview mode for the maintenance experience shown when Remote Config enables downtime.',
+    'Open Status Page',
+    'https://gemsprout.com'
+  );
+}
+
+function _devPreviewParentSignInScreen() {
+  const parent = (S.currentUser?.role === 'parent' && !S.currentUser.deleted)
+    ? S.currentUser
+    : (D.family?.members || []).find(m => m.role === 'parent' && !m.deleted);
+  if (!parent) {
+    toast('Add at least one parent profile first');
+    return;
+  }
+  closeSettings();
+  showParentSignIn(parent.id, () => {});
 }
 
 function _weekReviewStopAudio() {
+  _weekReviewPrimeToken++;
   if (!_weekReviewAudio) return;
   _weekReviewAudio.pause();
   _weekReviewAudio.currentTime = 0;
@@ -862,282 +962,214 @@ function _renderWeekReviewStory() {
       }
       @keyframes wr-scene-in {
         from { opacity:0; transform:translateY(20px) scale(0.985); }
-        to   { opacity:1; transform:translateY(0) scale(1); }
+        to { opacity:1; transform:translateY(0) scale(1); }
       }
       @keyframes wr-progress {
-        from { transform: scaleX(0); }
-        to { transform: scaleX(1); }
+        from { transform:scaleX(0); }
+        to { transform:scaleX(1); }
       }
-      @keyframes wr-reveal {
-        from { opacity: 1; transform: translate3d(var(--wr-from-x, 0px), var(--wr-from-y, 18px), 0) scale(1); }
-        to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+      @keyframes wr-reveal-up {
+        from { opacity:0; transform:translateY(16px) scale(0.99); }
+        to { opacity:1; transform:translateY(0) scale(1); }
       }
-      .wr-reveal-from-bottom { --wr-from-x:0px; --wr-from-y:calc(100vh + 120px); }
-      .wr-reveal-from-bottom-card { --wr-from-x:0px; --wr-from-y:calc(100vh + 160px); }
-      .wr-reveal-from-left { --wr-from-x:calc(-100vw - 160px); --wr-from-y:0px; }
-      .wr-reveal-from-right { --wr-from-x:calc(100vw + 160px); --wr-from-y:0px; }
+      @keyframes wr-reveal-left {
+        from { opacity:0; transform:translateX(-20px); }
+        to { opacity:1; transform:translateX(0); }
+      }
+      @keyframes wr-reveal-right {
+        from { opacity:0; transform:translateX(20px); }
+        to { opacity:1; transform:translateX(0); }
+      }
+      @keyframes wr-subtle-float {
+        0%,100% { transform:translateY(0); }
+        50% { transform:translateY(-4px); }
+      }
+      @keyframes wr-badge-pop {
+        0% { transform:scale(0.7); opacity:0; }
+        60% { transform:scale(1.08); opacity:1; }
+        100% { transform:scale(1); opacity:1; }
+      }
       .wr-shell {
-        max-width: 520px;
-        margin: 0 auto;
-        min-height: 100dvh;
-        padding: env(safe-area-inset-top,20px) 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
-        display: flex;
-        flex-direction: column;
-        position: relative;
+        position:relative;
+        min-height:100vh;
+        display:flex;
+        flex-direction:column;
+        padding:calc(env(safe-area-inset-top, 16px) + 10px) 16px calc(env(safe-area-inset-bottom, 12px) + 12px);
+        box-sizing:border-box;
       }
       .wr-top {
-        padding: 4px 0 10px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:8px;
+        margin-bottom:10px;
       }
-      .wr-progress-row {
-        display: flex;
-        gap: 6px;
-        margin-bottom: 16px;
+      .wr-progress {
+        flex:1;
+        display:flex;
+        gap:6px;
       }
       .wr-progress-track {
-        flex: 1;
-        height: 4px;
-        border-radius: 999px;
-        overflow: hidden;
-        background: rgba(255,253,248,0.24);
+        flex:1;
+        height:4px;
+        border-radius:999px;
+        background:rgba(255,255,255,0.32);
+        overflow:hidden;
       }
       .wr-progress-fill {
-        display: block;
-        width: 100%;
-        height: 100%;
-        transform-origin: left center;
-        transform: scaleX(0);
-        background: rgba(255,248,239,0.92);
-        border-radius: inherit;
+        display:block;
+        width:100%;
+        height:100%;
+        transform-origin:left;
+        transform:scaleX(0);
+        background:linear-gradient(90deg, #e8c76a, #f5d980);
       }
-      .wr-progress-fill.done {
-        transform: scaleX(1);
-      }
-      .wr-progress-fill.active {
-        animation: wr-progress linear forwards;
-      }
-      .wr-head {
-        padding: 8px 0 8px;
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 12px;
-      }
-      .wr-title {
-        color: #fff8ef;
-        font-size: 1.28rem;
-        font-weight: 900;
-        letter-spacing: -0.03em;
-      }
-      .wr-date {
-        color: rgba(244,239,228,0.62);
-        font-size: 0.82rem;
-        margin-top: 4px;
-      }
+      .wr-progress-fill.done { transform:scaleX(1); }
+      .wr-progress-fill.active { animation:wr-progress ${WEEK_REVIEW_SLIDE_MS}ms linear forwards; }
       .wr-close {
-        background: rgba(255,253,248,0.14);
-        border: 1px solid rgba(255,253,248,0.18);
-        color: rgba(255,248,239,0.78);
-        width: 38px;
-        height: 38px;
-        border-radius: 999px;
-        cursor: pointer;
-        flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 10px 18px rgba(15,29,25,0.14);
+        border:none;
+        background:rgba(255,255,255,0.2);
+        color:#f4efe4;
+        width:34px;height:34px;border-radius:12px;
+        display:grid;place-items:center;
+        cursor:pointer;
       }
-      .wr-scene {
-        position: relative;
-        flex: 1;
-        display: flex;
-        align-items: stretch;
-        min-height: 0;
-      }
-      .wr-tap {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 24%;
-        z-index: 5;
-      }
-      .wr-tap-left { left: 0; }
-      .wr-tap-right { right: 0; }
-      .wr-slide {
-        position: relative;
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        animation: wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both;
+      .wr-card-wrap {
+        position:relative;
+        flex:1;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        min-height:0;
       }
       .wr-card {
-        border-radius: 30px;
-        padding: 34px 24px 22px;
-        box-shadow: 0 18px 40px rgba(34, 28, 20, 0.14);
-        min-height: min(76dvh, 720px);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        width:min(620px, 100%);
+        max-height:100%;
+        overflow:hidden;
+        border-radius:28px;
+        background:rgba(255,252,246,0.9);
+        border:1px solid rgba(39,66,57,0.14);
+        box-shadow:0 20px 46px rgba(31,54,46,0.24);
+        animation:wr-scene-in .38s ease both;
       }
-      .wr-reveal {
-        opacity: 0;
-        animation: wr-reveal 0.55s cubic-bezier(0.22,1,0.36,1) forwards;
-        animation-delay: var(--wr-delay, 0s);
+      .wr-card-inner { padding:18px 16px 16px; }
+      .wr-date {
+        text-align:center;
+        color:#5f746a;
+        font-size:0.76rem;
+        font-weight:800;
+        letter-spacing:.08em;
+        text-transform:uppercase;
+        margin-bottom:10px;
       }
-      .wr-card-label {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 0.72rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: rgba(255,248,239,0.64);
-        margin-bottom: 14px;
+      .wr-title {
+        text-align:center;
+        color:#24453c;
+        font-size:1.34rem;
+        font-weight:900;
+        letter-spacing:-.02em;
+        line-height:1.15;
+        margin:0;
       }
+      .wr-subtitle {
+        text-align:center;
+        color:#4f675d;
+        margin-top:6px;
+        font-size:0.93rem;
+        line-height:1.35;
+      }
+      .wr-list {
+        margin-top:14px;
+        display:grid;
+        gap:10px;
+      }
+      .wr-row {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        background:rgba(241,248,244,0.86);
+        border:1px solid rgba(39,66,57,0.11);
+        border-radius:14px;
+        padding:10px 11px;
+      }
+      .wr-row-main { display:flex;align-items:center;gap:10px;min-width:0; }
+      .wr-row-icon {
+        width:36px;height:36px;border-radius:11px;
+        display:grid;place-items:center;
+        background:linear-gradient(180deg,#2a7560,#1f5f4f);
+        color:#f7fbf8;font-size:1.05rem;
+        flex-shrink:0;
+      }
+      .wr-row-label { color:#27423a;font-size:0.9rem;font-weight:700;line-height:1.3;word-break:break-word; }
+      .wr-row-value { color:#1f3932;font-size:0.95rem;font-weight:900;white-space:nowrap; }
       .wr-card-big {
-        font-size: clamp(3rem,14vw,5rem);
-        font-weight: 900;
-        color: #fff9f1;
-        line-height: 0.95;
-        letter-spacing: -0.05em;
-        margin-bottom: 8px;
-        text-wrap: balance;
+        margin-top:14px;
+        text-align:center;
+        color:#1f3932;
+        font-size:2.1rem;
+        line-height:1.05;
+        font-weight:900;
+        letter-spacing:-.03em;
       }
       .wr-card-sub {
-        font-size: 0.9rem;
-        color: rgba(255,246,238,0.68);
-        line-height: 1.45;
-        max-width: 24rem;
+        text-align:center;
+        color:#5f746a;
+        font-size:0.92rem;
+        margin-top:6px;
       }
-      .wr-kid-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-top: 6px;
+      .wr-reveal { opacity:0; animation:wr-reveal-up .44s ease forwards; animation-delay:var(--wr-delay, 0s); }
+      .wr-reveal-from-left { animation-name:wr-reveal-left; }
+      .wr-reveal-from-right { animation-name:wr-reveal-right; }
+      .wr-finale-icon { font-size:2.4rem; text-align:center; animation:wr-badge-pop .5s ease forwards, wr-subtle-float 2.6s ease-in-out infinite .7s; }
+      .wr-finale-message { text-align:center; color:#36554b; font-size:0.98rem; margin-top:8px; line-height:1.45; }
+      .wr-nav {
+        position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr; z-index:3;
       }
-      .wr-kid-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 11px 14px;
-        background: rgba(255,253,248,0.18);
-        border: 1px solid rgba(255,253,248,0.16);
-        border-radius: 18px;
-        backdrop-filter: blur(8px);
+      .wr-hit {
+        border:none; background:transparent; cursor:pointer; -webkit-tap-highlight-color:transparent;
       }
-      .wr-kid-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255,250,243,0.78);
-        color: #31453e;
-        font-size: 1.55rem;
-        line-height: 1;
-        flex-shrink: 0;
-        overflow: hidden;
+      .wr-bottom {
+        margin-top:10px;
+        display:flex;
+        justify-content:center;
+        color:rgba(244,252,248,0.88);
+        font-size:0.78rem;
+        font-weight:700;
       }
-      .wr-kid-name {
-        font-weight: 800;
-        color: #fff9f1;
-        font-size: 0.95rem;
-      }
-      .wr-kid-sub {
-        font-size: 0.79rem;
-        color: rgba(255,246,238,0.62);
-        margin-top: 2px;
-        line-height: 1.35;
-      }
-      .wr-kid-stat {
-        font-weight: 900;
-        color: #fff9f1;
-        font-size: 1.04rem;
-        white-space: nowrap;
-      }
-      .wr-finale {
-        text-align: center;
-        align-items: center;
-      }
-      .wr-finale .wr-card-sub {
-        max-width: 18rem;
-        text-align: center;
-      }
-      .wr-finale-icon {
-        font-size: 3.2rem;
-        color: rgba(255,255,255,0.58);
-        margin-bottom: 18px;
-      }
-      .wr-cover-chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 20px;
-      }
-      .wr-cover-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 9px 12px;
-        border-radius: 999px;
-        background: rgba(255,253,248,0.16);
-        border: 1px solid rgba(255,253,248,0.16);
-        color: rgba(255,248,239,0.9);
-        font-size: 0.8rem;
-        font-weight: 700;
-      }
-      .wr-bottom-note {
-        text-align: center;
-        color: rgba(255,255,255,0.78);
-        font-size: 0.84rem;
-        font-weight: 700;
-        padding-top: 14px;
-      }
-      @media (max-width: 640px) {
-        .wr-card {
-          min-height: calc(100dvh - env(safe-area-inset-top,20px) - env(safe-area-inset-bottom,0px) - 104px);
-          padding: 30px 22px 20px;
-        }
-        .wr-card-big {
-          font-size: clamp(2.8rem, 13vw, 4.5rem);
-        }
+      @media (max-width: 420px) {
+        .wr-shell { padding-left:12px; padding-right:12px; }
+        .wr-card { border-radius:24px; }
+        .wr-card-inner { padding:16px 14px 14px; }
+        .wr-title { font-size:1.22rem; }
+        .wr-card-big { font-size:1.88rem; }
       }
     </style>
     <div class="wr-shell">
       <div class="wr-top">
-        <div class="wr-progress-row">${progress}</div>
-        <div class="wr-head">
-          <div>
-            <div class="wr-title">Week in Review</div>
-            <div class="wr-date">${slides.length > 1 ? `Story ${state.index + 1} of ${slides.length} · ` : ''}${slide.type === 'cover' ? 'This past week' : dateRange}</div>
-          </div>
-          <button onclick="closeWeekReview()" class="wr-close"><i class="ph-duotone ph-x" style="font-size:1.1rem"></i></button>
-        </div>
+        <div class="wr-progress">${progress}</div>
+        <button onclick="closeWeekReview()" class="wr-close" aria-label="Close week in review"><i class="ph-duotone ph-x" style="font-size:1rem"></i></button>
+        <button onclick="_weekReviewTogglePause()" class="wr-close wr-pause-btn" aria-label="${state.paused ? 'Resume story' : 'Pause story'}"><i class="ph-duotone ${state.paused ? 'ph-play' : 'ph-pause'}" style="font-size:1rem"></i></button>
       </div>
-      <div class="wr-scene">
-        <button class="wr-tap wr-tap-left" aria-label="Previous story" onpointerdown="return handleWeekReviewPress('prev', event)" onpointerup="handleWeekReviewRelease('prev')" onpointercancel="handleWeekReviewRelease('prev')" onpointerleave="handleWeekReviewRelease('prev')" onclick="return handleWeekReviewTap('prev', event)"></button>
-        <button class="wr-tap wr-tap-right" aria-label="Next story" onpointerdown="return handleWeekReviewPress('next', event)" onpointerup="handleWeekReviewRelease('next')" onpointercancel="handleWeekReviewRelease('next')" onpointerleave="handleWeekReviewRelease('next')" onclick="return handleWeekReviewTap('next', event)"></button>
-        <div class="wr-slide" onpointerdown="return handleWeekReviewCardPress(event)" onpointerup="handleWeekReviewCardRelease()" onpointercancel="handleWeekReviewCardRelease()" onpointerleave="handleWeekReviewCardRelease()">
-          <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}" style="background:${slide.gradient}">
-            ${slide.type === 'finale' ? `<div class="wr-finale-icon wr-reveal" style="--wr-delay:1s">${slide.icon}</div>` : ''}
-            <div class="wr-card-label wr-reveal" style="--wr-delay:1s">${slide.icon}${slide.label}</div>
-            <div class="wr-card-big wr-reveal" style="--wr-delay:2s">${slide.bigStat}</div>
-            <div class="wr-card-sub wr-reveal" style="--wr-delay:3s">${slide.subStat}</div>
-            ${slide.type === 'cover' ? `
-              <div class="wr-cover-chip-row">
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:4s"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:5.1s"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSaved.toFixed(2)} saved</div>
-                <div class="wr-cover-chip wr-reveal" style="--wr-delay:6.2s"><i class="ph-duotone ph-medal" style="font-size:1rem"></i> ${totalBadges} badges</div>
-              </div>
-            ` : ''}
-            ${(slide.rows || []).length ? `<div class="wr-kid-list">${rowsHtml}</div>` : ''}
+      <div class="wr-card-wrap">
+        <div class="wr-card">
+          <div class="wr-card-inner">
+            <div class="wr-date">${slide.date || ''}</div>
+            <h2 class="wr-title">${slide.title || ''}</h2>
+            ${slide.subTitle ? `<div class="wr-subtitle">${slide.subTitle}</div>` : ''}
+            ${_weekReviewCardBodyHTML(slide, { previewAttr: '', totalDiamonds: _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.bigStat?.split(' ')[0] || '0', totalSaved: (() => {
+              const s = _weekReviewFindSlideByLabelPrefix(slides, 'Gems Earned')?.subStat || '';
+              const m = s.match(/saved\\s+([^\\s]+)/i);
+              return m ? m[1] : '$0.00';
+            })(), totalBadges: _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0' })}
           </div>
         </div>
+        <div class="wr-nav">
+          <button class="wr-hit" aria-label="Previous slide" onpointerdown="_weekReviewPressStartDir(event, 'prev')" onpointerup="_weekReviewPressEndDir(event, 'prev')" onpointercancel="_weekReviewPressCancelDir(event, 'prev')" onclick="_weekReviewPressClickDir(event, 'prev')"></button>
+          <button class="wr-hit" aria-label="Next slide" onpointerdown="_weekReviewPressStartDir(event, 'next')" onpointerup="_weekReviewPressEndDir(event, 'next')" onpointercancel="_weekReviewPressCancelDir(event, 'next')" onclick="_weekReviewPressClickDir(event, 'next')"></button>
+        </div>
       </div>
-      ${slide.type === 'finale' ? `<div class="wr-bottom-note wr-reveal" style="--wr-delay:4.8s">Tap anywhere to close or let the story finish.</div>` : ''}
+      <div class="wr-bottom">${state.index + 1} of ${slides.length}</div>
     </div>`;
 }
 
@@ -1688,6 +1720,36 @@ const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
 const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
 const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
 const PARENT_AUTH_PROVIDER_KEY = 'gemsprout.parentAuthProvider';
+const E2E_MODE_KEY = 'gemsprout.e2eMode';
+const DEBUG_FORCE_PRIZE_STATE_PREVIEW = false; // TEMP: visual preview for locked/redeemed prize states
+
+function isE2EMode() {
+  try {
+    if (window.__GEMSPROUT_E2E__ === true) return true;
+  } catch {}
+  try {
+    if (localStorage.getItem(E2E_MODE_KEY) === '1') return true;
+  } catch {}
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    return params.get('e2e') === '1';
+  } catch {}
+  return false;
+}
+
+function getPrizeStatusForKidView(prize, memberId) {
+  const status = getPrizeRedeemStatus(prize, memberId);
+  if (!DEBUG_FORCE_PRIZE_STATE_PREVIEW || isE2EMode() || prize?.type !== 'individual') return status;
+  if (status.reason === 'one_time_locked') return status;
+  return {
+    ...status,
+    ok: false,
+    reason: 'window_locked',
+    message: 'This prize will be available again tomorrow',
+    canAfford: true,
+    gemsNeeded: 0,
+  };
+}
 
 function getParentAuthUid() {
   try { return localStorage.getItem(PARENT_AUTH_KEY) || null; } catch { return null; }
@@ -1847,7 +1909,7 @@ function showAppPin() {
   S.pinBuffer = '';
   S.pinMode   = 'app';
   document.getElementById('pin-content').innerHTML = `
-    <img class="pin-avatar" src="gemsproutpadded.png">
+    <img class="pin-avatar" src="gemsproutcream.png">
     <div class="pin-title">GemSprout</div>
     <div class="pin-sub">Enter parent PIN to continue</div>
     <div class="pin-dots" id="pin-dots">
@@ -2175,6 +2237,7 @@ function defaultData() {
       parentPin:        '',
       autoApprove:      false,
       hideUnavailable:  false,
+      showLockedRecurringPrizes: true,
       tooltipBounceEnabled: true,
       diamondsPerDollar:  10,
       currency:         '$',
@@ -2207,6 +2270,7 @@ function defaultData() {
     teamGoalInboxDismissed: [],
     history:         [],
     savingsRequests: [],
+    prizeRequests:   [],
     declineNotifications: [],
   };
 }
@@ -2236,11 +2300,12 @@ function saveData() {
     if (fresh) S.currentUser = fresh;
   }
   renderCurrentView();
-  pushToFirestore();
+  if (!isE2EMode()) pushToFirestore();
 }
 
 async function pushToFirestore() {
   if (S._testOnboarding?.active) return;
+  if (isE2EMode()) return;
   try {
     await db.doc(getFamilyDoc()).set(D);
   } catch(e) {
@@ -2461,12 +2526,15 @@ function checkForNewBadges(member, isWhileAway = false) {
     const displayIcon = rawIcon.includes('<')
       ? rawIcon.replace(/font-size:[^;'"]+/g, 'font-size:3rem')
       : `<span style="font-size:3rem">${rawIcon}</span>`;
+    const reasonLine = h.choreTitle
+      ? `${h.title} for "${h.choreTitle}"`
+      : `${h.title} unlocked`;
     showCelebration({
       icon:      displayIcon,
       title:     titleHtml,
-      sub:       h.title + (h.choreTitle ? ` ? ${h.choreTitle}` : ''),
+      sub:       reasonLine,
       badgeIcon: rawIcon,
-      tts:       tiny ? `You earned a new badge! ${h.title}!` : null,
+      tts:       tiny ? `You earned a new badge! ${reasonLine}.` : null,
     });
   });
 }
@@ -2560,6 +2628,10 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
 }
 
 function subscribeToFirestore(onFirstLoad) {
+  if (isE2EMode()) {
+    if (typeof onFirstLoad === 'function') onFirstLoad();
+    return;
+  }
   if (firestoreUnsub) firestoreUnsub();
   const _subDoc = getFamilyDoc();
   let firstSnapshot = true;
@@ -2732,7 +2804,10 @@ function normalizeSlots(slots) {
 }
 
 function normalizeChore(chore) {
-  const rewardValue = Number(chore?.diamonds ?? chore?.gems ?? 0) || 0;
+  const hasGems = chore && Object.prototype.hasOwnProperty.call(chore, 'gems');
+  const hasDiamonds = chore && Object.prototype.hasOwnProperty.call(chore, 'diamonds');
+  const rewardSource = hasGems ? chore.gems : hasDiamonds ? chore.diamonds : 0;
+  const rewardValue = Number(rewardSource) || 0;
   const legacyFrequency = chore?.frequency || 'daily';
   const legacyPeriod = legacyFrequency === 'weekly' ? 'week' : legacyFrequency === 'once' ? 'once' : 'day';
   const schedule = chore?.schedule || {};
@@ -2760,6 +2835,7 @@ function normalizeChore(chore) {
   const title = chore?.title || '';
   const choreBadges = Array.isArray(chore?.badges) ? chore.badges :
     !chore?.id ? (() => { const preset = CHORE_BADGE_PRESETS[title]; return preset ? preset.map(b => ({ id: genId(), ...b })) : []; })() : [];
+  const icon = normalizeIconName(chore?.icon, DEFAULT_APP_ICON);
 
   return {
     ...chore,
@@ -2767,7 +2843,7 @@ function normalizeChore(chore) {
     gems: rewardValue,
     frequency: period,
     repeatCount: targetCount,
-    icon: chore?.icon || 'broom',
+    icon,
     iconColor: chore?.iconColor || '#6BCB77',
     photoMode: (['after','before_after'].includes(chore?.photoMode) ? chore.photoMode
              : chore?.requiresPhoto === true ? 'after' : 'none'),
@@ -2845,6 +2921,209 @@ function syncGemAliases() {
   });
 }
 
+const PRIZE_REQUIREMENT_TYPES = ['none', 'task_count', 'combo', 'specific_tasks'];
+const PRIZE_RECURRENCE_TYPES = ['anytime', 'daily', 'weekly', 'monthly', 'one_time'];
+
+function getPrizePeriodKey(recurrence, dateStr = today()) {
+  if (recurrence === 'one_time') return 'one_time';
+  if (recurrence === 'daily') return dateStr;
+  if (recurrence === 'weekly') return `w:${startOfWeekDate(dateStr)}`;
+  if (recurrence === 'monthly') return `m:${dateStr.slice(0, 7)}`;
+  return 'anytime';
+}
+
+function formatPrizeRecurrence(recurrence) {
+  if (recurrence === 'one_time') return 'Once';
+  if (recurrence === 'daily') return 'Once per day';
+  if (recurrence === 'weekly') return 'Once per week';
+  if (recurrence === 'monthly') return 'Once per month';
+  return 'Unlimited';
+}
+
+function getDaysUntilDate(dateStr) {
+  const now = parseDateLocal(today());
+  const target = parseDateLocal(dateStr);
+  const ms = target.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
+function getPrizeLockedWindowMessage(recurrence, redemptionDate = today()) {
+  if (recurrence === 'daily') return 'This prize will be available again tomorrow';
+  if (recurrence === 'weekly') {
+    const nextDate = addDaysToDate(startOfWeekDate(redemptionDate), 7);
+    const days = getDaysUntilDate(nextDate);
+    if (days <= 1) return 'This prize will be available again tomorrow';
+    return `This prize will be available again in ${days} days`;
+  }
+  if (recurrence === 'monthly') {
+    const nextDate = addMonthsToDate(`${redemptionDate.slice(0, 7)}-01`, 1);
+    const days = getDaysUntilDate(nextDate);
+    if (days <= 1) return 'This prize will be available again tomorrow';
+    return `This prize will be available again in ${days} days`;
+  }
+  return 'This prize is not available right now';
+}
+
+function normalizePrize(prize) {
+  const p = prize && typeof prize === 'object' ? prize : {};
+  const cost = Math.max(0, Number(p.cost) || 0);
+  const requirementType = PRIZE_REQUIREMENT_TYPES.includes(p.requirementType)
+    ? p.requirementType
+    : PRIZE_REQUIREMENT_TYPES.includes(p.extraRequirementType) ? p.extraRequirementType : 'none';
+  const recurrence = PRIZE_RECURRENCE_TYPES.includes(p.recurrence) ? p.recurrence : 'anytime';
+  const requirementTaskCount = Math.max(1, parseInt(p.requirementTaskCount, 10) || 1);
+  const requirementTaskIds = Array.from(new Set(Array.isArray(p.requirementTaskIds) ? p.requirementTaskIds.filter(Boolean) : []));
+  const redemptions = Array.isArray(p.redemptions) ? p.redemptions
+    .map(r => {
+      const date = typeof r?.date === 'string' && r.date ? r.date : today();
+      const memberId = typeof r?.memberId === 'string' ? r.memberId : '';
+      return {
+        ...r,
+        memberId,
+        date,
+        cost: Math.max(0, Number(r?.cost ?? cost) || 0),
+        periodKey: typeof r?.periodKey === 'string' && r.periodKey ? r.periodKey : getPrizePeriodKey(recurrence, date),
+      };
+    })
+    .filter(r => r.memberId) : [];
+  return {
+    icon: DEFAULT_APP_ICON,
+    iconColor: '#FF6584',
+    type: 'individual',
+    recurrence: 'anytime',
+    requireParentApproval: false,
+    requirementType: 'none',
+    requirementTaskCount: 1,
+    requirementTaskIds: [],
+    redemptions: [],
+    ...p,
+    icon: normalizeIconName(p.icon, DEFAULT_APP_ICON),
+    cost,
+    recurrence,
+    requireParentApproval: !!p.requireParentApproval,
+    requirementType,
+    requirementTaskCount,
+    requirementTaskIds,
+    redemptions,
+  };
+}
+
+function getMemberCompletedTaskIdsOnDate(memberId, dateStr = today(), opts = {}) {
+  const requireFullCompletion = opts.requireFullCompletion === true;
+  const done = [];
+  for (const chore of D.chores || []) {
+    if (!chore?.id) continue;
+    const entriesToday = normalizeCompletionEntries(chore?.completions?.[memberId])
+      .filter(entry => entry.status === 'done' && entry.date === dateStr);
+    if (!entriesToday.length) continue;
+    if (!requireFullCompletion) { done.push(chore.id); continue; }
+    const progress = getChoreProgress(chore, memberId, dateStr);
+    if (progress.status === 'done') done.push(chore.id);
+  }
+  return done;
+}
+
+function isTaskCountedForDailyCombo(chore, memberId, dateStr = today()) {
+  if (!chore || !memberId) return false;
+  const entriesToday = normalizeCompletionEntries(chore.completions?.[memberId])
+    .filter(entry => entry.status === 'done' && entry.date === dateStr);
+  return entriesToday.length > 0;
+}
+
+function getPrizeRequirementSummary(prize) {
+  const p = normalizePrize(prize);
+  if (p.requirementType === 'task_count') {
+    return `Requires ${p.requirementTaskCount} task${p.requirementTaskCount === 1 ? '' : 's'} completed`;
+  }
+  if (p.requirementType === 'combo') return 'Requires Daily Combo complete today';
+  if (p.requirementType === 'specific_tasks') {
+    const names = p.requirementTaskIds
+      .map(id => D.chores.find(c => c.id === id)?.title)
+      .filter(Boolean);
+    if (!names.length) return 'Requires specific tasks today';
+    if (names.length <= 2) return `Requires: ${names.join(' + ')}`;
+    return `Requires ${names.length} specific tasks today`;
+  }
+  return '';
+}
+
+function getPrizeRequirementStatus(prize, memberId, dateStr = today()) {
+  const p = normalizePrize(prize);
+  const member = getMember(memberId);
+  if (!member) return { ok: false, reason: 'member_missing', message: 'Member not found.' };
+  if (p.requirementType === 'none') return { ok: true, reason: 'none', message: '' };
+
+  const completedIds = new Set(getMemberCompletedTaskIdsOnDate(memberId, dateStr, { requireFullCompletion: false }));
+
+  if (p.requirementType === 'task_count') {
+    const doneCount = completedIds.size;
+    const required = p.requirementTaskCount;
+    if (doneCount >= required) return { ok: true, reason: 'task_count', message: '' };
+    const remaining = required - doneCount;
+    return {
+      ok: false,
+      reason: 'task_count',
+      message: `${remaining} more task${remaining === 1 ? '' : 's'} needed today`,
+    };
+  }
+
+  if (p.requirementType === 'combo') {
+    if (D.settings.comboEnabled === false) return { ok: false, reason: 'combo_disabled', message: 'Daily Combo is currently off' };
+    const combo = getDailyCombo(memberId);
+    if (combo.length < 3) return { ok: false, reason: 'combo_missing', message: 'Daily Combo not ready yet' };
+    const missing = combo.filter(id => !completedIds.has(id));
+    if (!missing.length) return { ok: true, reason: 'combo', message: '' };
+    return { ok: false, reason: 'combo', message: 'Finish today\'s Daily Combo first' };
+  }
+
+  if (p.requirementType === 'specific_tasks') {
+    const required = p.requirementTaskIds.filter(id => D.chores.some(c => c.id === id));
+    if (!required.length) return { ok: false, reason: 'specific_tasks_missing', message: 'Required tasks are no longer available' };
+    const missing = required.filter(id => !completedIds.has(id));
+    if (!missing.length) return { ok: true, reason: 'specific_tasks', message: '' };
+    const firstName = D.chores.find(c => c.id === missing[0])?.title || 'required tasks';
+    return {
+      ok: false,
+      reason: 'specific_tasks',
+      message: missing.length === 1 ? `Finish "${firstName}" today` : `Finish ${missing.length} required tasks today`,
+    };
+  }
+
+  return { ok: true, reason: 'none', message: '' };
+}
+
+function getPrizeScheduleStatus(prize, memberId, dateStr = today()) {
+  const p = normalizePrize(prize);
+  if (p.recurrence === 'one_time') {
+    const redeemed = (p.redemptions || []).some(r => r.memberId === memberId);
+    if (!redeemed) return { ok: true, reason: 'one_time_open', periodKey: 'one_time', message: '' };
+    return { ok: false, reason: 'one_time_locked', periodKey: 'one_time', message: 'This one-time prize has already been redeemed' };
+  }
+  if (p.recurrence === 'anytime') return { ok: true, reason: 'anytime', periodKey: 'anytime', message: '' };
+  const periodKey = getPrizePeriodKey(p.recurrence, dateStr);
+  const lastRedemption = (p.redemptions || []).find(r => r.memberId === memberId && getPrizePeriodKey(p.recurrence, r.date) === periodKey);
+  const alreadyRedeemed = !!lastRedemption;
+  if (!alreadyRedeemed) return { ok: true, reason: 'window_open', periodKey, message: '' };
+  const msg = getPrizeLockedWindowMessage(p.recurrence, lastRedemption?.date || dateStr);
+  return { ok: false, reason: 'window_locked', periodKey, message: msg };
+}
+
+function getPrizeRedeemStatus(prize, memberId, dateStr = today()) {
+  const p = normalizePrize(prize);
+  const member = getMember(memberId);
+  if (!p || !member) return { ok: false, reason: 'missing', message: 'Prize or member missing' };
+  const cost = Math.max(0, Number(p.cost) || 0);
+  const balance = Math.max(0, Number(member.gems) || 0);
+  const schedule = getPrizeScheduleStatus(p, memberId, dateStr);
+  const requirement = getPrizeRequirementStatus(p, memberId, dateStr);
+  const canAfford = balance >= cost;
+  const gemsNeeded = Math.max(0, cost - balance);
+  if (!schedule.ok) return { ok: false, reason: schedule.reason, message: schedule.message, schedule, requirement, canAfford, gemsNeeded };
+  if (!requirement.ok) return { ok: false, reason: requirement.reason, message: requirement.message, schedule, requirement, canAfford, gemsNeeded };
+  if (!canAfford) return { ok: false, reason: 'gems', message: gemsNeeded > 0 ? `${gemsNeeded} more gems needed` : 'Not enough gems', schedule, requirement, canAfford, gemsNeeded };
+  return { ok: true, reason: 'ok', message: '', schedule, requirement, canAfford, gemsNeeded };
+}
+
 function normalizeData(data) {
   const normalized = data && typeof data === 'object' ? data : defaultData();
   normalized.settings = { ...defaultData().settings, ...(normalized.settings || {}) };
@@ -2854,10 +3133,11 @@ function normalizeData(data) {
     : [];
   normalized.chores = Array.isArray(normalized.chores) ? normalized.chores.map(c => normalizeChore(c)) : [];
   normalized.prizes = Array.isArray(normalized.prizes)
-    ? normalized.prizes.map(p => ({ icon:'gift', iconColor:'#FF6584', ...p }))
+    ? normalized.prizes.map(normalizePrize)
     : [];
   normalized.history         = Array.isArray(normalized.history)         ? normalized.history         : [];
   normalized.savingsRequests = Array.isArray(normalized.savingsRequests) ? normalized.savingsRequests : [];
+  normalized.prizeRequests   = Array.isArray(normalized.prizeRequests)   ? normalized.prizeRequests   : [];
   normalized.teamGoals = Array.isArray(normalized.teamGoals)
     ? normalized.teamGoals.map(g => ({ icon: 'trophy', iconColor: '#FFD93D', ...g }))
     : [];
@@ -3131,6 +3411,10 @@ function pendingSpendRequests() {
   return (D.savingsRequests || []).filter(r => r.status === 'pending');
 }
 
+function pendingPrizeRequests() {
+  return (D.prizeRequests || []).filter(r => r.status === 'pending');
+}
+
 function readyTeamGoalInboxItems() {
   const dismissed = new Set(Array.isArray(D.teamGoalInboxDismissed) ? D.teamGoalInboxDismissed : []);
   return (D.teamGoals || [])
@@ -3148,7 +3432,11 @@ function readyTeamGoalInboxItems() {
 }
 
 function familyInboxCount() {
-  return pendingApprovals().length + pendingSpendRequests().length + inProgressChores().length + readyTeamGoalInboxItems().length;
+  return pendingApprovals().length
+    + pendingSpendRequests().length
+    + pendingPrizeRequests().length
+    + inProgressChores().length
+    + readyTeamGoalInboxItems().length;
 }
 
 function dismissTeamGoalInboxItem(goalId) {
@@ -3344,14 +3632,40 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
 function doRedeemPrize(prizeId, memberId) {
   const prize  = D.prizes.find(p => p.id === prizeId);
   const member = getMember(memberId);
-  if (!prize || !member) return false;
-  if ((member.gems||0) < prize.cost) return false;
-  member.gems -= prize.cost;
-  addHistory('prize', memberId, prize.title, -prize.cost);
+  if (!prize || !member) return { ok: false, reason: 'missing' };
+  const status = getPrizeRedeemStatus(prize, memberId);
+  if (!status.ok) return status;
+  const normalizedPrize = normalizePrize(prize);
+  const redemptionDate = today();
+  const periodKey = getPrizePeriodKey(normalizedPrize.recurrence, redemptionDate);
+  const alreadyRedeemedInWindow = (prize.redemptions || []).some(r => {
+    if (r.memberId !== memberId) return false;
+    const key = r.periodKey || getPrizePeriodKey(normalizedPrize.recurrence, r.date || redemptionDate);
+    return key === periodKey;
+  });
+  if (alreadyRedeemedInWindow && normalizedPrize.recurrence !== 'anytime') {
+    return { ok: false, reason: 'window_locked', message: getPrizeLockedWindowMessage(normalizedPrize.recurrence, redemptionDate) };
+  }
+  const cost = Math.max(0, Number(normalizedPrize.cost) || 0);
+  const newBalance = Math.max(0, (member.gems || 0) - cost);
+  member.gems = newBalance;
+  member.diamonds = newBalance;
+  addHistory('prize', memberId, normalizedPrize.title, -cost);
   if (!prize.redemptions) prize.redemptions = [];
-  prize.redemptions.push({ memberId, date:today() });
+  prize.redemptions.push({
+    memberId,
+    date: redemptionDate,
+    cost,
+    periodKey,
+    requirementSnapshot: {
+      type: normalizedPrize.requirementType,
+      taskCount: normalizedPrize.requirementTaskCount,
+      taskIds: [...(normalizedPrize.requirementTaskIds || [])],
+      recurrence: normalizedPrize.recurrence,
+    },
+  });
   saveData();
-  return true;
+  return { ok: true };
 }
 
 function goalTotal(goal) {
@@ -4099,7 +4413,7 @@ function checkComboBonus(memberId) {
 
   const allDone = combo.every(id => {
     const chore = D.chores.find(c => c.id === id);
-    return chore && getChoreProgress(chore, memberId).status === 'done';
+    return chore && isTaskCountedForDailyCombo(chore, memberId, today());
   });
   if (!allDone) return;
 
@@ -4381,8 +4695,20 @@ function fmtCurrencyVisual(amount, symbol = '$') {
   return Number.isInteger(value) ? `${symbol}${value}` : `${symbol}${value.toFixed(2)}`;
 }
 
+const DEFAULT_APP_ICON = 'sketch-logo';
+
+function normalizeIconName(icon, fallback = DEFAULT_APP_ICON) {
+  if (typeof icon !== 'string') return fallback;
+  const value = icon.trim();
+  if (!value) return fallback;
+  if (value.includes('<') || value.includes('>')) return fallback;
+  if (/^[a-z0-9-]+$/i.test(value)) return value.toLowerCase();
+  return fallback;
+}
+
 function renderIcon(name, color, extraStyle='') {
   if (!name) return '';
+  if (typeof name === 'string' && name.includes('<') && name.includes('>')) return name;
   // Legacy emoji: any string with non-ASCII characters
   if ([...name].some(c => c.codePointAt(0) > 127)) return name;
   const col = color || '#6C63FF';
@@ -4520,7 +4846,7 @@ function handleRapidTap(key, opts = {}) {
   _rapidTapState[key] = state;
 }
 
-function launchAvatarRain(avatar, count = 80) {
+function launchAvatarRain(avatar, count = 80, avatarColor = '') {
   const isImage = !!avatar && /\.(png|jpe?g|gif|webp)$/i.test(avatar);
   launchRain(({ size }) => {
     const el = isImage ? document.createElement('img') : document.createElement('div');
@@ -4529,7 +4855,7 @@ function launchAvatarRain(avatar, count = 80) {
       el.alt = '';
       el.style.cssText = `width:${size}px;height:${size}px;`;
     } else {
-      el.innerHTML = avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>';
+      el.innerHTML = renderAvatarHtml(avatar, '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>', avatarColor);
       el.style.cssText = `font-size:${Math.max(1.2, size / 24).toFixed(2)}rem;`;
     }
     return el;
@@ -4540,12 +4866,12 @@ function easterEggTap() {
   handleRapidTap('egg-gem', {
     pulseEl: document.getElementById('egg-gem'),
     idleOpacity: 0.25,
-    onTrigger: () => launchAvatarRain('gemsproutpadded.png', 80),
+    onTrigger: () => launchAvatarRain('gemsprout.png', 80),
   });
 }
 
 function launchGemsproutRain(count = 80) {
-  launchAvatarRain('gemsproutpadded.png', count);
+  launchAvatarRain('gemsprout.png', count);
 }
 
 function launchConfetti(count = 100, emoji = '*', rootElement = null) {
@@ -4574,7 +4900,11 @@ function kidAvatarEasterEgg(ev) {
   const m = S.currentUser;
   handleRapidTap('header-avatar', {
     pulseEl: document.querySelector('#kid-header .header-avatar'),
-    onTrigger: () => launchAvatarRain(m?.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>', 84),
+    onTrigger: () => launchAvatarRain(
+      m?.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>',
+      84,
+      m?.avatarColor || m?.color || ''
+    ),
   });
 }
 
@@ -4584,7 +4914,11 @@ function parentAvatarEasterEgg(ev) {
   const m = S.currentUser;
   handleRapidTap('header-avatar', {
     pulseEl: document.querySelector('#parent-header .header-avatar'),
-    onTrigger: () => launchAvatarRain(m?.avatar || '<i class="ph-duotone ph-user-circle" style="color:#9CA3AF"></i>', 84),
+    onTrigger: () => launchAvatarRain(
+      m?.avatar || '<i class="ph-duotone ph-user-circle" style="color:#9CA3AF"></i>',
+      84,
+      m?.avatarColor || m?.color || ''
+    ),
   });
 }
 
@@ -4789,28 +5123,29 @@ function emailDebugLogs() {
 }
 
 async function devTestPushPermission() {
-  if (!isNative()) { console.log('Push notifications only work on device.'); return; }
+  if (!isNative()) { console.log('Push notifications only work on device.'); toast('Push notifications only work on device'); return; }
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); return; }
+    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); toast('FirebaseMessaging plugin not found'); return; }
     const result = await FirebaseMessaging.requestPermissions();
     console.log('Permission status:', result.receive);
     toast(`<i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Permission: ${result.receive}`);
   } catch(e) {
     console.error('devTestPushPermission error:', e);
+    toast(`Permission check failed: ${e?.message || 'unknown error'}`);
   }
 }
 
 async function devShowPushToken() {
-  if (!isNative()) { console.log('Push notifications only work on device.'); return; }
+  if (!isNative()) { console.log('Push notifications only work on device.'); toast('Push notifications only work on device'); return; }
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); return; }
+    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); toast('FirebaseMessaging plugin not found'); return; }
     const perm = await FirebaseMessaging.requestPermissions();
     if (perm.receive !== 'granted') { console.warn('Permission not granted:', perm.receive); toast(`Permission not granted: ${perm.receive}`); return; }
     const result = await FirebaseMessaging.getToken();
     const token = result?.token;
-    if (!token) { console.warn('No token returned'); return; }
+    if (!token) { console.warn('No token returned'); toast('No token returned from FirebaseMessaging'); return; }
     const uid = getParentAuthUid();
     if (uid) {
       await db.doc(`users/${uid}`).set(
@@ -4826,8 +5161,10 @@ async function devShowPushToken() {
         <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${uid ? 'Token saved to Firestore.' : 'Not signed in - token not saved.'}</div>
         <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedToken}').then(()=>toast('Copied!')).catch(()=>toast('Copy failed'))">Copy Token</button>
       </div>`);
+    toast('<i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Token retrieved');
   } catch(e) {
     console.error('devShowPushToken error:', e);
+    toast(`Token fetch failed: ${e?.message || 'unknown error'}`);
   }
 }
 
@@ -4843,8 +5180,94 @@ async function devSendTestPushNotification() {
     toast('<i class="ph-duotone ph-paper-plane-tilt" style="font-size:1rem;vertical-align:middle"></i> Test notification sent!');
   } catch(e) {
     console.error('devSendTestPushNotification error:', e);
-    toast('Send failed - check console');
+    toast(`Send failed: ${e?.message || 'check console'}`);
   }
+}
+
+async function devShowPushDiagnostics() {
+  const info = {
+    platform: isNative() ? 'native' : 'web',
+    familyCode: getFamilyCode() || '(none)',
+    currentUserRole: S.currentUser?.role || '(none)',
+    currentUserId: S.currentUser?.id || '(none)',
+    parentAuthUid: getParentAuthUid() || '(none)',
+    authUid: auth.currentUser?.uid || '(none)',
+    authEmail: auth.currentUser?.email || '(none)',
+    notifyChoreApproval: D.settings.notifyChoreApproval !== false ? 'on' : 'off',
+    notifySavingsSpend: D.settings.notifySavingsSpend !== false ? 'on' : 'off',
+    tokenFromDevice: '(unavailable)',
+    pushPermission: '(unknown)',
+    authUserTokenCount: '(unknown)',
+    parentAuthTokenCount: '(unknown)',
+  };
+
+  try {
+    if (isNative()) {
+      const { FirebaseMessaging } = Capacitor.Plugins;
+      if (!FirebaseMessaging) {
+        info.pushPermission = 'plugin-missing';
+      } else {
+        let perm = null;
+        if (typeof FirebaseMessaging.checkPermissions === 'function') {
+          perm = await FirebaseMessaging.checkPermissions().catch(() => null);
+        }
+        if (!perm) perm = await FirebaseMessaging.requestPermissions().catch(() => null);
+        info.pushPermission = perm?.receive || '(unknown)';
+        if (info.pushPermission === 'granted') {
+          const tokenResult = await FirebaseMessaging.getToken().catch(() => null);
+          info.tokenFromDevice = tokenResult?.token || '(none)';
+        }
+      }
+    } else {
+      info.pushPermission = 'web-only';
+    }
+  } catch (e) {
+    info.pushPermission = `error: ${e?.message || 'unknown'}`;
+  }
+
+  const readUserTokenCount = async (uid) => {
+    if (!uid || uid === '(none)') return '(n/a)';
+    try {
+      const snap = await db.doc(`users/${uid}`).get();
+      const tokens = snap.exists ? (snap.data()?.fcmTokens || []) : [];
+      return Array.isArray(tokens) ? tokens.length : '(invalid)';
+    } catch (e) {
+      return `error: ${e?.message || 'unknown'}`;
+    }
+  };
+
+  info.authUserTokenCount = await readUserTokenCount(info.authUid);
+  info.parentAuthTokenCount = await readUserTokenCount(info.parentAuthUid);
+
+  const lines = [
+    `Platform: ${info.platform}`,
+    `Family code: ${info.familyCode}`,
+    `Current role: ${info.currentUserRole}`,
+    `Current user id: ${info.currentUserId}`,
+    `Auth UID: ${info.authUid}`,
+    `Auth email: ${info.authEmail}`,
+    `Parent auth UID: ${info.parentAuthUid}`,
+    `Push permission: ${info.pushPermission}`,
+    `Device token: ${info.tokenFromDevice === '(unavailable)' ? info.tokenFromDevice : `${String(info.tokenFromDevice).slice(0, 24)}...`}`,
+    `users/<authUid> token count: ${info.authUserTokenCount}`,
+    `users/<parentAuthUid> token count: ${info.parentAuthTokenCount}`,
+    `Notify chore approval: ${info.notifyChoreApproval}`,
+    `Notify savings spend: ${info.notifySavingsSpend}`,
+  ];
+
+  const escapedJson = JSON.stringify(info, null, 2)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const escapedCopy = JSON.stringify(info, null, 2).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  showQuickActionModal(`
+    <div style="padding:8px">
+      <div style="font-weight:700;margin-bottom:10px"><i class="ph-duotone ph-bug" style="vertical-align:middle;margin-right:6px"></i>Push Diagnostics</div>
+      <div style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin-bottom:10px">${lines.map(x => esc(x)).join('<br>')}</div>
+      <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.5;max-height:220px;overflow:auto">${escapedJson}</div>
+      <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedCopy}').then(()=>toast('Diagnostics copied')).catch(()=>toast('Copy failed'))">Copy Diagnostics JSON</button>
+    </div>`);
 }
 
 function testCameraPermission() {
@@ -5224,23 +5647,29 @@ function _setKidProfileLookColor(field, color, el) {
 }
 
 function saveKidProfileLook() {
-  const member = S.currentUser;
+  const current = S.currentUser;
   const draft = S._kidProfileDraft;
-  if (!member || member.role !== 'kid' || !draft) return;
+  if (!current || current.role !== 'kid' || !draft) return;
+  const member = getMember(current.id) || current;
+  if (!member || member.role !== 'kid') return;
   normalizeMember(member);
-  member.avatar = draft.avatar || member.avatar;
-  member.avatarColor = draft.avatarColor || member.avatarColor || member.color;
-  member.color = draft.color || member.color;
+  member.avatar = draft.avatar || member.avatar || AVATARS[0];
+  member.avatarColor = draft.avatarColor || member.avatarColor || member.color || COLORS[0];
+  member.color = draft.color || member.color || COLORS[0];
+  S.currentUser = member;
   saveData();
+  S._kidProfileDraft = null;
   closeModal();
-  renderCurrentView();
   toast('Profile updated');
 }
 
 function openKidProfileLookModal(opts = {}) {
-  const member = S.currentUser;
+  const current = S.currentUser;
+  if (!current || current.role !== 'kid') return;
+  const member = getMember(current.id) || current;
   if (!member || member.role !== 'kid') return;
   normalizeMember(member);
+  S.currentUser = member;
   S._kidProfileDraft = {
     avatar: member.avatar || AVATARS[0],
     avatarColor: member.avatarColor || member.color || COLORS[0],
@@ -5581,6 +6010,11 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           <label class="toggle"><input type="checkbox" ${s.hideUnavailable?'checked':''} onchange="saveSetting('hideUnavailable',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
+          <div><div class="toggle-label">Hide unavailable prizes</div>
+            <div class="toggle-sub">Daily, weekly, and monthly prizes will be hidden in the shop tab after they've been redeemed</div></div>
+          <label class="toggle"><input type="checkbox" ${s.showLockedRecurringPrizes===false?'checked':''} onchange="saveSetting('showLockedRecurringPrizes',!this.checked)"><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
           <div><div class="toggle-label">Show swipe hints</div>
             <div class="toggle-sub">Auto-bounce hint cards the first time they appear</div></div>
           <label class="toggle"><input type="checkbox" ${s.tooltipBounceEnabled!==false?'checked':''} onchange="saveSetting('tooltipBounceEnabled',this.checked)"><span class="toggle-track"></span></label>
@@ -5739,11 +6173,14 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devTestPushPermission()"><i class="ph-duotone ph-lock-open" style="font-size:0.9rem;vertical-align:middle"></i> Request Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devShowPushToken()"><i class="ph-duotone ph-identification-card" style="font-size:0.9rem;vertical-align:middle"></i> Register &amp; Show FCM Token</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devShowPushDiagnostics()"><i class="ph-duotone ph-bug" style="font-size:0.9rem;vertical-align:middle"></i> Push Diagnostics</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();showPaywall()"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="startTestOnboarding()"><i class="ph-duotone ph-rocket-launch" style="font-size:1rem;vertical-align:middle"></i> Test Onboarding</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="closeSettings();showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle"></i> Test Week in Review</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewMaintenanceScreen()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Preview Maintenance Screen</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewParentSignInScreen()"><i class="ph-duotone ph-sign-in" style="font-size:1rem;vertical-align:middle"></i> Preview Parent Sign-In</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="try{localStorage.removeItem(CHANGELOG_SEEN_KEY)}catch(_){};showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle"></i> Test What's New</button>
         <div style="height:10px"></div>
         <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
@@ -6081,7 +6518,7 @@ function renderHome() {
             <div class="home-family-line home-family-line-bottom">Family</div>
           </div>
         </div>
-        <img class="home-logo" src="gemsproutpadded.png" alt="GemSprout">
+        <img class="home-logo" src="gemsprout.png" alt="GemSprout">
         <div class="home-hero-meta">
           <div class="home-subtitle">A quick look at how the family is doing right now.</div>
           <div class="home-pill-row">
@@ -6420,7 +6857,7 @@ function renderSetupGate() {
   gate.innerHTML = `
     <div class="setup-gate-shell">
       <div class="setup-gate-card">
-        <img src="gemsproutpadded.png" class="setup-gate-mark" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark" alt="GemSprout">
         <div class="setup-gate-kicker"><i class="ph-duotone ph-plant" style="font-size:0.95rem"></i> Family rhythms, rewards, and growth</div>
         <div class="setup-gate-title">Welcome to GemSprout</div>
         <div class="setup-gate-sub">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two.'}</div>
@@ -6448,7 +6885,7 @@ function startNewFamily() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutpadded.png" style="width:90px;height:90px">
+      <img src="gemsproutcream.png" style="width:90px;height:90px">
       <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
       <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
       <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
@@ -6595,7 +7032,7 @@ function showSignInFlow() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
+      <img src="gemsproutcream.png" style="width:90px;height:90px;margin-bottom:16px">
       <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
       <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
       <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
@@ -7205,6 +7642,11 @@ function renderSetupStep(opts = {}) {
             <div class="toggle-sub">Tasks outside their time window won't show on kids' screens</div></div>
           <label class="toggle"><input type="checkbox" id="setup-hide-unavailable" ${D.settings.hideUnavailable?'checked':''}><span class="toggle-track"></span></label>
         </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Hide unavailable prizes</div>
+            <div class="toggle-sub">Daily, weekly, and monthly prizes will be hidden in the shop tab after they've been redeemed</div></div>
+          <label class="toggle"><input type="checkbox" id="setup-hide-unavailable-prizes" ${D.settings.showLockedRecurringPrizes===false?'checked':''}><span class="toggle-track"></span></label>
+        </div>
         <div class="form-group mb-0">
           <label class="form-label">Family timezone</label>
           <select id="setup-timezone" style="width:100%">
@@ -7606,7 +8048,7 @@ function setupNext() {
     DEFAULT_PRIZES.forEach((p,i) => {
       const cb = document.getElementById('sp'+i);
       if (cb && cb.checked && !D.prizes.find(x=>x.title===p.title)) {
-        D.prizes.push({ id:genId(), title:p.title, icon:p.icon, cost:p.cost, type:p.type, redemptions:[] });
+        D.prizes.push(normalizePrize({ id:genId(), title:p.title, icon:p.icon, iconColor:p.iconColor, cost:p.cost, type:p.type, recurrence:'anytime', redemptions:[] }));
       }
     });
   }
@@ -7633,6 +8075,8 @@ function setupNext() {
     if (autoEl) D.settings.autoApprove = autoEl.checked;
     const hideEl = document.getElementById('setup-hide-unavailable');
     if (hideEl) D.settings.hideUnavailable = hideEl.checked;
+    const hideUnavailablePrizesEl = document.getElementById('setup-hide-unavailable-prizes');
+    if (hideUnavailablePrizesEl) D.settings.showLockedRecurringPrizes = !hideUnavailablePrizesEl.checked;
     const tzEl = document.getElementById('setup-timezone');
     if (tzEl) D.settings.familyTimezone = tzEl.value;
     const notifyChoreEl = document.getElementById('setup-notify-chore');
@@ -7813,7 +8257,7 @@ function renderKidNav() {
   const accent = S.currentUser?.color || COLORS[0];
   const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
   const tabs = [
-    ['chores',  ICONS.chores,  'Rhythm'],
+    ['chores',  ICONS.chores,  'Tasks'],
     ['diamonds', ICONS.diamond, 'Gems'],
     ['shop',    ICONS.shop,    'Shop'],
     ['team',    ICONS.team,    'Team'],
@@ -7850,7 +8294,7 @@ function switchKidTab(tab) {
     const streak = m.streak?.current || 0;
     speak(`You currently have ${dmds} gems, you are level ${lvl.level}, and have a ${streak} day streak.`);
   } else if (tab === 'shop') {
-    const affordable = D.prizes.filter(p => p.type === 'individual' && (p.cost || 0) <= dmds).length;
+    const affordable = D.prizes.filter(p => p.type === 'individual' && getPrizeStatusForKidView(p, m.id).ok).length;
     speak(`You have ${dmds} gems to spend and can afford ${affordable} prize${affordable === 1 ? '' : 's'}.`);
   } else if (tab === 'team') {
     speak('Spend your gems towards team prizes.');
@@ -7891,10 +8335,16 @@ function renderKidChores() {
   }
 
   const progressMap = new Map(myChores.map(chore => [chore.id, getChoreProgress(chore, m.id)]));
+  const approvedToStartSet = new Set(
+    myChores
+      .filter(c => getChorePhotoPhase(c, m.id)?.phase === 'needs_after')
+      .map(c => c.id)
+  );
+  const approvedToStart = myChores.filter(c => approvedToStartSet.has(c.id));
   const done        = myChores.filter(c => progressMap.get(c.id)?.status === 'done');
   const awaiting    = myChores.filter(c => progressMap.get(c.id)?.status === 'pending');
-  const partial     = myChores.filter(c => progressMap.get(c.id)?.status === 'partial');
-  const todo        = myChores.filter(c => progressMap.get(c.id)?.status === 'none');
+  const partial     = myChores.filter(c => progressMap.get(c.id)?.status === 'partial' && !approvedToStartSet.has(c.id));
+  const todo        = myChores.filter(c => progressMap.get(c.id)?.status === 'none' && !approvedToStartSet.has(c.id));
   const unavailable = myChores.filter(c => progressMap.get(c.id)?.status === 'unavailable');
 
   const totalUnits  = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.targetCount || 0), 0);
@@ -7905,7 +8355,7 @@ function renderKidChores() {
 
   const comboIds  = D.settings.comboEnabled !== false ? new Set(getDailyCombo(m.id)) : new Set();
   const comboChores = [...comboIds].map(id => D.chores.find(c => c.id === id)).filter(Boolean);
-  const comboCompleted = comboChores.filter(c => progressMap.get(c.id)?.status === 'done').length;
+  const comboCompleted = comboChores.filter(c => isTaskCountedForDailyCombo(c, m.id, today())).length;
   const comboBonusAlreadyAwarded = m.comboBonusDate === today();
 
   const tiny = isTiny(m);
@@ -7998,7 +8448,7 @@ function renderKidChores() {
         </div>
         <div class="combo-chore-list">
           ${comboChores.map(c => {
-            const isDone = progressMap.get(c.id)?.status === 'done';
+            const isDone = isTaskCountedForDailyCombo(c, m.id, today());
             return `<div class="combo-chore-item ${isDone ? 'done' : ''}">
               <span class="combo-chore-item-check">${isDone ? '<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1.1rem"></i>' : '<i class="ph-duotone ph-circle" style="color:#D1D5DB;font-size:1.1rem"></i>'}</span>
               <span>${renderIcon(c.icon, c.iconColor, 'font-size:1rem;vertical-align:middle')} <span class="combo-item-title">${esc(c.title)}</span></span>
@@ -8026,32 +8476,40 @@ function renderKidChores() {
     </section>`;
   };
 
+  if (approvedToStart.length > 0) {
+    html += renderStage('Approved to Start', 'ph-check-circle', '#16A34A', approvedToStart.length, approvedToStart, 'sort-approved-start', {
+      emphasis: 'progress',
+      sub: 'Ready to begin',
+      bare: true
+    });
+  }
+
   html += renderStage('Open Now', 'ph-sun-horizon', '#1D6B57', todoVisible.length, todoVisible, 'sort-todo', {
     emphasis: 'primary',
-    sub: todoVisible.length ? 'Start here first.' : '',
+    sub: todoVisible.length ? 'Start here first' : '',
     bare: true
   });
 
   if (partial.length > 0) {
     html += renderStage('In Motion', 'ph-path', '#c96f3b', partial.length, partial, 'sort-partial', {
       emphasis: 'progress',
-      sub: 'Already started, not finished yet.',
+      sub: 'Already started, not finished yet',
       bare: true
     });
   }
 
-  html += renderStage('Waiting on Parent', 'ph-hourglass', '#6f8f99', awaiting.length, awaiting, 'sort-pending', {
-    sub: 'Sent in and ready for a check.',
+  html += renderStage('Pending', 'ph-hourglass', '#6f8f99', awaiting.length, awaiting, 'sort-pending', {
+    sub: 'Waiting for parent approval',
     bare: true
   });
   html += renderStage('Complete', 'ph-check-circle', '#5f8f63', done.length, done, 'sort-done', {
-    sub: 'Done for today.',
+    sub: 'Done for today',
     bare: true
   });
 
   if (!D.settings.hideUnavailable) {
     html += renderStage('Later Windows', 'ph-moon-stars', '#6b6d63', unavailable.length, unavailable, 'sort-unavail', {
-      sub: 'These unlock later in the day.'
+      sub: 'These unlock later in the day'
     });
   }
 
@@ -8243,11 +8701,11 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
       : `<button class="snapshot-reveal-btn snapshot-reveal-btn-approve" type="button" title="Request with photo" onpointerdown="event.preventDefault();event.stopPropagation();kidCompleteChore('${chore.id}',event,null,'before');return false;" onclick="return false;"><i class="ph-duotone ph-camera"></i><span>Request</span></button>`;
   } else if (phase === 'before_pending') {
     statusClass = 'pending';
-    hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve the start</div>`;
+    hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for approval</div>`;
     btnHtml  = tiny ? kidRoutineTinyOrb('ph-hourglass', 'secondary', '', true) : kidRoutineRevealStatus('Awaiting OK', 'ph-hourglass');
   } else if (phase === 'needs_after') {
     statusClass = 'partial';
-    hintHtml = '';
+    hintHtml = `<div class="chore-meta" style="color:#15803D"><i class="ph-duotone ph-check-circle" style="font-size:0.9rem;vertical-align:middle"></i> Approved to start</div>`;
     btnHtml  = tiny
       ? kidRoutineTinyOrb('ph-camera', 'approve', ` onclick="event.stopPropagation();kidCompleteChore('${chore.id}',event,null,'after')"`)
       : `<button class="snapshot-reveal-btn snapshot-reveal-btn-approve" type="button" title="Submit done photo" onpointerdown="event.preventDefault();event.stopPropagation();kidCompleteChore('${chore.id}',event,null,'after');return false;" onclick="return false;"><i class="ph-duotone ph-camera"></i><span>Done</span></button>`;
@@ -8770,7 +9228,7 @@ function submitSpendRequest(memberId) {
         kidName:    m.name || 'A kid',
         amount:     amt,
         reason:     reason || '',
-        pendingCount: pendingApprovals().length + pendingSpendRequests().length,
+        pendingCount: pendingApprovals().length + pendingSpendRequests().length + pendingPrizeRequests().length,
       }).catch(() => {});
     } catch(e) {}
   }
@@ -8807,6 +9265,42 @@ function denySavingsRequest(requestId, btn) {
     saveData();
     toast(`Spend request denied for ${m?.name || 'kid'}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
+    syncAppBadge();
+  });
+}
+
+function approvePrizeRequest(requestId, btn) {
+  const req = (D.prizeRequests || []).find(r => r.id === requestId);
+  if (!req || req.status !== 'pending') return;
+  const member = getMember(req.memberId);
+  const prize = D.prizes.find(p => p.id === req.prizeId);
+  if (!member || !prize) return;
+  _fadeOutAdminCard(btn, () => {
+    const result = doRedeemPrize(prize.id, member.id);
+    req.status = result?.ok ? 'approved' : 'denied';
+    req.resolvedAt = Date.now();
+    saveData();
+    if (result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
+    else toast(`Could not approve: ${formatPrizeRedeemStatusMessage(result)}`);
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
+    syncAppBadge();
+  });
+}
+
+function denyPrizeRequest(requestId, btn) {
+  const req = (D.prizeRequests || []).find(r => r.id === requestId);
+  if (!req || req.status !== 'pending') return;
+  const member = getMember(req.memberId);
+  _fadeOutAdminCard(btn, () => {
+    req.status = 'denied';
+    req.resolvedAt = Date.now();
+    saveData();
+    toast(`Prize request denied for ${member?.name || 'kid'}`);
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
     syncAppBadge();
   });
 }
@@ -8984,32 +9478,54 @@ function claimInterest(memberId) {
   m.savings                 = (m.savings || 0) + interest;
   m.savingsInterest         = (m.savingsInterest || 0) + interest;
   m.savingsInterestLastDate = today();
-  addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+  addHistory('savings', m.id, `Claimed interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
   saveData();
 }
 
 // Kept for any legacy calls; now a no-op since kids claim interactively
 function applyInterestForAllKids() {}
 
+function formatPrizeRedeemStatusMessage(status) {
+  if (!status || status.ok) return '';
+  if (status.message) return status.message;
+  if (status.reason === 'gems') return `${status.gemsNeeded || 0} more gems needed`;
+  return 'This prize is not ready yet';
+}
+
 function renderKidShop() {
   const m    = S.currentUser;
   const tiny = isTiny(m);
   const dmds  = m.gems || 0;
-  const indiv = D.prizes.filter(p => p.type === 'individual').slice().sort((a,b) => (a.cost||0)-(b.cost||0) || (a.title||'').localeCompare(b.title||''));
+  const showLockedRecurringPrizes = D.settings.showLockedRecurringPrizes !== false;
+  const indiv = D.prizes
+    .filter(p => p.type === 'individual')
+    .filter(p => {
+      const status = getPrizeStatusForKidView(p, m.id);
+      if (status.reason === 'one_time_locked') return false;
+      if (showLockedRecurringPrizes) return true;
+      return status.reason !== 'window_locked';
+    })
+    .slice()
+    .sort((a,b) => (a.cost||0)-(b.cost||0) || (a.title||'').localeCompare(b.title||''));
 
   if (indiv.length === 0) {
     document.getElementById('kid-content').innerHTML = `
       <div class="empty-state">
         <div class="empty-icon"><i class="ph-duotone ph-gift" style="color:#FF6584;font-size:3rem"></i></div>
-        <div class="empty-text">No prizes yet! Ask a parent to add some.</div>
+        <div class="empty-text">${showLockedRecurringPrizes ? 'No prizes yet! Ask a parent to add some.' : 'No prizes available right now. Check back later!'}</div>
       </div>`;
     return;
   }
 
   const renderPrizeCard = (p) => {
-    const canAfford = dmds >= p.cost;
-    const cls = canAfford ? 'can-afford' : '';
-    const tts  = `${p.title}. Costs ${p.cost} gems.${canAfford?' You can get this!':` You need ${p.cost-dmds} more gems.`}`;
+    const status = getPrizeStatusForKidView(p, m.id);
+    const canAfford = status.canAfford;
+    const cls = `${status.ok ? 'can-afford' : ''} ${status.reason === 'window_locked' ? 'locked-window' : ''}`.trim();
+    const blockedReason = formatPrizeRedeemStatusMessage(status);
+    const note = status.ok ? 'Ready!' : blockedReason;
+    const requirementSummary = getPrizeRequirementSummary(p);
+    const recurrenceSummary = formatPrizeRecurrence(p.recurrence);
+    const tts  = `${p.title}. Costs ${p.cost} gems.${status.ok ? ' You can get this now!' : ` ${blockedReason}.`}`;
     return `
       <div class="prize-card kid-shop-prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
@@ -9022,10 +9538,9 @@ function renderKidShop() {
         </div>
         <div class="prize-name kid-shop-prize-name">${esc(p.title)}</div>
         <div class="kid-shop-prize-note">
-          ${canAfford
-            ? `Ready!`
-            : `${p.cost-dmds} more gems needed`}
+          ${esc(note)}
         </div>
+        <div style="margin-top:4px;font-size:0.74rem;color:var(--muted)">${esc(recurrenceSummary)}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}${p.requireParentApproval ? ' &middot; Parent approval required' : ''}</div>
       </div>`;
   };
 
@@ -9042,37 +9557,83 @@ function kidRedeemPrize(prizeId, evt) {
   const prize = D.prizes.find(p=>p.id===prizeId);
   if (!m || !prize) return;
 
-  const dmds = m.gems||0;
-  if (dmds < prize.cost) {
-    const need = prize.cost - dmds;
-    if (isTiny(m)) speak(`You need ${need} more gems for this prize!`);
-    else toast(`Need ${need} more gems for "${prize.title}"`);
+  const status = getPrizeStatusForKidView(prize, m.id);
+  if (!status.ok) {
+    const msg = formatPrizeRedeemStatusMessage(status);
+    if (isTiny(m)) speak(msg);
+    else toast(msg);
     return;
   }
+  const dmds = m.gems||0;
+  const requirementSummary = getPrizeRequirementSummary(prize);
+  const needsApproval = !!prize.requireParentApproval;
 
   showQuickActionModal(`
-    <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} Redeem Prize?</div>
-    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your ${dmds} gems?</p>
+    <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} ${needsApproval ? 'Request Prize?' : 'Redeem Prize?'}</div>
+    <p style="margin-bottom:20px;line-height:1.6">${needsApproval ? `Send a request to your parent for <strong>${esc(prize.title)}</strong> (${prize.cost} gems)?` : `Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your ${dmds} gems?`}</p>
+    <p style="margin-top:-10px;margin-bottom:20px;font-size:0.82rem;color:var(--muted)">${esc(formatPrizeRecurrence(prize.recurrence))}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}${needsApproval ? ' &middot; Parent approval required' : ''}</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
-      <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></button>
+      <button class="btn btn-primary" onclick="${needsApproval ? `submitPrizeRequest('${prizeId}')` : `confirmRedeem('${prizeId}')`}">${needsApproval ? 'Send request' : 'Yes, redeem!'} <i class="ph-duotone ${needsApproval ? 'ph-paper-plane-tilt' : 'ph-confetti'}" style="font-size:1rem;vertical-align:middle"></i></button>
     </div>`);
 }
 
+function submitPrizeRequest(prizeId) {
+  const m = S.currentUser;
+  const prize = D.prizes.find(p => p.id === prizeId);
+  closeModal();
+  if (!m || !prize) return;
+  D.prizeRequests = D.prizeRequests || [];
+  const hasPending = D.prizeRequests.some(r => r.status === 'pending' && r.memberId === m.id && r.prizeId === prizeId);
+  if (hasPending) {
+    toast('Request already pending for this prize');
+    return;
+  }
+  D.prizeRequests.push({
+    id: genId(),
+    prizeId,
+    memberId: m.id,
+    cost: Math.max(0, Number(prize.cost) || 0),
+    status: 'pending',
+    date: today(),
+    createdAt: Date.now(),
+  });
+  saveData();
+  toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent for parent approval');
+  if (isTiny(m)) speak(`Request sent for ${prize.title}. Waiting for your grown-up.`);
+  renderKidShop();
+  renderKidHeader();
+}
+
 function confirmRedeem(prizeId) {
+  if (!S._redeemLocks) S._redeemLocks = {};
+  if (S._redeemLocks[prizeId]) return;
+  S._redeemLocks[prizeId] = true;
   const m     = S.currentUser;
   const prize = D.prizes.find(p=>p.id===prizeId);
   closeModal();
-  if (!prize) { toast('Prize no longer available'); return; }
-  const ok = doRedeemPrize(prizeId, m?.id);
-  if (!ok) { toast('Could not redeem - not enough gems'); return; }
+  if (!prize) {
+    toast('Prize no longer available');
+    delete S._redeemLocks[prizeId];
+    return;
+  }
+  const result = doRedeemPrize(prizeId, m?.id);
+  if (!result?.ok) {
+    toast(formatPrizeRedeemStatusMessage(result));
+    delete S._redeemLocks[prizeId];
+    return;
+  }
 
   showCelebration({
     icon:   renderIcon(prize.icon, prize.iconColor, 'font-size:3.5rem'),
     title:  'Prize Unlocked!',
     sub:    prize.title,
     tts:    isTiny(m) ? `You got it! ${prize.title}! Go show your grown-up!` : null,
-    onClose: () => { renderKidShop(); renderKidHeader(); }
+    onClose: () => {
+      delete S._redeemLocks[prizeId];
+      renderKidShop();
+      renderKidHeader();
+    }
   });
 }
 
@@ -9128,7 +9689,7 @@ function renderKidTeam() {
           </div>
         </div>
         <div class="goal-bar-bg kid-team-goal-bar-bg"><div class="goal-bar-fill kid-team-goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' • Goal reached!' : ''}</div>
+        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' â€¢ Goal reached!' : ''}</div>
         ${kids.length>1?`<div class="kid-team-contrib-list">${contribs}</div>`:''}
         ${!reached?`
           <div class="kid-team-goal-action">
@@ -9306,7 +9867,7 @@ function renderParentNav() {
   const homeCount = pending;
   const tabs = [
     ['home',    ICONS.home,     'Overview'],
-    ['chores',  ICONS.chores,   'Rhythm'],
+    ['chores',  ICONS.chores,   'Tasks'],
     ['prizes',  ICONS.prizes,   'Prizes'],
     ['levels',  ICONS.levels,   'Levels'],
     ['stats',   ICONS.stats,    'Stats'],
@@ -9539,7 +10100,7 @@ function renderFamilyStatsCard(kids, histIdx, expandedOverride = null) {
   return `
     <div class="stats-panel-card stats-panel-family-card">
       <div ${headerAttrs}>
-        <img src="gemsproutpadded.png" style="width:2.75rem;height:2.75rem;border-radius:14px;flex-shrink:0">
+        <img src="gemsprout.png" style="width:2.75rem;height:2.75rem;border-radius:14px;flex-shrink:0">
         <div>
           <div class="stats-panel-header-title">${esc(D.family.name || 'The Family')}</div>
           <div class="stats-panel-header-sub">${kids.length} kid${kids.length !== 1 ? 's' : ''} &middot; all-time combined stats</div>
@@ -9719,7 +10280,7 @@ function renderStatsPage(container) {
 
   html += `
     <div class="tab-end-cap tab-end-cap-gem" aria-hidden="true">
-      <img src="gemsproutpadded.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
+      <img src="gemsprout.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
     </div>
   </div>`;
   container.innerHTML = html;
@@ -9753,7 +10314,7 @@ function renderFamilyStatsLaunchCard(kids, histIdx) {
   return `
     <button class="snapshot-summary-card stats-launch-card stats-launch-card-family" type="button" onclick="openStatsDetailPanel('family')" style="--stats-accent:#365e4f">
       <div class="stats-launch-head">
-        <div class="stats-launch-avatar stats-launch-avatar-family"><img src="gemsproutpadded.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
+        <div class="stats-launch-avatar stats-launch-avatar-family"><img src="gemsprout.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
         <div class="stats-launch-hero">
           <div class="stats-launch-name">${esc(D.family.name || 'The Family')}</div>
           <div class="stats-launch-sub">Family snapshot</div>
@@ -9817,7 +10378,7 @@ function renderStatsDetailPanel(kind, memberId = '') {
       <div class="snapshot-panel-head stats-panel-head" style="--snapshot-accent:#6C63FF">
         <button class="snapshot-panel-close" onclick="closeFamilySnapshot()"><i class="ph-duotone ph-arrow-left"></i></button>
         <div class="snapshot-panel-person">
-          <div class="snapshot-panel-avatar"><img src="gemsproutpadded.png" alt="" style="width:100%;height:100%;border-radius:20px"></div>
+          <div class="snapshot-panel-avatar"><img src="gemsprout.png" alt="" style="width:100%;height:100%;border-radius:20px"></div>
           <div>
             <div class="snapshot-panel-name">${esc(D.family.name || 'The Family')}</div>
             <div class="snapshot-panel-sub">Combined lifetime stats</div>
@@ -9924,6 +10485,7 @@ function renderFamilySnapshotPanel(kidId) {
     : `<div class="kid-overview-list snapshot-chore-stack">${myChores.map(chore => {
         const progress = getChoreProgress(chore, kid.id);
         const status = progress.status;
+        const metaSummary = parentChoreMetaSummary(chore);
         const isDone = status === 'done';
         const isCombo = kidCombo.has(chore.id);
         const swipeKey = `snapshot_${kid.id}_${chore.id}`;
@@ -9946,7 +10508,10 @@ function renderFamilySnapshotPanel(kidId) {
               <div class="snapshot-routine-top">
                 <div class="snapshot-routine-main">
                   <div class="snapshot-routine-title-row">
-                    <div class="snapshot-routine-title">${esc(chore.title)}</div>
+                    <div class="parent-chore-copy snapshot-panel-chore-copy">
+                      <div class="snapshot-routine-title">${esc(chore.title)}</div>
+                      <div class="parent-chore-meta snapshot-panel-chore-meta">${esc(metaSummary)}</div>
+                    </div>
                     <div class="snapshot-routine-diamond-badge"><span class="snapshot-routine-glyph-main">${renderIcon(chore.icon,chore.iconColor)}</span><span class="snapshot-routine-glyph-badge">${chore.diamonds || 0}</span></div>
                     <div class="snapshot-routine-utility">
                       <button class="snapshot-routine-swipe-hint" type="button" aria-label="Reveal action" onclick="event.stopPropagation();toggleSnapshotSwipe('${swipeKey}')">
@@ -10561,7 +11126,7 @@ function showBetaWelcomeIfNeeded() {
   try { localStorage.setItem(BETA_WELCOME_KEY, '1'); } catch(_) {}
   showQuickActionModal(`
     <div style="text-align:center;margin-bottom:16px">
-      <img src="gemsproutpadded.png" style="width:72px;height:72px;margin-bottom:8px">
+      <img src="gemsprout.png" style="width:72px;height:72px;margin-bottom:8px">
       <div class="modal-title" style="margin-bottom:6px">Welcome to the GemSprout Beta!</div>
       <p style="color:var(--muted);font-size:0.88rem;line-height:1.5;margin-bottom:14px">
         Thank you so much for helping us shape GemSprout. Your feedback during this beta means everything.
@@ -10590,6 +11155,7 @@ function renderParentHome() {
   const kids        = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const pending     = pendingApprovals();
   const pendingSpend = pendingSpendRequests();
+  const pendingPrize = pendingPrizeRequests();
   const readyGoals  = readyTeamGoalInboxItems();
   const cur         = D.settings.currency || '$';
   const t           = today();
@@ -10636,7 +11202,7 @@ function renderParentHome() {
       <div class="parent-summary-grid">
         <div class="parent-summary-tile">
           <div class="parent-summary-label">Needs Review</div>
-          <div class="parent-summary-value">${pending.length + pendingSpend.length}</div>
+          <div class="parent-summary-value">${pending.length + pendingSpend.length + pendingPrize.length}</div>
           <div class="parent-summary-sub">${inProgress.length} in progress</div>
         </div>
         <div class="parent-summary-tile">
@@ -10657,8 +11223,8 @@ function renderParentHome() {
       </div>
     </div>`;
 
-  if (inProgress.length > 0 || pending.length > 0 || pendingSpend.length > 0 || readyGoals.length > 0) {
-    const inboxCount = pending.length + pendingSpend.length + inProgress.length + readyGoals.length;
+  if (inProgress.length > 0 || pending.length > 0 || pendingSpend.length > 0 || pendingPrize.length > 0 || readyGoals.length > 0) {
+    const inboxCount = pending.length + pendingSpend.length + pendingPrize.length + inProgress.length + readyGoals.length;
     html += `<div class="inbox-head">
       <div class="inbox-title"><i class="ph-duotone ph-tray" style="color:#1D6B57;font-size:1rem"></i> Family Inbox</div>
       <div class="inbox-count">${inboxCount} Item${inboxCount === 1 ? '' : 's'}</div>
@@ -10679,11 +11245,15 @@ function renderParentHome() {
         const mem = getMember(memberId);
         if (!mem) return;
         html += `
-          <div class="admin-card">
+          <div class="admin-card" style="flex-wrap:wrap;gap:10px">
             <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
             <div class="admin-info" style="flex:1;min-width:0">
               <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
               <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; waiting for after photo &middot; ${chore.diamonds} gems</div>
+            </div>
+            <div class="admin-actions">
+              <button class="btn-icon-sm btn-icon-approve" onclick="completeInProgressChoreFromInbox('${chore.id}','${memberId}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
+              <button class="btn-icon-sm btn-icon-reject" onclick="revokeInProgressChore('${chore.id}','${memberId}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:0.9rem"></i></button>
             </div>
           </div>`;
         return;
@@ -10729,6 +11299,23 @@ function renderParentHome() {
           <div class="admin-actions">
             <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject" onclick="denySavingsRequest('${req.id}',this)"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+          </div>
+        </div>`;
+    });
+    pendingPrize.forEach(req => {
+      const mem = getMember(req.memberId);
+      const prize = D.prizes.find(p => p.id === req.prizeId);
+      if (!mem || !prize) return;
+      html += `
+        <div class="admin-card" style="flex-wrap:wrap;gap:10px">
+          <span class="admin-icon">${renderIcon(prize.icon, prize.iconColor, 'font-size:1.6rem')}</span>
+          <div class="admin-info" style="flex:1;min-width:0">
+            <div class="admin-name">Prize Request <span style="background:#EDE9FE;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">${Math.max(0, Number(req.cost ?? prize.cost) || 0)} gems</span></div>
+            <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; ${esc(prize.title)} &middot; ${fmtDate(req.date)}</div>
+          </div>
+          <div class="admin-actions">
+            <button class="btn-icon-sm btn-icon-approve" onclick="approvePrizeRequest('${req.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-reject" onclick="denyPrizeRequest('${req.id}',this)"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
     });
@@ -10949,6 +11536,38 @@ function confirmRejectChore(choreId, memberId, entryId) {
   syncAppBadge();
 }
 
+function completeInProgressChoreFromInbox(choreId, memberId) {
+  parentMarkChoreDone(choreId, memberId);
+  syncAppBadge();
+}
+
+function revokeInProgressChore(choreId, memberId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  const todayStr = today();
+  const filtered = entries.filter(entry => {
+    if (entry.date !== todayStr) return true;
+    if (entry.entryType === 'before' && (entry.status === 'approved' || entry.status === 'pending')) return false;
+    if (entry.entryType === 'after' && entry.status === 'pending') return false;
+    return true;
+  });
+  if (filtered.length === entries.length) {
+    toast('No in-progress approval to revoke');
+    return;
+  }
+  if (!chore.completions) chore.completions = {};
+  if (filtered.length === 0) delete chore.completions[memberId];
+  else chore.completions[memberId] = filtered;
+  saveData();
+  toast(`Removed start approval for ${member.name}`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+  syncAppBadge();
+}
+
 
 // Parent directly marks a chore done for a kid (no kid submission required)
 function parentMarkChoreDone(choreId, memberId) {
@@ -10983,9 +11602,11 @@ function parentMarkChoreDone(choreId, memberId) {
       totalPts += chore.gems;
     });
   } else {
+    const photoPhase = chore.photoMode === 'before_after' ? getChorePhotoPhase(chore, memberId) : null;
+    const completionEntryType = photoPhase?.phase === 'needs_after' ? 'after' : null;
     chore.completions[memberId].push({
       id: genId(), status: 'done', date: today(), createdAt: Date.now(),
-      slotId: null, photoUrl: null, entryType: null,
+      slotId: null, photoUrl: null, entryType: completionEntryType,
     });
     totalPts = chore.gems;
   }
@@ -11267,7 +11888,7 @@ function showChoreModal(choreId, opts = {}) {
   const kids  = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const chore = choreId ? D.chores.find(c=>c.id===choreId) : null;
   const c     = normalizeChore(chore || {
-    title:'', icon:'<i class="ph-duotone ph-star" style="color:#F59E0B"></i>', gems:10, frequency:'day', repeatCount:1,
+    title:'', icon:DEFAULT_APP_ICON, gems:10, frequency:'day', repeatCount:1,
     schedule: { period:'day', targetCount:1, daysOfWeek:ALL_DAYS.slice(), windows:{}, slots:null },
     assignedTo:kids.map(k=>k.id), description:'', completions:{}
   });
@@ -11276,8 +11897,9 @@ function showChoreModal(choreId, opts = {}) {
   _editSlots = c.schedule.slots ? c.schedule.slots.map(s=>({...s})) : [];
 
   const choreColor = c.iconColor || '#6BCB77';
+  const choreIcon = normalizeIconName(c.icon, DEFAULT_APP_ICON);
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
-    `<div class="icon-opt${n===c.icon?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    `<div class="icon-opt${n===choreIcon?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
   ).join('');
   const colorSwatches = COLORS.map(col =>
     `<div class="icon-color-swatch${col===choreColor?' sel':''}" style="background:${col}" onclick="selChoreColor(this,'${col}')"></div>`
@@ -11311,7 +11933,7 @@ function showChoreModal(choreId, opts = {}) {
   const hasSlots = _editSlots.length > 0;
 
   const modalHtml = `
-    <input type="hidden" id="cm-icon" value="${esc(String(c.icon || ''))}">
+    <input type="hidden" id="cm-icon" value="${esc(String(choreIcon || DEFAULT_APP_ICON))}">
     <input type="hidden" id="cm-icon-color" value="${esc(String(choreColor || ''))}">
     <div class="form-group">
       <label class="form-label">Task name</label>
@@ -11495,7 +12117,7 @@ function toggleChoreDayRow(dayIndex) {
 
 function saveChore(choreId) {
   const title  = document.getElementById('cm-title')?.value.trim();
-  const icon      = document.getElementById('cm-icon')?.value || 'broom';
+  const icon      = normalizeIconName(document.getElementById('cm-icon')?.value, DEFAULT_APP_ICON);
   const iconColor = document.getElementById('cm-icon-color')?.value || '#6BCB77';
   const gems = parseInt(document.getElementById('cm-gems')?.value)||10;
   const freq   = document.getElementById('cm-freq')?.value || 'day';
@@ -11581,25 +12203,36 @@ function renderParentPrizes() {
 
   html += `<div class="parent-prize-list">`;
   indiv.forEach(p => {
+    const recurrenceLabel = formatPrizeRecurrence(p.recurrence);
+    const requirementSummary = getPrizeRequirementSummary(p);
+    const oneTimeRedeemed = (p.recurrence === 'one_time' && (p.redemptions || []).length > 0)
+      || (DEBUG_FORCE_PRIZE_STATE_PREVIEW && !isE2EMode() && p.type === 'individual');
+    const redeemedByCount = Math.max(1, new Set((p.redemptions || []).map(r => r.memberId).filter(Boolean)).size || 0);
     const swipeKey = `parent_prize_${p.id}`;
     html += `
       <div class="snapshot-routine-shell parent-prize-shell" data-swipe-id="${swipeKey}">
-        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal">
+        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal ${oneTimeRedeemed ? 'has-reset' : ''}">
           <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete prize" onpointerdown="event.preventDefault();event.stopPropagation();deletePrize('${p.id}');return false;" onclick="return false;">
             <i class="ph-duotone ph-trash"></i>
             <span>Delete</span>
           </button>
+          ${oneTimeRedeemed ? `
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-approve parent-prize-reveal-btn" type="button" title="Reset prize" onpointerdown="event.preventDefault();event.stopPropagation();resetPrize('${p.id}');return false;" onclick="return false;">
+            <i class="ph-duotone ph-arrow-counter-clockwise"></i>
+            <span>Reset</span>
+          </button>` : ''}
           <button class="snapshot-reveal-btn snapshot-reveal-btn-secondary parent-prize-reveal-btn" type="button" title="Edit prize" onpointerdown="event.preventDefault();event.stopPropagation();openPrizeEditor('${p.id}', this);return false;" onclick="return false;">
             <i class="ph-duotone ph-pencil-simple"></i>
             <span>Edit</span>
           </button>
         </div>
-        <div class="snapshot-routine-card parent-prize-card" onpointerdown="startSnapshotSwipe(event,'${swipeKey}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'${swipeKey}')">
+        <div class="snapshot-routine-card parent-prize-card ${oneTimeRedeemed ? 'one-time-redeemed' : ''}" onpointerdown="startSnapshotSwipe(event,'${swipeKey}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'${swipeKey}')">
           <div class="snapshot-routine-top">
             <div class="snapshot-routine-main">
               <div class="snapshot-routine-title-row">
                 <div class="parent-chore-copy">
                   <div class="snapshot-routine-title">${esc(p.title)}</div>
+                  <div class="parent-chore-meta">${esc(recurrenceLabel)}${requirementSummary ? `\n${requirementSummary}` : ''}${oneTimeRedeemed ? `\nRedeemed by ${redeemedByCount} kid${redeemedByCount === 1 ? '' : 's'} - reset to make available again` : ''}</div>
                 </div>
                 <div class="snapshot-routine-diamond-badge">
                   <span class="snapshot-routine-glyph-main">${renderIcon(p.icon,p.iconColor)}</span>
@@ -11634,14 +12267,20 @@ function renderParentPrizes() {
   goals.forEach(g => {
     const total = goalTotal(g);
     const pct   = Math.min(100,Math.round(total/(g.targetPoints||1)*100));
+    const isComplete = (g.targetPoints || 0) > 0 && total >= (g.targetPoints || 0);
     const swipeKey = `team_prize_${g.id}`;
     html += `
       <div class="snapshot-routine-shell parent-prize-shell" data-swipe-id="${swipeKey}">
-        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal">
+        <div class="snapshot-routine-reveal snapshot-routine-reveal-secondary parent-prize-reveal ${isComplete ? 'has-reset' : ''}">
           <button class="snapshot-reveal-btn snapshot-reveal-btn-danger parent-prize-reveal-btn" type="button" title="Delete team prize" onpointerdown="event.preventDefault();event.stopPropagation();clearGoal('${g.id}');return false;" onclick="return false;">
             <i class="ph-duotone ph-trash"></i>
             <span>Delete</span>
           </button>
+          ${isComplete ? `
+          <button class="snapshot-reveal-btn snapshot-reveal-btn-approve parent-prize-reveal-btn" type="button" title="Reset team prize" onpointerdown="event.preventDefault();event.stopPropagation();resetGoal('${g.id}');return false;" onclick="return false;">
+            <i class="ph-duotone ph-arrow-counter-clockwise"></i>
+            <span>Reset</span>
+          </button>` : ''}
           <button class="snapshot-reveal-btn snapshot-reveal-btn-secondary parent-prize-reveal-btn" type="button" title="Edit team prize" onpointerdown="event.preventDefault();event.stopPropagation();openGoalEditor('${g.id}', this);return false;" onclick="return false;">
             <i class="ph-duotone ph-pencil-simple"></i>
             <span>Edit</span>
@@ -11653,7 +12292,7 @@ function renderParentPrizes() {
               <div class="snapshot-routine-title-row">
                 <div class="parent-chore-copy">
                   <div class="snapshot-routine-title">${esc(g.title)}</div>
-                  <div class="parent-chore-meta">${esc(`${total} / ${g.targetPoints} gems\n${pct}% complete`)}</div>
+                  <div class="parent-chore-meta">${esc(`${total} / ${g.targetPoints} gems\n${pct}% complete`)}${isComplete ? '\nFully funded - reset to start again' : ''}</div>
                 </div>
                 <div class="snapshot-routine-diamond-badge">
                   <span class="snapshot-routine-glyph-main">${renderIcon(g.icon,g.iconColor)}</span>
@@ -12099,20 +12738,77 @@ function selBadgeIcon(el, name) {
   renderParentLevels();
 }
 
+function renderPrizeTaskRequirementChecks(selectedIds = []) {
+  const selected = new Set(selectedIds);
+  const chores = (D.chores || []).slice().sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  if (!chores.length) {
+    return '<div style="font-size:0.82rem;color:var(--muted)">No tasks available yet. Add tasks first.</div>';
+  }
+  return chores.map(chore => `
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0;padding:8px 10px;border:1px solid #E5E7EB;border-radius:10px;background:#fff">
+      <span style="display:flex;align-items:center;gap:8px;min-width:0">
+        <span>${renderIcon(chore.icon, chore.iconColor, 'font-size:0.95rem;vertical-align:middle')}</span>
+        <span style="font-size:0.88rem;line-height:1.25">${esc(chore.title)}</span>
+      </span>
+      <span class="toggle" style="flex-shrink:0">
+        <input type="checkbox" class="pm-req-task" value="${chore.id}" ${selected.has(chore.id) ? 'checked' : ''}>
+        <span class="toggle-track"></span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function getPrizeRequirementBuilderText(reqType, amount = 1) {
+  if (reqType === 'task_count') return `Require ${Math.max(1, amount)} daily tasks to be completed before this prize is available.`;
+  if (reqType === 'combo') return 'Require the Daily Combo to be completed before this prize is available.';
+  if (reqType === 'specific_tasks') return 'Require the following daily tasks to be completed before this prize is available.';
+  return '';
+}
+
+function onPrizeRequirementToggleChanged(enabled) {
+  const fields = document.getElementById('pm-requirement-fields');
+  const reqType = document.getElementById('pm-requirement-type');
+  if (fields) fields.style.display = enabled ? 'block' : 'none';
+  if (!reqType) return;
+  if (!enabled) reqType.value = 'task_count';
+  onPrizeRequirementTypeChanged();
+}
+
+function onPrizeRequirementTypeChanged() {
+  const reqType = document.getElementById('pm-requirement-type')?.value || 'task_count';
+  const countInput = document.getElementById('pm-task-count');
+  const countWrap = document.getElementById('pm-task-count-wrap');
+  const tasksWrap = document.getElementById('pm-specific-tasks-wrap');
+  const helper = document.getElementById('pm-requirement-helper');
+  if (countWrap) countWrap.style.display = reqType === 'task_count' ? 'block' : 'none';
+  if (tasksWrap) tasksWrap.style.display = reqType === 'specific_tasks' ? 'block' : 'none';
+  if (helper) helper.textContent = getPrizeRequirementBuilderText(reqType, Math.max(1, parseInt(countInput?.value, 10) || 1));
+}
+
+function onPrizeTaskCountChanged() {
+  onPrizeRequirementTypeChanged();
+}
+
 function showPrizeModal(prizeId, opts = {}) {
   const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
-  const p     = prize || { title:'', icon:'gift', iconColor:'#FF6584', cost:100, type:'individual' };
+  const p = normalizePrize(prize || { title:'', icon:DEFAULT_APP_ICON, iconColor:'#FF6584', cost:100, type:'individual', recurrence:'anytime', requirementType:'none', requirementTaskCount:1, requirementTaskIds:[] });
 
   const prizeColor = p.iconColor || '#FF6584';
+  const prizeIcon = normalizeIconName(p.icon, DEFAULT_APP_ICON);
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
-    `<div class="icon-opt${n===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    `<div class="icon-opt${n===prizeIcon?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
   ).join('');
   const colorSwatches = COLORS.map(col =>
     `<div class="icon-color-swatch${col===prizeColor?' sel':''}" style="background:${col}" onclick="selPrizeColor(this,'${col}')"></div>`
   ).join('');
+  const requirementEnabled = p.requirementType !== 'none';
+  const requirementType = requirementEnabled ? p.requirementType : 'task_count';
+  const specificTasksHtml = renderPrizeTaskRequirementChecks(p.requirementTaskIds);
+  const oneTimeRedeemed = (p.recurrence === 'one_time' && (p.redemptions || []).length > 0)
+    || (DEBUG_FORCE_PRIZE_STATE_PREVIEW && !isE2EMode() && p.type === 'individual');
 
   const modalHtml = `
-    <input type="hidden" id="pm-icon" value="${p.icon}">
+    <input type="hidden" id="pm-icon" value="${prizeIcon}">
     <input type="hidden" id="pm-icon-color" value="${prizeColor}">
     <div class="form-group">
       <label class="form-label">Prize name</label>
@@ -12125,11 +12821,76 @@ function showPrizeModal(prizeId, opts = {}) {
     </div>
     <div class="form-group">
       <label class="form-label">Gems cost</label>
-      <input type="number" id="pm-cost" min="1" value="${p.cost}">
+      <input type="number" id="pm-cost" min="0" value="${p.cost}">
     </div>
+    <div class="form-group">
+      <label class="form-label">Redemption frequency</label>
+      <div style="font-size:0.78rem;color:var(--muted);margin:2px 0 8px">How often this prize can be redeemed.</div>
+      <select id="pm-recurrence">
+        <option value="one_time" ${p.recurrence==='one_time'?'selected':''}>Once</option>
+        <option value="anytime" ${p.recurrence==='anytime'?'selected':''}>Unlimited</option>
+        <option value="daily" ${p.recurrence==='daily'?'selected':''}>Once per day</option>
+        <option value="weekly" ${p.recurrence==='weekly'?'selected':''}>Once per week</option>
+        <option value="monthly" ${p.recurrence==='monthly'?'selected':''}>Once per month</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-top:-2px">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>
+          <div class="form-label" style="margin:0">Require parent approval</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Prize will be submitted for approval by a parent</div>
+        </span>
+        <span class="toggle" style="flex-shrink:0">
+          <input type="checkbox" id="pm-parent-approval" ${p.requireParentApproval ? 'checked' : ''}>
+          <span class="toggle-track"></span>
+        </span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>
+          <div class="form-label" style="margin:0">Additional requirements</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Add task-based requirements</div>
+        </span>
+        <span class="toggle" style="flex-shrink:0">
+          <input type="checkbox" id="pm-requirement-enabled" ${requirementEnabled ? 'checked' : ''} onchange="onPrizeRequirementToggleChanged(this.checked)">
+          <span class="toggle-track"></span>
+        </span>
+      </label>
+      <div id="pm-requirement-fields" style="display:${requirementEnabled ? 'block' : 'none'};margin-top:10px;padding:10px;border:1px solid #E5E7EB;border-radius:12px;background:#F8FAFC">
+      <select id="pm-requirement-type" onchange="onPrizeRequirementTypeChanged()">
+        <option value="task_count" ${requirementType==='task_count'?'selected':''}>Total tasks completed</option>
+        <option value="combo" ${requirementType==='combo'?'selected':''}>Daily Combo completed</option>
+        <option value="specific_tasks" ${requirementType==='specific_tasks'?'selected':''}>Specific tasks completed</option>
+      </select>
+      <div id="pm-task-count-wrap" style="margin-top:8px;display:${requirementType==='task_count' ? 'block' : 'none'}">
+        <input type="number" id="pm-task-count" min="1" value="${Math.max(1, p.requirementTaskCount || 1)}" oninput="onPrizeTaskCountChanged()">
+      </div>
+      <div id="pm-requirement-helper" style="font-size:0.8rem;color:#475569;line-height:1.45;margin-top:8px">${esc(getPrizeRequirementBuilderText(requirementType, Math.max(1, p.requirementTaskCount || 1)))}</div>
+      <div id="pm-specific-tasks-wrap" style="margin-top:8px;display:${requirementType==='specific_tasks' ? 'block' : 'none'}">
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:6px">Tasks required before this prize unlocks:</div>
+        <div style="max-height:220px;overflow:auto;padding:2px 2px 0">${specificTasksHtml}</div>
+      </div>
+      </div>
+    </div>
+    ${oneTimeRedeemed ? `<div class="form-group" style="margin-top:-4px">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>
+          <div class="form-label" style="margin:0">Save and reset redemptions</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Makes this one-time prize available again after saving changes</div>
+        </span>
+        <span class="toggle" style="flex-shrink:0">
+          <input type="checkbox" id="pm-reset-on-save" checked>
+          <span class="toggle-track"></span>
+        </span>
+      </label>
+    </div>` : '<input type="hidden" id="pm-reset-on-save" value="">'}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="savePrize('${prizeId||''}')">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      ${oneTimeRedeemed
+        ? `<button class="btn btn-secondary" onclick="savePrize('${prizeId||''}', false)">Save</button>
+           <button class="btn btn-primary" onclick="savePrize('${prizeId||''}', true)">Save &amp; Reset <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>`
+        : `<button class="btn btn-primary" onclick="savePrize('${prizeId||''}', false)">Save <i class="ph-duotone ph-check-circle" style="font-size:0.95rem;vertical-align:middle"></i></button>`}
     </div>`;
   if (opts.quickAction) {
     showQuickActionModal(modalHtml, 'quick-action-modal-wide prize-editor-modal');
@@ -12159,18 +12920,62 @@ function filterPrizeIcons(query) {
   }
 }
 
-function savePrize(prizeId) {
+function savePrize(prizeId, forceReset = false) {
   const title     = document.getElementById('pm-title')?.value.trim();
-  const icon      = document.getElementById('pm-icon')?.value || 'gift';
+  const icon      = normalizeIconName(document.getElementById('pm-icon')?.value, DEFAULT_APP_ICON);
   const iconColor = document.getElementById('pm-icon-color')?.value || '#FF6584';
-  const cost      = parseInt(document.getElementById('pm-cost')?.value)||100;
+  const costRaw   = parseInt(document.getElementById('pm-cost')?.value, 10);
+  const cost      = Math.max(0, Number.isFinite(costRaw) ? costRaw : 0);
+  const recurrence = PRIZE_RECURRENCE_TYPES.includes(document.getElementById('pm-recurrence')?.value)
+    ? document.getElementById('pm-recurrence')?.value
+    : 'anytime';
+  const requireParentApproval = !!document.getElementById('pm-parent-approval')?.checked;
+  const requirementEnabled = !!document.getElementById('pm-requirement-enabled')?.checked;
+  const pickedRequirement = document.getElementById('pm-requirement-type')?.value || 'none';
+  const requirementType = requirementEnabled && PRIZE_REQUIREMENT_TYPES.includes(pickedRequirement) ? pickedRequirement : 'none';
+  const requirementTaskCount = Math.max(1, parseInt(document.getElementById('pm-task-count')?.value, 10) || 1);
+  const requirementTaskIds = [...document.querySelectorAll('.pm-req-task:checked')].map(el => el.value).filter(Boolean);
+  const shouldResetOneTime = forceReset || !!document.getElementById('pm-reset-on-save')?.checked;
   if (!title) { toast('Enter a prize name'); return; }
+  if (requirementType === 'specific_tasks' && requirementTaskIds.length === 0) {
+    toast('Select at least one required task');
+    return;
+  }
 
   if (prizeId) {
     const p = D.prizes.find(x=>x.id===prizeId);
-    if (p) Object.assign(p, { title, icon, iconColor, cost, type:'individual' });
+    if (p) {
+      const existing = normalizePrize(p);
+      Object.assign(p, normalizePrize({
+        ...existing,
+        title,
+        icon,
+        iconColor,
+        cost,
+        recurrence,
+        requireParentApproval,
+        requirementType,
+        requirementTaskCount,
+        requirementTaskIds,
+        type: 'individual',
+      }));
+      if (shouldResetOneTime) p.redemptions = [];
+    }
   } else {
-    D.prizes.push({ id:genId(), title, icon, iconColor, cost, type:'individual', redemptions:[] });
+    D.prizes.push(normalizePrize({
+      id: genId(),
+      title,
+      icon,
+      iconColor,
+      cost,
+      type: 'individual',
+      recurrence,
+      requireParentApproval,
+      requirementType,
+      requirementTaskCount,
+      requirementTaskIds,
+      redemptions: [],
+    }));
   }
   saveData();
   closeModal();
@@ -12186,6 +12991,27 @@ function deletePrize(prizeId) {
     confirmLabel: 'Delete',
     onConfirm: () => _doDeletePrize(prizeId),
   });
+}
+
+function resetPrize(prizeId) {
+  const prize = D.prizes.find(p => p.id === prizeId);
+  if (!prize) return;
+  const redemptionCount = (prize.redemptions || []).length;
+  showDangerConfirm({
+    title: 'Reset Prize Availability?',
+    message: `This will clear ${redemptionCount} redemption${redemptionCount === 1 ? '' : 's'} for <strong>${esc(prize.title)}</strong> and make it available again.`,
+    confirmLabel: 'Reset',
+    onConfirm: () => _doResetPrize(prizeId),
+  });
+}
+
+function _doResetPrize(prizeId) {
+  const prize = D.prizes.find(p => p.id === prizeId);
+  if (!prize) return;
+  prize.redemptions = [];
+  saveData();
+  toast('Prize reset');
+  renderParentPrizes();
 }
 
 function _doDeletePrize(prizeId) {
@@ -12234,6 +13060,7 @@ function openGoalEditor(goalId, triggerEl) {
 function showGoalModal(goalId, opts = {}) {
   const existing = goalId ? D.teamGoals?.find(g => g.id === goalId) : null;
   const g = existing || { title:'', icon:'trophy', iconColor:'#FFD93D', targetPoints:500 };
+  const isComplete = !!existing && (existing.targetPoints || 0) > 0 && goalTotal(existing) >= (existing.targetPoints || 0);
   const goalColor = g.iconColor || '#FFD93D';
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
     `<div class="icon-opt${n===g.icon?' sel':''}" onclick="selGoalIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
@@ -12259,9 +13086,13 @@ function showGoalModal(goalId, opts = {}) {
       <label class="form-label">Gems target</label>
       <input type="number" id="gm-target" min="1" value="${g.targetPoints||500}">
     </div>
+    ${isComplete ? `<div style="font-size:0.78rem;color:var(--muted);margin-top:-4px;margin-bottom:12px">Save and reset makes this team prize available again</div>` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-teal" onclick="saveGoal()">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>
+      ${isComplete
+        ? `<button class="btn btn-secondary" onclick="saveGoal(false)">Save</button>
+           <button class="btn btn-teal" onclick="saveGoal(true)">Save &amp; Reset <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>`
+        : `<button class="btn btn-teal" onclick="saveGoal(false)">Save <i class="ph-duotone ph-check" style="font-size:0.95rem;vertical-align:middle"></i></button>`}
     </div>`;
   if (opts.quickAction) {
     showQuickActionModal(modalHtml, 'quick-action-modal-wide prize-editor-modal');
@@ -12299,7 +13130,12 @@ function filterGoalIcons(query) {
   }
 }
 
-function saveGoal() {
+function _clearTeamGoalInboxDismissed(goalId) {
+  if (!goalId || !Array.isArray(D.teamGoalInboxDismissed)) return;
+  D.teamGoalInboxDismissed = D.teamGoalInboxDismissed.filter(id => id !== goalId);
+}
+
+function saveGoal(forceReset = false) {
   const goalId = document.getElementById('gm-id')?.value;
   const title  = document.getElementById('gm-title')?.value.trim();
   const icon      = document.getElementById('gm-icon')?.value || 'trophy';
@@ -12310,13 +13146,42 @@ function saveGoal() {
   if (!D.teamGoals) D.teamGoals = [];
   if (goalId) {
     const g = D.teamGoals.find(x => x.id === goalId);
-    if (g) Object.assign(g, { title, icon, iconColor, targetPoints: target });
+    if (g) {
+      Object.assign(g, { title, icon, iconColor, targetPoints: target });
+      if (forceReset) {
+        g.contributions = {};
+        _clearTeamGoalInboxDismissed(goalId);
+      }
+    }
   } else {
     D.teamGoals.push({ id: genId(), title, icon, iconColor, targetPoints: target, contributions: {} });
   }
   saveData();
   closeModal();
-  toast(goalId ? 'Team prize updated!' : 'Team prize added!');
+  if (goalId && forceReset) toast('Team prize updated and reset');
+  else toast(goalId ? 'Team prize updated!' : 'Team prize added!');
+  renderParentPrizes();
+}
+
+function resetGoal(goalId) {
+  const goal = (D.teamGoals||[]).find(g => g.id === goalId);
+  if (!goal) return;
+  const total = goalTotal(goal);
+  showDangerConfirm({
+    title: 'Reset Team Prize?',
+    message: `This will clear <strong>${total}</strong> contributed gem${total === 1 ? '' : 's'} for "${esc(goal.title)}" and make it available again.`,
+    confirmLabel: 'Reset',
+    onConfirm: () => _doResetGoal(goalId),
+  });
+}
+
+function _doResetGoal(goalId) {
+  const goal = (D.teamGoals||[]).find(g => g.id === goalId);
+  if (!goal) return;
+  goal.contributions = {};
+  _clearTeamGoalInboxDismissed(goalId);
+  saveData();
+  toast('Team prize reset');
   renderParentPrizes();
 }
 
@@ -13170,13 +14035,15 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center;padding:32px';
+  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:24px';
   const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
   el.innerHTML = `
-    <img src="gemsproutpadded.png" class="loading-img" style="width:120px;height:120px">
-    <div style="color:#fff;font-size:1.6rem;font-weight:800;letter-spacing:-0.01em">${title}</div>
-    <div style="color:rgba(255,255,255,0.85);font-size:1rem;max-width:300px;line-height:1.5">${message}</div>
-    ${btnText ? `<button onclick="${btnAction}" style="margin-top:8px;padding:12px 28px;border-radius:12px;border:none;background:#fff;color:#6C63FF;font-weight:700;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}`;
+    <div style="width:min(360px,calc(100vw - 44px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+      <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
+      <div style="color:#24453c;font-size:1.5rem;font-weight:900;letter-spacing:-0.01em">${title}</div>
+      <div style="color:#4f675d;font-size:0.98rem;max-width:300px;line-height:1.5;margin:8px auto 0">${message}</div>
+      ${btnText ? `<button onclick="${btnAction}" style="margin-top:14px;padding:12px 28px;border-radius:12px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-weight:800;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}
+    </div>`;
 }
 
 // Global Remote Config values populated on startup, safe to read anywhere after startApp()
@@ -13218,13 +14085,14 @@ function showParentSignIn(memberId, onSuccess) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:40px 28px';
+  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 44%,#e9ddc8 44%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:26px 22px';
   const member = getMember(memberId);
   el.innerHTML = `
-    <img src="gemsproutpadded.png" style="width:90px;height:90px;margin-bottom:16px">
-    <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
-    <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
-    <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+    <div style="width:min(420px,calc(100vw - 28px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <img src="gemsprout.png" style="width:88px;height:88px;margin:0 auto 14px;display:block">
+    <div style="color:#24453c;font-size:1.6rem;font-weight:900;margin-bottom:6px;text-align:center">Welcome back!</div>
+    <div style="color:#4f675d;font-size:0.95rem;margin-bottom:20px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin:0 auto">
       <button id="btn-google-signin" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="handleParentSignIn('google','${memberId}')">
         <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
         Continue with Google
@@ -13234,16 +14102,17 @@ function showParentSignIn(memberId, onSuccess) {
         Continue with Apple&nbsp;
       </button>
     </div>
-    <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer" onclick="renderHome()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.9rem;font-weight:700;cursor:pointer;display:block;margin-left:auto;margin-right:auto" onclick="renderHome()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
     ${RC.betaMode ? `
-    <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
-      <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
+    <div style="margin:20px auto 0;padding-top:16px;border-top:1px solid rgba(39,66,57,0.14);width:100%;max-width:320px">
+      <div style="color:#628073;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
       <div style="display:flex;gap:8px">
         <input id="dev-parentsignin-email" type="email" placeholder="your setup email" autocomplete="off"
-          style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
-        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test Sign In</button>
+          style="flex:1;padding:10px 12px;border:1px solid rgba(39,66,57,0.18);border-radius:10px;font-size:0.9rem;background:#fff;color:#1f3932;outline:none">
+        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:#2a7560;color:#fff;border:none;font-size:0.85rem;font-weight:700;cursor:pointer;white-space:nowrap">Test Sign In</button>
       </div>
-    </div>` : ''}`;
+    </div>` : ''}
+    </div>`;
   S._parentSignInCallback = onSuccess || null;
 }
 
@@ -13293,14 +14162,17 @@ function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:linear-gradient(145deg,#667eea,#764ba2);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:20px;text-align:center';
+  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:20px';
   el.innerHTML = `
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
-    <img src="gemsproutpadded.png" class="loading-img" style="width:160px;height:160px">
-    <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.01em">GemSprout</div>
-    <div class="loading-text" style="color:rgba(255,255,255,0.75);font-size:1rem;display:flex;align-items:center;gap:2px">
+    <div style="width:min(320px,calc(100vw - 48px));background:rgba(255,252,246,0.88);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24);backdrop-filter:blur(4px)">
+      <img src="gemsprout.png" class="loading-img" style="width:124px;height:124px;display:block;margin:0 auto 10px">
+      <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
+      <div style="margin-top:5px;color:#5d7368;font-size:0.9rem;font-weight:700;letter-spacing:0.01em;text-transform:uppercase">Family rhythms and rewards</div>
+    </div>
+    <div class="loading-text" style="color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;gap:2px">
       Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
     </div>`;
 }
@@ -13334,18 +14206,26 @@ function init() {
 
   // Re-render settings if it's open when Firebase auth state resolves (async on app restore).
   // This fixes the "Link Account" flash when closing on kid profile and reopening.
-  auth.onAuthStateChanged(() => {
-    if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
-  });
+  if (!isE2EMode()) {
+    auth.onAuthStateChanged(() => {
+      if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
+    });
+  }
 
   loadData();
   applyInterestForAllKids();
   scheduleHereCheck();
+  if (DEBUG_FORCE_LOADING_PREVIEW && !isE2EMode()) {
+    showLoading();
+    setTimeout(() => routeAfterLoad(), DEBUG_FORCE_LOADING_PREVIEW_MS);
+    return;
+  }
 
   const _needsMigrationPush = !getFamilyCode() && D.setup;
   if (_needsMigrationPush) setFamilyCode(genFamilyCode()); // temp sync code so getFamilyDoc() works; replaced with unique code before push below
 
   const hasLocalData = D.setup && D.family && D.family.members.length > 0;
+  const skipFirestore = isE2EMode();
 
   if (hasLocalData) {
     if (isAppUnlocked()) {
@@ -13363,30 +14243,36 @@ function init() {
         renderHome();
       }
     } else showAppPin();
-    ensureFirestoreAuth()
-      .then(async () => {
-        if (_needsMigrationPush) {
-          // Replace the temp sync code with a collision-checked unique code before pushing
-          const safeCode = await genUniqueFamilyCode();
-          setFamilyCode(safeCode);
-          await pushToFirestore();
-        }
-        if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
-          db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
-        }
-        subscribeToFirestore();
-      })
-      .catch(err => console.warn('Firestore sync unavailable:', err));
+    if (!skipFirestore) {
+      ensureFirestoreAuth()
+        .then(async () => {
+          if (_needsMigrationPush) {
+            // Replace the temp sync code with a collision-checked unique code before pushing
+            const safeCode = await genUniqueFamilyCode();
+            setFamilyCode(safeCode);
+            await pushToFirestore();
+          }
+          if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
+            db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
+          }
+          subscribeToFirestore();
+        })
+        .catch(err => console.warn('Firestore sync unavailable:', err));
+    }
   } else {
     // Slow path: no local data (fresh install or standalone PWA first launch)
     // Wait for Firestore before routing so we don't wrongly show setup wizard
-    showLoading();
-    ensureFirestoreAuth()
-      .then(() => subscribeToFirestore(routeAfterLoad))
-      .catch(err => {
-        console.warn('Firestore unavailable, falling back to local data:', err);
-        routeAfterLoad();
-      });
+    if (skipFirestore) {
+      routeAfterLoad();
+    } else {
+      showLoading();
+      ensureFirestoreAuth()
+        .then(() => subscribeToFirestore(routeAfterLoad))
+        .catch(err => {
+          console.warn('Firestore unavailable, falling back to local data:', err);
+          routeAfterLoad();
+        });
+    }
   }
 }
 
@@ -13401,6 +14287,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Start on DOM ready
 async function ensureFirestoreAuth() {
+  if (isE2EMode()) return;
   if (auth.currentUser) return;
   await auth.signInAnonymously().catch(() => {});
 }
@@ -13428,6 +14315,26 @@ document.addEventListener('visibilitychange', () => {
   if (kc) kc.scrollTop = 0;
   if (pc) pc.scrollTop = 0;
   if (S.currentUser?.role === 'parent') syncAppBadge();
+  if (S.currentUser?.role === 'kid') {
+    const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
+    checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
+    clearPendingSnapshot(S.currentUser.id);
+    savePendingSnapshot(S.currentUser.id);
+    checkForNewBonuses(S.currentUser, true);
+    checkForNewSavingsDeposits(S.currentUser, true);
+    checkForSavingsRequestOutcomes(S.currentUser, true);
+    checkForNewBadges(S.currentUser, true);
+    checkForDeclineNotifications(S.currentUser, true);
+  }
+  if (!isE2EMode() && D.setup) {
+    const now = Date.now();
+    if (!S._lastForegroundSyncAt || now - S._lastForegroundSyncAt > 10000) {
+      S._lastForegroundSyncAt = now;
+      ensureFirestoreAuth()
+        .then(() => subscribeToFirestore())
+        .catch(() => {});
+    }
+  }
 });
 
 console.log('GemSprout fully loaded!');

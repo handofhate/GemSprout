@@ -961,6 +961,7 @@
     }
     .kid-routine-card.done { background: linear-gradient(180deg, #f3fbf1, #eef7ea); border-color: rgba(95,143,99,0.35); }
     .kid-routine-card.pending { background: linear-gradient(180deg, #f5f7ef, #f0f2e6); border-color: rgba(111,143,153,0.35); }
+    .kid-routine-card.partial::before { background: linear-gradient(180deg, #22c55e, #16a34a); }
     .kid-routine-card.unavailable { opacity: 0.85; }
     .chore-top {
       display: flex;
@@ -1323,6 +1324,11 @@
       justify-content: space-between;
       position: relative;
       overflow: hidden;
+    }
+    .kid-shop-prize-card.locked-window {
+      opacity: 0.72;
+      border-color: rgba(124, 93, 57, 0.08);
+      filter: saturate(0.85);
     }
     .kid-shop-prize-top {
       display: flex;
@@ -3650,6 +3656,9 @@
       padding: 12px;
       background: linear-gradient(180deg, rgba(244, 233, 220, 0.98), rgba(231, 218, 200, 0.98));
     }
+    .parent-prize-reveal.has-reset {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
     .parent-chore-reveal-btn {
       height: 100%;
       min-height: 0;
@@ -3657,12 +3666,21 @@
     .parent-prize-reveal-btn {
       height: 100%;
       min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
     }
     .parent-chore-card {
       min-height: 114px;
     }
     .parent-prize-card {
       min-height: 114px;
+    }
+    .parent-prize-card.one-time-redeemed .snapshot-routine-main {
+      opacity: 0.62;
+      filter: saturate(0.75);
     }
     .parent-chore-copy {
       min-width: 0;
@@ -3676,6 +3694,14 @@
       color: #67726a;
       max-width: 18ch;
       white-space: pre-line;
+      padding-left: 24px;
+    }
+    .snapshot-panel-chore-copy {
+      margin-left: 0;
+    }
+    .snapshot-panel-chore-meta {
+      max-width: none;
+      margin-top: 4px;
     }
     .parent-prize-progress {
       margin-top: 10px;
