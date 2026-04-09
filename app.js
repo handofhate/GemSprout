@@ -2270,6 +2270,7 @@ function defaultData() {
     teamGoalInboxDismissed: [],
     history:         [],
     savingsRequests: [],
+    prizeRequests:   [],
     declineNotifications: [],
   };
 }
@@ -2525,12 +2526,15 @@ function checkForNewBadges(member, isWhileAway = false) {
     const displayIcon = rawIcon.includes('<')
       ? rawIcon.replace(/font-size:[^;'"]+/g, 'font-size:3rem')
       : `<span style="font-size:3rem">${rawIcon}</span>`;
+    const reasonLine = h.choreTitle
+      ? `${h.title} for "${h.choreTitle}"`
+      : `${h.title} unlocked`;
     showCelebration({
       icon:      displayIcon,
       title:     titleHtml,
-      sub:       h.title + (h.choreTitle ? ` ? ${h.choreTitle}` : ''),
+      sub:       reasonLine,
       badgeIcon: rawIcon,
-      tts:       tiny ? `You earned a new badge! ${h.title}!` : null,
+      tts:       tiny ? `You earned a new badge! ${reasonLine}.` : null,
     });
   });
 }
@@ -2800,7 +2804,10 @@ function normalizeSlots(slots) {
 }
 
 function normalizeChore(chore) {
-  const rewardValue = Number(chore?.diamonds ?? chore?.gems ?? 0) || 0;
+  const hasGems = chore && Object.prototype.hasOwnProperty.call(chore, 'gems');
+  const hasDiamonds = chore && Object.prototype.hasOwnProperty.call(chore, 'diamonds');
+  const rewardSource = hasGems ? chore.gems : hasDiamonds ? chore.diamonds : 0;
+  const rewardValue = Number(rewardSource) || 0;
   const legacyFrequency = chore?.frequency || 'daily';
   const legacyPeriod = legacyFrequency === 'weekly' ? 'week' : legacyFrequency === 'once' ? 'once' : 'day';
   const schedule = chore?.schedule || {};
@@ -2828,6 +2835,7 @@ function normalizeChore(chore) {
   const title = chore?.title || '';
   const choreBadges = Array.isArray(chore?.badges) ? chore.badges :
     !chore?.id ? (() => { const preset = CHORE_BADGE_PRESETS[title]; return preset ? preset.map(b => ({ id: genId(), ...b })) : []; })() : [];
+  const icon = normalizeIconName(chore?.icon, DEFAULT_APP_ICON);
 
   return {
     ...chore,
@@ -2835,7 +2843,7 @@ function normalizeChore(chore) {
     gems: rewardValue,
     frequency: period,
     repeatCount: targetCount,
-    icon: chore?.icon || 'broom',
+    icon,
     iconColor: chore?.iconColor || '#6BCB77',
     photoMode: (['after','before_after'].includes(chore?.photoMode) ? chore.photoMode
              : chore?.requiresPhoto === true ? 'after' : 'none'),
@@ -2979,17 +2987,20 @@ function normalizePrize(prize) {
     })
     .filter(r => r.memberId) : [];
   return {
-    icon: 'gift',
+    icon: DEFAULT_APP_ICON,
     iconColor: '#FF6584',
     type: 'individual',
     recurrence: 'anytime',
+    requireParentApproval: false,
     requirementType: 'none',
     requirementTaskCount: 1,
     requirementTaskIds: [],
     redemptions: [],
     ...p,
+    icon: normalizeIconName(p.icon, DEFAULT_APP_ICON),
     cost,
     recurrence,
+    requireParentApproval: !!p.requireParentApproval,
     requirementType,
     requirementTaskCount,
     requirementTaskIds,
@@ -3126,6 +3137,7 @@ function normalizeData(data) {
     : [];
   normalized.history         = Array.isArray(normalized.history)         ? normalized.history         : [];
   normalized.savingsRequests = Array.isArray(normalized.savingsRequests) ? normalized.savingsRequests : [];
+  normalized.prizeRequests   = Array.isArray(normalized.prizeRequests)   ? normalized.prizeRequests   : [];
   normalized.teamGoals = Array.isArray(normalized.teamGoals)
     ? normalized.teamGoals.map(g => ({ icon: 'trophy', iconColor: '#FFD93D', ...g }))
     : [];
@@ -3399,6 +3411,10 @@ function pendingSpendRequests() {
   return (D.savingsRequests || []).filter(r => r.status === 'pending');
 }
 
+function pendingPrizeRequests() {
+  return (D.prizeRequests || []).filter(r => r.status === 'pending');
+}
+
 function readyTeamGoalInboxItems() {
   const dismissed = new Set(Array.isArray(D.teamGoalInboxDismissed) ? D.teamGoalInboxDismissed : []);
   return (D.teamGoals || [])
@@ -3416,7 +3432,11 @@ function readyTeamGoalInboxItems() {
 }
 
 function familyInboxCount() {
-  return pendingApprovals().length + pendingSpendRequests().length + inProgressChores().length + readyTeamGoalInboxItems().length;
+  return pendingApprovals().length
+    + pendingSpendRequests().length
+    + pendingPrizeRequests().length
+    + inProgressChores().length
+    + readyTeamGoalInboxItems().length;
 }
 
 function dismissTeamGoalInboxItem(goalId) {
@@ -3616,16 +3636,27 @@ function doRedeemPrize(prizeId, memberId) {
   const status = getPrizeRedeemStatus(prize, memberId);
   if (!status.ok) return status;
   const normalizedPrize = normalizePrize(prize);
+  const redemptionDate = today();
+  const periodKey = getPrizePeriodKey(normalizedPrize.recurrence, redemptionDate);
+  const alreadyRedeemedInWindow = (prize.redemptions || []).some(r => {
+    if (r.memberId !== memberId) return false;
+    const key = r.periodKey || getPrizePeriodKey(normalizedPrize.recurrence, r.date || redemptionDate);
+    return key === periodKey;
+  });
+  if (alreadyRedeemedInWindow && normalizedPrize.recurrence !== 'anytime') {
+    return { ok: false, reason: 'window_locked', message: getPrizeLockedWindowMessage(normalizedPrize.recurrence, redemptionDate) };
+  }
   const cost = Math.max(0, Number(normalizedPrize.cost) || 0);
-  member.gems = Math.max(0, (member.gems || 0) - cost);
+  const newBalance = Math.max(0, (member.gems || 0) - cost);
+  member.gems = newBalance;
+  member.diamonds = newBalance;
   addHistory('prize', memberId, normalizedPrize.title, -cost);
   if (!prize.redemptions) prize.redemptions = [];
-  const redemptionDate = today();
   prize.redemptions.push({
     memberId,
     date: redemptionDate,
     cost,
-    periodKey: getPrizePeriodKey(normalizedPrize.recurrence, redemptionDate),
+    periodKey,
     requirementSnapshot: {
       type: normalizedPrize.requirementType,
       taskCount: normalizedPrize.requirementTaskCount,
@@ -4664,8 +4695,20 @@ function fmtCurrencyVisual(amount, symbol = '$') {
   return Number.isInteger(value) ? `${symbol}${value}` : `${symbol}${value.toFixed(2)}`;
 }
 
+const DEFAULT_APP_ICON = 'sketch-logo';
+
+function normalizeIconName(icon, fallback = DEFAULT_APP_ICON) {
+  if (typeof icon !== 'string') return fallback;
+  const value = icon.trim();
+  if (!value) return fallback;
+  if (value.includes('<') || value.includes('>')) return fallback;
+  if (/^[a-z0-9-]+$/i.test(value)) return value.toLowerCase();
+  return fallback;
+}
+
 function renderIcon(name, color, extraStyle='') {
   if (!name) return '';
+  if (typeof name === 'string' && name.includes('<') && name.includes('>')) return name;
   // Legacy emoji: any string with non-ASCII characters
   if ([...name].some(c => c.codePointAt(0) > 127)) return name;
   const col = color || '#6C63FF';
@@ -5080,28 +5123,29 @@ function emailDebugLogs() {
 }
 
 async function devTestPushPermission() {
-  if (!isNative()) { console.log('Push notifications only work on device.'); return; }
+  if (!isNative()) { console.log('Push notifications only work on device.'); toast('Push notifications only work on device'); return; }
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); return; }
+    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); toast('FirebaseMessaging plugin not found'); return; }
     const result = await FirebaseMessaging.requestPermissions();
     console.log('Permission status:', result.receive);
     toast(`<i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Permission: ${result.receive}`);
   } catch(e) {
     console.error('devTestPushPermission error:', e);
+    toast(`Permission check failed: ${e?.message || 'unknown error'}`);
   }
 }
 
 async function devShowPushToken() {
-  if (!isNative()) { console.log('Push notifications only work on device.'); return; }
+  if (!isNative()) { console.log('Push notifications only work on device.'); toast('Push notifications only work on device'); return; }
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); return; }
+    if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); toast('FirebaseMessaging plugin not found'); return; }
     const perm = await FirebaseMessaging.requestPermissions();
     if (perm.receive !== 'granted') { console.warn('Permission not granted:', perm.receive); toast(`Permission not granted: ${perm.receive}`); return; }
     const result = await FirebaseMessaging.getToken();
     const token = result?.token;
-    if (!token) { console.warn('No token returned'); return; }
+    if (!token) { console.warn('No token returned'); toast('No token returned from FirebaseMessaging'); return; }
     const uid = getParentAuthUid();
     if (uid) {
       await db.doc(`users/${uid}`).set(
@@ -5117,8 +5161,10 @@ async function devShowPushToken() {
         <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${uid ? 'Token saved to Firestore.' : 'Not signed in - token not saved.'}</div>
         <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedToken}').then(()=>toast('Copied!')).catch(()=>toast('Copy failed'))">Copy Token</button>
       </div>`);
+    toast('<i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Token retrieved');
   } catch(e) {
     console.error('devShowPushToken error:', e);
+    toast(`Token fetch failed: ${e?.message || 'unknown error'}`);
   }
 }
 
@@ -5134,8 +5180,94 @@ async function devSendTestPushNotification() {
     toast('<i class="ph-duotone ph-paper-plane-tilt" style="font-size:1rem;vertical-align:middle"></i> Test notification sent!');
   } catch(e) {
     console.error('devSendTestPushNotification error:', e);
-    toast('Send failed - check console');
+    toast(`Send failed: ${e?.message || 'check console'}`);
   }
+}
+
+async function devShowPushDiagnostics() {
+  const info = {
+    platform: isNative() ? 'native' : 'web',
+    familyCode: getFamilyCode() || '(none)',
+    currentUserRole: S.currentUser?.role || '(none)',
+    currentUserId: S.currentUser?.id || '(none)',
+    parentAuthUid: getParentAuthUid() || '(none)',
+    authUid: auth.currentUser?.uid || '(none)',
+    authEmail: auth.currentUser?.email || '(none)',
+    notifyChoreApproval: D.settings.notifyChoreApproval !== false ? 'on' : 'off',
+    notifySavingsSpend: D.settings.notifySavingsSpend !== false ? 'on' : 'off',
+    tokenFromDevice: '(unavailable)',
+    pushPermission: '(unknown)',
+    authUserTokenCount: '(unknown)',
+    parentAuthTokenCount: '(unknown)',
+  };
+
+  try {
+    if (isNative()) {
+      const { FirebaseMessaging } = Capacitor.Plugins;
+      if (!FirebaseMessaging) {
+        info.pushPermission = 'plugin-missing';
+      } else {
+        let perm = null;
+        if (typeof FirebaseMessaging.checkPermissions === 'function') {
+          perm = await FirebaseMessaging.checkPermissions().catch(() => null);
+        }
+        if (!perm) perm = await FirebaseMessaging.requestPermissions().catch(() => null);
+        info.pushPermission = perm?.receive || '(unknown)';
+        if (info.pushPermission === 'granted') {
+          const tokenResult = await FirebaseMessaging.getToken().catch(() => null);
+          info.tokenFromDevice = tokenResult?.token || '(none)';
+        }
+      }
+    } else {
+      info.pushPermission = 'web-only';
+    }
+  } catch (e) {
+    info.pushPermission = `error: ${e?.message || 'unknown'}`;
+  }
+
+  const readUserTokenCount = async (uid) => {
+    if (!uid || uid === '(none)') return '(n/a)';
+    try {
+      const snap = await db.doc(`users/${uid}`).get();
+      const tokens = snap.exists ? (snap.data()?.fcmTokens || []) : [];
+      return Array.isArray(tokens) ? tokens.length : '(invalid)';
+    } catch (e) {
+      return `error: ${e?.message || 'unknown'}`;
+    }
+  };
+
+  info.authUserTokenCount = await readUserTokenCount(info.authUid);
+  info.parentAuthTokenCount = await readUserTokenCount(info.parentAuthUid);
+
+  const lines = [
+    `Platform: ${info.platform}`,
+    `Family code: ${info.familyCode}`,
+    `Current role: ${info.currentUserRole}`,
+    `Current user id: ${info.currentUserId}`,
+    `Auth UID: ${info.authUid}`,
+    `Auth email: ${info.authEmail}`,
+    `Parent auth UID: ${info.parentAuthUid}`,
+    `Push permission: ${info.pushPermission}`,
+    `Device token: ${info.tokenFromDevice === '(unavailable)' ? info.tokenFromDevice : `${String(info.tokenFromDevice).slice(0, 24)}...`}`,
+    `users/<authUid> token count: ${info.authUserTokenCount}`,
+    `users/<parentAuthUid> token count: ${info.parentAuthTokenCount}`,
+    `Notify chore approval: ${info.notifyChoreApproval}`,
+    `Notify savings spend: ${info.notifySavingsSpend}`,
+  ];
+
+  const escapedJson = JSON.stringify(info, null, 2)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const escapedCopy = JSON.stringify(info, null, 2).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  showQuickActionModal(`
+    <div style="padding:8px">
+      <div style="font-weight:700;margin-bottom:10px"><i class="ph-duotone ph-bug" style="vertical-align:middle;margin-right:6px"></i>Push Diagnostics</div>
+      <div style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin-bottom:10px">${lines.map(x => esc(x)).join('<br>')}</div>
+      <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.5;max-height:220px;overflow:auto">${escapedJson}</div>
+      <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedCopy}').then(()=>toast('Diagnostics copied')).catch(()=>toast('Copy failed'))">Copy Diagnostics JSON</button>
+    </div>`);
 }
 
 function testCameraPermission() {
@@ -6041,6 +6173,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devTestPushPermission()"><i class="ph-duotone ph-lock-open" style="font-size:0.9rem;vertical-align:middle"></i> Request Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devShowPushToken()"><i class="ph-duotone ph-identification-card" style="font-size:0.9rem;vertical-align:middle"></i> Register &amp; Show FCM Token</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devShowPushDiagnostics()"><i class="ph-duotone ph-bug" style="font-size:0.9rem;vertical-align:middle"></i> Push Diagnostics</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();showPaywall()"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
@@ -8124,7 +8257,7 @@ function renderKidNav() {
   const accent = S.currentUser?.color || COLORS[0];
   const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
   const tabs = [
-    ['chores',  ICONS.chores,  'Rhythm'],
+    ['chores',  ICONS.chores,  'Tasks'],
     ['diamonds', ICONS.diamond, 'Gems'],
     ['shop',    ICONS.shop,    'Shop'],
     ['team',    ICONS.team,    'Team'],
@@ -8202,10 +8335,16 @@ function renderKidChores() {
   }
 
   const progressMap = new Map(myChores.map(chore => [chore.id, getChoreProgress(chore, m.id)]));
+  const approvedToStartSet = new Set(
+    myChores
+      .filter(c => getChorePhotoPhase(c, m.id)?.phase === 'needs_after')
+      .map(c => c.id)
+  );
+  const approvedToStart = myChores.filter(c => approvedToStartSet.has(c.id));
   const done        = myChores.filter(c => progressMap.get(c.id)?.status === 'done');
   const awaiting    = myChores.filter(c => progressMap.get(c.id)?.status === 'pending');
-  const partial     = myChores.filter(c => progressMap.get(c.id)?.status === 'partial');
-  const todo        = myChores.filter(c => progressMap.get(c.id)?.status === 'none');
+  const partial     = myChores.filter(c => progressMap.get(c.id)?.status === 'partial' && !approvedToStartSet.has(c.id));
+  const todo        = myChores.filter(c => progressMap.get(c.id)?.status === 'none' && !approvedToStartSet.has(c.id));
   const unavailable = myChores.filter(c => progressMap.get(c.id)?.status === 'unavailable');
 
   const totalUnits  = myChores.reduce((sum, chore) => sum + (progressMap.get(chore.id)?.targetCount || 0), 0);
@@ -8337,32 +8476,40 @@ function renderKidChores() {
     </section>`;
   };
 
+  if (approvedToStart.length > 0) {
+    html += renderStage('Approved to Start', 'ph-check-circle', '#16A34A', approvedToStart.length, approvedToStart, 'sort-approved-start', {
+      emphasis: 'progress',
+      sub: 'Ready to begin',
+      bare: true
+    });
+  }
+
   html += renderStage('Open Now', 'ph-sun-horizon', '#1D6B57', todoVisible.length, todoVisible, 'sort-todo', {
     emphasis: 'primary',
-    sub: todoVisible.length ? 'Start here first.' : '',
+    sub: todoVisible.length ? 'Start here first' : '',
     bare: true
   });
 
   if (partial.length > 0) {
     html += renderStage('In Motion', 'ph-path', '#c96f3b', partial.length, partial, 'sort-partial', {
       emphasis: 'progress',
-      sub: 'Already started, not finished yet.',
+      sub: 'Already started, not finished yet',
       bare: true
     });
   }
 
-  html += renderStage('Waiting on Parent', 'ph-hourglass', '#6f8f99', awaiting.length, awaiting, 'sort-pending', {
-    sub: 'Sent in and ready for a check.',
+  html += renderStage('Pending', 'ph-hourglass', '#6f8f99', awaiting.length, awaiting, 'sort-pending', {
+    sub: 'Waiting for parent approval',
     bare: true
   });
   html += renderStage('Complete', 'ph-check-circle', '#5f8f63', done.length, done, 'sort-done', {
-    sub: 'Done for today.',
+    sub: 'Done for today',
     bare: true
   });
 
   if (!D.settings.hideUnavailable) {
     html += renderStage('Later Windows', 'ph-moon-stars', '#6b6d63', unavailable.length, unavailable, 'sort-unavail', {
-      sub: 'These unlock later in the day.'
+      sub: 'These unlock later in the day'
     });
   }
 
@@ -8554,11 +8701,11 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
       : `<button class="snapshot-reveal-btn snapshot-reveal-btn-approve" type="button" title="Request with photo" onpointerdown="event.preventDefault();event.stopPropagation();kidCompleteChore('${chore.id}',event,null,'before');return false;" onclick="return false;"><i class="ph-duotone ph-camera"></i><span>Request</span></button>`;
   } else if (phase === 'before_pending') {
     statusClass = 'pending';
-    hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for parent to approve the start</div>`;
+    hintHtml = `<div class="chore-meta" style="color:var(--yellow)"><i class="ph-duotone ph-hourglass" style="font-size:0.9rem;vertical-align:middle"></i> Waiting for approval</div>`;
     btnHtml  = tiny ? kidRoutineTinyOrb('ph-hourglass', 'secondary', '', true) : kidRoutineRevealStatus('Awaiting OK', 'ph-hourglass');
   } else if (phase === 'needs_after') {
     statusClass = 'partial';
-    hintHtml = '';
+    hintHtml = `<div class="chore-meta" style="color:#15803D"><i class="ph-duotone ph-check-circle" style="font-size:0.9rem;vertical-align:middle"></i> Approved to start</div>`;
     btnHtml  = tiny
       ? kidRoutineTinyOrb('ph-camera', 'approve', ` onclick="event.stopPropagation();kidCompleteChore('${chore.id}',event,null,'after')"`)
       : `<button class="snapshot-reveal-btn snapshot-reveal-btn-approve" type="button" title="Submit done photo" onpointerdown="event.preventDefault();event.stopPropagation();kidCompleteChore('${chore.id}',event,null,'after');return false;" onclick="return false;"><i class="ph-duotone ph-camera"></i><span>Done</span></button>`;
@@ -9081,7 +9228,7 @@ function submitSpendRequest(memberId) {
         kidName:    m.name || 'A kid',
         amount:     amt,
         reason:     reason || '',
-        pendingCount: pendingApprovals().length + pendingSpendRequests().length,
+        pendingCount: pendingApprovals().length + pendingSpendRequests().length + pendingPrizeRequests().length,
       }).catch(() => {});
     } catch(e) {}
   }
@@ -9118,6 +9265,42 @@ function denySavingsRequest(requestId, btn) {
     saveData();
     toast(`Spend request denied for ${m?.name || 'kid'}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
+    syncAppBadge();
+  });
+}
+
+function approvePrizeRequest(requestId, btn) {
+  const req = (D.prizeRequests || []).find(r => r.id === requestId);
+  if (!req || req.status !== 'pending') return;
+  const member = getMember(req.memberId);
+  const prize = D.prizes.find(p => p.id === req.prizeId);
+  if (!member || !prize) return;
+  _fadeOutAdminCard(btn, () => {
+    const result = doRedeemPrize(prize.id, member.id);
+    req.status = result?.ok ? 'approved' : 'denied';
+    req.resolvedAt = Date.now();
+    saveData();
+    if (result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
+    else toast(`Could not approve: ${formatPrizeRedeemStatusMessage(result)}`);
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
+    syncAppBadge();
+  });
+}
+
+function denyPrizeRequest(requestId, btn) {
+  const req = (D.prizeRequests || []).find(r => r.id === requestId);
+  if (!req || req.status !== 'pending') return;
+  const member = getMember(req.memberId);
+  _fadeOutAdminCard(btn, () => {
+    req.status = 'denied';
+    req.resolvedAt = Date.now();
+    saveData();
+    toast(`Prize request denied for ${member?.name || 'kid'}`);
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
     syncAppBadge();
   });
 }
@@ -9295,7 +9478,7 @@ function claimInterest(memberId) {
   m.savings                 = (m.savings || 0) + interest;
   m.savingsInterest         = (m.savingsInterest || 0) + interest;
   m.savingsInterestLastDate = today();
-  addHistory('savings', m.id, `Interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+  addHistory('savings', m.id, `Claimed interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
   saveData();
 }
 
@@ -9357,7 +9540,7 @@ function renderKidShop() {
         <div class="kid-shop-prize-note">
           ${esc(note)}
         </div>
-        <div style="margin-top:4px;font-size:0.74rem;color:var(--muted)">${esc(recurrenceSummary)}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}</div>
+        <div style="margin-top:4px;font-size:0.74rem;color:var(--muted)">${esc(recurrenceSummary)}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}${p.requireParentApproval ? ' &middot; Parent approval required' : ''}</div>
       </div>`;
   };
 
@@ -9383,31 +9566,74 @@ function kidRedeemPrize(prizeId, evt) {
   }
   const dmds = m.gems||0;
   const requirementSummary = getPrizeRequirementSummary(prize);
+  const needsApproval = !!prize.requireParentApproval;
 
   showQuickActionModal(`
-    <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} Redeem Prize?</div>
-    <p style="margin-bottom:20px;line-height:1.6">Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your ${dmds} gems?</p>
-    <p style="margin-top:-10px;margin-bottom:20px;font-size:0.82rem;color:var(--muted)">${esc(formatPrizeRecurrence(prize.recurrence))}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}</p>
+    <div class="modal-title">${renderIcon(prize.icon,prize.iconColor,'font-size:1.2rem;vertical-align:middle')} ${needsApproval ? 'Request Prize?' : 'Redeem Prize?'}</div>
+    <p style="margin-bottom:20px;line-height:1.6">${needsApproval ? `Send a request to your parent for <strong>${esc(prize.title)}</strong> (${prize.cost} gems)?` : `Redeem <strong>${esc(prize.title)}</strong> for ${prize.cost} of your ${dmds} gems?`}</p>
+    <p style="margin-top:-10px;margin-bottom:20px;font-size:0.82rem;color:var(--muted)">${esc(formatPrizeRecurrence(prize.recurrence))}${requirementSummary ? ` &middot; ${esc(requirementSummary)}` : ''}${needsApproval ? ' &middot; Parent approval required' : ''}</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">Not yet</button>
-      <button class="btn btn-primary" onclick="confirmRedeem('${prizeId}')">Yes, redeem! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></button>
+      <button class="btn btn-primary" onclick="${needsApproval ? `submitPrizeRequest('${prizeId}')` : `confirmRedeem('${prizeId}')`}">${needsApproval ? 'Send request' : 'Yes, redeem!'} <i class="ph-duotone ${needsApproval ? 'ph-paper-plane-tilt' : 'ph-confetti'}" style="font-size:1rem;vertical-align:middle"></i></button>
     </div>`);
 }
 
+function submitPrizeRequest(prizeId) {
+  const m = S.currentUser;
+  const prize = D.prizes.find(p => p.id === prizeId);
+  closeModal();
+  if (!m || !prize) return;
+  D.prizeRequests = D.prizeRequests || [];
+  const hasPending = D.prizeRequests.some(r => r.status === 'pending' && r.memberId === m.id && r.prizeId === prizeId);
+  if (hasPending) {
+    toast('Request already pending for this prize');
+    return;
+  }
+  D.prizeRequests.push({
+    id: genId(),
+    prizeId,
+    memberId: m.id,
+    cost: Math.max(0, Number(prize.cost) || 0),
+    status: 'pending',
+    date: today(),
+    createdAt: Date.now(),
+  });
+  saveData();
+  toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent for parent approval');
+  if (isTiny(m)) speak(`Request sent for ${prize.title}. Waiting for your grown-up.`);
+  renderKidShop();
+  renderKidHeader();
+}
+
 function confirmRedeem(prizeId) {
+  if (!S._redeemLocks) S._redeemLocks = {};
+  if (S._redeemLocks[prizeId]) return;
+  S._redeemLocks[prizeId] = true;
   const m     = S.currentUser;
   const prize = D.prizes.find(p=>p.id===prizeId);
   closeModal();
-  if (!prize) { toast('Prize no longer available'); return; }
+  if (!prize) {
+    toast('Prize no longer available');
+    delete S._redeemLocks[prizeId];
+    return;
+  }
   const result = doRedeemPrize(prizeId, m?.id);
-  if (!result?.ok) { toast(formatPrizeRedeemStatusMessage(result)); return; }
+  if (!result?.ok) {
+    toast(formatPrizeRedeemStatusMessage(result));
+    delete S._redeemLocks[prizeId];
+    return;
+  }
 
   showCelebration({
     icon:   renderIcon(prize.icon, prize.iconColor, 'font-size:3.5rem'),
     title:  'Prize Unlocked!',
     sub:    prize.title,
     tts:    isTiny(m) ? `You got it! ${prize.title}! Go show your grown-up!` : null,
-    onClose: () => { renderKidShop(); renderKidHeader(); }
+    onClose: () => {
+      delete S._redeemLocks[prizeId];
+      renderKidShop();
+      renderKidHeader();
+    }
   });
 }
 
@@ -10929,6 +11155,7 @@ function renderParentHome() {
   const kids        = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const pending     = pendingApprovals();
   const pendingSpend = pendingSpendRequests();
+  const pendingPrize = pendingPrizeRequests();
   const readyGoals  = readyTeamGoalInboxItems();
   const cur         = D.settings.currency || '$';
   const t           = today();
@@ -10975,7 +11202,7 @@ function renderParentHome() {
       <div class="parent-summary-grid">
         <div class="parent-summary-tile">
           <div class="parent-summary-label">Needs Review</div>
-          <div class="parent-summary-value">${pending.length + pendingSpend.length}</div>
+          <div class="parent-summary-value">${pending.length + pendingSpend.length + pendingPrize.length}</div>
           <div class="parent-summary-sub">${inProgress.length} in progress</div>
         </div>
         <div class="parent-summary-tile">
@@ -10996,8 +11223,8 @@ function renderParentHome() {
       </div>
     </div>`;
 
-  if (inProgress.length > 0 || pending.length > 0 || pendingSpend.length > 0 || readyGoals.length > 0) {
-    const inboxCount = pending.length + pendingSpend.length + inProgress.length + readyGoals.length;
+  if (inProgress.length > 0 || pending.length > 0 || pendingSpend.length > 0 || pendingPrize.length > 0 || readyGoals.length > 0) {
+    const inboxCount = pending.length + pendingSpend.length + pendingPrize.length + inProgress.length + readyGoals.length;
     html += `<div class="inbox-head">
       <div class="inbox-title"><i class="ph-duotone ph-tray" style="color:#1D6B57;font-size:1rem"></i> Family Inbox</div>
       <div class="inbox-count">${inboxCount} Item${inboxCount === 1 ? '' : 's'}</div>
@@ -11018,11 +11245,15 @@ function renderParentHome() {
         const mem = getMember(memberId);
         if (!mem) return;
         html += `
-          <div class="admin-card">
+          <div class="admin-card" style="flex-wrap:wrap;gap:10px">
             <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
             <div class="admin-info" style="flex:1;min-width:0">
               <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
               <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; waiting for after photo &middot; ${chore.diamonds} gems</div>
+            </div>
+            <div class="admin-actions">
+              <button class="btn-icon-sm btn-icon-approve" onclick="completeInProgressChoreFromInbox('${chore.id}','${memberId}')"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
+              <button class="btn-icon-sm btn-icon-reject" onclick="revokeInProgressChore('${chore.id}','${memberId}')"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:0.9rem"></i></button>
             </div>
           </div>`;
         return;
@@ -11068,6 +11299,23 @@ function renderParentHome() {
           <div class="admin-actions">
             <button class="btn-icon-sm btn-icon-approve" onclick="approveSavingsRequest('${req.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
             <button class="btn-icon-sm btn-icon-reject" onclick="denySavingsRequest('${req.id}',this)"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
+          </div>
+        </div>`;
+    });
+    pendingPrize.forEach(req => {
+      const mem = getMember(req.memberId);
+      const prize = D.prizes.find(p => p.id === req.prizeId);
+      if (!mem || !prize) return;
+      html += `
+        <div class="admin-card" style="flex-wrap:wrap;gap:10px">
+          <span class="admin-icon">${renderIcon(prize.icon, prize.iconColor, 'font-size:1.6rem')}</span>
+          <div class="admin-info" style="flex:1;min-width:0">
+            <div class="admin-name">Prize Request <span style="background:#EDE9FE;color:var(--purple);border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">${Math.max(0, Number(req.cost ?? prize.cost) || 0)} gems</span></div>
+            <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; ${esc(prize.title)} &middot; ${fmtDate(req.date)}</div>
+          </div>
+          <div class="admin-actions">
+            <button class="btn-icon-sm btn-icon-approve" onclick="approvePrizeRequest('${req.id}',this)"><i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem"></i></button>
+            <button class="btn-icon-sm btn-icon-reject" onclick="denyPrizeRequest('${req.id}',this)"><i class="ph-duotone ph-x" style="font-size:0.9rem"></i></button>
           </div>
         </div>`;
     });
@@ -11288,6 +11536,38 @@ function confirmRejectChore(choreId, memberId, entryId) {
   syncAppBadge();
 }
 
+function completeInProgressChoreFromInbox(choreId, memberId) {
+  parentMarkChoreDone(choreId, memberId);
+  syncAppBadge();
+}
+
+function revokeInProgressChore(choreId, memberId) {
+  const chore = D.chores.find(c => c.id === choreId);
+  const member = getMember(memberId);
+  if (!chore || !member) return;
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  const todayStr = today();
+  const filtered = entries.filter(entry => {
+    if (entry.date !== todayStr) return true;
+    if (entry.entryType === 'before' && (entry.status === 'approved' || entry.status === 'pending')) return false;
+    if (entry.entryType === 'after' && entry.status === 'pending') return false;
+    return true;
+  });
+  if (filtered.length === entries.length) {
+    toast('No in-progress approval to revoke');
+    return;
+  }
+  if (!chore.completions) chore.completions = {};
+  if (filtered.length === 0) delete chore.completions[memberId];
+  else chore.completions[memberId] = filtered;
+  saveData();
+  toast(`Removed start approval for ${member.name}`);
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+  syncAppBadge();
+}
+
 
 // Parent directly marks a chore done for a kid (no kid submission required)
 function parentMarkChoreDone(choreId, memberId) {
@@ -11322,9 +11602,11 @@ function parentMarkChoreDone(choreId, memberId) {
       totalPts += chore.gems;
     });
   } else {
+    const photoPhase = chore.photoMode === 'before_after' ? getChorePhotoPhase(chore, memberId) : null;
+    const completionEntryType = photoPhase?.phase === 'needs_after' ? 'after' : null;
     chore.completions[memberId].push({
       id: genId(), status: 'done', date: today(), createdAt: Date.now(),
-      slotId: null, photoUrl: null, entryType: null,
+      slotId: null, photoUrl: null, entryType: completionEntryType,
     });
     totalPts = chore.gems;
   }
@@ -11606,7 +11888,7 @@ function showChoreModal(choreId, opts = {}) {
   const kids  = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const chore = choreId ? D.chores.find(c=>c.id===choreId) : null;
   const c     = normalizeChore(chore || {
-    title:'', icon:'<i class="ph-duotone ph-star" style="color:#F59E0B"></i>', gems:10, frequency:'day', repeatCount:1,
+    title:'', icon:DEFAULT_APP_ICON, gems:10, frequency:'day', repeatCount:1,
     schedule: { period:'day', targetCount:1, daysOfWeek:ALL_DAYS.slice(), windows:{}, slots:null },
     assignedTo:kids.map(k=>k.id), description:'', completions:{}
   });
@@ -11615,8 +11897,9 @@ function showChoreModal(choreId, opts = {}) {
   _editSlots = c.schedule.slots ? c.schedule.slots.map(s=>({...s})) : [];
 
   const choreColor = c.iconColor || '#6BCB77';
+  const choreIcon = normalizeIconName(c.icon, DEFAULT_APP_ICON);
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
-    `<div class="icon-opt${n===c.icon?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    `<div class="icon-opt${n===choreIcon?' sel':''}" onclick="selChoreIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
   ).join('');
   const colorSwatches = COLORS.map(col =>
     `<div class="icon-color-swatch${col===choreColor?' sel':''}" style="background:${col}" onclick="selChoreColor(this,'${col}')"></div>`
@@ -11650,7 +11933,7 @@ function showChoreModal(choreId, opts = {}) {
   const hasSlots = _editSlots.length > 0;
 
   const modalHtml = `
-    <input type="hidden" id="cm-icon" value="${esc(String(c.icon || ''))}">
+    <input type="hidden" id="cm-icon" value="${esc(String(choreIcon || DEFAULT_APP_ICON))}">
     <input type="hidden" id="cm-icon-color" value="${esc(String(choreColor || ''))}">
     <div class="form-group">
       <label class="form-label">Task name</label>
@@ -11834,7 +12117,7 @@ function toggleChoreDayRow(dayIndex) {
 
 function saveChore(choreId) {
   const title  = document.getElementById('cm-title')?.value.trim();
-  const icon      = document.getElementById('cm-icon')?.value || 'broom';
+  const icon      = normalizeIconName(document.getElementById('cm-icon')?.value, DEFAULT_APP_ICON);
   const iconColor = document.getElementById('cm-icon-color')?.value || '#6BCB77';
   const gems = parseInt(document.getElementById('cm-gems')?.value)||10;
   const freq   = document.getElementById('cm-freq')?.value || 'day';
@@ -12508,11 +12791,12 @@ function onPrizeTaskCountChanged() {
 
 function showPrizeModal(prizeId, opts = {}) {
   const prize = prizeId ? D.prizes.find(p=>p.id===prizeId) : null;
-  const p = normalizePrize(prize || { title:'', icon:'gift', iconColor:'#FF6584', cost:100, type:'individual', recurrence:'anytime', requirementType:'none', requirementTaskCount:1, requirementTaskIds:[] });
+  const p = normalizePrize(prize || { title:'', icon:DEFAULT_APP_ICON, iconColor:'#FF6584', cost:100, type:'individual', recurrence:'anytime', requirementType:'none', requirementTaskCount:1, requirementTaskIds:[] });
 
   const prizeColor = p.iconColor || '#FF6584';
+  const prizeIcon = normalizeIconName(p.icon, DEFAULT_APP_ICON);
   const iconOpts = ICON_MAP.slice(0, 48).map(({n}) =>
-    `<div class="icon-opt${n===p.icon?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
+    `<div class="icon-opt${n===prizeIcon?' sel':''}" onclick="selPrizeIcon(this,'${n}')" data-icon="${n}"><i class="ph-duotone ph-${n}"></i></div>`
   ).join('');
   const colorSwatches = COLORS.map(col =>
     `<div class="icon-color-swatch${col===prizeColor?' sel':''}" style="background:${col}" onclick="selPrizeColor(this,'${col}')"></div>`
@@ -12524,7 +12808,7 @@ function showPrizeModal(prizeId, opts = {}) {
     || (DEBUG_FORCE_PRIZE_STATE_PREVIEW && !isE2EMode() && p.type === 'individual');
 
   const modalHtml = `
-    <input type="hidden" id="pm-icon" value="${p.icon}">
+    <input type="hidden" id="pm-icon" value="${prizeIcon}">
     <input type="hidden" id="pm-icon-color" value="${prizeColor}">
     <div class="form-group">
       <label class="form-label">Prize name</label>
@@ -12549,6 +12833,18 @@ function showPrizeModal(prizeId, opts = {}) {
         <option value="weekly" ${p.recurrence==='weekly'?'selected':''}>Once per week</option>
         <option value="monthly" ${p.recurrence==='monthly'?'selected':''}>Once per month</option>
       </select>
+    </div>
+    <div class="form-group" style="margin-top:-2px">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span>
+          <div class="form-label" style="margin:0">Require parent approval</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px">Prize will be submitted for approval by a parent</div>
+        </span>
+        <span class="toggle" style="flex-shrink:0">
+          <input type="checkbox" id="pm-parent-approval" ${p.requireParentApproval ? 'checked' : ''}>
+          <span class="toggle-track"></span>
+        </span>
+      </label>
     </div>
     <div class="form-group">
       <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -12626,13 +12922,14 @@ function filterPrizeIcons(query) {
 
 function savePrize(prizeId, forceReset = false) {
   const title     = document.getElementById('pm-title')?.value.trim();
-  const icon      = document.getElementById('pm-icon')?.value || 'gift';
+  const icon      = normalizeIconName(document.getElementById('pm-icon')?.value, DEFAULT_APP_ICON);
   const iconColor = document.getElementById('pm-icon-color')?.value || '#FF6584';
   const costRaw   = parseInt(document.getElementById('pm-cost')?.value, 10);
   const cost      = Math.max(0, Number.isFinite(costRaw) ? costRaw : 0);
   const recurrence = PRIZE_RECURRENCE_TYPES.includes(document.getElementById('pm-recurrence')?.value)
     ? document.getElementById('pm-recurrence')?.value
     : 'anytime';
+  const requireParentApproval = !!document.getElementById('pm-parent-approval')?.checked;
   const requirementEnabled = !!document.getElementById('pm-requirement-enabled')?.checked;
   const pickedRequirement = document.getElementById('pm-requirement-type')?.value || 'none';
   const requirementType = requirementEnabled && PRIZE_REQUIREMENT_TYPES.includes(pickedRequirement) ? pickedRequirement : 'none';
@@ -12656,6 +12953,7 @@ function savePrize(prizeId, forceReset = false) {
         iconColor,
         cost,
         recurrence,
+        requireParentApproval,
         requirementType,
         requirementTaskCount,
         requirementTaskIds,
@@ -12672,6 +12970,7 @@ function savePrize(prizeId, forceReset = false) {
       cost,
       type: 'individual',
       recurrence,
+      requireParentApproval,
       requirementType,
       requirementTaskCount,
       requirementTaskIds,
@@ -14016,6 +14315,26 @@ document.addEventListener('visibilitychange', () => {
   if (kc) kc.scrollTop = 0;
   if (pc) pc.scrollTop = 0;
   if (S.currentUser?.role === 'parent') syncAppBadge();
+  if (S.currentUser?.role === 'kid') {
+    const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
+    checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
+    clearPendingSnapshot(S.currentUser.id);
+    savePendingSnapshot(S.currentUser.id);
+    checkForNewBonuses(S.currentUser, true);
+    checkForNewSavingsDeposits(S.currentUser, true);
+    checkForSavingsRequestOutcomes(S.currentUser, true);
+    checkForNewBadges(S.currentUser, true);
+    checkForDeclineNotifications(S.currentUser, true);
+  }
+  if (!isE2EMode() && D.setup) {
+    const now = Date.now();
+    if (!S._lastForegroundSyncAt || now - S._lastForegroundSyncAt > 10000) {
+      S._lastForegroundSyncAt = now;
+      ensureFirestoreAuth()
+        .then(() => subscribeToFirestore())
+        .catch(() => {});
+    }
+  }
 });
 
 console.log('GemSprout fully loaded!');

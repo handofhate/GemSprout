@@ -961,6 +961,7 @@
     }
     .kid-routine-card.done { background: linear-gradient(180deg, #f3fbf1, #eef7ea); border-color: rgba(95,143,99,0.35); }
     .kid-routine-card.pending { background: linear-gradient(180deg, #f5f7ef, #f0f2e6); border-color: rgba(111,143,153,0.35); }
+    .kid-routine-card.partial::before { background: linear-gradient(180deg, #22c55e, #16a34a); }
     .kid-routine-card.unavailable { opacity: 0.85; }
     .chore-top {
       display: flex;
