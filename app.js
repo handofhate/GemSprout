@@ -6533,6 +6533,25 @@ function _settingsAuthProviders() {
   return _authProviders;
 }
 
+function _ensureMemberAuthProviders(member) {
+  if (!member) return [];
+  if (!Array.isArray(member.authProviders)) member.authProviders = [];
+  if (!member.authProviders.length) {
+    const fallbackProviders = _settingsAuthProviders();
+    if (fallbackProviders.length) {
+      member.authProviders = fallbackProviders.map(p => ({
+        providerId: p.providerId,
+        uid: p.uid || '',
+        email: p.email || '',
+      }));
+      member.authUids = member.authProviders.map(p => p.uid).filter(Boolean);
+      member.authUid = member.authProviders[0]?.uid || '';
+      saveData();
+    }
+  }
+  return member.authProviders;
+}
+
 const _GOOGLE_ICON = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
 const _APPLE_ICON  = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#000" style="flex-shrink:0" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>`;
 
@@ -10431,8 +10450,16 @@ function _removeLastProviderAndSignOut() {
 
 function unlinkProvider(providerId) {
   const member = S.currentUser;
-  if (!member?.authProviders?.length) return;
-  const remaining = member.authProviders.filter(p => p.providerId !== providerId);
+  const providers = _ensureMemberAuthProviders(member);
+  if (!providers.length) {
+    toast('No linked sign-in methods found');
+    return;
+  }
+  const remaining = providers.filter(p => p.providerId !== providerId);
+  if (remaining.length === providers.length) {
+    toast('That sign-in method is not linked');
+    return;
+  }
   if (remaining.length === 0) {
     toast('Keep at least one sign-in method linked. Use Switch Account instead.');
     return;
@@ -10444,6 +10471,7 @@ function unlinkProvider(providerId) {
   setParentAuthUid(next.uid);
   try { localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, next.providerId); } catch {}
   saveData();
+  toast('Sign-in method unlinked');
   renderSettings();
 }
 
