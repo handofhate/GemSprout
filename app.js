@@ -6535,21 +6535,27 @@ function _settingsAuthProviders() {
 
 function _ensureMemberAuthProviders(member) {
   if (!member) return [];
-  if (!Array.isArray(member.authProviders)) member.authProviders = [];
-  if (!member.authProviders.length) {
+  const target = getMember(member.id) || member;
+  if (!Array.isArray(target.authProviders)) target.authProviders = [];
+  if (!target.authProviders.length) {
     const fallbackProviders = _settingsAuthProviders();
     if (fallbackProviders.length) {
-      member.authProviders = fallbackProviders.map(p => ({
+      target.authProviders = fallbackProviders.map(p => ({
         providerId: p.providerId,
         uid: p.uid || '',
         email: p.email || '',
       }));
-      member.authUids = member.authProviders.map(p => p.uid).filter(Boolean);
-      member.authUid = member.authProviders[0]?.uid || '';
+      target.authUids = target.authProviders.map(p => p.uid).filter(Boolean);
+      target.authUid = target.authProviders[0]?.uid || '';
+      if (S.currentUser?.id === target.id) {
+        S.currentUser.authProviders = target.authProviders;
+        S.currentUser.authUids = target.authUids;
+        S.currentUser.authUid = target.authUid;
+      }
       saveData();
     }
   }
-  return member.authProviders;
+  return target.authProviders;
 }
 
 const _GOOGLE_ICON = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
@@ -10464,9 +10470,15 @@ function unlinkProvider(providerId) {
     toast('Keep at least one sign-in method linked. Use Switch Account instead.');
     return;
   }
-  member.authProviders = remaining;
-  member.authUids = remaining.map(p => p.uid);
-  member.authUid = remaining[0]?.uid || '';
+  const target = getMember(member.id) || member;
+  target.authProviders = remaining;
+  target.authUids = remaining.map(p => p.uid);
+  target.authUid = remaining[0]?.uid || '';
+  if (S.currentUser?.id === target.id) {
+    S.currentUser.authProviders = target.authProviders;
+    S.currentUser.authUids = target.authUids;
+    S.currentUser.authUid = target.authUid;
+  }
   const next = remaining[0];
   setParentAuthUid(next.uid);
   try { localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, next.providerId); } catch {}
