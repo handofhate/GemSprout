@@ -1,4 +1,4 @@
-﻿const FIREBASE_CONFIG = {
+const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU",
   authDomain:        "gemsprout1.firebaseapp.com",
   projectId:         "gemsprout1",
@@ -73,17 +73,11 @@ async function initPushNotifications(firebaseUser) {
     });
     // Foreground message: re-render immediately so the pending row appears without a tab switch
     FirebaseMessaging.addListener('notificationReceived', (event) => {
-      const t = event?.notification?.data?.type;
-      if ((t === 'approval_request' || t === 'spend_request') && S.currentUser?.role === 'parent') {
-        renderCurrentView();
-      }
+      _handleNotificationReceived(event);
     });
-    // Notification tap: navigate to the overview tab (PIN gate handled separately)
+    // Notification tap: route to the right tab and refresh so pending rows are visible immediately.
     FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
-      const t = event?.notification?.data?.type;
-      if (t === 'approval_request' || t === 'spend_request') {
-        _handleApprovalNotificationTap();
-      }
+      _handleNotificationAction(event);
     });
     // Schedule interest day local notification now that permissions are confirmed
     scheduleInterestDayNotification();
@@ -92,14 +86,108 @@ async function initPushNotifications(firebaseUser) {
   }
 }
 
-function _handleApprovalNotificationTap() {
-  if (S.currentUser?.role === 'parent') {
-    switchParentTab('home');
-  } else if (document.getElementById('screen-pin')?.classList.contains('active')) {
-    // App is at PIN gate; after successful unlock, land on overview
-    S._afterPinNav = 'overview';
+function _notificationTypeFromEvent(event) {
+  const data = event?.notification?.data || {};
+  return String(data.type || data.notificationType || data.kind || '').trim().toLowerCase();
+}
+
+function _normalizeParentTab(value) {
+  const tab = String(value || '').trim().toLowerCase();
+  return ['home', 'chores', 'prizes', 'levels', 'stats'].includes(tab) ? tab : '';
+}
+
+function _normalizeKidTab(value) {
+  const tab = String(value || '').trim().toLowerCase();
+  return ['chores', 'diamonds', 'shop', 'team', 'stats'].includes(tab) ? tab : '';
+}
+
+function _routeFromNotification(event) {
+  const data = event?.notification?.data || {};
+  const type = _notificationTypeFromEvent(event);
+  const explicitParentTab = _normalizeParentTab(data.parentTab);
+  const explicitKidTab = _normalizeKidTab(data.kidTab);
+  if (explicitParentTab || explicitKidTab) {
+    return { type, parentTab: explicitParentTab || 'home', kidTab: explicitKidTab || '' };
   }
-  // Otherwise (profile picker / no session), the badge will be visible when they sign in
+
+  // Known payloads today.
+  if (type === 'approval_request' || type === 'spend_request') {
+    return { type, parentTab: 'home', kidTab: 'diamonds' };
+  }
+
+  // Best-effort routing for future notification types.
+  if (type.includes('prize')) return { type, parentTab: 'prizes', kidTab: 'shop' };
+  if (type.includes('chore') || type.includes('task')) return { type, parentTab: 'chores', kidTab: 'chores' };
+  if (type.includes('level') || type.includes('badge')) return { type, parentTab: 'levels', kidTab: 'stats' };
+  if (type.includes('savings') || type.includes('interest') || type.includes('spend')) {
+    return { type, parentTab: 'home', kidTab: 'diamonds' };
+  }
+  if (type) return { type, parentTab: 'home', kidTab: '' };
+  return null;
+}
+
+async function _refreshFamilyFromServerAndRender() {
+  if (isE2EMode()) { renderCurrentView(); return; }
+  try {
+    const snap = await db.doc(getFamilyDoc()).get({ source: 'server' });
+    if (snap.exists) {
+      const incoming = normalizeData(snap.data());
+      const incomingSync = Number(incoming.settings?.lastSync || 0);
+      const localSync = Number(D.settings?.lastSync || 0);
+      const isOlderThanLocal = !!incomingSync && !!localSync && incomingSync < localSync;
+      if (!isOlderThanLocal) {
+        D = incoming;
+        try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+        if (S.currentUser?.id) {
+          const fresh = getMember(S.currentUser.id);
+          if (fresh) S.currentUser = fresh;
+        }
+      }
+    }
+  } catch(e) {}
+  renderCurrentView();
+}
+
+function _applyDeferredPostPinNav() {
+  const nav = S._afterPinNav;
+  if (!nav) return;
+  S._afterPinNav = null;
+  if (typeof nav === 'string') {
+    if (nav === 'overview') S.parentTab = 'home'; // legacy support
+    return;
+  }
+  if (nav.parentTab) S.parentTab = nav.parentTab;
+  if (nav.kidTab) S.kidTab = nav.kidTab;
+  if (nav.refresh) setTimeout(() => { _refreshFamilyFromServerAndRender(); }, 0);
+}
+
+function _handleNotificationReceived(event) {
+  const route = _routeFromNotification(event);
+  if (!route) return;
+  // If parent is actively using the app, keep inbox/overview current immediately.
+  if (S.currentUser?.role === 'parent' && route.parentTab === 'home') {
+    _refreshFamilyFromServerAndRender();
+  }
+}
+
+function _handleNotificationAction(event) {
+  const route = _routeFromNotification(event);
+  if (!route) return;
+  if (S.currentUser?.role === 'parent') {
+    switchParentTab(route.parentTab || 'home');
+    _refreshFamilyFromServerAndRender();
+    return;
+  }
+  if (S.currentUser?.role === 'kid' && route.kidTab) {
+    switchKidTab(route.kidTab);
+    _refreshFamilyFromServerAndRender();
+    return;
+  }
+  if (document.getElementById('screen-pin')?.classList.contains('active')) {
+    // App is at PIN gate; route + refresh after unlock.
+    S._afterPinNav = { parentTab: route.parentTab || 'home', kidTab: route.kidTab || '', refresh: true };
+  }
+  // If no active session/profile yet, default flow continues; inbox badges will still reflect updates.
 }
 
 // Interest day local notification
@@ -1719,6 +1807,7 @@ async function scheduleInterestDayNotification() {
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
 const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
 const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
+const PARENT_AUTH_FAMILY_KEY = 'gemsprout.parentAuthFamilyCode';
 const PARENT_AUTH_PROVIDER_KEY = 'gemsprout.parentAuthProvider';
 const E2E_MODE_KEY = 'gemsprout.e2eMode';
 const DEBUG_FORCE_PRIZE_STATE_PREVIEW = false; // TEMP: visual preview for locked/redeemed prize states
@@ -1755,15 +1844,33 @@ function getParentAuthUid() {
   try { return localStorage.getItem(PARENT_AUTH_KEY) || null; } catch { return null; }
 }
 
+function _getParentAuthFamilyCode() {
+  try { return localStorage.getItem(PARENT_AUTH_FAMILY_KEY) || ''; } catch { return ''; }
+}
+
 function setParentAuthUid(uid) {
   try {
-    if (uid) localStorage.setItem(PARENT_AUTH_KEY, uid);
-    else localStorage.removeItem(PARENT_AUTH_KEY);
+    if (uid) {
+      localStorage.setItem(PARENT_AUTH_KEY, uid);
+      localStorage.setItem(PARENT_AUTH_FAMILY_KEY, getFamilyCode() || '');
+    } else {
+      localStorage.removeItem(PARENT_AUTH_KEY);
+      localStorage.removeItem(PARENT_AUTH_FAMILY_KEY);
+      _pushInitUid = '';
+    }
   } catch {}
 }
 
 function isParentSignedIn() {
-  return !!getParentAuthUid();
+  const uid = getParentAuthUid();
+  if (!uid) return false;
+  const trustedFamily = _getParentAuthFamilyCode();
+  const activeFamily = getFamilyCode() || '';
+  if (!trustedFamily || (activeFamily && trustedFamily !== activeFamily)) {
+    setParentAuthUid(null);
+    return false;
+  }
+  return true;
 }
 
 function _isRecentParentAuthForMember(member) {
@@ -1771,16 +1878,83 @@ function _isRecentParentAuthForMember(member) {
   if (!recent || !recent.uid || !member) return false;
   const ageMs = Date.now() - recent.at;
   if (ageMs > 2 * 60 * 1000) return false;
+  if (recent.familyCode && recent.familyCode !== (getFamilyCode() || '')) return false;
   const email = recent.email || '';
+  return _isAuthIdentityLinkedToMember(member, recent.uid, email);
+}
+
+function _isMemberAuthConfigured(member) {
+  if (!member) return false;
+  return !!member.authUid || ((member.authProviders || []).length > 0);
+}
+
+function _isAuthIdentityLinkedToMember(member, uid = '', email = '') {
+  if (!member || !uid) return false;
+  const normalizedEmail = String(email || '').toLowerCase();
   const providers = member.authProviders || [];
-  return member.authUid === recent.uid || providers.some(p => p.uid === recent.uid || (email && p.email?.toLowerCase() === email));
+  if (providers.length) {
+    return providers.some(p => p.uid === uid || (normalizedEmail && p.email?.toLowerCase() === normalizedEmail));
+  }
+  // Legacy fallback for older profiles that only had authUid.
+  return member.authUid === uid;
+}
+
+function _findOtherParentLinkedToAuth(uid = '', email = '', excludeMemberId = '') {
+  if (!uid) return null;
+  return (D.family?.members || []).find(m =>
+    m?.role === 'parent' &&
+    !m?.deleted &&
+    m.id !== excludeMemberId &&
+    _isAuthIdentityLinkedToMember(m, uid, email)
+  ) || null;
+}
+
+function _shouldAutoMapCurrentAuthAsKid() {
+  const u = auth.currentUser;
+  if (!u) return false;
+  // Safety: never remap signed-in provider accounts during kid-join flow.
+  return !!u.isAnonymous;
+}
+
+let _pushInitUid = '';
+function _ensureParentPushRegistration() {
+  const trustedUid = getParentAuthUid();
+  const firebaseUid = auth.currentUser?.uid || '';
+  if (!trustedUid || !firebaseUid || trustedUid !== firebaseUid) return;
+  if (_pushInitUid === trustedUid) return;
+  _pushInitUid = trustedUid;
+  initPushNotifications(auth.currentUser);
+}
+
+async function _isParentAuthUserAllowedForActiveFamily(firebaseUser) {
+  const uid = firebaseUser?.uid || '';
+  const activeFamily = getFamilyCode() || '';
+  if (!uid || !activeFamily) return { ok: true };
+  try {
+    const snap = await db.doc(`users/${uid}`).get();
+    const linkedFamily = snap.exists ? String(snap.data()?.familyCode || '') : '';
+    if (linkedFamily && linkedFamily !== activeFamily) {
+      return { ok: false, linkedFamily };
+    }
+  } catch {}
+  return { ok: true };
 }
 
 function ensureParentAuth(member, onSuccess) {
   if (!member || member.role !== 'parent') return true;
-  if (isParentSignedIn()) return true;
+  if (isParentSignedIn()) {
+    const trustedUid = getParentAuthUid() || '';
+    const trustedEmail = String(auth.currentUser?.email || '').toLowerCase();
+    if (_isMemberAuthConfigured(member) && !_isAuthIdentityLinkedToMember(member, trustedUid, trustedEmail)) {
+      setParentAuthUid(null);
+    } else {
+      _ensureParentPushRegistration();
+      return true;
+    }
+  }
   if (_isRecentParentAuthForMember(member)) {
     setParentAuthUid(S._recentParentAuth.uid);
+    _ensureParentPushRegistration();
     return true;
   }
   showParentSignIn(member.id, onSuccess);
@@ -1851,6 +2025,7 @@ async function signOutParent() {
     console.warn('Sign out error:', e.message);
   } finally {
     setParentAuthUid(null);
+    S._recentParentAuth = null;
   }
 }
 
@@ -1862,7 +2037,6 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   } catch {}
   const member = getMember(memberId);
   if (!member) return;
-  if (!member.authUid) member.authUid = firebaseUser.uid;
   if (!member.authProviders) member.authProviders = [];
   const pid   = overrideProviderId || firebaseUser.providerData?.[0]?.providerId || 'unknown';
   const email = firebaseUser.email || firebaseUser.providerData?.[0]?.email || '';
@@ -1870,6 +2044,7 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   const idx = member.authProviders.findIndex(p => p.providerId === pid);
   if (idx >= 0) member.authProviders[idx] = entry; else member.authProviders.push(entry);
   member.authUids = member.authProviders.map(p => p.uid); // for future Firestore array-contains queries
+  member.authUid = member.authProviders[0]?.uid || firebaseUser.uid;
   saveData();
   db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
     .catch(e => console.warn('users doc write failed:', e));
@@ -1950,6 +2125,7 @@ function signOutAndGoHome() {
   S.currentUser = null;
   setCurrentUserId('');
   setParentAuthUid(null);
+  S._recentParentAuth = null;
   try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   if (wasParent) signOutParent().finally(() => {
     auth.signInAnonymously().catch(() => {});
@@ -2179,6 +2355,7 @@ let S = {            // UI state (not persisted)
   _scrollMemory:         {},
   _activeViewUserId:     '',
   _activeViewRole:       '',
+  _historyMemberId:      null,
   _testOnboarding:       null,
 };
 
@@ -3593,10 +3770,21 @@ function doApproveChore(choreId, memberId, entryId) {
   if (entry.entryType === 'before') {
     entry.status = 'approved';
   } else {
+    const memberBefore = _captureMemberUndoSnapshot(member);
+    const completionsBefore = normalizeCompletionEntries(chore.completions?.[memberId]);
     entry.status = 'done';
     member.gems      = (member.gems      || 0) + chore.gems;
     member.totalEarned = (member.totalEarned || 0) + chore.gems;
-    addHistory('chore', memberId, chore.title, chore.gems);
+    addHistory('chore', memberId, chore.title, chore.gems, {
+      undoAction: 'approve_completion',
+      choreId: chore.id,
+      completionId: entry.id,
+      slotId: entry.slotId || null,
+      entryType: entry.entryType || null,
+      pointsAwarded: chore.gems,
+      memberBefore,
+      completionsBefore,
+    });
     checkAfterDiamondsAwarded(member, chore.gems);
     checkChoreBadges(chore, memberId);
     // Auto-here: approving a chore means the kid must be home
@@ -3629,7 +3817,7 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
   saveData();
 }
 
-function doRedeemPrize(prizeId, memberId) {
+function doRedeemPrize(prizeId, memberId, opts = {}) {
   const prize  = D.prizes.find(p => p.id === prizeId);
   const member = getMember(memberId);
   if (!prize || !member) return { ok: false, reason: 'missing' };
@@ -3647,10 +3835,19 @@ function doRedeemPrize(prizeId, memberId) {
     return { ok: false, reason: 'window_locked', message: getPrizeLockedWindowMessage(normalizedPrize.recurrence, redemptionDate) };
   }
   const cost = Math.max(0, Number(normalizedPrize.cost) || 0);
+  const memberBefore = _captureMemberUndoSnapshot(member);
+  const redemptionsBefore = Array.isArray(prize.redemptions) ? _cloneForUndo(prize.redemptions) : [];
   const newBalance = Math.max(0, (member.gems || 0) - cost);
   member.gems = newBalance;
   member.diamonds = newBalance;
-  addHistory('prize', memberId, normalizedPrize.title, -cost);
+  addHistory('prize', memberId, normalizedPrize.title, -cost, {
+    undoAction: 'prize_redeem',
+    prizeId: prize.id,
+    memberBefore,
+    redemptionsBefore,
+    requestId: opts.requestId || null,
+    requestBefore: opts.requestBefore ? _cloneForUndo(opts.requestBefore) : null,
+  });
   if (!prize.redemptions) prize.redemptions = [];
   prize.redemptions.push({
     memberId,
@@ -3685,10 +3882,18 @@ function doContributeToGoal(memberId, goalId, gems) {
   const applied = Math.min(requested, owned, remaining);
   if (requested <= 0) return { ok: false, reason: 'invalid' };
   if (applied <= 0) return { ok: false, reason: remaining <= 0 ? 'complete' : 'insufficient', requested, owned, remaining };
+  const memberBefore = _captureMemberUndoSnapshot(member);
+  const contributionsBefore = _cloneForUndo(goal.contributions || {});
   member.gems -= applied;
+  member.diamonds = member.gems;
   goal.contributions = goal.contributions || {};
   goal.contributions[memberId] = (goal.contributions[memberId]||0) + applied;
-  addHistory('goal', memberId, goal.title, -applied);
+  addHistory('goal', memberId, goal.title, -applied, {
+    undoAction: 'goal_contribution',
+    goalId: goal.id,
+    memberBefore,
+    contributionsBefore,
+  });
   saveData();
   return {
     ok: true,
@@ -3702,10 +3907,23 @@ function doContributeToGoal(memberId, goalId, gems) {
 }
 
 function addHistory(type, memberId, title, gems, extra = {}) {
-  D.history.unshift({ id:genId(), type, memberId, title, gems, date:today(), ...extra });
+  D.history.unshift({ id:genId(), type, memberId, title, gems, date:today(), createdAt: Date.now(), ...extra });
+}
+
+function _cleanupUndoDemoEntries() {
+  D.history = Array.isArray(D.history) ? D.history : [];
+  const before = D.history.length;
+  D.history = D.history.filter(h => !h?.demoUndoSeed && !(String(h?.title || '').includes('TEMP: Demo undo entry')));
+  if (D.history.length !== before) {
+    saveData();
+  }
+  try { localStorage.removeItem('gemsprout.debugUndoActivitySeeded'); } catch {}
 }
 
 function historyIcon(h) {
+  if (h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title)) {
+    return '<i class="ph-duotone ph-arrow-u-up-left" style="color:#6B7280"></i>';
+  }
   if (h.type === 'chore') {
     if ((h.title||'').startsWith('Streak bonus')) return '<i class="ph-duotone ph-fire" style="color:#F97316"></i>';
     return '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>';
@@ -3728,6 +3946,7 @@ function historyIcon(h) {
 }
 
 function historyBadge(h) {
+  if (h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title)) return { color:'#6b7280', bg:'#F3F4F6' };
   if (h.type === 'chore') {
     if ((h.title||'').startsWith('Streak bonus')) return { color:'#c2410c', bg:'#FFF7ED' };
     return { color:'#166534', bg:'#DCFCE7' };
@@ -3754,17 +3973,266 @@ function isUndoHistoryEntry(title = '') {
 function cleanActivityTitle(title = '') {
   return String(title || '')
     .replace(/<[^>]+>/g, '')
-    .replace(/^.*?(?:Undo:|Removed:)\s*/iu, 'Undo: ')
+    .replace(/^.*?(?:Undo:|Removed:)\s*/iu, '')
     .replace(/^[^\p{L}\p{N}]+/u, '')
     .trim();
 }
 
-function renderActivityRow(h) {
+const HISTORY_UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
+const HISTORY_UNDO_MAX_DEPTH = 200;
+
+function _captureMemberUndoSnapshot(member) {
+  if (!member) return null;
+  normalizeMember(member);
+  return JSON.parse(JSON.stringify({
+    gems: member.gems || 0,
+    diamonds: member.diamonds || member.gems || 0,
+    totalEarned: member.totalEarned || 0,
+    xp: member.xp || 0,
+    badges: Array.isArray(member.badges) ? [...member.badges] : [],
+    streak: member.streak || { current: 0, best: 0, lastDate: null },
+    comboStreak: member.comboStreak || { current: 0, best: 0, lastDate: null },
+    comboBonusDate: member.comboBonusDate || null,
+    savings: member.savings || 0,
+    savingsGifted: member.savingsGifted || 0,
+    savingsMatched: member.savingsMatched || 0,
+    savingsInterest: member.savingsInterest || 0,
+    savingsInterestLastDate: member.savingsInterestLastDate || '',
+    nlTodaySecs: member.nlTodaySecs || 0,
+    nlPendingSecs: member.nlPendingSecs || 0,
+    nlLifetimeSecs: member.nlLifetimeSecs || 0,
+    nlDate: member.nlDate || '',
+  }));
+}
+
+function _restoreMemberUndoSnapshot(member, snap) {
+  if (!member || !snap) return false;
+  normalizeMember(member);
+  member.gems = Math.max(0, Number(snap.gems || 0));
+  member.diamonds = Math.max(0, Number(snap.diamonds ?? snap.gems ?? 0));
+  member.totalEarned = Math.max(0, Number(snap.totalEarned || 0));
+  member.xp = Math.max(0, Number(snap.xp || 0));
+  member.badges = Array.isArray(snap.badges) ? [...snap.badges] : [];
+  member.streak = snap.streak ? JSON.parse(JSON.stringify(snap.streak)) : { current: 0, best: 0, lastDate: null };
+  member.comboStreak = snap.comboStreak ? JSON.parse(JSON.stringify(snap.comboStreak)) : { current: 0, best: 0, lastDate: null };
+  member.comboBonusDate = snap.comboBonusDate || null;
+  member.savings = parseFloat((Number(snap.savings || 0)).toFixed(2));
+  member.savingsGifted = parseFloat((Number(snap.savingsGifted || 0)).toFixed(2));
+  member.savingsMatched = parseFloat((Number(snap.savingsMatched || 0)).toFixed(2));
+  member.savingsInterest = parseFloat((Number(snap.savingsInterest || 0)).toFixed(2));
+  member.savingsInterestLastDate = snap.savingsInterestLastDate || '';
+  member.nlTodaySecs = Math.max(0, Number(snap.nlTodaySecs || 0));
+  member.nlPendingSecs = Math.max(0, Number(snap.nlPendingSecs || 0));
+  member.nlLifetimeSecs = Math.max(0, Number(snap.nlLifetimeSecs || 0));
+  member.nlDate = snap.nlDate || '';
+  return true;
+}
+
+function _supportsUndoAction(h) {
+  const action = String(h?.undoAction || '');
+  return [
+    'approve_completion',
+    'parent_mark_done',
+    'manual_gems_adjust',
+    'manual_savings_adjust',
+    'not_listening_apply',
+    'prize_redeem',
+    'goal_contribution',
+    'approve_savings_request',
+    'deny_savings_request',
+    'deny_prize_request',
+  ].includes(action);
+}
+
+function _getUndoBlockReason(h) {
+  if (!h) return 'Cannot undo: Missing activity entry';
+  if (S.currentUser?.role !== 'parent') return 'Cannot undo: Parent-only action';
+  if (!_supportsUndoAction(h)) return 'Non-undoable activity';
+  if (!h.createdAt) return 'Cannot undo: Unsupported activity (historical age)';
+
+  const idx = (D.history || []).findIndex(x => x.id === h.id);
+  if (idx < 0) return 'Cannot undo: Missing activity entry';
+  if (idx > HISTORY_UNDO_MAX_DEPTH) return 'Cannot undo: More than 200 new activities';
+  if ((Date.now() - Number(h.createdAt || 0)) > HISTORY_UNDO_WINDOW_MS) return 'Cannot undo: Older than 24 hours';
+
+  const newerForMember = (D.history || []).slice(0, idx).some(x =>
+    x && x.memberId === h.memberId && x.id !== h.id
+  );
+  if (newerForMember) return 'Cannot undo: Recent activity depends on this';
+
+  const member = getMember(h.memberId);
+  if (!member) return 'Cannot undo: Original member no longer exists';
+  if ((h.undoAction === 'approve_completion' || h.undoAction === 'parent_mark_done') && !D.chores.find(c => c.id === h.choreId)) {
+    return 'Cannot undo: Original task no longer exists';
+  }
+  if (h.undoAction === 'prize_redeem' && !D.prizes.find(p => p.id === h.prizeId)) return 'Cannot undo: Original prize no longer exists';
+  if (h.undoAction === 'goal_contribution' && !(D.teamGoals || []).find(g => g.id === h.goalId)) return 'Cannot undo: Original team prize no longer exists';
+  return '';
+}
+
+function _isUndoableHistoryEntry(h) {
+  return !_getUndoBlockReason(h);
+}
+
+function _removeCompletionEntry(chore, memberId, completionId, fallback = {}) {
+  if (!chore || !memberId) return null;
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  if (!entries.length) return null;
+
+  let idx = completionId ? entries.findIndex(e => e.id === completionId) : -1;
+  if (idx === -1 && fallback.slotId) idx = entries.findIndex(e => e.status === 'done' && e.slotId === fallback.slotId && e.entryType !== 'before');
+  if (idx === -1 && fallback.entryType) idx = entries.findIndex(e => e.status === 'done' && (e.entryType || null) === fallback.entryType);
+  if (idx === -1) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i]?.status === 'done' && entries[i]?.entryType !== 'before') { idx = i; break; }
+    }
+  }
+  if (idx < 0) return null;
+
+  const [removed] = entries.splice(idx, 1);
+  if (!chore.completions) chore.completions = {};
+  if (!entries.length) delete chore.completions[memberId];
+  else chore.completions[memberId] = entries;
+  return removed || null;
+}
+
+function _deductAwardedGems(member, gems) {
+  const pts = Math.max(0, Number(gems) || 0);
+  if (!member || pts <= 0) return 0;
+  const actual = Math.min(pts, Math.max(0, Number(member.gems || 0)));
+  member.gems = Math.max(0, (member.gems || 0) - actual);
+  member.totalEarned = Math.max(0, (member.totalEarned || 0) - pts);
+  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - pts);
+  return actual;
+}
+
+function undoActivityHistoryEntry(historyId) {
+  const h = (D.history || []).find(x => x.id === historyId);
+  if (!h) { toast('Activity entry not found'); return; }
+  const blockReason = _getUndoBlockReason(h);
+  if (blockReason) { toast(blockReason); return; }
+
+  const chore = D.chores.find(c => c.id === h.choreId);
+  const member = getMember(h.memberId);
+  if (!member) { toast('Original member no longer exists'); return; }
+
+  let ok = false;
+  const action = String(h.undoAction || '');
+
+  if (action === 'approve_completion' || action === 'parent_mark_done') {
+    if (!chore) { toast('Original task no longer exists'); return; }
+    if (h.memberBefore) _restoreMemberUndoSnapshot(member, h.memberBefore);
+    if (h.completionsBefore) {
+      const before = Array.isArray(h.completionsBefore) ? normalizeCompletionEntries(h.completionsBefore) : [];
+      if (!chore.completions) chore.completions = {};
+      if (!before.length) delete chore.completions[h.memberId];
+      else chore.completions[h.memberId] = before;
+      ok = true;
+    } else {
+      let removedCount = 0;
+      if (action === 'approve_completion') {
+        const removed = _removeCompletionEntry(chore, h.memberId, h.completionId, {
+          slotId: h.slotId || null,
+          entryType: h.entryType || null,
+        });
+        if (removed) removedCount = 1;
+      } else {
+        const ids = Array.isArray(h.completionIds) ? h.completionIds : [];
+        if (ids.length) {
+          ids.forEach(id => { if (_removeCompletionEntry(chore, h.memberId, id)) removedCount += 1; });
+        } else {
+          if (_removeCompletionEntry(chore, h.memberId, h.completionId || null, { slotId: h.slotId || null })) removedCount = 1;
+        }
+      }
+      if (removedCount > 0) {
+        const expectedPts = Math.max(0, Number(h.pointsAwarded || h.gems || 0));
+        _deductAwardedGems(member, expectedPts);
+        ok = true;
+      }
+    }
+  } else if (action === 'manual_gems_adjust' || action === 'manual_savings_adjust' || action === 'not_listening_apply') {
+    ok = _restoreMemberUndoSnapshot(member, h.memberBefore);
+  } else if (action === 'prize_redeem') {
+    const prize = D.prizes.find(p => p.id === h.prizeId);
+    if (!prize) { toast('Original prize no longer exists'); return; }
+    const restoredMember = _restoreMemberUndoSnapshot(member, h.memberBefore);
+    if (Array.isArray(h.redemptionsBefore)) {
+      prize.redemptions = _cloneForUndo(h.redemptionsBefore);
+    }
+    if (h.requestId && h.requestBefore) {
+      const req = (D.prizeRequests || []).find(r => r.id === h.requestId);
+      if (req) {
+        req.status = h.requestBefore.status || req.status;
+        req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+      }
+    }
+    ok = restoredMember;
+  } else if (action === 'goal_contribution') {
+    const goal = (D.teamGoals || []).find(g => g.id === h.goalId);
+    if (!goal) { toast('Original team prize no longer exists'); return; }
+    const restoredMember = _restoreMemberUndoSnapshot(member, h.memberBefore);
+    if (h.contributionsBefore && typeof h.contributionsBefore === 'object') {
+      goal.contributions = _cloneForUndo(h.contributionsBefore);
+    }
+    ok = restoredMember;
+  } else if (action === 'approve_savings_request') {
+    const restoredMember = _restoreMemberUndoSnapshot(member, h.memberBefore);
+    const req = (D.savingsRequests || []).find(r => r.id === h.requestId);
+    if (req && h.requestBefore) {
+      req.status = h.requestBefore.status || req.status;
+      req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+    }
+    ok = restoredMember;
+  } else if (action === 'deny_savings_request') {
+    const req = (D.savingsRequests || []).find(r => r.id === h.requestId);
+    if (!req || !h.requestBefore) { ok = false; }
+    else {
+      req.status = h.requestBefore.status || req.status;
+      req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+      ok = true;
+    }
+  } else if (action === 'deny_prize_request') {
+    const req = (D.prizeRequests || []).find(r => r.id === h.requestId);
+    if (!req || !h.requestBefore) { ok = false; }
+    else {
+      req.status = h.requestBefore.status || req.status;
+      req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+      ok = true;
+    }
+  } else {
+    ok = _restoreMemberUndoSnapshot(member, h.memberBefore);
+  }
+
+  if (!ok) { toast('Nothing to undo (it may already be changed)'); return; }
+
+  // Remove the original action from history so stats/counts revert cleanly.
+  D.history = (D.history || []).filter(x => x.id !== h.id);
+  if (action === 'manual_savings_adjust') {
+    addHistory('savings', h.memberId, `Undo: ${cleanActivityTitle(h.title)}`, 0, { undoSourceHistoryId: h.id });
+  } else {
+    const reversal = -Number(h.gems || 0);
+    addHistory(reversal >= 0 ? 'bonus' : 'penalty', h.memberId, `Undo: ${cleanActivityTitle(h.title)}`, reversal, { undoSourceHistoryId: h.id });
+  }
+  saveData();
+  toast(`Undid "${cleanActivityTitle(h.title)}" for ${member.name}`);
+  _suppressActivityHintBounceOnce();
+  if (chore?.id) refreshOpenFamilySnapshot({ memberId: h.memberId, choreId: chore.id });
+  if (document.getElementById('settings-root')?.classList.contains('open')) {
+    renderFullHistory(S._historyMemberId, { suppressBounce: true });
+  }
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+  syncAppBadge();
+}
+
+function renderActivityRow(h, opts = {}) {
   const mem = getMember(h.memberId);
   const badge = historyBadge(h);
   const icon = historyIcon(h);
   const delta = Number(h.gems || 0);
   const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral';
+  const isUndoneVisual = !!(h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title));
   const metaBits = [];
 
   if (mem) metaBits.push(`${renderMemberAvatarHtml(mem)} ${esc(mem.name)}`);
@@ -3772,18 +4240,38 @@ function renderActivityRow(h) {
 
   if (h.choreTitle) metaBits.push(esc(h.choreTitle));
   metaBits.push(fmtDate(h.date));
-
-  return `<div class="activity-row">
+  const blockReason = _getUndoBlockReason(h);
+  const canUndo = !blockReason;
+  const showReason = !!opts.showUndoReasons;
+  const showBlockedReason = showReason && _supportsUndoAction(h) && !!blockReason && S.currentUser?.role === 'parent';
+  const rowHtml = `<div class="activity-row${canUndo ? ' activity-row-swipe' : ''}${isUndoneVisual ? ' activity-row-undone' : ''}">
     <span class="activity-badge" style="background:${badge.bg};color:${badge.color}">${icon}</span>
     <div class="activity-body">
       <div class="activity-title">${esc(cleanActivityTitle(h.title))}</div>
       <div class="activity-meta">${metaBits.join(' <span class="activity-dot">&middot;</span> ')}</div>
+      ${showBlockedReason ? `<div class="activity-undo-wrap"><span class="activity-undo-note">${esc(blockReason)}</span></div>` : ''}
     </div>
-    ${delta !== 0 ? `<div class="activity-delta ${deltaClass}">
-      <span class="activity-delta-value">${delta > 0 ? `+${delta}` : `${delta}`}</span>
-      <span class="activity-delta-unit">gems</span>
-    </div>` : ''}
+    <div class="activity-delta-slot">
+      ${delta !== 0 ? `<div class="activity-delta ${deltaClass}">
+        <span class="activity-delta-value">${delta > 0 ? `+${delta}` : `${delta}`}</span>
+        <span class="activity-delta-unit">gems</span>
+      </div>` : ''}
+    </div>
+    ${canUndo ? `<button class="snapshot-routine-swipe-hint activity-swipe-hint" type="button" aria-label="Reveal undo action" onclick="event.stopPropagation();toggleSnapshotSwipe('activity_${h.id}')"><i class="ph-duotone ph-caret-double-left"></i></button>` : ''}
   </div>`;
+  if (!canUndo) return rowHtml;
+
+  return `
+    <div class="snapshot-routine-shell activity-swipe-shell" data-swipe-id="activity_${h.id}">
+      <div class="snapshot-routine-reveal activity-reveal">
+        <button class="snapshot-reveal-btn snapshot-reveal-btn-danger activity-reveal-btn" type="button" title="Undo action" onpointerdown="event.preventDefault();event.stopPropagation();undoActivityHistoryEntry('${h.id}');return false;" onclick="return false;">
+          <i class="ph-duotone ph-arrow-counter-clockwise"></i>
+        </button>
+      </div>
+      <div class="snapshot-routine-card activity-row-card" onpointerdown="startSnapshotSwipe(event,'activity_${h.id}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'activity_${h.id}')">
+        ${rowHtml}
+      </div>
+    </div>`;
 }
 
 const DEFAULT_LEVELS = [
@@ -4493,7 +4981,7 @@ function _renderNL() {
         const t = today();
         normalizeMember(k);
         const todaySecs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0) + (st.selectedKids.includes(k.id) ? Math.floor(st.accumulated / 1000) : 0);
-        const secsLabel = todaySecs > 0 ? ` ? ${Math.floor(todaySecs/60)}m${todaySecs%60}s today` : '';
+        const secsLabel = todaySecs > 0 ? `${Math.floor(todaySecs/60)}m${todaySecs%60}s today` : '';
         return `
         <div class="nl-kid-chip ${st.selectedKids.includes(k.id)?'selected':''}"
              onclick="_nlToggleKid('${k.id}')">
@@ -4606,6 +5094,7 @@ function _nlDone() {
     _nlState.selectedKids.forEach(kidId => {
       const m = getMember(kidId);
       if (!m) return;
+      const memberBefore = _captureMemberUndoSnapshot(m);
       normalizeMember(m);
       // Today's display counter (resets daily)
       if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
@@ -4614,11 +5103,18 @@ function _nlDone() {
       m.nlPendingSecs = (m.nlPendingSecs || 0) + sessionSecs;
       const dmds = Math.floor(m.nlPendingSecs / secsPerPt);
       m.nlPendingSecs = m.nlPendingSecs % secsPerPt;
+      let appliedPenalty = 0;
       if (dmds > 0) {
         m.diamonds = Math.max(0, (m.diamonds || 0) - dmds);
-        addHistory('penalty', kidId, `Not listening penalty`, -dmds);
+        m.gems = m.diamonds;
+        appliedPenalty = dmds;
         totalDeducted += dmds;
       }
+      addHistory('penalty', kidId, `Not listening penalty`, -appliedPenalty, {
+        undoAction: 'not_listening_apply',
+        memberBefore,
+        sessionSecs,
+      });
     });
     saveData();
     if (totalDeducted > 0) {
@@ -4737,6 +5233,58 @@ function toast(msg, duration = 2900) {
   el.innerHTML = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), duration);
+}
+
+let _deleteUndoState = null;
+
+function _cloneForUndo(value) {
+  try { return JSON.parse(JSON.stringify(value)); }
+  catch { return value; }
+}
+
+function _clearDeleteUndoBar() {
+  if (_deleteUndoState?.timerId) clearTimeout(_deleteUndoState.timerId);
+  if (_deleteUndoState?.intervalId) clearInterval(_deleteUndoState.intervalId);
+  const bar = document.getElementById('delete-undo-bar');
+  if (bar) bar.remove();
+  _deleteUndoState = null;
+}
+
+function _showDeleteUndoBar(message, onUndo, duration = 6500) {
+  _clearDeleteUndoBar();
+  const totalMs = Math.max(1200, duration);
+  const endAt = Date.now() + totalMs;
+  const bar = document.createElement('div');
+  bar.id = 'delete-undo-bar';
+  bar.className = 'delete-undo-bar';
+  bar.innerHTML = `
+    <div class="delete-undo-copy">
+      <span class="delete-undo-msg">${esc(message)}</span>
+      <span class="delete-undo-count" aria-live="polite"></span>
+    </div>
+    <button class="delete-undo-btn" type="button"><i class="ph-duotone ph-arrow-counter-clockwise"></i>Undo</button>
+  `;
+  const countEl = bar.querySelector('.delete-undo-count');
+  const updateCountdown = () => {
+    if (!countEl) return;
+    const leftMs = Math.max(0, endAt - Date.now());
+    const leftSecs = Math.max(0, Math.ceil(leftMs / 1000));
+    countEl.textContent = `${leftSecs}s`;
+  };
+  updateCountdown();
+  const btn = bar.querySelector('.delete-undo-btn');
+  btn?.addEventListener('click', () => {
+    const cb = _deleteUndoState?.onUndo;
+    _clearDeleteUndoBar();
+    if (typeof cb === 'function') cb();
+  });
+  document.body.appendChild(bar);
+  const intervalId = setInterval(updateCountdown, 200);
+  _deleteUndoState = {
+    onUndo,
+    timerId: setTimeout(() => _clearDeleteUndoBar(), totalMs),
+    intervalId,
+  };
 }
 
 function diamondsBurst(x, y, diamonds) {
@@ -5780,6 +6328,7 @@ function _doLeaveDevice() {
   localStorage.removeItem(FAMILY_CODE_KEY);
   setCurrentUserId('');
   setParentAuthUid(null);
+  S._recentParentAuth = null;
   try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   D = defaultData();
   S.currentUser = null;
@@ -5808,17 +6357,24 @@ function closeSettings() {
 }
 
 function openFullHistory(memberId = null) {
+  S._historyMemberId = memberId || null;
   renderFullHistory(memberId);
   const sr = document.getElementById('settings-root');
   sr.classList.add('open');
   sr.scrollTop = 0;
 }
 
-function renderFullHistory(memberId = null) {
+let _activityHintBounceSuppressOnce = false;
+
+function _suppressActivityHintBounceOnce() {
+  _activityHintBounceSuppressOnce = true;
+}
+
+function renderFullHistory(memberId = null, opts = {}) {
   const history = memberId
     ? (D.history || []).filter(h => h.memberId === memberId)
     : (D.history || []);
-  const rows = history.map(renderActivityRow).join('');
+  const rows = history.map(h => renderActivityRow(h, { showUndoReasons: true })).join('');
   const member = memberId ? getMember(memberId) : null;
   const title = member ? `${member.name}'s Activity` : 'Full Activity History';
 
@@ -5833,6 +6389,24 @@ function renderFullHistory(memberId = null) {
         ${rows || '<div class="empty-state"><div class="empty-text">No activity yet</div></div>'}
       </div>
     </div>`;
+  _bindSnapshotSwipeAutoDismiss();
+  if (!opts?.suppressBounce) _maybeBounceFirstActivitySwipe('#settings-root');
+}
+
+function _maybeBounceFirstActivitySwipe(scopeSelector = '#parent-content') {
+  if (_activityHintBounceSuppressOnce) {
+    _activityHintBounceSuppressOnce = false;
+    return;
+  }
+  if (D.settings.tooltipBounceEnabled === false) return;
+  setTimeout(() => {
+    const scope = document.querySelector(scopeSelector) || document;
+    const first = scope.querySelector('.activity-swipe-shell');
+    if (!first) return;
+    first.classList.remove('hint-bounce');
+    first.classList.add('hint-bounce');
+    setTimeout(() => first.classList.remove('hint-bounce'), 2200);
+  }, 180);
 }
 
 // Swipe from left edge to close settings (iOS-style back gesture)
@@ -6209,6 +6783,7 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
   const _authProviders = _settingsAuthProviders();
   const _googleProv = _authProviders.find(p => p.providerId === 'google.com');
   const _appleProv  = _authProviders.find(p => p.providerId === 'apple.com');
+  const _linkedCount = (_googleProv ? 1 : 0) + (_appleProv ? 1 : 0);
   const _anyLinked  = !!(_googleProv || _appleProv);
   const pinLabel = s.parentPin ? 'Reset PIN' : 'Set PIN';
   const bioBtn = isBiometricSupported() ? (getBiometricCredentialId()
@@ -6236,7 +6811,9 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
             </div>
           </div>
           ${_googleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Sign Out</button>`
+            ? (_linkedCount === 1
+                ? `<button class="btn btn-secondary btn-sm" style="color:#A16207;border-color:#D6B06A" onclick="switchLinkedProviderAccount('google.com')">Switch Account</button>`
+                : `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Unlink</button>`)
             : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Sign In</button>`}
         </div>
         <div class="settings-provider-row">
@@ -6249,9 +6826,12 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
             </div>
           </div>
           ${_appleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Sign Out</button>`
+            ? (_linkedCount === 1
+                ? `<button class="btn btn-secondary btn-sm" style="color:#A16207;border-color:#D6B06A" onclick="switchLinkedProviderAccount('apple.com')">Switch Account</button>`
+                : `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Unlink</button>`)
             : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Sign In</button>`}
         </div>
+        ${_anyLinked && _linkedCount === 1 ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">At least one sign-in method must stay linked.</div>` : ''}
         ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">Sign in with Google or Apple to enable push notifications and secure your profile</div>` : ''}
       </div>
 
@@ -6650,7 +7230,7 @@ function pinKey(k) {
           const rememberedUser = getMember(getCurrentUserId());
           if (rememberedUser) {
             S.currentUser = rememberedUser;
-            if (S._afterPinNav === 'overview') { S._afterPinNav = null; S.parentTab = 'home'; }
+            _applyDeferredPostPinNav();
             routeToView(rememberedUser);
           } else {
             renderHome();
@@ -6833,7 +7413,7 @@ function tryBiometricUnlock() {
       const rememberedUser = getMember(getCurrentUserId());
       if (rememberedUser) {
         S.currentUser = rememberedUser;
-        if (S._afterPinNav === 'overview') { S._afterPinNav = null; S.parentTab = 'home'; }
+        _applyDeferredPostPinNav();
         routeToView(rememberedUser);
       } else {
         renderHome();
@@ -7012,10 +7592,11 @@ async function joinFamily() {
     setFamilyCode(code);
     setCurrentUserId('');   // don't inherit a remembered profile from a previous session
     setParentAuthUid(null); // don't inherit parent auth trust from a previous session
+    S._recentParentAuth = null;
     try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
     ensureFirestoreAuth()
       .then(() => {
-        if (auth.currentUser && !getParentAuthUid()) {
+        if (_shouldAutoMapCurrentAuthAsKid() && !getParentAuthUid()) {
           db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: code, role: 'kid' }, { merge: true }).catch(() => {});
         }
         subscribeToFirestore();
@@ -8160,7 +8741,7 @@ function finishSetup() {
   if (S._newFamilyFirebaseUser && mergedParents[0]) {
     const setupUser = S._newFamilyFirebaseUser;
     linkParentAuth(setupUser, mergedParents[0].id);
-    S._recentParentAuth = { uid: setupUser.uid, email: (setupUser.email || '').toLowerCase(), at: Date.now() };
+    S._recentParentAuth = { uid: setupUser.uid, email: (setupUser.email || '').toLowerCase(), familyCode: getFamilyCode() || '', at: Date.now() };
     S._newFamilyFirebaseUser = null;
   }
   saveData();
@@ -9243,12 +9824,21 @@ function approveSavingsRequest(requestId, btn) {
   const cur = D.settings.currency || '$';
   if (!m) return;
   _fadeOutAdminCard(btn, () => {
+    const memberBefore = _captureMemberUndoSnapshot(m);
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
     const actual = Math.min(req.amount, m.savings || 0);
     reduceSavingsBuckets(m, actual);
     m.savings = parseFloat(Math.max(0, (m.savings || 0) - actual).toFixed(2));
     req.status = 'approved';
+    req.resolvedAt = Date.now();
     const label = req.reason ? `Spent: ${req.reason}` : 'Savings withdrawal approved';
-    addHistory('savings_withdraw', req.memberId, label, 0, { dollars: actual });
+    addHistory('savings_withdraw', req.memberId, label, 0, {
+      dollars: actual,
+      undoAction: 'approve_savings_request',
+      requestId: req.id,
+      requestBefore,
+      memberBefore,
+    });
     saveData();
     toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
@@ -9261,7 +9851,14 @@ function denySavingsRequest(requestId, btn) {
   if (!req) return;
   const m = getMember(req.memberId);
   _fadeOutAdminCard(btn, () => {
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
     req.status = 'denied';
+    req.resolvedAt = Date.now();
+    addHistory('decline', req.memberId, 'Savings request denied', 0, {
+      undoAction: 'deny_savings_request',
+      requestId: req.id,
+      requestBefore,
+    });
     saveData();
     toast(`Spend request denied for ${m?.name || 'kid'}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
@@ -9276,7 +9873,8 @@ function approvePrizeRequest(requestId, btn) {
   const prize = D.prizes.find(p => p.id === req.prizeId);
   if (!member || !prize) return;
   _fadeOutAdminCard(btn, () => {
-    const result = doRedeemPrize(prize.id, member.id);
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
+    const result = doRedeemPrize(prize.id, member.id, { requestId: req.id, requestBefore });
     req.status = result?.ok ? 'approved' : 'denied';
     req.resolvedAt = Date.now();
     saveData();
@@ -9294,8 +9892,14 @@ function denyPrizeRequest(requestId, btn) {
   if (!req || req.status !== 'pending') return;
   const member = getMember(req.memberId);
   _fadeOutAdminCard(btn, () => {
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
     req.status = 'denied';
     req.resolvedAt = Date.now();
+    addHistory('decline', req.memberId, 'Prize request denied', 0, {
+      undoAction: 'deny_prize_request',
+      requestId: req.id,
+      requestBefore,
+    });
     saveData();
     toast(`Prize request denied for ${member?.name || 'kid'}`);
     renderParentHome();
@@ -9689,7 +10293,7 @@ function renderKidTeam() {
           </div>
         </div>
         <div class="goal-bar-bg kid-team-goal-bar-bg"><div class="goal-bar-fill kid-team-goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' â€¢ Goal reached!' : ''}</div>
+        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' • Goal reached!' : ''}</div>
         ${kids.length>1?`<div class="kid-team-contrib-list">${contribs}</div>`:''}
         ${!reached?`
           <div class="kid-team-goal-action">
@@ -9818,6 +10422,7 @@ function _removeLastProviderAndSignOut() {
   if (member) {
     member.authProviders = [];
     member.authUids = [];
+    member.authUid = '';
     saveData();
   }
   closeSettings();
@@ -9829,20 +10434,48 @@ function unlinkProvider(providerId) {
   if (!member?.authProviders?.length) return;
   const remaining = member.authProviders.filter(p => p.providerId !== providerId);
   if (remaining.length === 0) {
-    showDangerConfirm({
-      title: 'Remove Account?',
-      message: 'This is your only linked account. Removing it will sign you out.',
-      confirmLabel: 'Remove &amp; Sign Out',
-      onConfirm: () => _removeLastProviderAndSignOut(),
-    });
+    toast('Keep at least one sign-in method linked. Use Switch Account instead.');
     return;
   }
   member.authProviders = remaining;
   member.authUids = remaining.map(p => p.uid);
+  member.authUid = remaining[0]?.uid || '';
   const next = remaining[0];
   setParentAuthUid(next.uid);
   try { localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, next.providerId); } catch {}
   saveData();
+  renderSettings();
+}
+
+async function switchLinkedProviderAccount(providerId) {
+  const member = S.currentUser;
+  if (!member || member.role !== 'parent') return;
+  const providerName = providerId === 'google.com' ? 'Google' : 'Apple';
+  const linkedProviders = member.authProviders || [];
+  if (!linkedProviders.find(p => p.providerId === providerId)) return;
+
+  const firebaseUser = providerId === 'google.com'
+    ? await signInWithGoogle()
+    : await signInWithApple();
+  if (!firebaseUser) return;
+
+  const allowedFamily = await _isParentAuthUserAllowedForActiveFamily(firebaseUser);
+  if (!allowedFamily.ok) {
+    await signOutParent();
+    toast('This sign-in does not match the linked parent account');
+    return;
+  }
+
+  const email = String(firebaseUser.email || '').toLowerCase();
+  const otherParent = _findOtherParentLinkedToAuth(firebaseUser.uid, email, member.id);
+  if (otherParent) {
+    await signOutParent();
+    toast('This sign-in does not match the linked parent account');
+    return;
+  }
+
+  await linkParentAuth(firebaseUser, member.id, providerId);
+  toast(`${providerName} account updated`);
   renderSettings();
 }
 
@@ -11152,6 +11785,7 @@ function showBetaWelcomeIfNeeded() {
 }
 
 function renderParentHome() {
+  _cleanupUndoDemoEntries();
   const kids        = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const pending     = pendingApprovals();
   const pendingSpend = pendingSpendRequests();
@@ -11248,7 +11882,7 @@ function renderParentHome() {
           <div class="admin-card" style="flex-wrap:wrap;gap:10px">
             <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
             <div class="admin-info" style="flex:1;min-width:0">
-              <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+              <div class="admin-name">${esc(chore.title)} <span class="admin-status-pill admin-status-pill-progress">IN PROGRESS</span></div>
               <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; waiting for after photo &middot; ${chore.diamonds} gems</div>
             </div>
             <div class="admin-actions">
@@ -11427,6 +12061,7 @@ function renderParentHome() {
 
   document.getElementById('parent-content').innerHTML = html;
   _bindSnapshotSummaryAutoDismiss();
+  _bindSnapshotSwipeAutoDismiss();
   if (_snapshotSummarySuppressHintBounceOnce) {
     _snapshotSummarySuppressHintBounceOnce = false;
     showBetaWelcomeIfNeeded();
@@ -11442,6 +12077,7 @@ function renderParentHome() {
       firstSummary.classList.add('hint-bounce');
       setTimeout(() => firstSummary.classList.remove('hint-bounce'), 2200);
     }, 180);
+    _maybeBounceFirstActivitySwipe('#parent-content');
   }
   showBetaWelcomeIfNeeded();
   showChangelogIfNeeded();
@@ -11486,7 +12122,7 @@ function approveChore(choreId, memberId, entryId, btn) {
     const inProgressInner = `
       <span class="admin-icon">${renderIcon(c.icon, c.iconColor, 'font-size:1.6rem')}</span>
       <div class="admin-info" style="flex:1;min-width:0">
-        <div class="admin-name">${esc(c.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+        <div class="admin-name">${esc(c.title)} <span class="admin-status-pill admin-status-pill-progress">IN PROGRESS</span></div>
         <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
     _flipAdminCard(btn, inProgressInner, () => {
@@ -11574,6 +12210,7 @@ function parentMarkChoreDone(choreId, memberId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
+  const memberBefore = _captureMemberUndoSnapshot(member);
 
   const progress = getChoreProgress(chore, memberId);
   if (progress.status === 'done') {
@@ -11583,10 +12220,12 @@ function parentMarkChoreDone(choreId, memberId) {
 
   if (!chore.completions) chore.completions = {};
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+  const completionsBefore = normalizeCompletionEntries(chore.completions[memberId]);
 
   chore.completions[memberId] = chore.completions[memberId].filter(e => !(e.status === 'pending' && e.entryType !== 'before'));
 
   let totalPts = 0;
+  const completedEntryIds = [];
 
   if (progress.isSlotMode) {
     // Complete only the currently-available slot(s); if none are in-window, complete just the earliest waiting slot
@@ -11595,25 +12234,36 @@ function parentMarkChoreDone(choreId, memberId) {
     const toComplete = available.length > 0 ? available : waiting.slice(0, 1);
     if (toComplete.length === 0) { toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} All slots already submitted for ${esc(member.name)}`); return; }
     toComplete.forEach(({ slot }) => {
+      const completionId = genId();
       chore.completions[memberId].push({
-        id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+        id: completionId, status: 'done', date: today(), createdAt: Date.now(),
         slotId: slot.id, photoUrl: null, entryType: null,
       });
+      completedEntryIds.push(completionId);
       totalPts += chore.gems;
     });
   } else {
     const photoPhase = chore.photoMode === 'before_after' ? getChorePhotoPhase(chore, memberId) : null;
     const completionEntryType = photoPhase?.phase === 'needs_after' ? 'after' : null;
+    const completionId = genId();
     chore.completions[memberId].push({
-      id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+      id: completionId, status: 'done', date: today(), createdAt: Date.now(),
       slotId: null, photoUrl: null, entryType: completionEntryType,
     });
+    completedEntryIds.push(completionId);
     totalPts = chore.gems;
   }
 
   member.gems      = (member.gems      || 0) + totalPts;
   member.totalEarned = (member.totalEarned || 0) + totalPts;
-  addHistory('chore', memberId, chore.title, totalPts);
+  addHistory('chore', memberId, chore.title, totalPts, {
+    undoAction: 'parent_mark_done',
+    choreId: chore.id,
+    completionIds: completedEntryIds,
+    pointsAwarded: totalPts,
+    memberBefore,
+    completionsBefore,
+  });
   checkAfterDiamondsAwarded(member, totalPts);
   checkChoreBadges(chore, memberId);
   // Auto-here: parent marking a chore done means the kid is home
@@ -11663,6 +12313,7 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
+  const memberBefore = _captureMemberUndoSnapshot(member);
   const progress = getChoreProgress(chore, memberId);
   const slotStatus = progress.slotStatuses?.find(s => s.slot.id === slotId);
   if (!slotStatus) { toast('Slot not found'); return; }
@@ -11670,13 +12321,23 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   if (slotStatus.status === 'pending') { toast('Already submitted - waiting for approval'); return; }
   if (!chore.completions) chore.completions = {};
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+  const completionsBefore = normalizeCompletionEntries(chore.completions[memberId]);
+  const completionId = genId();
   chore.completions[memberId].push({
-    id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+    id: completionId, status: 'done', date: today(), createdAt: Date.now(),
     slotId, photoUrl: null, entryType: null,
   });
   member.gems      = (member.gems      || 0) + chore.gems;
   member.totalEarned = (member.totalEarned || 0) + chore.gems;
-  addHistory('chore', memberId, chore.title, chore.gems);
+  addHistory('chore', memberId, chore.title, chore.gems, {
+    undoAction: 'parent_mark_done',
+    choreId: chore.id,
+    completionIds: [completionId],
+    slotId,
+    pointsAwarded: chore.gems,
+    memberBefore,
+    completionsBefore,
+  });
   checkAfterDiamondsAwarded(member, chore.gems);
   checkChoreBadges(chore, memberId);
   saveData();
@@ -12179,6 +12840,13 @@ function deleteChore(choreId) {
 }
 
 function _doDeleteChore(choreId) {
+  const idx = D.chores.findIndex(c => c.id === choreId);
+  const removed = idx >= 0 ? D.chores[idx] : null;
+  if (!removed) return;
+  const choreCopy = _cloneForUndo(removed);
+  const wasExpanded = _expandedChores.has(choreId);
+  const slotKeys = [..._expandedSlots].filter(key => key.startsWith(choreId + '_'));
+
   D.chores = D.chores.filter(c=>c.id!==choreId);
   for (const key of _expandedSlots) {
     if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
@@ -12187,6 +12855,16 @@ function _doDeleteChore(choreId) {
   saveData();
   toast('Chore deleted');
   renderParentChores();
+  _showDeleteUndoBar('Task deleted', () => {
+    if (D.chores.some(c => c.id === choreCopy.id)) return;
+    const insertAt = Math.max(0, Math.min(idx, D.chores.length));
+    D.chores.splice(insertAt, 0, normalizeChore(choreCopy));
+    if (wasExpanded) _expandedChores.add(choreCopy.id);
+    slotKeys.forEach(key => _expandedSlots.add(key));
+    saveData();
+    renderParentChores();
+    toast('Task restored');
+  });
 }
 
 function renderParentPrizes() {
@@ -13015,10 +13693,23 @@ function _doResetPrize(prizeId) {
 }
 
 function _doDeletePrize(prizeId) {
+  const idx = D.prizes.findIndex(p => p.id === prizeId);
+  const removed = idx >= 0 ? D.prizes[idx] : null;
+  if (!removed) return;
+  const prizeCopy = _cloneForUndo(removed);
+
   D.prizes = D.prizes.filter(p=>p.id!==prizeId);
   saveData();
   toast('Prize deleted');
   renderParentPrizes();
+  _showDeleteUndoBar('Prize deleted', () => {
+    if (D.prizes.some(p => p.id === prizeCopy.id)) return;
+    const insertAt = Math.max(0, Math.min(idx, D.prizes.length));
+    D.prizes.splice(insertAt, 0, normalizePrize(prizeCopy));
+    saveData();
+    renderParentPrizes();
+    toast('Prize restored');
+  });
 }
 
 function openAddPrizeModal(triggerEl) {
@@ -13196,9 +13887,25 @@ function clearGoal(goalId) {
 }
 
 function _doClearGoal(goalId) {
-  D.teamGoals = (D.teamGoals||[]).filter(g => g.id !== goalId);
+  const goals = D.teamGoals || [];
+  const idx = goals.findIndex(g => g.id === goalId);
+  const removed = idx >= 0 ? goals[idx] : null;
+  if (!removed) return;
+  const goalCopy = _cloneForUndo(removed);
+  D.teamGoals = goals.filter(g => g.id !== goalId);
   saveData();
   renderParentPrizes();
+  toast('Team prize deleted');
+  _showDeleteUndoBar('Team prize deleted', () => {
+    const list = D.teamGoals || [];
+    if (list.some(g => g.id === goalCopy.id)) return;
+    const insertAt = Math.max(0, Math.min(idx, list.length));
+    list.splice(insertAt, 0, { icon: 'trophy', iconColor: '#FFD93D', ...goalCopy });
+    D.teamGoals = list;
+    saveData();
+    renderParentPrizes();
+    toast('Team prize restored');
+  });
 }
 
 
@@ -13786,10 +14493,17 @@ function _doAdjDiamondsQuick() {
   if (amt <= 0) { toast('Enter an amount'); return; }
   const dmds = sign * amt;
   targets.forEach(m => {
+    const memberBefore = _captureMemberUndoSnapshot(m);
+    const beforeGems = Number(m.gems || 0);
     m.gems = Math.max(0, (m.gems || 0) + dmds);
     if (dmds > 0) m.totalEarned = (m.totalEarned || 0) + dmds;
+    m.diamonds = m.gems;
     const label = reason || (dmds > 0 ? 'A special bonus from your parent!' : 'Gem adjustment');
-    addHistory('bonus', m.id, label, dmds);
+    const appliedDelta = m.gems - beforeGems;
+    addHistory('bonus', m.id, label, appliedDelta, {
+      undoAction: 'manual_gems_adjust',
+      memberBefore,
+    });
   });
   saveData();
   closeModal();
@@ -13883,14 +14597,26 @@ function _doAdjSavingsQuick() {
   if (amt <= 0) { toast('Enter an amount'); return; }
   const dollars = parseFloat((sign * amt).toFixed(2));
   targets.forEach(m => {
+    const memberBefore = _captureMemberUndoSnapshot(m);
+    const beforeSavings = Number(m.savings || 0);
     normalizeMember(m);
     m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
     if (sign > 0) {
       m.savingsGifted = parseFloat(((m.savingsGifted || 0) + amt).toFixed(2));
-      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, { dollars: amt });
+      const applied = parseFloat((m.savings - beforeSavings).toFixed(2));
+      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, {
+        dollars: applied,
+        undoAction: 'manual_savings_adjust',
+        memberBefore,
+      });
     } else {
       reduceSavingsBuckets(m, amt);
-      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, { dollars: amt });
+      const applied = parseFloat((beforeSavings - m.savings).toFixed(2));
+      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, {
+        dollars: applied,
+        undoAction: 'manual_savings_adjust',
+        memberBefore,
+      });
     }
   });
   saveData();
@@ -13927,10 +14653,17 @@ function doAdjustPoints(memberId, sign) {
   const amt    = parseInt(document.getElementById('adj-dmds')?.value)||0;
   const reason = document.getElementById('adj-reason')?.value.trim() || 'A special bonus from your parent!';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const memberBefore = _captureMemberUndoSnapshot(m);
+  const beforeGems = Number(m.gems || 0);
   const dmds = sign * amt;
   m.gems    = Math.max(0, (m.gems||0) + dmds);
+  m.diamonds = m.gems;
   m.totalEarned = dmds>0 ? (m.totalEarned||0)+dmds : m.totalEarned;
-  addHistory('bonus', memberId, reason, dmds);
+  const appliedDelta = m.gems - beforeGems;
+  addHistory('bonus', memberId, reason, appliedDelta, {
+    undoAction: 'manual_gems_adjust',
+    memberBefore,
+  });
   saveData();
   closeModal();
   toast(`${dmds>0?'+':''}${dmds} gems for ${m.name}`);
@@ -13966,17 +14699,29 @@ function doAdjustSavings(memberId, sign) {
   const reason = document.getElementById('adj-sav-reason')?.value.trim();
   const cur    = D.settings.currency || '$';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const memberBefore = _captureMemberUndoSnapshot(m);
+  const beforeSavings = Number(m.savings || 0);
   const dollars = parseFloat((sign * amt).toFixed(2));
   normalizeMember(m);
   m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
   if (sign > 0) {
     m.savingsGifted = parseFloat(((m.savingsGifted || 0) + amt).toFixed(2));
     const label = reason || 'A savings deposit from your parent!';
-    addHistory('savings_deposit', memberId, label, 0, { dollars: amt });
+    const applied = parseFloat((m.savings - beforeSavings).toFixed(2));
+    addHistory('savings_deposit', memberId, label, 0, {
+      dollars: applied,
+      undoAction: 'manual_savings_adjust',
+      memberBefore,
+    });
   } else {
     reduceSavingsBuckets(m, amt);
     const label = reason ? `Withdrawal: ${reason}` : 'Savings withdrawal';
-    addHistory('savings_withdraw', memberId, label, 0, { dollars: amt });
+    const applied = parseFloat((beforeSavings - m.savings).toFixed(2));
+    addHistory('savings_withdraw', memberId, label, 0, {
+      dollars: applied,
+      undoAction: 'manual_savings_adjust',
+      memberBefore,
+    });
   }
   saveData();
   closeModal();
@@ -13998,6 +14743,7 @@ function _confirmSwitchFamily() {
   S.currentUser = null;
   setCurrentUserId('');
   setParentAuthUid(null);
+  S._recentParentAuth = null;
   try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   closeSettings();
   localStorage.removeItem(LS_KEY);
@@ -14135,9 +14881,38 @@ function _devParentSignIn(memberId) {
 
 async function handleParentSignIn(provider, memberId) {
   const btns = document.querySelectorAll('#btn-google-signin, #btn-apple-signin');
+  const mismatchMsg = 'This sign-in does not match the linked parent account';
   btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
   const firebaseUser = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
   if (!firebaseUser) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  const allowedFamily = await _isParentAuthUserAllowedForActiveFamily(firebaseUser);
+  if (!allowedFamily.ok) {
+    await signOutParent();
+    toast(mismatchMsg);
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  const member = getMember(memberId);
+  if (!member) {
+    await signOutParent();
+    toast('Parent profile not found');
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  const email = String(firebaseUser.email || '').toLowerCase();
+  const otherParent = _findOtherParentLinkedToAuth(firebaseUser.uid, email, member.id);
+  if (otherParent) {
+    await signOutParent();
+    toast(mismatchMsg);
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  if (_isMemberAuthConfigured(member) && !_isAuthIdentityLinkedToMember(member, firebaseUser.uid, email)) {
+    await signOutParent();
+    toast(mismatchMsg);
     btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
     return;
   }
@@ -14252,7 +15027,7 @@ function init() {
             setFamilyCode(safeCode);
             await pushToFirestore();
           }
-          if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
+          if (_shouldAutoMapCurrentAuthAsKid() && !getParentAuthUid() && getFamilyCode()) {
             db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
           }
           subscribeToFirestore();
