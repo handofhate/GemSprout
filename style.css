@@ -21,6 +21,15 @@
       --base-font: 16px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    input, textarea {
+      -webkit-user-select: text;
+      user-select: text;
+    }
     html {
       font-size: var(--base-font);
       background: #365e4f;
@@ -48,7 +57,7 @@
       overflow: hidden;
       padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: env(safe-area-inset-bottom, 0px);
-      background: #365e4f;
+      background: #26443d;
     }
     #screen-auth.loading { position: fixed; inset: 0; z-index: 9999; overflow: hidden; }
     @keyframes loading-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
@@ -1437,6 +1446,7 @@
     .kid-shop-prize-card.can-afford .kid-shop-prize-note {
       position: absolute;
       right: -37px;
+      bottom: 12px;
      
       min-width: 104px;
       padding: 3px 0;
@@ -1785,9 +1795,9 @@
       font-weight: 700;
       color: #253428;
       line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow: visible;
+      word-break: break-word;
     }
     .activity-row-undone {
       opacity: 0.78;
@@ -2848,7 +2858,7 @@
       box-sizing: border-box;
       overflow: hidden;
       padding: 0;
-      background: linear-gradient(180deg, #365e4f 0%, #365e4f 50%, #f4efe4 50%, #f4efe4 100%);
+      background: linear-gradient(180deg, #365e4f 0%, #365e4f 45%, #f4efe4 45%, #f4efe4 100%);
     }
     .setup-gate-stage {
       flex: 1;
@@ -2868,6 +2878,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      transform: translateY(-5dvh);
       border-radius: 30px;
       padding: clamp(24px, 4vw, 34px);
       background:
@@ -5299,28 +5310,41 @@
       gap: 12px;
     }
     .snapshot-summary-shell {
+      --snapshot-summary-reveal-width: 100px;
+      --snapshot-summary-reveal-shift: 92px;
       position: relative;
       overflow: hidden;
       border-radius: 24px;
       min-height: 174px;
     }
     .snapshot-summary-shell.hint-bounce .snapshot-summary-card {
-      animation: snapshotSummaryNudge 2s ease;
-    }
-    @keyframes snapshotSummaryNudge {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(54px); }
+      animation: snapshotSwipeNudge 2s ease;
     }
     .snapshot-summary-reveal {
       position: absolute;
-      inset: 0 0 auto 0;
-      min-height: 126px;
+      inset: 0 0 0 auto;
+      width: var(--snapshot-summary-reveal-width);
       display: flex;
-      align-items: stretch;
-      padding: 12px 12px 18px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      gap: 8px;
+      overflow: hidden;
+      box-sizing: border-box;
       background: linear-gradient(180deg, rgba(239, 231, 217, 0.98), rgba(226, 214, 192, 0.98));
-      border-radius: 24px 24px 0 0;
+      border-radius: 18px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+    }
+    .snapshot-summary-shell[data-side="left"] .snapshot-summary-reveal {
+      inset: 0 0 0 auto;
+      border-radius: 18px;
+      padding: 8px;
+    }
+    .snapshot-summary-shell[data-side="right"] .snapshot-summary-reveal {
+      inset: 0 auto 0 0;
+      border-radius: 18px;
+      padding: 8px;
     }
     .snapshot-summary-reveal.here {
       background: linear-gradient(180deg, rgba(221, 240, 230, 0.98), rgba(202, 226, 213, 0.98));
@@ -5329,31 +5353,58 @@
       background: linear-gradient(180deg, rgba(245, 223, 217, 0.98), rgba(234, 205, 197, 0.98));
     }
     .snapshot-summary-toggle-row {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       width: 100%;
-      align-items: start;
+      height: 100%;
+      align-items: stretch;
+      justify-content: center;
     }
     .snapshot-summary-toggle-btn {
       border: 0;
-      border-radius: 18px;
-      padding: 0 10px;
-      min-height: 62px;
+      border-radius: 16px;
+      width: 100%;
+      margin: 0;
+      padding: 8px 6px;
+      min-height: 72px;
+      flex: 1 1 0;
       align-self: start;
-      display: inline-flex;
+      display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 6px;
       background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(247, 242, 234, 0.96));
       color: #5d6b64;
       font-family: inherit;
-      font-size: 0.82rem;
+      font-size: 0.72rem;
       font-weight: 800;
       cursor: pointer;
       transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, border-color 0.18s ease;
       box-shadow: 0 10px 18px rgba(65, 48, 26, 0.08);
       border: 1px solid rgba(83, 67, 48, 0.08);
+      line-height: 1.1;
+      text-align: center;
+    }
+    .snapshot-summary-shell[data-side="left"] .snapshot-summary-toggle-btn {
+      margin: 0 0 0 8px;
+      width: calc(100% - 8px);
+    }
+    .snapshot-summary-shell[data-side="right"] .snapshot-summary-toggle-btn {
+      margin: 0 8px 0 0;
+      width: calc(100% - 8px);
+    }
+    .snapshot-summary-toggle-btn i {
+      display: block;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .snapshot-summary-toggle-btn span {
+      display: block;
+      font-size: 0.7rem;
+      line-height: 1.15;
+      white-space: nowrap;
     }
     .snapshot-summary-toggle-btn.home.active {
       background: linear-gradient(180deg, #d8f0e2, #c5e4d4);
@@ -5381,17 +5432,15 @@
       background: linear-gradient(180deg, #ffffff, #f7f3ea);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 10px 20px rgba(44, 37, 24, 0.06);
       border: 1px solid rgba(39, 50, 41, 0.06);
-      transition: transform 0.22s ease, box-shadow 0.22s ease;
+      transition: transform 0.24s ease;
       overflow: hidden;
-      touch-action: none;
+      touch-action: pan-y;
     }
-    .snapshot-summary-shell.revealed .snapshot-summary-card {
-      transform: translateY(85px);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 18px 28px rgba(44, 37, 24, 0.09);
+    .snapshot-summary-shell[data-side="left"].revealed .snapshot-summary-card {
+      transform: translateX(calc(var(--snapshot-summary-reveal-shift) * -1));
     }
-    .snapshot-summary-card:active {
-      transform: scale(0.985);
-      box-shadow: 0 10px 22px rgba(44, 37, 24, 0.08);
+    .snapshot-summary-shell[data-side="right"].revealed .snapshot-summary-card {
+      transform: translateX(var(--snapshot-summary-reveal-shift));
     }
     .snapshot-summary-avatar {
       margin-left: auto;
@@ -5781,12 +5830,27 @@
       padding: 6px 0;
     }
     .snapshot-summary-swipe-note {
-      display: flex;
+      position: absolute;
+      top: 50%;
+      margin-top: 0;
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-top: auto;
+      transform: translateY(-50%);
       color: #8a7460;
-      font-size: 1rem;
+      font-size: 0.95rem;
+      pointer-events: none;
+    }
+    .snapshot-summary-shell[data-side="left"] .snapshot-summary-swipe-note {
+      left: 8px;
+    }
+    .snapshot-summary-shell[data-side="right"] .snapshot-summary-swipe-note {
+      right: 8px;
+    }
+    .snapshot-summary-shell[data-side="left"] .snapshot-summary-swipe-note i {
+      transform: rotate(180deg);
     }
     @media (max-width: 420px) {
       .overview-kids-grid {
@@ -5916,5 +5980,329 @@
         width: 76px;
         height: 76px;
       }
+    }
+
+    /* ── Badge Trading Card Modal ──────────────────────────────────────────── */
+
+    /* Card ~62% of viewport height, width derived from 240:340 ratio */
+
+    /* Dedicated full-screen root — no backdrop-filter anywhere in this subtree */
+    #badge-card-root {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+    }
+
+    /* Plain dim backdrop — NO backdrop-filter (would flatten 3D children) */
+    .badge-card-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 8, 20, 0.72);
+    }
+
+    .badge-card-scene {
+      position: relative; /* sits above backdrop */
+      perspective: 900px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .badge-card {
+      position: relative;
+      /* 240:340 ≈ 0.706 ratio — height drives width */
+      height: min(62vh, 480px);
+      width: calc(min(62vh, 480px) * 240 / 340);
+      border-radius: 24px;
+      /* Dark base tinted toward the badge icon color via --card-accent */
+      background: linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--card-accent, #7C3AED) 22%, #0d0820) 0%,
+        color-mix(in srgb, var(--card-accent, #7C3AED) 30%, #111830) 45%,
+        color-mix(in srgb, var(--card-accent, #7C3AED) 18%, #081428) 100%
+      );
+      border: 2px solid color-mix(in srgb, var(--card-accent, #7C3AED) 40%, transparent);
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--card-accent, #7C3AED) 35%, transparent),
+        0 28px 80px rgba(0,0,0,0.6),
+        0 6px 24px color-mix(in srgb, var(--card-accent, #7C3AED) 30%, transparent);
+      transform-style: preserve-3d;
+      transition: transform 0.6s cubic-bezier(.2,.8,.2,1);
+      will-change: transform;
+      overflow: hidden;
+      cursor: grab;
+      /* No animation here — fill-mode:forwards/both locks the keyframe transform
+         and overrides inline style.transform, breaking the tilt. Animate the wrapper instead. */
+    }
+
+    .badge-card-scene {
+      animation: badgeCardEntrance 0.38s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    @keyframes badgeCardEntrance {
+      from { opacity: 0; transform: scale(0.88) rotateY(90deg); }
+      to   { opacity: 1; transform: scale(1)    rotateY(0deg);  }
+    }
+
+    /*
+     * Holographic layers — ported from simeydotme/pokemon-cards-css (MIT)
+     * Technique: vmax rainbow-alt / rare holo vmax
+     * CSS vars driven by gyro/mouse tilt in JS:
+     *   --pointer-x, --pointer-y   : tilt position as % (0-100), opposite to tilt direction
+     *   --pointer-from-center       : distance from center (0 = center, 1 = corner)
+     *   --background-x, --background-y : parallax-multiplied position for gradient panning
+     */
+
+    /* ── Icon tile layer — glints through the holo blend above it ── */
+    .badge-card-icon-tile {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 1;
+      background-repeat: repeat;
+      /* background-size set inline from JS to match canvas dimensions */
+      /* Center the repeat so all edges tile symmetrically, drift slowly with tilt */
+      background-position:
+        calc(50% + (var(--background-x, 50%) - 50%) * 0.15)
+        calc(50% + (var(--background-y, 50%) - 50%) * 0.15);
+      opacity: 0.45;
+      mix-blend-mode: soft-light;
+    }
+
+    /* ── Shine layer: rainbow stripes + scanlines ── */
+    .badge-card-shine {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 2;
+
+      --space: 5%;
+      --angle: 133deg;
+      --r-clr-1: hsl(0,   57%, 37%);
+      --r-clr-2: hsl(40,  53%, 39%);
+      --r-clr-3: hsl(90,  60%, 35%);
+      --r-clr-4: hsl(180, 60%, 35%);
+      --r-clr-5: hsl(180, 60%, 35%);
+      --r-clr-6: hsl(210, 57%, 39%);
+      --r-clr-7: hsl(280, 55%, 31%);
+
+      background-image:
+        repeating-linear-gradient(
+          var(--angle),
+          hsla(283, 49%, 60%, 0.75) calc(var(--space) * 1),
+          hsla(2,   70%, 58%, 0.75) calc(var(--space) * 2),
+          hsla(53,  67%, 53%, 0.75) calc(var(--space) * 3),
+          hsla(93,  56%, 52%, 0.75) calc(var(--space) * 4),
+          hsla(176, 38%, 50%, 0.75) calc(var(--space) * 5),
+          hsla(228,100%, 77%, 0.75) calc(var(--space) * 6),
+          hsla(283, 49%, 61%, 0.75) calc(var(--space) * 7)
+        ),
+        repeating-linear-gradient(
+          90deg,
+          #000 0px, #000 2px,
+          #666 2px, #666 4px
+        ),
+        linear-gradient(
+          -30deg,
+          var(--r-clr-1), var(--r-clr-2), var(--r-clr-3), var(--r-clr-4),
+          var(--r-clr-5), var(--r-clr-6), var(--r-clr-7),
+          var(--r-clr-1), var(--r-clr-2), var(--r-clr-3), var(--r-clr-4),
+          var(--r-clr-5), var(--r-clr-6), var(--r-clr-7),
+          var(--r-clr-1), var(--r-clr-2), var(--r-clr-3), var(--r-clr-4),
+          var(--r-clr-5), var(--r-clr-6), var(--r-clr-7), var(--r-clr-1)
+        );
+
+      background-size: 200% 400%, 2px 2px, 400% 400%;
+      background-position:
+        0% calc(var(--background-y, 50%) * 1),
+        center center,
+        calc(var(--background-x, 50%) * 1.5) calc(var(--background-y, 50%) * 1.5);
+
+      background-blend-mode: luminosity, overlay;
+      filter:
+        brightness(calc((var(--pointer-from-center, 0) * 0.3) + 0.3))
+        contrast(3)
+        saturate(1.8);
+      mix-blend-mode: color-dodge;
+    }
+
+    /* ── Shine ::after — color-dodge rainbow layer (opposite parallax) ── */
+    .badge-card-shine::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+
+      background-image:
+        repeating-linear-gradient(
+          90deg,
+          #000 0px, #000 2px,
+          #666 2px, #666 4px
+        ),
+        linear-gradient(
+          -60deg,
+          var(--r-clr-1), var(--r-clr-2), var(--r-clr-3), var(--r-clr-4),
+          var(--r-clr-5), var(--r-clr-6), var(--r-clr-7),
+          var(--r-clr-1), var(--r-clr-2), var(--r-clr-3), var(--r-clr-4),
+          var(--r-clr-5), var(--r-clr-6), var(--r-clr-7),
+          var(--r-clr-1), var(--r-clr-2), var(--r-clr-3), var(--r-clr-4),
+          var(--r-clr-5), var(--r-clr-6), var(--r-clr-7), var(--r-clr-1)
+        );
+
+      background-blend-mode: overlay;
+      background-size: 2px 2px, 400% 400%;
+      /* Moves opposite direction to shine layer */
+      background-position:
+        center center,
+        calc(var(--background-x, 50%) * -1.5) calc(var(--background-y, 50%) * -1.5);
+
+      filter:
+        brightness(calc((var(--pointer-from-center, 0) * 0.5) + 0.6))
+        contrast(3)
+        saturate(1);
+      mix-blend-mode: color-dodge;
+      opacity: calc(1.2 - var(--pointer-from-center, 0) * 0.5);
+    }
+
+    /* ── Glare layer: radial spotlight following tilt ── */
+    .badge-card-glare {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 3;
+
+      background-image: radial-gradient(
+        farthest-corner circle at var(--pointer-x, 50%) var(--pointer-y, 30%),
+        hsla(50,  20%, 90%, 0.75) 0%,
+        hsla(150, 20%, 30%, 0.65) 45%,
+        hsla(0,    0%, 0%,  1)    100%
+      );
+
+      filter: brightness(0.9) contrast(2);
+      mix-blend-mode: overlay;
+      opacity: calc(0.6 + var(--pointer-from-center, 0) * 0.15);
+    }
+
+    .badge-card-content {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16% 7% 14%;
+      gap: 0;
+    }
+
+    /* ── Stars — pinned to top of card ── */
+    .badge-card-stars {
+      position: absolute;
+      top: 5%;
+      left: 0; right: 0;
+      display: flex;
+      justify-content: space-around;
+      padding: 0 12%;
+      pointer-events: none;
+    }
+
+    .badge-card-stars i {
+      font-size: clamp(1rem, 3.5vw, 1.6rem);
+    }
+    .badge-card-stars i:nth-child(2) {
+      font-size: clamp(1.4rem, 5vw, 2.2rem);
+    }
+
+    /* ── Middle block: header + icon + earned-by ── */
+    .badge-card-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+      margin-bottom: auto;
+      margin-top: 6%;
+    }
+
+    .badge-card-name {
+      font-size: clamp(2rem, 7.5vw, 3.6rem);
+      font-weight: 900;
+      color: #fff;
+      text-align: center;
+      text-shadow: 0 2px 18px rgba(0,0,0,0.85), 0 1px 4px rgba(0,0,0,0.6);
+      letter-spacing: 0.01em;
+      line-height: 1.1;
+    }
+
+    .badge-card-earn {
+      font-size: clamp(1rem, 3.5vw, 1.8rem);
+      font-weight: 600;
+      color: #fff;
+      text-align: center;
+      line-height: 1.35;
+      text-shadow: 0 2px 18px rgba(0,0,0,0.85), 0 1px 4px rgba(0,0,0,0.6);
+    }
+
+    /* ── Center icon — absolutely centered on the card, not in flex flow ── */
+    .badge-card-icon-wrap {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 48%;
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 22%;
+      background: rgba(255,255,255,0.12);
+      border: 1.5px solid rgba(255,255,255,0.22);
+      box-shadow: 0 8px 28px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+
+    .badge-card-icon {
+      font-size: clamp(5.6rem, 22vw, 12rem);
+      line-height: 1;
+      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.4));
+    }
+
+    /* ── Earned-by line ── */
+    .badge-card-earned-by {
+      font-size: clamp(0.9rem, 3vw, 1.6rem);
+      font-weight: 600;
+      color: #fff;
+      text-align: center;
+      letter-spacing: 0.02em;
+      margin-top: auto;
+      margin-bottom: 14%;
+      text-shadow: 0 2px 18px rgba(0,0,0,0.85), 0 1px 4px rgba(0,0,0,0.6);
+    }
+
+    /* ── Footer — pinned to bottom of card ── */
+    .badge-card-footer {
+      position: absolute;
+      bottom: 5%;
+      left: 0; right: 0;
+      text-align: center;
+      font-size: clamp(0.8rem, 2.5vw, 1.4rem);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: rgba(255,255,255,0.25);
+      text-transform: uppercase;
+    }
+
+    .badge-card-close-hint {
+      position: relative; /* above backdrop */
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.4);
+      text-align: center;
     }
 

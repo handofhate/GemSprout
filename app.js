@@ -289,20 +289,20 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const mCard = cardBase + `border:2px solid ${mSel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${mSel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   const yCard = cardBase + `border:2px solid ${ySel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${ySel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   return `
-  <div style="height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden">
+  <div style="height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;background:#f4efe4">
     <div style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 100%)">
       <div style="position:relative;text-align:center;padding:36px 24px 20px">
         <button onclick="renderHome()" style="position:absolute;top:8px;left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
         <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
         <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
-        <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
+        <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">An easy to use family system for rewards, savings, and shared goals</div>
       </div>
 
       <div style="padding:0 24px 18px;display:flex;flex-direction:column;gap:10px">
         ${[
-          ['ph-check-circle','Daily routines with parent approvals and optional photo proof'],
-          ['ph-bell-ringing','Instant alerts when kids complete tasks or request spending'],
-          ['ph-piggy-bank',  'Gems, savings, matching, and interest in one family system'],
+          ['ph-check-circle','Configurable daily tasks with parent approvals and optional photo verification'],
+          ['ph-bell-ringing','Instant alerts when kids complete tasks or request actions'],
+          ['ph-piggy-bank',  'Rewards and savings with optional parent-matching and interest'],
         ].map(([icon, text]) => `
           <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
             <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
@@ -1044,7 +1044,7 @@ function _renderWeekReviewStory() {
   return `
     <style>
       #week-review-overlay {
-        background: linear-gradient(180deg, #365e4f 0%, #365e4f 50%, #f4efe4 50%, #f4efe4 100%);
+        background: linear-gradient(180deg, #365e4f 0%, #365e4f 45%, #f4efe4 45%, #f4efe4 100%);
         color: #273229;
         font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
         touch-action: manipulation;
@@ -1523,7 +1523,7 @@ function _weekReviewHTML(slides, currentIndex) {
   return `
     <style>
       #week-review-overlay {
-        background: linear-gradient(180deg, #365e4f 0%, #365e4f 50%, #f4efe4 50%, #f4efe4 100%);
+        background: linear-gradient(180deg, #365e4f 0%, #365e4f 45%, #f4efe4 45%, #f4efe4 100%);
         color: #273229;
         font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
         touch-action: manipulation;
@@ -2845,11 +2845,11 @@ function subscribeToFirestore(onFirstLoad) {
           if (_freshUser) S.currentUser = _freshUser;
         }
         // Trigger celebration if kid is viewing and chores got approved
-        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
+        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid' && !isParentSignedIn()) {
           checkForApprovalCelebration(prevPending, S.currentUser);
         }
         // Trigger celebration for new manual bonus gems, savings deposits, spend outcomes, or declines
-        if (!firstSnapshot && S.currentUser?.role === 'kid') {
+        if (!firstSnapshot && S.currentUser?.role === 'kid' && !isParentSignedIn()) {
           checkForNewBonuses(S.currentUser, false);
           checkForNewSavingsDeposits(S.currentUser, false);
           checkForSavingsRequestOutcomes(S.currentUser, false);
@@ -2860,7 +2860,7 @@ function subscribeToFirestore(onFirstLoad) {
     if (firstSnapshot) {
       firstSnapshot = false;
       // Check for approvals that happened while the app was closed
-      if (S.currentUser?.role === 'kid') {
+      if (S.currentUser?.role === 'kid' && !isParentSignedIn()) {
         const savedKeys = loadPendingSnapshot(S.currentUser.id);
         if (savedKeys.size > 0) checkForApprovalCelebration(savedKeys, S.currentUser, true);
         clearPendingSnapshot(S.currentUser.id);
@@ -2875,7 +2875,7 @@ function subscribeToFirestore(onFirstLoad) {
       else if (_didUpdate) renderCurrentView();
     } else if (_didUpdate) {
       renderCurrentView();
-      if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
+      if (S.currentUser?.role === 'kid' && !isParentSignedIn()) checkForNewBadges(S.currentUser, false);
     }
   }, err => {
     console.warn('Firestore listener error:', err);
@@ -4235,8 +4235,67 @@ function renderActivityRow(h, opts = {}) {
   const badge = historyBadge(h);
   const icon = historyIcon(h);
   const delta = Number(h.gems || 0);
+  const absDelta = Math.abs(delta);
   const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral';
   const isUndoneVisual = !!(h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title));
+  const cleanTitle = cleanActivityTitle(h.title || 'Activity');
+  const tinyKidSelf = S.currentUser?.role === 'kid' && isTiny(S.currentUser) && S.currentUser?.id === h.memberId;
+  const formatDollarsNaturally = (value) => {
+    const centsTotal = Math.max(0, Math.round((Number(value) || 0) * 100));
+    const dollars = Math.floor(centsTotal / 100);
+    const cents = centsTotal % 100;
+    if (dollars <= 0) return `${cents} cent${cents === 1 ? '' : 's'}`;
+    const dollarPart = dollars === 1 ? 'one dollar' : `${dollars} dollars`;
+    if (cents <= 0) return dollarPart;
+    return `${dollarPart} and ${cents} cent${cents === 1 ? '' : 's'}`;
+  };
+  let tinyTtsText = '';
+  if (isUndoHistoryEntry(h?.title)) {
+    tinyTtsText = `${cleanTitle}.`;
+  } else if (h.type === 'chore') {
+    tinyTtsText = /streak bonus/i.test(String(h.title || ''))
+      ? `Streak bonus! You earned ${h.gems || 0} gems!`
+      : `${cleanTitle}. You earned ${h.gems || 0} gems!`;
+  } else if (h.type === 'decline') {
+    tinyTtsText = `${cleanTitle} was not approved.`;
+  } else if (h.type === 'prize') {
+    tinyTtsText = `You got ${cleanTitle}! That cost you ${absDelta} gems.`;
+  } else if (h.type === 'goal') {
+    tinyTtsText = `You put ${absDelta} gems toward ${cleanTitle}!`;
+  } else if (h.type === 'savings') {
+    tinyTtsText = (delta !== 0 && /converted/i.test(String(h.title || '')))
+      ? `${cleanTitle}.`
+      : delta !== 0
+      ? `${cleanTitle}. ${delta > 0 ? 'You got' : 'You spent'} ${absDelta} gems.`
+      : `${cleanTitle}.`;
+  } else if (h.type === 'savings_deposit') {
+    tinyTtsText = Number.isFinite(Number(h?.dollars)) && Number(h.dollars) > 0
+      ? `You earned an extra ${formatDollarsNaturally(h.dollars)} from parent matched savings!`
+      : `${cleanTitle}. Money was added to your savings!`;
+  } else if (h.type === 'savings_withdraw') {
+    tinyTtsText = `${cleanTitle}. Money came out of your savings.`;
+  } else if (h.type === 'bonus') {
+    const isParentDefaultBonus = String(h.title || '').trim() === 'A special bonus from your parent!'
+      || cleanTitle === 'A special bonus from your parent!';
+    tinyTtsText = /combo/i.test(String(h.title || ''))
+      ? `Combo bonus! You earned ${h.gems || 0} gems!`
+      : isParentDefaultBonus
+        ? `Bonus! You earned ${h.gems || 0} gems!`
+        : `Bonus! You earned ${h.gems || 0} gems for ${cleanTitle}!`;
+  } else if (h.type === 'penalty') {
+    tinyTtsText = `${cleanTitle}. You lost ${absDelta} gems.`;
+  } else if (h.type === 'badge') {
+    tinyTtsText = `You earned the ${cleanTitle} badge!`;
+  } else if (h.type === 'level') {
+    const levelMatch = String(h.title || '').match(/level up\s*-\s*(.+?)!?\s*$/i);
+    const levelName = (levelMatch?.[1] || cleanTitle.replace(/^level up\s*-\s*/i, '').replace(/[!]+$/g, '').trim() || cleanTitle).trim();
+    tinyTtsText = `You leveled up! You are now a ${levelName}!`;
+  } else {
+    tinyTtsText = `${cleanTitle}.`;
+  }
+  const tinyTtsAttr = tinyKidSelf && tinyTtsText
+    ? ` onclick="speak('${tinyTtsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"`
+    : '';
   const metaBits = [];
 
   if (mem) metaBits.push(`${renderMemberAvatarHtml(mem)} ${esc(mem.name)}`);
@@ -4248,10 +4307,10 @@ function renderActivityRow(h, opts = {}) {
   const canUndo = !blockReason;
   const showReason = !!opts.showUndoReasons;
   const showBlockedReason = showReason && _supportsUndoAction(h) && !!blockReason && S.currentUser?.role === 'parent';
-  const rowHtml = `<div class="activity-row${canUndo ? ' activity-row-swipe' : ''}${isUndoneVisual ? ' activity-row-undone' : ''}">
+  const rowHtml = `<div class="activity-row${canUndo ? ' activity-row-swipe' : ''}${isUndoneVisual ? ' activity-row-undone' : ''}"${tinyTtsAttr}>
     <span class="activity-badge" style="background:${badge.bg};color:${badge.color}">${icon}</span>
     <div class="activity-body">
-      <div class="activity-title">${esc(cleanActivityTitle(h.title))}</div>
+      <div class="activity-title">${esc(cleanTitle)}</div>
       <div class="activity-meta">${metaBits.join(' <span class="activity-dot">&middot;</span> ')}</div>
       ${showBlockedReason ? `<div class="activity-undo-wrap"><span class="activity-undo-note">${esc(blockReason)}</span></div>` : ''}
     </div>
@@ -4865,7 +4924,7 @@ function saveComboOverride(kidId) {
       showQuickActionModal(`
         <div class="modal-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;vertical-align:middle"></i> Combo Will Complete!</div>
         <p style="font-size:0.9rem;color:var(--muted);margin:0 0 16px">
-          Saving this rhythm for <b>${esc(member.name)}</b> will immediately award the Daily Combo bonus of <b>+${bonusPts} gems</b> since all 3 tasks are already complete.
+          Saving this combo for <b>${esc(member.name)}</b> will immediately award the Daily Combo bonus of <b>+${bonusPts} gems</b> since all 3 tasks are already complete.
         </p>
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary" onclick="closeModal()" style="flex:1">Cancel</button>
@@ -5488,6 +5547,7 @@ function launchDollarRain(count = 160, rootElement = null) {
 const _celebQueue = [];
 
 function showCelebration(opts) {
+  if (isParentSignedIn()) return;
   _celebQueue.push(opts);
   // Defer so all synchronous calls batch before any rendering,
   // ensuring the first modal knows the full queue size.
@@ -7487,7 +7547,7 @@ function renderSetupGate() {
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
         <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome to GemSprout</div>
-        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two'}</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'An easy to use family system for rewards, savings, and shared goals'}</div>
         <div class="setup-gate-actions">
           <button class="setup-gate-btn setup-gate-btn-primary" onclick="${isPreview ? `goSetup({ testMode: true })` : `startNewFamily()`}">
             <i class="ph-duotone ph-sparkle" style="vertical-align:middle"></i> Get Started
@@ -8068,8 +8128,12 @@ function cancelSetup() {
   S._setupBiometricDecisionRequired = false;
   S._setupBiometricOfferAnswered = false;
   if (_exitTestOnboarding('Onboarding preview closed - nothing was saved.')) return;
-  const user = S.currentUser;
-  if (user) routeToView(user);
+  const currentUserId = S.currentUser?.id || getCurrentUserId();
+  const freshUser = currentUserId ? getMember(currentUserId) : null;
+  if (freshUser) {
+    S.currentUser = freshUser;
+    routeToView(freshUser);
+  }
   else renderHome();
 }
 
@@ -8963,7 +9027,7 @@ function renderKidChores() {
     document.getElementById('kid-content').innerHTML = `
       <div class="empty-state">
         <div class="empty-icon"><i class="ph-duotone ph-confetti" style="color:#F97316;font-size:3rem"></i></div>
-        <div class="empty-text">No rhythms assigned yet. Ask a parent to add some.</div>
+        <div class="empty-text">No tasks assigned yet. Ask a parent to add some.</div>
       </div>`;
     return;
   }
@@ -9355,11 +9419,11 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   const comboClass = isCombo && statusClass !== 'done' ? ' combo-chore' : '';
   let ttsText;
   if (phase === 'needs_before') {
-    ttsText = `${chore.title}. Take a before photo to start this chore!`;
+    ttsText = `${chore.title}. Take a before photo to start this task!`;
   } else if (phase === 'before_pending') {
     ttsText = `${chore.title}. Waiting for your grown-up to say yes!`;
   } else if (phase === 'needs_after') {
-    ttsText = `${chore.title}. You were approved! Do the chore, then take a done photo.`;
+    ttsText = `${chore.title}. You were approved! Finish the task, then take a done photo.`;
   } else if (phase === 'after_pending') {
     ttsText = `${chore.title}. Waiting for your grown-up to check your done photo.`;
   } else {
@@ -9707,8 +9771,10 @@ function renderKidDiamonds() {
     const baseBadgeChips = D?.settings?.baseBadgesEnabled === false ? '' : BADGE_DEFS.map(b => {
       const def = getBaseBadgeDef(b.id);
       const have = earned.includes(b.id);
-      const badgeTts = tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")}')"` : '';
-      return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${badgeTts}>
+      const tap = have
+        ? ` onclick="openBadgeCard('${b.id}','base')"`
+        : (tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")} — not earned yet.')"` : '');
+      return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${tap}>
         <span class="badge-chip-icon">${def.icon}</span>${esc(def.name)}
       </div>`;
     }).join('');
@@ -9718,8 +9784,11 @@ function renderKidDiamonds() {
         const key = `cb_${b.id}`;
         const have = earned.includes(key);
         if (!have && b.secret) return '';
-        const badgeTts = tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")}')"` : '';
-        return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${badgeTts}>
+        const choreTitle = chore.title || '';
+        const tap = have
+          ? ` onclick="openBadgeCard('${b.id}','chore',${JSON.stringify(choreTitle).replace(/"/g,'&quot;')},${b.count||0})"`
+          : (tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")} — not earned yet.')"` : '');
+        return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${tap}>
           <span class="badge-chip-icon">${b.icon||'<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>'}</span>${esc(b.name||'')}
         </div>`;
       })
@@ -9962,7 +10031,7 @@ function denyPrizeRequest(requestId, btn) {
   });
 }
 
-function showSavingsHistory(memberId, triggerEl = null) {
+function showSavingsHistory(memberId, triggerEl = null, showSubheader = false) {
   const m = getMember(memberId);
   if (!m) return;
   const cur = D.settings.currency || '$';
@@ -10007,9 +10076,11 @@ function showSavingsHistory(memberId, triggerEl = null) {
 
   const rect = triggerEl?.getBoundingClientRect?.();
   if (rect) _modalLaunchOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  const subheaderHtml = showSubheader
+    ? `<p class="kid-savings-modal-copy">A quick look at ${esc(m.name)}'s savings activity.</p>`
+    : '';
   showQuickActionModal(`
-    <div class="modal-title kid-savings-modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Savings History</div>
-    <p class="kid-savings-modal-copy">A quick look at ${esc(m.name)}'s savings activity.</p>
+    ${subheaderHtml}
     <div class="kid-savings-history-list">${rows}</div>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-full" onclick="closeModal()">Close</button>
@@ -10182,7 +10253,15 @@ function renderKidShop() {
     const note = status.ok ? 'Ready!' : blockedReason;
     const requirementSummary = getPrizeRequirementSummary(p);
     const recurrenceSummary = formatPrizeRecurrence(p.recurrence);
-    const tts  = `${p.title}. Costs ${p.cost} gems.${status.ok ? ' You can get this now!' : ` ${blockedReason}.`}`;
+    const prizeCost = Math.max(0, Number(p.cost) || 0);
+    const extraCondition = status.ok ? '' : (blockedReason || '').trim().replace(/[.!?]+$/, '');
+    const costClause = prizeCost > 0 ? `Costs ${prizeCost} gems` : '';
+    const conditionClause = extraCondition || '';
+    let ttsDetail = '';
+    if (costClause && conditionClause) ttsDetail = `${costClause} and ${conditionClause}.`;
+    else if (costClause) ttsDetail = `${costClause}.`;
+    else if (conditionClause) ttsDetail = `${conditionClause}.`;
+    const tts = `${p.title}.${ttsDetail ? ` ${ttsDetail}` : ''}${status.ok ? ' You can get this now!' : ''}`;
     return `
       <div class="prize-card kid-shop-prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
@@ -10217,8 +10296,7 @@ function kidRedeemPrize(prizeId, evt) {
   const status = getPrizeStatusForKidView(prize, m.id);
   if (!status.ok) {
     const msg = formatPrizeRedeemStatusMessage(status);
-    if (isTiny(m)) speak(msg);
-    else toast(msg);
+    toast(msg);
     return;
   }
   const dmds = m.gems||0;
@@ -10888,7 +10966,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   const favChoreSub = s.favChore ? `${s.favChore[1]}x completed` : 'No tasks yet';
   const extraSection = _statSection('Fun Facts',
     _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>','Best Day', s.bestDate ? `${s.bestDate.dmds} gems` : 'None', '#d97706', bestDaySub, tts(s.bestDate ? `Your best day was ${s.bestDate.dmds} gems.` : `No best day yet.`)) +
-    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : 'None', '#db2777', favChoreSub, tts(s.favChore ? `Your favorite chore is ${s.favChore[0]}.` : `No favorite chore yet.`)) +
+    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Task', s.favChore ? `${s.favChore[0].split(' ')[0]}` : 'None', '#db2777', favChoreSub, tts(s.favChore ? `Your favorite task is ${s.favChore[0]}.` : `No favorite chore yet.`)) +
     _statTile('<i class="ph-duotone ph-arrow-u-down-left" style="color:#6B7280"></i>','Declined', s.declineCount, '#374151', 'tasks declined', '')
   );
 
@@ -10896,7 +10974,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   const choreTableRows = s.choreBreakdown.map(([name,count]) => [name, count]);
   const choreTable = `
     <div class="stats-panel-section">
-      <div class="stats-panel-section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;vertical-align:middle"></i> Chore Breakdown</div>
+      <div class="stats-panel-section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;vertical-align:middle"></i> Task Breakdown</div>
       ${_statBreakdownTable(choreTableRows.slice(0,10), 'Chore', 'times')}
     </div>`;
 
@@ -11182,7 +11260,7 @@ function renderFamilySnapshotPanel(kidId) {
   const pickerChore = _snapshotTimePicker?.memberId === kid.id ? myChores.find(c => c.id === _snapshotTimePicker.choreId) : null;
   const pickerHtml = pickerChore ? renderSnapshotTimePicker(pickerChore, kid) : '';
   const choreRows = myChores.length === 0
-    ? `<div class="empty-state" style="padding:22px 8px"><div class="empty-text">No rhythms assigned</div></div>`
+    ? `<div class="empty-state" style="padding:22px 8px"><div class="empty-text">No tasks assigned</div></div>`
     : `<div class="kid-overview-list snapshot-chore-stack">${myChores.map(chore => {
         const progress = getChoreProgress(chore, kid.id);
         const status = progress.status;
@@ -11238,7 +11316,7 @@ function renderFamilySnapshotPanel(kidId) {
         </div>
         <div class="snapshot-panel-stats">
           <span class="snapshot-panel-stat"><strong>${kid.diamonds||0}</strong><small>Gems</small></span>
-          ${D.settings.savingsEnabled!==false?`<span class="snapshot-panel-stat"><strong>${cur}${(kid.savings||0).toFixed(2)}</strong><small>Savings</small></span>`:''}
+          ${D.settings.savingsEnabled!==false?`<span class="snapshot-panel-stat" onclick="showSavingsHistory('${kid.id}', this, true)"><strong>${cur}${(kid.savings||0).toFixed(2)}</strong><small>Savings</small></span>`:''}
           <span class="snapshot-panel-stat"><strong>${pct}%</strong><small>On track</small></span>
         </div>
       </div>
@@ -11591,39 +11669,61 @@ function startSnapshotSummarySwipe(ev, id) {
     id,
     shell,
     card,
+    side: shell.dataset.side === 'right' ? 'right' : 'left',
     startX: ev.clientX,
     startY: ev.clientY,
+    lastX: ev.clientX,
+    lastT: Date.now(),
+    velocityX: 0,
     revealedAtStart: shell.classList.contains('revealed'),
     dragging: false,
-    dy: 0
+    dx: 0,
   };
 }
 function moveSnapshotSummarySwipe(ev) {
   if (!_snapshotSummarySwipeSession) return;
   const dx = ev.clientX - _snapshotSummarySwipeSession.startX;
   const dy = ev.clientY - _snapshotSummarySwipeSession.startY;
+  const now = Date.now();
+  const dt = Math.max(1, now - (_snapshotSummarySwipeSession.lastT || now));
+  const stepDx = ev.clientX - (_snapshotSummarySwipeSession.lastX ?? ev.clientX);
+  _snapshotSummarySwipeSession.velocityX = stepDx / dt;
+  _snapshotSummarySwipeSession.lastX = ev.clientX;
+  _snapshotSummarySwipeSession.lastT = now;
   if (!_snapshotSummarySwipeSession.dragging) {
-    if (dy < 8 || dy < Math.abs(dx)) return;
+    if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
     _snapshotSummarySwipeSession.dragging = true;
   }
+  const side = _snapshotSummarySwipeSession.side;
   const card = _snapshotSummarySwipeSession.card;
-  const shift = 85;
-  const base = _snapshotSummarySwipeSession.revealedAtStart ? shift : 0;
-  const clampedDy = _snapshotSummarySwipeSession.revealedAtStart
-    ? Math.max(-shift, Math.min(dy, 0))
-    : Math.max(0, Math.min(dy, shift));
-  _snapshotSummarySwipeSession.dy = clampedDy;
+  const shell = _snapshotSummarySwipeSession.shell;
+  const shift = parseFloat(getComputedStyle(shell).getPropertyValue('--snapshot-summary-reveal-shift')) || 92;
+  let base = 0;
+  let clampedDx = 0;
+  if (side === 'left') {
+    base = _snapshotSummarySwipeSession.revealedAtStart ? -shift : 0;
+    clampedDx = _snapshotSummarySwipeSession.revealedAtStart
+      ? Math.max(shift * -0.2, Math.min(dx, shift))
+      : Math.max(-shift, Math.min(dx, shift * 0.24));
+  } else {
+    base = _snapshotSummarySwipeSession.revealedAtStart ? shift : 0;
+    clampedDx = _snapshotSummarySwipeSession.revealedAtStart
+      ? Math.min(shift * 0.2, Math.max(dx, -shift))
+      : Math.min(shift, Math.max(dx, shift * -0.24));
+  }
+  _snapshotSummarySwipeSession.dx = clampedDx;
   if (card) {
     card.style.transition = 'none';
-    card.style.transform = `translateY(${base + clampedDy}px)`;
+    card.style.transform = `translateX(${base + clampedDx}px)`;
   }
   ev.preventDefault?.();
 }
 function endSnapshotSummarySwipe(ev) {
   if (!_snapshotSummarySwipeSession) return;
-  const dy = _snapshotSummarySwipeSession.dragging
-    ? _snapshotSummarySwipeSession.dy
-    : ev.clientY - _snapshotSummarySwipeSession.startY;
+  const side = _snapshotSummarySwipeSession.side;
+  const dx = _snapshotSummarySwipeSession.dragging
+    ? _snapshotSummarySwipeSession.dx
+    : ev.clientX - _snapshotSummarySwipeSession.startX;
   const shell = _snapshotSummarySwipeSession.shell;
   const card = _snapshotSummarySwipeSession.card;
   const resetCard = () => {
@@ -11632,11 +11732,13 @@ function endSnapshotSummarySwipe(ev) {
     card.style.removeProperty('transform');
   };
   if (_snapshotSummarySwipeSession.dragging) {
-    if (dy > 24) {
+    const opening = side === 'left' ? dx < 0 : dx > 0;
+    const closing = side === 'left' ? dx > 0 : dx < 0;
+    if (opening) {
       closeAllSnapshotSummaryReveals(shell.dataset.summaryId);
       shell.classList.add('revealed');
       _snapshotSummaryReveal.add(shell.dataset.summaryId);
-    } else if (dy < -18) {
+    } else if (closing) {
       shell.classList.remove('revealed');
       _snapshotSummaryReveal.delete(shell.dataset.summaryId);
     } else {
@@ -12050,7 +12152,7 @@ function renderParentHome() {
     const laterCount = myChores.filter(c=>choreStatus(c,kid.id)==='unavailable').length;
     const side      = idx % 2 === 0 ? 'left' : 'right';
     const summaryStatuses = myChores.length === 0
-      ? '<span class="snapshot-summary-status-empty">No rhythms assigned yet</span>'
+      ? '<span class="snapshot-summary-status-empty">No tasks assigned yet</span>'
       : [
           `<span class="snapshot-summary-status"><strong>${doneCount}/${myChores.length}</strong> Complete</span>`,
           ...(partialCount > 0 ? [`<span class="snapshot-summary-status"><strong>${partialCount}</strong> In Motion</span>`] : []),
@@ -12061,7 +12163,7 @@ function renderParentHome() {
     const summaryId = `summary_${kid.id}`;
     const savingsDisplay = fmtCurrencyVisual(kid.savings || 0, D.settings.currency || '$');
     kidsHtml += `
-      <div class="snapshot-summary-shell ${_snapshotSummaryReveal.has(summaryId) ? 'revealed' : ''}" data-summary-id="${summaryId}">
+      <div class="snapshot-summary-shell ${_snapshotSummaryReveal.has(summaryId) ? 'revealed' : ''}" data-summary-id="${summaryId}" data-side="${side}">
         <div class="snapshot-summary-reveal ${isHereToday ? 'here' : 'away'}">
           <div class="snapshot-summary-toggle-row">
             <button class="snapshot-summary-toggle-btn home ${isHereToday ? 'active' : ''}" type="button" onpointerdown="return handleOverviewTodayStatusAction(event,'${kid.id}', true)" onclick="return false;">
@@ -12082,7 +12184,7 @@ function renderParentHome() {
             <span class="snapshot-summary-chip"><strong>${kid.diamonds||0}</strong><small>Gems</small></span>
             ${D.settings.savingsEnabled!==false?`<span class="snapshot-summary-chip"><strong>${savingsDisplay}</strong><small>Savings</small></span>`:''}
           </div>
-          <div class="snapshot-summary-swipe-note"><i class="ph-duotone ph-caret-double-down"></i></div>
+          <div class="snapshot-summary-swipe-note"><i class="ph-duotone ph-caret-double-right"></i></div>
         </button>
       </div>`;
   });
@@ -13201,7 +13303,7 @@ function renderParentLevels() {
       <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
     </div>
     <div class="card">
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.streakEnabled!==false?'14px':'0'}">Bonus gems when a kid completes all the tasks in their rhythm every day in a row.</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.streakEnabled!==false?'14px':'0'}">Bonus gems when a kid completes at least one task in their rhythm every day in a row.</p>
       ${s.streakEnabled!==false ? `<div style="display:flex;flex-direction:column;gap:8px">
         ${[['3-day streak','streakBonus3',1],['7-day streak','streakBonus7',3],['14-day streak','streakBonus14',5],['30-day streak','streakBonus30',10]].map(([label,key,def]) => `
           <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#FAFAFA;border-radius:10px;border:1px solid #E5E7EB">
@@ -13274,7 +13376,7 @@ function renderParentLevels() {
       <label class="toggle"><input type="checkbox" ${s.choreBadgesEnabled!==false?'checked':''} onchange="saveSetting('choreBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
     </div>
     <div class="card">
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.choreBadgesEnabled!==false?'14px':'0'}">Per-chore milestone badges. Kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye" style="color:#9ca3af;vertical-align:middle"></i> to make a badge secret so it won't appear at all until earned, making it a surprise to discover.</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.choreBadgesEnabled!==false?'14px':'0'}">Per-task milestone badges. Kids earn these by completing a task a set number of times. Use <i class="ph-duotone ph-eye" style="color:#9ca3af;vertical-align:middle"></i> to make a badge secret so it won't appear at all until earned, making it a surprise to discover.</p>
       ${s.choreBadgesEnabled!==false ? choreBadgeCards : ''}
     </div>`;
 
@@ -14849,9 +14951,9 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 45%,#f4efe4 45%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
-    <div style="width:min(calc(100% - 40px),780px);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
       <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.5rem;font-weight:900;letter-spacing:-0.01em">${title}</div>
       <div style="color:#4f675d;font-size:0.98rem;max-width:300px;line-height:1.5;margin:8px auto 0">${message}</div>
@@ -14897,10 +14999,10 @@ function showParentSignIn(memberId, onSuccess) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
-  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 45%,#f4efe4 45%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
   const member = getMember(memberId);
   el.innerHTML = `
-    <div style="width:min(calc(100% - 40px),780px);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
     <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin:0 auto 14px;display:block">
     <div style="color:#24453c;font-size:1.6rem;font-weight:900;margin-bottom:6px;text-align:center">Welcome back!</div>
     <div style="color:#4f675d;font-size:0.95rem;margin-bottom:20px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
@@ -14977,12 +15079,12 @@ function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-right:20px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);padding-left:20px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-right:20px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);padding-left:20px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 45%,#f4efe4 45%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
-    <div style="width:min(calc(100% - 40px),780px);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
       <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
       <div class="loading-text" style="margin-top:6px;color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:2px">
@@ -15137,7 +15239,7 @@ document.addEventListener('visibilitychange', () => {
       _refreshFamilyFromServerAndRender();
     }
   }
-  if (S.currentUser?.role === 'kid') {
+  if (S.currentUser?.role === 'kid' && !isParentSignedIn()) {
     const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
     checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
     clearPendingSnapshot(S.currentUser.id);
@@ -15160,6 +15262,359 @@ document.addEventListener('visibilitychange', () => {
 });
 
 console.log('GemSprout fully loaded!');
+
+// ─── Badge Trading Card Modal ─────────────────────────────────────────────────
+
+let _badgeCardGyroCleanup = null;
+
+function openBadgeCard(badgeId, type, choreTitle, choreCount) {
+  // Resolve badge definition
+  let icon, name, earnDesc;
+  if (type === 'chore') {
+    // Find the chore badge definition
+    let found = null;
+    for (const chore of (D.chores || [])) {
+      found = (chore.badges || []).find(b => b.id === badgeId);
+      if (found) break;
+    }
+    icon     = found?.icon || '<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>';
+    name     = found?.name || 'Badge';
+    const ct = choreTitle || '';
+    const cc = choreCount || found?.count || 0;
+    earnDesc = ct && cc ? `${ct} ${cc} time${cc !== 1 ? 's' : ''}` : (ct ? ct : 'Chore milestone');
+  } else {
+    const def = getBaseBadgeDef(badgeId);
+    icon     = def?.icon || '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>';
+    name     = def?.name || 'Badge';
+    earnDesc = def?.desc || 'Special achievement';
+  }
+
+  // TTS for tiny mode
+  const tiny = isTiny(S.currentUser);
+  if (tiny) speak(`${name}. ${earnDesc}.`);
+
+  // Extract hex color from icon string (e.g. color:#F97316) to tint the card
+  const accentMatch = icon.match(/color:(#[0-9a-fA-F]{3,6})/);
+  const accent = accentMatch ? accentMatch[1] : '#7C3AED';
+
+  // Look up when this badge was earned from history
+  const memberId = S.currentUser?.id;
+  const memberName = S.currentUser?.name || '';
+  const badgeKey = type === 'chore' ? `cb_${badgeId}` : badgeId;
+  const earnedEntry = (D.history || []).find(h => {
+    if (h.type !== 'badge' || h.memberId !== memberId) return false;
+    if (type === 'chore') {
+      // Chore badge entries store badge.name as title and chore.title as choreTitle
+      return h.title === name && (h.choreTitle === choreTitle || !h.choreTitle);
+    }
+    return h.title === name;
+  });
+  const earnedDateStr = (() => {
+    if (!earnedEntry?.date) return null;
+    const [y, m, d] = earnedEntry.date.split('-').map(Number);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const suffix = d === 1 || d === 21 || d === 31 ? 'st'
+                 : d === 2 || d === 22             ? 'nd'
+                 : d === 3 || d === 23             ? 'rd' : 'th';
+    return `${months[m - 1]} ${d}${suffix}, ${y}`;
+  })();
+
+  // Render into a dedicated root that has NO backdrop-filter ancestor.
+  // backdrop-filter on any ancestor flattens all 3D transforms in its subtree,
+  // which is why the card can't tilt inside the normal modal stack.
+  const cardId = 'badge-trading-card';
+  let root = document.getElementById('badge-card-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'badge-card-root';
+    document.body.appendChild(root);
+  }
+  root.innerHTML = `
+    <div class="badge-card-backdrop" id="badge-card-backdrop"></div>
+    <div class="badge-card-scene">
+      <div class="badge-card" id="${cardId}" style="--card-accent:${accent}">
+        <div class="badge-card-shine"></div>
+        <div class="badge-card-glare"></div>
+        <div class="badge-card-content">
+          <div class="badge-card-stars">
+            <i class="ph-duotone ph-star" style="color:#FDE68A;opacity:0.6"></i>
+            <i class="ph-duotone ph-star" style="color:#FDE68A;opacity:0.9"></i>
+            <i class="ph-duotone ph-star" style="color:#FDE68A;opacity:0.6"></i>
+          </div>
+          <div class="badge-card-header">
+            <div class="badge-card-name">${esc(name)}</div>
+            <div class="badge-card-earn">${esc(earnDesc)}</div>
+          </div>
+          <div class="badge-card-icon-wrap">
+            <div class="badge-card-icon">${icon}</div>
+          </div>
+          <div class="badge-card-earned-by">
+            ${earnedDateStr
+              ? `Earned by ${esc(memberName)} on ${earnedDateStr}`
+              : `Earned by ${esc(memberName)}`}
+          </div>
+          <div class="badge-card-footer">GemSprout</div>
+        </div>
+      </div>
+    </div>
+    <div class="badge-card-close-hint">Tap anywhere outside to close</div>`;
+  root.style.display = 'flex';
+
+  document.getElementById('badge-card-backdrop').addEventListener('click', closeBadgeCard);
+
+  // Start gyro / touch tilt after card is in DOM
+  requestAnimationFrame(() => {
+    _initBadgeCardTilt(cardId);
+    _injectBadgeIconTile(cardId, accent);
+  });
+}
+
+function closeBadgeCard() {
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+  const root = document.getElementById('badge-card-root');
+  if (root) root.style.display = 'none';
+}
+
+function _injectBadgeIconTile(cardId, accent) {
+  // Wait for fonts so the Phosphor glyph is available to canvas
+  (document.fonts?.ready || Promise.resolve()).then(() => _doInjectBadgeIconTile(cardId, accent));
+}
+
+function _doInjectBadgeIconTile(cardId, accent) {
+  const card  = document.getElementById(cardId);
+  const shine = card?.querySelector('.badge-card-shine');
+  const iEl   = card?.querySelector('.badge-card-icon i');
+  if (!shine || !iEl) return;
+
+  // Phosphor-Duotone uses two pseudo-elements:
+  //   ::before — secondary/light path, opacity 0.2
+  //   ::after  — primary/stroke path, full opacity
+  // Both use the same font-family. Drawing only ::before gives a silhouette.
+  // We draw both layers to get the full duotone detail.
+  const beforeStyle = getComputedStyle(iEl, '::before');
+  const afterStyle  = getComputedStyle(iEl, '::after');
+  const glyphBefore = beforeStyle.content.replace(/["']/g, '');
+  const glyphAfter  = afterStyle.content.replace(/["']/g, '');
+  const fontFamily  = '"Phosphor-Duotone"';
+  // Mix accent 65% toward white so the tile is always lighter than the dark
+  // card background regardless of hue — purple card gets a light lavender tile,
+  // orange gets a light peach, etc. Stays recognizably the same palette.
+  const _ah = (accent || '#7C3AED').replace('#','');
+  const _ar = parseInt(_ah.slice(0,2), 16);
+  const _ag = parseInt(_ah.slice(2,4), 16);
+  const _ab = parseInt(_ah.slice(4,6), 16);
+  const _mix = (c) => Math.round(c + (255 - c) * 0.40);
+  const color = `rgb(${_mix(_ar)},${_mix(_ag)},${_mix(_ab)})`;
+
+  // Tile layout: staggered brick pattern.
+  // Each cell is tileSize × tileSize. The canvas is 2×1 cells wide so
+  // we can offset every other row by half a tile, making a brick grid.
+  // background-size will be set to 2*tileSize × tileSize and
+  // background-position centers it on the card.
+  const tileSize  = 42;
+  const glyphSize = Math.round(tileSize * 0.54);
+
+  // Repeating brick unit: 2×2 tile canvas.
+  // Icons sit at the center of each quadrant, diagonally offset:
+  //   top-left  quadrant → (0.5, 0.5) × tileSize
+  //   bot-right quadrant → (1.5, 1.5) × tileSize
+  // When tiled, this produces a clean staggered grid with no clipped edges.
+  const canvas = document.createElement('canvas');
+  canvas.width  = tileSize * 2;
+  canvas.height = tileSize * 2;
+  const ctx = canvas.getContext('2d');
+
+  ctx.font         = `${glyphSize}px ${fontFamily}`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  const positions = [
+    { x: tileSize * 0.5, y: tileSize * 0.5 },
+    { x: tileSize * 1.5, y: tileSize * 1.5 },
+  ];
+
+  for (const { x, y } of positions) {
+    // ::before layer — secondary path at 20% opacity (matches Phosphor spec)
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle   = color;
+    ctx.fillText(glyphBefore, x, y);
+
+    // ::after layer — primary path at full opacity on top
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle   = color;
+    ctx.fillText(glyphAfter, x, y);
+  }
+
+  const dataUrl = canvas.toDataURL('image/png');
+
+  const tileDiv = document.createElement('div');
+  tileDiv.className = 'badge-card-icon-tile';
+  tileDiv.style.backgroundImage = `url("${dataUrl}")`;
+  // background-size matches the canvas dimensions for a 1:1 pixel render
+  tileDiv.style.backgroundSize = `${tileSize * 2}px ${tileSize * 2}px`;
+  card.insertBefore(tileDiv, shine);
+}
+
+function _initBadgeCardTilt(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+
+  // Clean up any previous listener
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+
+  const MAX_TILT = 18; // degrees
+
+  const shine = card.querySelector('.badge-card-shine');
+  const glare = card.querySelector('.badge-card-glare');
+  const tile  = card.querySelector('.badge-card-icon-tile');
+
+  function applyTilt(rx, ry, isResting) {
+    const scale = isResting ? 1 : 1.03;
+    card.style.transform = `rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) scale(${scale})`;
+
+    // Shadow shifts with tilt
+    const sx = (-ry * 1.2).toFixed(1);
+    const sy = (rx * 1.2 + 28).toFixed(1);
+    card.style.boxShadow = [
+      `0 0 0 1px color-mix(in srgb, var(--card-accent, #7C3AED) 35%, transparent)`,
+      `${sx}px ${sy}px 60px rgba(0,0,0,0.6)`,
+      `0 6px 24px color-mix(in srgb, var(--card-accent, #7C3AED) 30%, transparent)`
+    ].join(', ');
+
+    // Normalize tilt to 0-100% range.
+    // Reflection moves OPPOSITE to tilt: top-left tilts away → sheen moves to bottom-right.
+    // ry positive = right side toward viewer → pointer moves LEFT (lower %)
+    // rx positive = top toward viewer → pointer moves DOWN (higher %)
+    const px = 50 - (ry / MAX_TILT) * 40; // 10%–90%
+    const py = 50 + (rx / MAX_TILT) * 40;
+
+    // background-x/y: parallax-amplified version used for gradient panning
+    const bx = 50 - (ry / MAX_TILT) * 50;
+    const by = 50 + (rx / MAX_TILT) * 50;
+
+    // pointer-from-center: 0 at rest, ~1 at full tilt
+    const dist = Math.min(1, Math.sqrt((ry / MAX_TILT) ** 2 + (rx / MAX_TILT) ** 2));
+
+    const el = shine || card;
+    el.style.setProperty('--pointer-x',          `${px.toFixed(1)}%`);
+    el.style.setProperty('--pointer-y',          `${py.toFixed(1)}%`);
+    el.style.setProperty('--background-x',       `${bx.toFixed(1)}%`);
+    el.style.setProperty('--background-y',       `${by.toFixed(1)}%`);
+    el.style.setProperty('--pointer-from-center', dist.toFixed(3));
+
+    if (glare) {
+      glare.style.setProperty('--pointer-x', `${px.toFixed(1)}%`);
+      glare.style.setProperty('--pointer-y', `${py.toFixed(1)}%`);
+      glare.style.setProperty('--pointer-from-center', dist.toFixed(3));
+    }
+
+    // Tile parallax — slow drift so icons feel embedded in the card surface
+    if (tile) {
+      tile.style.setProperty('--background-x', `${bx.toFixed(1)}%`);
+      tile.style.setProperty('--background-y', `${by.toFixed(1)}%`);
+    }
+  }
+
+  // ── Gyroscope ──────────────────────────────────────────────────────────────
+  let gyroActive = false;
+  let baseGamma = null, baseBeta = null;
+
+  function onDeviceOrientation(e) {
+    if (e.gamma == null) return;
+    if (baseGamma === null) { baseGamma = e.gamma; baseBeta = e.beta; }
+    const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 0.9));
+    const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 0.9));
+    applyTilt(rx, ry);
+  }
+
+  function startGyro() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', onDeviceOrientation);
+            gyroActive = true;
+          }
+        })
+        .catch(() => {});
+    } else if (typeof DeviceOrientationEvent !== 'undefined') {
+      // Android / non-gated browser
+      window.addEventListener('deviceorientation', onDeviceOrientation);
+      gyroActive = true;
+    }
+  }
+  startGyro();
+
+  // ── Touch drag tilt ────────────────────────────────────────────────────────
+  let touchStartX = null, touchStartY = null;
+
+  function onTouchStart(e) {
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    card.style.transition = 'none';
+  }
+
+  function onTouchMove(e) {
+    if (touchStartX === null) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, dx * 0.25));
+    const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, dy * 0.25));
+    applyTilt(rx, ry);
+  }
+
+  function onTouchEnd() {
+    touchStartX = null; touchStartY = null;
+    card.style.transition = 'transform 0.6s cubic-bezier(.2,.8,.2,1)';
+    applyTilt(0, 0, true);
+  }
+
+  card.addEventListener('touchstart', onTouchStart, { passive: true });
+  card.addEventListener('touchmove',  onTouchMove,  { passive: false });
+  card.addEventListener('touchend',   onTouchEnd);
+
+  // ── Mouse tilt (desktop / live-server testing) ─────────────────────────────
+  function onMouseMove(e) {
+    const rect = card.getBoundingClientRect();
+    // Map cursor position within the card to [-1, 1]
+    const nx = (e.clientX - rect.left)  / rect.width  * 2 - 1;
+    const ny = (e.clientY - rect.top)   / rect.height * 2 - 1;
+    const ry =  nx * MAX_TILT;
+    const rx = -ny * MAX_TILT;
+    card.style.transition = 'none';
+    applyTilt(rx, ry);
+  }
+
+  function onMouseLeave() {
+    card.style.transition = 'transform 0.6s cubic-bezier(.2,.8,.2,1)';
+    applyTilt(0, 0, true);
+  }
+
+  card.addEventListener('mousemove',  onMouseMove);
+  card.addEventListener('mouseleave', onMouseLeave);
+
+  _badgeCardGyroCleanup = () => {
+    if (gyroActive) window.removeEventListener('deviceorientation', onDeviceOrientation);
+    card.removeEventListener('touchstart', onTouchStart);
+    card.removeEventListener('touchmove',  onTouchMove);
+    card.removeEventListener('touchend',   onTouchEnd);
+    card.removeEventListener('mousemove',  onMouseMove);
+    card.removeEventListener('mouseleave', onMouseLeave);
+  };
+}
+
+// Patch closeModal to clean up gyro listener
+const _origCloseModal = closeModal;
+closeModal = function() {
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+  _origCloseModal.apply(this, arguments);
+};
+
+
+
 
 
 
