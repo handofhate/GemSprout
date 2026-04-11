@@ -93,7 +93,7 @@
       background: #f4efe4;
       display: flex;
       justify-content: center;
-      padding: clamp(8px, 1.6vh, 16px) clamp(16px, 4vw, 24px) calc(env(safe-area-inset-bottom, 0px) + clamp(12px, 2.2vh, 22px));
+      padding: clamp(8px, 1.6vh, 16px) 0 calc(env(safe-area-inset-bottom, 0px) + clamp(12px, 2.2vh, 22px));
     }
     .home-top-inner,
     .home-bottom-inner {
@@ -245,7 +245,7 @@
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
-      padding-bottom: 4px;
+      padding: 2px 0 4px;
       box-shadow: none;
     }
     .home-footer {
@@ -282,6 +282,8 @@
       width: 100%;
       max-width: min(100%, 760px);
       margin: 0 auto;
+      padding: 0 clamp(16px, 4vw, 24px);
+      box-sizing: border-box;
     }
     @media (min-width: 600px) {
       .profile-grid { grid-template-columns: repeat(auto-fit, minmax(156px, 1fr)); }
