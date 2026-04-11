@@ -291,8 +291,8 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   return `
   <div style="height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden">
     <div style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 100%)">
-      <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
-        <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+      <div style="position:relative;text-align:center;padding:36px 24px 20px">
+        <button onclick="renderHome()" style="position:absolute;top:8px;left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
         <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
         <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
         <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
@@ -337,7 +337,7 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
         </div>
       </div>
 
-      <div style="flex:0 0 auto;padding:12px 24px calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;justify-content:center;gap:20px;background:rgba(244,239,228,0.96);border-top:1px solid rgba(39,66,57,0.10)">
+      <div style="flex:0 0 auto;padding:12px 24px 12px;display:flex;justify-content:center;gap:20px;background:rgba(244,239,228,0.96);border-top:1px solid rgba(39,66,57,0.10)">
         <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
         <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
       </div>
@@ -1632,7 +1632,7 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-measure-host { position:absolute; inset:0; pointer-events:none; visibility:hidden; z-index:-1; overflow:hidden; }
       .wr-measure-slide { position:absolute; inset:0; display:flex; align-items:center; }
       .wr-measure-host .wr-card { min-height:0 !important; height:auto !important; }
-      .wr-bottom-note { position:absolute; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom, 0px) + 8px); text-align:center; color:rgba(255,255,255,0.78); font-size:0.84rem; font-weight:700; }
+      .wr-bottom-note { position:absolute; left:16px; right:16px; bottom:8px; text-align:center; color:rgba(255,255,255,0.78); font-size:0.84rem; font-weight:700; }
       @media (max-width: 640px) {
         .wr-reveal-from-bottom { --wr-from-y: calc(100dvh + 96px); }
         .wr-reveal-from-bottom-card { --wr-from-y: calc(100dvh + 120px); }
@@ -1673,7 +1673,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-kid-list-compact .wr-kid-badge-name { font-size: 0.62rem; }
         .wr-cover-chip-row { gap: 6px; }
         .wr-cover-chip { width: 104px; min-width: 104px; padding: 8px 6px; font-size: 0.65rem; gap: 4px; }
-        .wr-bottom-note { left: 18px; right: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); font-size: 0.76rem; }
+        .wr-bottom-note { left: 18px; right: 18px; bottom: 6px; font-size: 0.76rem; }
       }
       @media (max-width: 420px) and (max-height: 760px) {
         .wr-shell { padding: env(safe-area-inset-top,20px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); }
@@ -1712,7 +1712,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-finale-icon i { transform: translateY(-14px); }
         .wr-finale-message { font-size: clamp(1.8rem, 8.6vw, 2.6rem); }
         .wr-finale .wr-card-sub { margin-top: 8px; font-size: 0.9rem; line-height: 1.28; }
-        .wr-bottom-note { font-size: 0.68rem; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+        .wr-bottom-note { font-size: 0.68rem; left: 12px; right: 12px; bottom: 4px; }
       }
     </style>
     <div class="wr-shell">
@@ -14851,7 +14851,7 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   el.className = 'screen active loading';
   el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
-    <div style="width:min(360px,calc(100vw - 44px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <div style="width:min(calc(100% - 40px),780px);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
       <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.5rem;font-weight:900;letter-spacing:-0.01em">${title}</div>
       <div style="color:#4f675d;font-size:0.98rem;max-width:300px;line-height:1.5;margin:8px auto 0">${message}</div>
@@ -14900,7 +14900,7 @@ function showParentSignIn(memberId, onSuccess) {
   el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
   const member = getMember(memberId);
   el.innerHTML = `
-    <div style="width:min(420px,calc(100vw - 28px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <div style="width:min(calc(100% - 40px),780px);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
     <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin:0 auto 14px;display:block">
     <div style="color:#24453c;font-size:1.6rem;font-weight:900;margin-bottom:6px;text-align:center">Welcome back!</div>
     <div style="color:#4f675d;font-size:0.95rem;margin-bottom:20px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
@@ -14982,14 +14982,14 @@ function showLoading() {
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
-    <div style="width:min(320px,calc(100vw - 48px));background:rgba(255,252,246,0.88);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24);backdrop-filter:blur(4px)">
+    <div style="width:min(calc(100% - 40px),780px);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
       <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
-      <div style="margin-top:5px;color:#5d7368;font-size:0.9rem;font-weight:700;letter-spacing:0.01em;text-transform:uppercase">Family rhythms and rewards</div>
+      <div class="loading-text" style="margin-top:6px;color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:2px">
+        Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
+      </div>
     </div>
-    <div class="loading-text" style="color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;gap:2px">
-      Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
-    </div>`;
+    `;
 }
 
 function routeAfterLoad() {

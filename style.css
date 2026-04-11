@@ -60,6 +60,7 @@
     ══════════════════════════════════════════ */
     #screen-home {
       background: #f4efe4;
+      height: 100dvh;
       align-items: center;
       justify-content: flex-start;
       overflow-x: hidden;
@@ -73,6 +74,7 @@
       min-height: 0;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
     .home-top {
       width: 100%;
@@ -82,7 +84,7 @@
         linear-gradient(180deg, #22443c 0%, #365e4f 100%);
       display: flex;
       justify-content: center;
-      padding: calc(env(safe-area-inset-top, 0px) + clamp(18px, 3.4vh, 30px)) clamp(16px, 4vw, 24px) clamp(28px, 4.6vh, 40px);
+      padding: calc(env(safe-area-inset-top, 0px) + clamp(18px, 3.4vh, 30px)) clamp(16px, 4vw, 24px) clamp(36px, 5.8vh, 52px);
     }
     .home-bottom {
       width: 100%;
@@ -234,6 +236,7 @@
       justify-content: flex-start;
       overflow: hidden;
       width: 100%;
+      box-shadow: none;
     }
     .home-member-list {
       width: 100%;
@@ -243,13 +246,14 @@
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
       padding-bottom: 4px;
+      box-shadow: none;
     }
     .home-footer {
       width: 100%;
       flex: 0 0 auto;
       display: flex;
       justify-content: center;
-      padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
+      padding: 10px 0 12px;
       border-top: 1px solid rgba(39, 50, 41, 0.10);
       background: rgba(244, 239, 228, 0.96);
     }
@@ -285,7 +289,7 @@
     .profile-card {
       background: linear-gradient(180deg, rgba(255,253,248,0.98), rgba(246,240,229,0.98));
       border-radius: 24px;
-      padding: clamp(14px, 2vw, 16px) clamp(12px, 2vw, 14px);
+      padding: clamp(18px, 2.8vw, 22px) clamp(12px, 2vw, 14px) clamp(14px, 2vw, 16px);
       aspect-ratio: 1 / 0.9;
       min-height: 148px;
       display: flex;
@@ -1430,7 +1434,7 @@
     .kid-shop-prize-card.can-afford .kid-shop-prize-note {
       position: absolute;
       right: -37px;
-      bottom: 10px;
+     
       min-width: 104px;
       padding: 3px 0;
       text-align: center;
@@ -2839,7 +2843,7 @@
       justify-content: center;
       box-sizing: border-box;
       overflow: hidden;
-      padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+      padding: 0;
       background: linear-gradient(180deg, #365e4f 0%, #365e4f 50%, #f4efe4 50%, #f4efe4 100%);
     }
     .setup-gate-stage {
@@ -3321,22 +3325,7 @@
 
     /* ══════════════════════════════════════════
        SYNC STATUS
-    ══════════════════════════════════════════ */
-    .sync-bar.error {
-      background: #FEE2E2;
-      color: #DC2626;
-      font-size: 0.78rem;
-      font-weight: 700;
-      padding: calc(env(safe-area-inset-top, 0px) + 6px) 16px 6px;
-      text-align: center;
-    }
-    /* When sync bar is visible it absorbs the safe-area-inset, so header doesn't double it */
-    #parent-sync-bar.error ~ #parent-header,
-    #kid-sync-bar.error ~ #kid-header {
-      padding-top: 14px;
-    }
-
-    /* ══════════════════════════════════════════
+    ══════════════════════════════════════════ */`r`n/* ══════════════════════════════════════════
        ICON PICKER (Phosphor duotone, for chores/prizes)
     ══════════════════════════════════════════ */
     .icon-picker {
@@ -3805,7 +3794,7 @@
       position: absolute;
       left: 4px;
       top: 10px;
-      bottom: 10px;
+     
       width: 12px;
       display: flex;
       align-items: center;
@@ -4269,7 +4258,7 @@
     @media (min-width: 768px) {
       .main-content { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
       .app-header   { padding-left: max(24px, calc((100% - 1080px) / 2)); padding-right: max(24px, calc((100% - 1080px) / 2)); }
-      .nav-bar      { max-width: 900px; left: 50%; right: auto; bottom: 10px; width: calc(100% - 24px); transform: translateX(-50%); border-radius: 24px; }
+      .nav-bar      { max-width: 900px; left: 50%; right: auto; width: calc(100% - 24px); transform: translateX(-50%); border-radius: 24px; }
       .prize-grid   { grid-template-columns: repeat(3, 1fr); }
       .stats-grid   { grid-template-columns: repeat(4, 1fr); }
       .pin-grid     { width: min(100%, 360px); }
@@ -5924,3 +5913,4 @@
         height: 76px;
       }
     }
+
