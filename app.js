@@ -289,31 +289,34 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const mCard = cardBase + `border:2px solid ${mSel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${mSel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   const yCard = cardBase + `border:2px solid ${ySel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${ySel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   return `
-  <div style="height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;background:#f4efe4">
-    <div style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 100%)">
-      <div style="position:relative;text-align:center;padding:36px 24px 20px">
-        <button onclick="renderHome()" style="position:absolute;top:8px;left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
-        <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
-        <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
-        <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">An easy to use family system for rewards, savings, and shared goals</div>
-      </div>
+  <div class="paywall-shell">
+    <div class="paywall-top">
+      <div class="paywall-top-inner">
+        <div style="position:relative;text-align:center;padding:26px 0 20px">
+          <button onclick="renderHome()" style="position:absolute;top:8px;left:-8px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+          <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
+          <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
+          <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">An easy to use family system for rewards, savings, and shared goals</div>
+        </div>
 
-      <div style="padding:0 24px 18px;display:flex;flex-direction:column;gap:10px">
-        ${[
-          ['ph-check-circle','Configurable daily tasks with parent approvals and optional photo verification'],
-          ['ph-bell-ringing','Instant alerts when kids complete tasks or request actions'],
-          ['ph-piggy-bank',  'Rewards and savings with optional parent-matching and interest'],
-        ].map(([icon, text]) => `
-          <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
-            <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
-            <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
-          </div>`).join('')}
+        <div style="padding:0 0 18px;display:flex;flex-direction:column;gap:10px">
+          ${[
+            ['ph-check-circle','Configurable daily tasks with parent approvals and optional photo verification'],
+            ['ph-bell-ringing','Instant alerts when kids complete tasks or request actions'],
+            ['ph-piggy-bank',  'Rewards and savings with optional parent-matching and interest'],
+          ].map(([icon, text]) => `
+            <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
+              <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
+              <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
+            </div>`).join('')}
+        </div>
       </div>
     </div>
 
-    <div style="flex:1 1 auto;min-height:0;background:#f4efe4;display:flex;flex-direction:column;overflow:hidden">
-      <div style="flex:1 1 auto;min-height:0;overflow:auto;padding-bottom:12px">
-        <div style="padding:20px 24px 0;display:flex;gap:12px">
+    <div class="paywall-bottom">
+      <div class="paywall-bottom-inner">
+        <div class="paywall-bottom-scroll">
+          <div style="padding:20px 24px 0;display:flex;gap:12px">
           <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
             <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
             <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
@@ -335,11 +338,12 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
             Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
           </div>
         </div>
-      </div>
+        </div>
 
-      <div style="flex:0 0 auto;padding:12px 24px 12px;display:flex;justify-content:center;gap:20px;background:rgba(244,239,228,0.96);border-top:1px solid rgba(39,66,57,0.10)">
-        <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
-        <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+        <div class="paywall-footer">
+          <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
+          <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+        </div>
       </div>
     </div>
   </div>`;
@@ -3982,6 +3986,46 @@ function cleanActivityTitle(title = '') {
     .trim();
 }
 
+function numberToWordsInt(value) {
+  const n = Math.max(0, Math.floor(Number(value) || 0));
+  const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+  const under100 = (x) => {
+    if (x < 10) return ones[x];
+    if (x < 20) return teens[x - 10];
+    const t = Math.floor(x / 10);
+    const u = x % 10;
+    return u ? `${tens[t]} ${ones[u]}` : tens[t];
+  };
+
+  if (n < 100) return under100(n);
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const rest = n % 100;
+    return rest ? `${ones[h]} hundred ${under100(rest)}` : `${ones[h]} hundred`;
+  }
+  if (n < 1000000) {
+    const k = Math.floor(n / 1000);
+    const rest = n % 1000;
+    return rest ? `${numberToWordsInt(k)} thousand ${numberToWordsInt(rest)}` : `${numberToWordsInt(k)} thousand`;
+  }
+  return String(n).split('').map(d => ones[Number(d)]).join(' ');
+}
+
+function formatDollarsNaturally(amount) {
+  const centsTotal = Math.max(0, Math.round((Number(amount) || 0) * 100));
+  const dollars = Math.floor(centsTotal / 100);
+  const cents = centsTotal % 100;
+  if (dollars <= 0) {
+    return `${numberToWordsInt(cents)} cent${cents === 1 ? '' : 's'}`;
+  }
+  const dollarsPart = `${numberToWordsInt(dollars)} dollar${dollars === 1 ? '' : 's'}`;
+  if (cents <= 0) return dollarsPart;
+  return `${dollarsPart} and ${numberToWordsInt(cents)} cent${cents === 1 ? '' : 's'}`;
+}
+
 const HISTORY_UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
 const HISTORY_UNDO_MAX_DEPTH = 200;
 
@@ -4240,15 +4284,6 @@ function renderActivityRow(h, opts = {}) {
   const isUndoneVisual = !!(h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title));
   const cleanTitle = cleanActivityTitle(h.title || 'Activity');
   const tinyKidSelf = S.currentUser?.role === 'kid' && isTiny(S.currentUser) && S.currentUser?.id === h.memberId;
-  const formatDollarsNaturally = (value) => {
-    const centsTotal = Math.max(0, Math.round((Number(value) || 0) * 100));
-    const dollars = Math.floor(centsTotal / 100);
-    const cents = centsTotal % 100;
-    if (dollars <= 0) return `${cents} cent${cents === 1 ? '' : 's'}`;
-    const dollarPart = dollars === 1 ? 'one dollar' : `${dollars} dollars`;
-    if (cents <= 0) return dollarPart;
-    return `${dollarPart} and ${cents} cent${cents === 1 ? '' : 's'}`;
-  };
   let tinyTtsText = '';
   if (isUndoHistoryEntry(h?.title)) {
     tinyTtsText = `${cleanTitle}.`;
@@ -4259,7 +4294,9 @@ function renderActivityRow(h, opts = {}) {
   } else if (h.type === 'decline') {
     tinyTtsText = `${cleanTitle} was not approved.`;
   } else if (h.type === 'prize') {
-    tinyTtsText = `You got ${cleanTitle}! That cost you ${absDelta} gems.`;
+    tinyTtsText = absDelta === 0
+      ? `You got ${cleanTitle}!`
+      : `You got ${cleanTitle}! That cost you ${absDelta} gems.`;
   } else if (h.type === 'goal') {
     tinyTtsText = `You put ${absDelta} gems toward ${cleanTitle}!`;
   } else if (h.type === 'savings') {
@@ -4267,7 +4304,14 @@ function renderActivityRow(h, opts = {}) {
       ? `${cleanTitle}.`
       : delta !== 0
       ? `${cleanTitle}. ${delta > 0 ? 'You got' : 'You spent'} ${absDelta} gems.`
-      : `${cleanTitle}.`;
+      : (() => {
+          const moneyMatch = String(h.title || '').match(/\+?\s*\$([0-9]+(?:\.[0-9]+)?)/);
+          if (!moneyMatch) return `${cleanTitle}.`;
+          const naturalAmt = formatDollarsNaturally(parseFloat(moneyMatch[1]));
+          if (/match/i.test(cleanTitle)) return `Parent match added ${naturalAmt} to your savings.`;
+          if (/interest/i.test(cleanTitle)) return `Interest added ${naturalAmt} to your savings.`;
+          return `${naturalAmt} was added to your savings.`;
+        })();
   } else if (h.type === 'savings_deposit') {
     tinyTtsText = Number.isFinite(Number(h?.dollars)) && Number(h.dollars) > 0
       ? `You earned an extra ${formatDollarsNaturally(h.dollars)} from parent matched savings!`
@@ -4277,7 +4321,9 @@ function renderActivityRow(h, opts = {}) {
   } else if (h.type === 'bonus') {
     const isParentDefaultBonus = String(h.title || '').trim() === 'A special bonus from your parent!'
       || cleanTitle === 'A special bonus from your parent!';
-    tinyTtsText = /combo/i.test(String(h.title || ''))
+    tinyTtsText = (h.gems || 0) < 0
+      ? `You lost ${Math.abs(h.gems || 0)} gems for ${cleanTitle}.`
+      : /combo/i.test(String(h.title || ''))
       ? `Combo bonus! You earned ${h.gems || 0} gems!`
       : isParentDefaultBonus
         ? `Bonus! You earned ${h.gems || 0} gems!`
@@ -10035,6 +10081,7 @@ function showSavingsHistory(memberId, triggerEl = null, showSubheader = false) {
   const m = getMember(memberId);
   if (!m) return;
   const cur = D.settings.currency || '$';
+  const tiny = isTiny(m);
   const savTypes = new Set(['savings', 'savings_deposit', 'savings_withdraw']);
   const entries = (D.history || []).filter(h => h.memberId === memberId && savTypes.has(h.type));
 
@@ -10054,6 +10101,7 @@ function showSavingsHistory(memberId, triggerEl = null, showSubheader = false) {
         const isDeposit  = h.type === 'savings_deposit';
         const isWithdraw = h.type === 'savings_withdraw';
         const hasDollars = (h.dollars || 0) > 0;
+        const title = String(h.title || '').trim() || 'Savings update';
         const delta = hasDollars
           ? `${isWithdraw ? '-' : '+'}${cur}${h.dollars.toFixed(2)}`
           : h.diamonds !== 0
@@ -10061,7 +10109,33 @@ function showSavingsHistory(memberId, triggerEl = null, showSubheader = false) {
             : '';
         const deltaUnit = hasDollars ? '' : (h.diamonds !== 0 ? 'gems' : '');
         const deltaClass = hasDollars ? (isWithdraw ? 'negative' : 'positive') : (h.diamonds > 0 ? 'positive' : h.diamonds < 0 ? 'negative' : 'neutral');
-        return `<div class="activity-row">
+        let ttsText = `${title}.`;
+        if (h.type === 'savings_deposit') {
+          ttsText = hasDollars
+            ? `${title}. ${formatDollarsNaturally(h.dollars)} was added to your savings!`
+            : `${title}.`;
+        } else if (h.type === 'savings_withdraw') {
+          ttsText = hasDollars
+            ? `${title}. ${formatDollarsNaturally(h.dollars)} came out of your savings.`
+            : `${title}.`;
+        } else if (h.type === 'savings') {
+          ttsText = /converted/i.test(title)
+            ? `${title}.`
+            : h.diamonds !== 0
+            ? `${title}. You earned ${Math.abs(h.diamonds)} gems.`
+            : (() => {
+                const moneyMatch = String(h.title || '').match(/\+?\s*\$([0-9]+(?:\.[0-9]+)?)/);
+                if (!moneyMatch) return `${title}.`;
+                const naturalAmt = formatDollarsNaturally(parseFloat(moneyMatch[1]));
+                if (/match/i.test(title)) return `Parent match added ${naturalAmt} to your savings.`;
+                if (/interest/i.test(title)) return `Interest added ${naturalAmt} to your savings.`;
+                return `${naturalAmt} was added to your savings.`;
+              })();
+        }
+        const ttsAttr = tiny
+          ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"`
+          : '';
+        return `<div class="activity-row"${ttsAttr}>
           <span class="activity-badge" style="background:${isWithdraw ? '#ede9fe' : '#e8f5ee'};color:${isWithdraw ? '#6C63FF' : '#1f7a55'}">${savingsIcon(h)}</span>
           <div class="activity-body">
             <div class="activity-title">${esc(h.title||'')}</div>
@@ -15462,7 +15536,7 @@ function _initBadgeCardTilt(cardId) {
   // Clean up any previous listener
   if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
 
-  const MAX_TILT = 18; // degrees
+  const MAX_TILT = 25; // degrees — increased for more responsive gyro tilt
 
   const shine = card.querySelector('.badge-card-shine');
   const glare = card.querySelector('.badge-card-glare');
@@ -15518,13 +15592,40 @@ function _initBadgeCardTilt(cardId) {
   // ── Gyroscope ──────────────────────────────────────────────────────────────
   let gyroActive = false;
   let baseGamma = null, baseBeta = null;
+  let lastGyroRx = 0, lastGyroRy = 0;
+  let gyroIdleTimer = null;
+  let driftRafId = null;
+
+  // Gradually drift current gyro tilt back to 0 so touch input starts clean
+  function startGyroDrift() {
+    if (driftRafId) return;
+    function drift() {
+      lastGyroRx *= 0.88;
+      lastGyroRy *= 0.88;
+      applyTilt(lastGyroRx, lastGyroRy, Math.abs(lastGyroRx) < 0.3 && Math.abs(lastGyroRy) < 0.3);
+      if (Math.abs(lastGyroRx) > 0.1 || Math.abs(lastGyroRy) > 0.1) {
+        driftRafId = requestAnimationFrame(drift);
+      } else {
+        lastGyroRx = 0; lastGyroRy = 0;
+        driftRafId = null;
+      }
+    }
+    driftRafId = requestAnimationFrame(drift);
+  }
 
   function onDeviceOrientation(e) {
     if (e.gamma == null) return;
     if (baseGamma === null) { baseGamma = e.gamma; baseBeta = e.beta; }
-    const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 0.9));
-    const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 0.9));
+    // Cancel any ongoing drift when gyro is actively providing input
+    if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
+    // Increased multiplier (1.5 vs 0.9) for more responsive tilt
+    const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 1.5));
+    const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 1.5));
+    lastGyroRx = rx; lastGyroRy = ry;
     applyTilt(rx, ry);
+    // Start drift timer — if no gyro event for 800ms, drift back to center
+    clearTimeout(gyroIdleTimer);
+    gyroIdleTimer = setTimeout(startGyroDrift, 800);
   }
 
   function startGyro() {
@@ -15598,6 +15699,8 @@ function _initBadgeCardTilt(cardId) {
 
   _badgeCardGyroCleanup = () => {
     if (gyroActive) window.removeEventListener('deviceorientation', onDeviceOrientation);
+    clearTimeout(gyroIdleTimer);
+    if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
     card.removeEventListener('touchstart', onTouchStart);
     card.removeEventListener('touchmove',  onTouchMove);
     card.removeEventListener('touchend',   onTouchEnd);
