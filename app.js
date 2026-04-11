@@ -289,53 +289,58 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const mCard = cardBase + `border:2px solid ${mSel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${mSel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   const yCard = cardBase + `border:2px solid ${ySel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${ySel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   return `
-  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 58%,#e9ddc8 58%,#f4efe4 100%);overflow:auto">
-    <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
-      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
-      <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
-      <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
-      <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
-    </div>
-
-    <div style="padding:0 24px;display:flex;flex-direction:column;gap:10px">
-      ${[
-        ['ph-check-circle','Daily rhythms with flexible parent approval and photo proof'],
-        ['ph-bell-ringing','Push notifications when kids complete tasks'],
-        ['ph-piggy-bank',  'Savings, matching, interest, and spend requests in one place'],
-        ['ph-users',       'Built for modern families, including split-household rhythms'],
-      ].map(([icon, text]) => `
-        <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
-          <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
-          <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
-        </div>`).join('')}
-    </div>
-
-    <div style="padding:20px 24px 0;display:flex;gap:12px">
-      <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
-        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
-        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
-        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per month</div>
+  <div style="height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden">
+    <div style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 100%)">
+      <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
+        <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+        <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
+        <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
+        <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
       </div>
-      <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
-        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
-        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
-        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${yPrice}</div>
-        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per year</div>
+
+      <div style="padding:0 24px 18px;display:flex;flex-direction:column;gap:10px">
+        ${[
+          ['ph-check-circle','Daily routines with parent approvals and optional photo proof'],
+          ['ph-bell-ringing','Instant alerts when kids complete tasks or request spending'],
+          ['ph-piggy-bank',  'Gems, savings, matching, and interest in one family system'],
+        ].map(([icon, text]) => `
+          <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
+            <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
+            <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
+          </div>`).join('')}
       </div>
     </div>
 
-    <div style="padding:20px 24px 0">
-      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
-        Start ${trialDays}-Day Free Trial
-      </button>
-      <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
-        Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
-      </div>
-    </div>
+    <div style="flex:1 1 auto;min-height:0;background:#f4efe4;display:flex;flex-direction:column;overflow:hidden">
+      <div style="flex:1 1 auto;min-height:0;overflow:auto;padding-bottom:12px">
+        <div style="padding:20px 24px 0;display:flex;gap:12px">
+          <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
+            <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
+            <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
+            <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per month</div>
+          </div>
+          <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
+            <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
+            <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
+            <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${yPrice}</div>
+            <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per year</div>
+          </div>
+        </div>
 
-    <div style="margin-top:auto;padding:20px 24px 36px;display:flex;justify-content:center;gap:20px">
-      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
-      <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+        <div style="padding:20px 24px 0">
+          <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
+            Start ${trialDays}-Day Free Trial
+          </button>
+          <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
+            Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:0 0 auto;padding:12px 24px calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;justify-content:center;gap:20px;background:rgba(244,239,228,0.96);border-top:1px solid rgba(39,66,57,0.10)">
+        <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
+        <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+      </div>
     </div>
   </div>`;
 }
@@ -994,9 +999,7 @@ function _devPreviewMaintenanceScreen() {
   closeSettings();
   showMaintenanceScreen(
     'Scheduled Maintenance',
-    'Preview mode for the maintenance experience shown when Remote Config enables downtime.',
-    'Open Status Page',
-    'https://gemsprout.com'
+    'Preview mode for the maintenance experience shown when Remote Config enables downtime.'
   );
 }
 
@@ -1010,6 +1013,11 @@ function _devPreviewParentSignInScreen() {
   }
   closeSettings();
   showParentSignIn(parent.id, () => {});
+}
+
+function _devPreviewLoadingScreen() {
+  closeSettings();
+  showLoading();
 }
 
 function _weekReviewStopAudio() {
@@ -1036,10 +1044,7 @@ function _renderWeekReviewStory() {
   return `
     <style>
       #week-review-overlay {
-        background:
-          radial-gradient(circle at top left, rgba(232,199,106,0.16), transparent 24%),
-          radial-gradient(circle at top right, rgba(95,143,99,0.14), transparent 26%),
-          linear-gradient(180deg, #26443d 0%, #355d4f 34%, #e9ddc8 34%, #f4efe4 100%);
+        background: linear-gradient(180deg, #365e4f 0%, #365e4f 50%, #f4efe4 50%, #f4efe4 100%);
         color: #273229;
         font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
         touch-action: manipulation;
@@ -1518,10 +1523,7 @@ function _weekReviewHTML(slides, currentIndex) {
   return `
     <style>
       #week-review-overlay {
-        background:
-          radial-gradient(circle at top left, rgba(232,199,106,0.16), transparent 24%),
-          radial-gradient(circle at top right, rgba(95,143,99,0.14), transparent 26%),
-          linear-gradient(180deg, #26443d 0%, #355d4f 34%, #e9ddc8 34%, #f4efe4 100%);
+        background: linear-gradient(180deg, #365e4f 0%, #365e4f 50%, #f4efe4 50%, #f4efe4 100%);
         color: #273229;
         font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
         touch-action: manipulation;
@@ -6705,9 +6707,9 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           </div>
           <div style="font-size:0.8rem;color:#4f675d;margin-top:6px;padding:0">
             <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px;flex-shrink:0"></i>${ip === 'weekly'
-              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>.`
-              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>.`}
-            <div style="margin-left:20px">Unclaimed interest expires at midnight.</div>
+              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>`
+              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>`}
+            <div style="margin-left:20px">Unclaimed interest expires at midnight</div>
           </div>`;
         })() : ''}
         ` : ''}
@@ -6782,6 +6784,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="closeSettings();showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle"></i> Test Week in Review</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewMaintenanceScreen()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Preview Maintenance Screen</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewParentSignInScreen()"><i class="ph-duotone ph-sign-in" style="font-size:1rem;vertical-align:middle"></i> Preview Parent Sign-In</button>
+        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewLoadingScreen()"><i class="ph-duotone ph-spinner-gap" style="font-size:1rem;vertical-align:middle"></i> Preview Loading Screen</button>
         <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="try{localStorage.removeItem(CHANGELOG_SEEN_KEY)}catch(_){};showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle"></i> Test What's New</button>
         <div style="height:10px"></div>
         <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
@@ -7096,16 +7099,14 @@ function renderHome() {
   const pendingCount = familyInboxCount();
   const cards = members.map(m => {
     const bday = isBirthday(m);
-    const ptsLabel = m.role === 'parent'
-      ? '<i class="ph-duotone ph-gear-six" style="font-size:0.9rem;vertical-align:middle"></i> Parent tools'
-      : `<i class="ph-duotone ph-sketch-logo" style="font-size:0.9rem;vertical-align:middle"></i> ${m.gems || 0} gems`;
+    const roleLabel = m.role === 'parent' ? 'Parent' : 'Kid';
     return `
       <button class="profile-card${bday ? ' bday-card' : ''}" style="--member-color:${m.color || '#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
         ${bday ? `<span class="bday-badge"><i class="ph-duotone ph-cake" style="font-size:0.9rem"></i></span>` : ''}
         <span class="profile-avatar">${renderMemberAvatarHtml(m)}</span>
         <span class="profile-name">${esc(m.name)}</span>
-        <span class="profile-diamonds">${ptsLabel}</span>
+        <span class="profile-diamonds">${roleLabel}</span>
       </button>`;
   }).join('');
   const anyBday = members.some(m => m.role !== 'parent' && isBirthday(m));
@@ -7116,31 +7117,42 @@ function renderHome() {
   root.innerHTML = `
     ${bdayBanner}
     <div class="home-shell">
-      <div class="home-hero">
-        <div class="home-hero-copy">
-          <div class="home-kicker"><i class="ph-duotone ph-leaf" style="font-size:1rem"></i> Family Space</div>
-          <div class="home-family-stack">
-            <div class="home-family-line home-family-line-top">The</div>
-            <div class="home-family-line home-family-line-name">${esc(familyStem)}</div>
-            <div class="home-family-line home-family-line-bottom">Family</div>
-          </div>
-        </div>
-        <img class="home-logo" src="gemsprout.png" alt="GemSprout">
-        <div class="home-hero-meta">
-          <div class="home-subtitle">A quick look at how the family is doing right now.</div>
-          <div class="home-pill-row">
-            <div class="home-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
-            <div class="home-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSavings.toFixed(2)} saved</div>
-            <div class="home-pill"><i class="ph-duotone ph-clock-countdown" style="font-size:1rem"></i> ${pendingCount} pending</div>
+      <div class="home-top">
+        <div class="home-top-inner">
+          <div class="home-hero">
+            <div class="home-hero-copy">
+              <div class="home-kicker"><i class="ph-duotone ph-leaf" style="font-size:1rem"></i> Family Space</div>
+              <div class="home-family-stack">
+                <div class="home-family-line home-family-line-top">The</div>
+                <div class="home-family-line home-family-line-name">${esc(familyStem)}</div>
+                <div class="home-family-line home-family-line-bottom">Family</div>
+              </div>
+            </div>
+            <img class="home-logo" src="gemsprout.png" alt="GemSprout">
+            <div class="home-hero-meta">
+              <div class="home-subtitle">A quick look at how the family is doing right now.</div>
+              <div class="home-pill-row">
+                <div class="home-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
+                <div class="home-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSavings.toFixed(2)} saved</div>
+                <div class="home-pill"><i class="ph-duotone ph-clock-countdown" style="font-size:1rem"></i> ${pendingCount} pending</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="home-lower">
-        <div class="home-section-head">
-          <div class="home-section-title">Choose your place in the family</div>
-        </div>
-        <div class="home-member-list">
-          <div class="profile-grid">${cards}</div>
+      <div class="home-bottom">
+        <div class="home-bottom-inner">
+          <div class="home-lower">
+            <div class="home-member-list">
+              <div class="profile-grid">${cards}</div>
+            </div>
+          </div>
+          <div class="home-footer">
+            <button class="home-footer-btn" onclick="goSetup()">
+              <i class="ph-duotone ph-gear-six" style="font-size:1rem"></i>
+              Edit Family
+            </button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -7472,24 +7484,18 @@ function renderSetupGate() {
   content.style.display = 'none';
   gate.innerHTML = `
     <div class="setup-gate-shell">
-      <div class="setup-gate-card">
-        <img src="gemsprout.png" class="setup-gate-mark" alt="GemSprout">
-        <div class="setup-gate-kicker"><i class="ph-duotone ph-plant" style="font-size:0.95rem"></i> Family rhythms, rewards, and growth</div>
-        <div class="setup-gate-title">Welcome to GemSprout</div>
-        <div class="setup-gate-sub">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two.'}</div>
-        <div class="setup-gate-pill-row">
-          <div class="setup-gate-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> Gems</div>
-          <div class="setup-gate-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> Savings</div>
-          <div class="setup-gate-pill"><i class="ph-duotone ph-users-three" style="font-size:1rem"></i> Family goals</div>
-        </div>
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome to GemSprout</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two'}</div>
         <div class="setup-gate-actions">
           <button class="setup-gate-btn setup-gate-btn-primary" onclick="${isPreview ? `goSetup({ testMode: true })` : `startNewFamily()`}">
             <i class="ph-duotone ph-sparkle" style="vertical-align:middle"></i> Get Started
           </button>
-          <button class="setup-gate-btn setup-gate-btn-secondary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Sign In is disabled during onboarding preview')` : `showSignInFlow()`}">
+          <button class="setup-gate-btn setup-gate-btn-primary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Sign In is disabled during onboarding preview')` : `showSignInFlow()`}">
             <i class="ph-duotone ph-sign-in" style="vertical-align:middle"></i> Sign In
           </button>
-          <button class="setup-gate-btn setup-gate-btn-muted ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Kid entry is disabled during onboarding preview')` : `showKidEntry()`}">
+          <button class="setup-gate-btn setup-gate-btn-primary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Kid entry is disabled during onboarding preview')` : `showKidEntry()`}">
             <i class="ph-duotone ph-smiley" style="vertical-align:middle"></i> I'm a Kid
           </button>
         </div>
@@ -7500,12 +7506,12 @@ function renderSetupGate() {
 function startNewFamily() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div class="setup-gate-stage" style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%)">
-      <div class="setup-gate-card" style="width:min(100%, 460px)">
-        <img src="gemsprout.png" style="width:90px;height:90px">
-        <div style="color:#24453c;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
-        <div style="color:#5f746a;font-size:0.95rem;text-align:center;max-width:320px">Sign in to secure your account and sync your family across devices.</div>
-        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:12px">
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Create Your Family</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center">Sign in to secure your account and sync your family across devices</div>
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
           <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:1px solid rgba(39,66,57,0.14)" onclick="_newFamilyAuth('google')">
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
             Continue with Google
@@ -7515,7 +7521,7 @@ function startNewFamily() {
             Continue with Apple&nbsp;
           </button>
         </div>
-        <button style="background:none;border:none;color:#3f5d52;font-size:0.9rem;cursor:pointer;margin-top:12px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
       </div>
     </div>`;
 }
@@ -7531,8 +7537,42 @@ async function _newFamilyAuth(provider) {
   await _processNewFamilyUser(user);
 }
 
+async function _lookupFamilyCodeForAuthUser(firebaseUser) {
+  if (!firebaseUser?.uid) return '';
+  try {
+    const uidDoc = await db.doc(`users/${firebaseUser.uid}`).get();
+    const uidFamily = uidDoc.exists ? String(uidDoc.data()?.familyCode || '') : '';
+    if (uidFamily) return uidFamily;
+  } catch (e) {}
+  const email = (firebaseUser.email || '').toLowerCase();
+  if (!email) return '';
+  try {
+    const emailSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (!emailSnap.empty) {
+      const familyCode = String(emailSnap.docs[0].data()?.familyCode || '');
+      if (familyCode) return familyCode;
+    }
+  } catch (e) {}
+  return '';
+}
+
 async function _processNewFamilyUser(user) {
   S._pendingNewFamilyUser = user;
+  const existingFamilyCode = await _lookupFamilyCodeForAuthUser(user);
+  if (existingFamilyCode) {
+    S._pendingNewFamilyUser = null;
+    setFamilyCode(existingFamilyCode);
+    setParentAuthUid(user.uid);
+    db.doc(`users/${user.uid}`).set({
+      familyCode: existingFamilyCode,
+      uid: user.uid,
+      email: (user.email || '').toLowerCase(),
+    }, { merge: true }).catch(() => {});
+    await ensureFirestoreAuth();
+    subscribeToFirestore(routeAfterLoad);
+    toast('This account is already linked to a family - signed you in');
+    return;
+  }
   const email = (user.email || '').toLowerCase();
   if (email) {
     try {
@@ -7578,21 +7618,24 @@ async function _acceptInviteFromGetStarted() {
 function showKidEntry() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div class="setup-gate-stage">
-      <div style="font-size:3.5rem"><i class="ph-duotone ph-smiley" style="color:#6C63FF"></i></div>
-      <div style="font-weight:800;font-size:1.4rem">I'm a Kid!</div>
-      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the family code from your parent's Settings screen, or scan the QR code they show you.</div>
-      <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
-        style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:280px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
-        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
-      <button class="btn btn-primary" style="width:100%;max-width:280px;padding:14px" onclick="joinFamily()">
-        <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
-      </button>
-      ${isNative() ? `
-      <button class="btn btn-secondary" style="width:100%;max-width:280px;padding:12px" onclick="startQRScan()">
-        <i class="ph-duotone ph-qr-code" style="vertical-align:middle;margin-right:6px"></i> Scan QR Code
-      </button>` : ''}
-      <button class="btn-back" style="background:none;border:none;color:var(--muted);font-size:0.95rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin-bottom:16px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">I'm a Kid!</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">Enter the family code from your parent's Settings screen, or scan the QR code they show you</div>
+        <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
+          style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:320px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:12px">
+          <button class="btn btn-primary" style="width:100%;padding:14px" onclick="joinFamily()">
+            <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
+          </button>
+          <button class="btn btn-secondary" style="width:100%;padding:12px" onclick="startQRScan()">
+            <i class="ph-duotone ph-qr-code" style="vertical-align:middle;margin-right:6px"></i> Scan QR Code
+          </button>
+        </div>
+        <button class="btn-back" style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7635,9 +7678,9 @@ async function joinFamily() {
 function showSignInFlow() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div class="setup-gate-stage" style="gap:0;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%)">
-      <div class="setup-gate-card" style="width:min(100%, 460px)">
-        <img src="gemsprout.png" style="width:90px;height:90px;margin-bottom:16px">
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin-bottom:16px">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome back!</div>
         <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center">Sign in to access your family on this device</div>
         <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
@@ -7719,12 +7762,12 @@ function _showSignInNotFound() {
   gate.style.display = 'flex';
   document.getElementById('setup-content').style.display = 'none';
   gate.innerHTML = `
-    <div class="setup-gate-stage" style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%)">
-      <div class="setup-gate-card" style="width:min(100%, 460px)">
-        <i class="ph-duotone ph-magnifying-glass" style="font-size:3rem;color:#46695d"></i>
-        <div style="color:#24453c;font-size:1.4rem;font-weight:800;text-align:center">No family found</div>
-        <div style="color:#5f746a;font-size:0.95rem;text-align:center;max-width:320px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
-        <button class="btn" style="background:#2a7560;color:#fff;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:12px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin-bottom:16px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">No family found</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
+        <button class="btn" style="background:#2a7560;color:#fff;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:16px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
       </div>
     </div>`;
 }
@@ -14806,14 +14849,12 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
-  const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
     <div style="width:min(360px,calc(100vw - 44px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
       <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.5rem;font-weight:900;letter-spacing:-0.01em">${title}</div>
       <div style="color:#4f675d;font-size:0.98rem;max-width:300px;line-height:1.5;margin:8px auto 0">${message}</div>
-      ${btnText ? `<button onclick="${btnAction}" style="margin-top:14px;padding:12px 28px;border-radius:12px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-weight:800;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}
     </div>`;
 }
 
@@ -14856,11 +14897,11 @@ function showParentSignIn(memberId, onSuccess) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
-  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 44%,#e9ddc8 44%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
   const member = getMember(memberId);
   el.innerHTML = `
     <div style="width:min(420px,calc(100vw - 28px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
-    <img src="gemsprout.png" style="width:88px;height:88px;margin:0 auto 14px;display:block">
+    <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin:0 auto 14px;display:block">
     <div style="color:#24453c;font-size:1.6rem;font-weight:900;margin-bottom:6px;text-align:center">Welcome back!</div>
     <div style="color:#4f675d;font-size:0.95rem;margin-bottom:20px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
     <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin:0 auto">
@@ -14936,13 +14977,13 @@ function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-right:20px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);padding-left:20px;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-right:20px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);padding-left:20px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 50%,#f4efe4 50%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
     <div style="width:min(320px,calc(100vw - 48px));background:rgba(255,252,246,0.88);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24);backdrop-filter:blur(4px)">
-      <img src="gemsprout.png" class="loading-img" style="width:124px;height:124px;display:block;margin:0 auto 10px">
+      <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
       <div style="margin-top:5px;color:#5d7368;font-size:0.9rem;font-weight:700;letter-spacing:0.01em;text-transform:uppercase">Family rhythms and rewards</div>
     </div>
