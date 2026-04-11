@@ -171,8 +171,7 @@ function _handleNotificationReceived(event) {
 }
 
 function _handleNotificationAction(event) {
-  const route = _routeFromNotification(event);
-  if (!route) return;
+  const route = _routeFromNotification(event) || { type: '', parentTab: 'home', kidTab: '' };
   if (S.currentUser?.role === 'parent') {
     switchParentTab(route.parentTab || 'home');
     _refreshFamilyFromServerAndRender();
@@ -187,7 +186,8 @@ function _handleNotificationAction(event) {
     // App is at PIN gate; route + refresh after unlock.
     S._afterPinNav = { parentTab: route.parentTab || 'home', kidTab: route.kidTab || '', refresh: true };
   }
-  // If no active session/profile yet, default flow continues; inbox badges will still reflect updates.
+  // If no active session/profile yet, apply after route/auth restores the current user.
+  S._pendingNotificationRoute = { parentTab: route.parentTab || 'home', kidTab: route.kidTab || '' };
 }
 
 // Interest day local notification
@@ -1079,7 +1079,7 @@ function _renderWeekReviewStory() {
       }
       .wr-shell {
         position:relative;
-        min-height:100vh;
+        min-height:100dvh;
         display:flex;
         flex-direction:column;
         padding:calc(env(safe-area-inset-top, 16px) + 10px) 16px calc(env(safe-area-inset-bottom, 12px) + 12px);
@@ -1538,8 +1538,8 @@ function _weekReviewHTML(slides, currentIndex) {
         from { opacity: 1; transform: translate3d(var(--wr-from-x, 0px), var(--wr-from-y, 18px), 0) scale(1); }
         to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
       }
-      .wr-reveal-from-bottom { --wr-from-x:0px; --wr-from-y:calc(100vh + 120px); }
-      .wr-reveal-from-bottom-card { --wr-from-x:0px; --wr-from-y:calc(100vh + 160px); }
+      .wr-reveal-from-bottom { --wr-from-x:0px; --wr-from-y:calc(100dvh + 120px); }
+      .wr-reveal-from-bottom-card { --wr-from-x:0px; --wr-from-y:calc(100dvh + 160px); }
       .wr-reveal-from-left { --wr-from-x:calc(-100vw - 160px); --wr-from-y:0px; }
       .wr-reveal-from-right { --wr-from-x:calc(100vw + 160px); --wr-from-y:0px; }
       .wr-shell {
@@ -1632,8 +1632,8 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-measure-host .wr-card { min-height:0 !important; height:auto !important; }
       .wr-bottom-note { position:absolute; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom, 0px) + 8px); text-align:center; color:rgba(255,255,255,0.78); font-size:0.84rem; font-weight:700; }
       @media (max-width: 640px) {
-        .wr-reveal-from-bottom { --wr-from-y: calc(100vh + 96px); }
-        .wr-reveal-from-bottom-card { --wr-from-y: calc(100vh + 120px); }
+        .wr-reveal-from-bottom { --wr-from-y: calc(100dvh + 96px); }
+        .wr-reveal-from-bottom-card { --wr-from-y: calc(100dvh + 120px); }
         .wr-reveal-from-left { --wr-from-x: calc(-100vw - 120px); }
         .wr-reveal-from-right { --wr-from-x: calc(100vw + 120px); }
         .wr-card { min-height: var(--wr-card-uniform-height, clamp(430px, 58dvh, 560px)); height:var(--wr-card-uniform-height, auto); padding:24px 22px 24px; }
@@ -2347,6 +2347,8 @@ let S = {            // UI state (not persisted)
   syncStatus:           'idle', // 'idle' | 'syncing' | 'ok' | 'error'
   lastLocalSave:        0,
   _afterPinNav:         null,
+  _pendingNotificationRoute: null,
+  _lastParentForegroundRefreshAt: 0,
   _authPromptShown:      false,
   _pinPromptShown:       false,
   _parentSignInCallback: null,
@@ -7199,11 +7201,20 @@ function routeToView(member) {
   S._activeViewUserId = member.id;
   S._activeViewRole = member.role;
   if (member.role === 'parent') {
+    const pendingRoute = S._pendingNotificationRoute;
+    if (pendingRoute?.parentTab) S.parentTab = pendingRoute.parentTab;
     if (!ensureParentAuth(member, (authedMember) => routeToView(authedMember))) return;
     if (!S.isPro && !RC.betaMode) { showPaywall(); return; }
     renderParentView();
+    if (pendingRoute) {
+      S._pendingNotificationRoute = null;
+      setTimeout(() => { _refreshFamilyFromServerAndRender(); }, 0);
+    }
   } else {
+    const pendingRoute = S._pendingNotificationRoute;
+    if (pendingRoute?.kidTab) S.kidTab = pendingRoute.kidTab;
     renderKidView(); // handles both 'tiny' and 'regular'
+    if (pendingRoute) S._pendingNotificationRoute = null;
   }
 }
 
@@ -7489,7 +7500,7 @@ function renderSetupGate() {
 function startNewFamily() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px;background:linear-gradient(145deg,#667eea,#764ba2)">
+    <div class="setup-gate-stage" style="background:linear-gradient(145deg,#667eea,#764ba2)">
       <img src="gemsproutcream.png" style="width:90px;height:90px">
       <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
       <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
@@ -7580,7 +7591,7 @@ async function _acceptInviteFromGetStarted() {
 function showKidEntry() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
+    <div class="setup-gate-stage">
       <div style="font-size:3.5rem"><i class="ph-duotone ph-smiley" style="color:#6C63FF"></i></div>
       <div style="font-weight:800;font-size:1.4rem">I'm a Kid!</div>
       <div style="color:#6B7280;text-align:center;max-width:280px">Enter the family code from your parent's Settings screen, or scan the QR code they show you.</div>
@@ -7637,7 +7648,7 @@ async function joinFamily() {
 function showSignInFlow() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
+    <div class="setup-gate-stage" style="gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
       <img src="gemsproutcream.png" style="width:90px;height:90px;margin-bottom:16px">
       <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
       <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
@@ -14821,7 +14832,7 @@ function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:24px';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
   el.innerHTML = `
     <div style="width:min(360px,calc(100vw - 44px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
@@ -14871,7 +14882,7 @@ function showParentSignIn(memberId, onSuccess) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
-  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 44%,#e9ddc8 44%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:26px 22px';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 44%,#e9ddc8 44%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
   const member = getMember(memberId);
   el.innerHTML = `
     <div style="width:min(420px,calc(100vw - 28px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
@@ -14977,7 +14988,7 @@ function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:20px';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-right:20px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);padding-left:20px;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
@@ -15130,6 +15141,13 @@ document.addEventListener('visibilitychange', () => {
   if (kc) kc.scrollTop = 0;
   if (pc) pc.scrollTop = 0;
   if (S.currentUser?.role === 'parent') syncAppBadge();
+  if (S.currentUser?.role === 'parent') {
+    const now = Date.now();
+    if (!S._lastParentForegroundRefreshAt || now - S._lastParentForegroundRefreshAt > 4000) {
+      S._lastParentForegroundRefreshAt = now;
+      _refreshFamilyFromServerAndRender();
+    }
+  }
   if (S.currentUser?.role === 'kid') {
     const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
     checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
