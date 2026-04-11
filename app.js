@@ -6703,7 +6703,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
               <input type="number" value="${iDom}" min="1" max="28" onchange="saveSetting('savingsInterestDayOfMonth',Math.min(28,Math.max(1,parseInt(this.value)||1)));renderSettings()">
             </div>`}
           </div>
-          <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
+          <div style="font-size:0.8rem;color:#4f675d;margin-top:6px;padding:0">
             <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px;flex-shrink:0"></i>${ip === 'weekly'
               ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>.`
               : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>.`}
@@ -7500,30 +7500,23 @@ function renderSetupGate() {
 function startNewFamily() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div class="setup-gate-stage" style="background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutcream.png" style="width:90px;height:90px">
-      <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
-      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
-        <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('google')">
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
-          Continue with Google
-        </button>
-        <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
-          Continue with Apple&nbsp;
-        </button>
-      </div>
-      <button style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer;margin-top:8px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-      ${RC.betaMode ? `
-      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
-        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
-        <div style="display:flex;gap:8px">
-          <input id="dev-getstarted-email" type="email" placeholder="test@email.com" autocomplete="off"
-            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
-          <button onclick="_devTestGetStarted()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test Sign In</button>
+    <div class="setup-gate-stage" style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%)">
+      <div class="setup-gate-card" style="width:min(100%, 460px)">
+        <img src="gemsprout.png" style="width:90px;height:90px">
+        <div style="color:#24453c;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
+        <div style="color:#5f746a;font-size:0.95rem;text-align:center;max-width:320px">Sign in to secure your account and sync your family across devices.</div>
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:12px">
+          <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:1px solid rgba(39,66,57,0.14)" onclick="_newFamilyAuth('google')">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+            Continue with Google
+          </button>
+          <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+            Continue with Apple&nbsp;
+          </button>
         </div>
-      </div>` : ''}
+        <button style="background:none;border:none;color:#3f5d52;font-size:0.9rem;cursor:pointer;margin-top:12px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7536,12 +7529,6 @@ async function _newFamilyAuth(provider) {
     return;
   }
   await _processNewFamilyUser(user);
-}
-
-async function _devTestGetStarted() {
-  const email = (document.getElementById('dev-getstarted-email')?.value || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
-  await _processNewFamilyUser({ uid: `dev-${email.replace(/[^a-z0-9]/g, '-')}`, email, displayName: '' });
 }
 
 async function _processNewFamilyUser(user) {
@@ -7648,30 +7635,23 @@ async function joinFamily() {
 function showSignInFlow() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div class="setup-gate-stage" style="gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutcream.png" style="width:90px;height:90px;margin-bottom:16px">
-      <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
-      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
-        <button id="signin-google-btn" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('google')">
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
-          Continue with Google
-        </button>
-        <button id="signin-apple-btn" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('apple')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
-          Continue with Apple&nbsp;
-        </button>
-      </div>
-      <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-      ${RC.betaMode ? `
-      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
-        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
-        <div style="display:flex;gap:8px">
-          <input id="dev-signin-email" type="email" placeholder="invited@email.com" autocomplete="off"
-            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
-          <button onclick="_devTestSignIn()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test Sign In</button>
+    <div class="setup-gate-stage" style="gap:0;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%)">
+      <div class="setup-gate-card" style="width:min(100%, 460px)">
+        <img src="gemsprout.png" style="width:90px;height:90px;margin-bottom:16px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome back!</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center">Sign in to access your family on this device</div>
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+          <button id="signin-google-btn" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:1px solid rgba(39,66,57,0.14)" onclick="_handleSignIn('google')">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+            Continue with Google
+          </button>
+          <button id="signin-apple-btn" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('apple')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+            Continue with Apple&nbsp;
+          </button>
         </div>
-      </div>` : ''}
+        <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7739,11 +7719,13 @@ function _showSignInNotFound() {
   gate.style.display = 'flex';
   document.getElementById('setup-content').style.display = 'none';
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:16px;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <i class="ph-duotone ph-magnifying-glass" style="font-size:3rem;color:rgba(255,255,255,0.7)"></i>
-      <div style="color:#fff;font-size:1.4rem;font-weight:800;text-align:center">No family found</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:300px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
-      <button class="btn" style="background:#fff;color:#6C63FF;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:8px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <div class="setup-gate-stage" style="background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%)">
+      <div class="setup-gate-card" style="width:min(100%, 460px)">
+        <i class="ph-duotone ph-magnifying-glass" style="font-size:3rem;color:#46695d"></i>
+        <div style="color:#24453c;font-size:1.4rem;font-weight:800;text-align:center">No family found</div>
+        <div style="color:#5f746a;font-size:0.95rem;text-align:center;max-width:320px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
+        <button class="btn" style="background:#2a7560;color:#fff;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:12px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7816,14 +7798,6 @@ const DEV_TEST_UID_KEY = 'gemsprout.devTestUid';
 
 function _devShowInviteTest() {
   showInviteParent(true);
-}
-
-async function _devTestSignIn() {
-  const email = (document.getElementById('dev-signin-email')?.value || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
-  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
-  try { localStorage.setItem(DEV_TEST_UID_KEY, fakeUid); } catch {}
-  await _resolveSignInUser({ uid: fakeUid, email });
 }
 
 async function _devResetInviteTest() {
@@ -14900,34 +14874,8 @@ function showParentSignIn(memberId, onSuccess) {
       </button>
     </div>
     <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.9rem;font-weight:700;cursor:pointer;display:block;margin-left:auto;margin-right:auto" onclick="renderHome()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-    ${RC.betaMode ? `
-    <div style="margin:20px auto 0;padding-top:16px;border-top:1px solid rgba(39,66,57,0.14);width:100%;max-width:320px">
-      <div style="color:#628073;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
-      <div style="display:flex;gap:8px">
-        <input id="dev-parentsignin-email" type="email" placeholder="your setup email" autocomplete="off"
-          style="flex:1;padding:10px 12px;border:1px solid rgba(39,66,57,0.18);border-radius:10px;font-size:0.9rem;background:#fff;color:#1f3932;outline:none">
-        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:#2a7560;color:#fff;border:none;font-size:0.85rem;font-weight:700;cursor:pointer;white-space:nowrap">Test Sign In</button>
-      </div>
-    </div>` : ''}
     </div>`;
   S._parentSignInCallback = onSuccess || null;
-}
-
-function _devParentSignIn(memberId) {
-  const email = (document.getElementById('dev-parentsignin-email')?.value || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
-  const member = getMember(memberId);
-  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
-  const linked = member?.authUid === fakeUid ||
-    (member?.authProviders || []).some(p => p.email?.toLowerCase() === email || p.uid === fakeUid);
-  if (!linked) {
-    toast("That email isn't linked to this profile; use the email you signed up with");
-    return;
-  }
-  setParentAuthUid(fakeUid);
-  const cb = S._parentSignInCallback;
-  S._parentSignInCallback = null;
-  proceedAsParent(memberId, cb);
 }
 
 async function handleParentSignIn(provider, memberId) {
