@@ -48,6 +48,7 @@
       overflow: hidden;
       padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: env(safe-area-inset-bottom, 0px);
+      background: #365e4f;
     }
     #screen-auth.loading { position: fixed; inset: 0; z-index: 9999; overflow: hidden; }
     @keyframes loading-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
@@ -227,8 +228,8 @@
     .home-lower {
       flex: 1 1 auto;
       min-height: 0;
-      margin-top: clamp(12px, 2.2vh, 24px);
-      padding-top: clamp(8px, 1.6vh, 16px);
+      margin-top: clamp(4px, 1vh, 10px);
+      padding-top: clamp(2px, 0.8vh, 8px);
       padding-bottom: clamp(8px, 1.6vh, 16px);
       display: flex;
       flex-direction: column;
@@ -245,7 +246,7 @@
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
-      padding: 2px 0 4px;
+      padding: 2px 0 16px;
       box-shadow: none;
     }
     .home-footer {
@@ -2583,6 +2584,7 @@
       overflow: hidden;
       padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: env(safe-area-inset-bottom, 0px);
+      background: #365e4f;
     }
     .setup-wrap {
       width: 100%;
@@ -2651,8 +2653,8 @@
         padding: 7px 10px;
       }
       .home-lower {
-        margin-top: 14px;
-        padding-top: 10px;
+        margin-top: 8px;
+        padding-top: 6px;
       }
       .home-setup-btn {
         margin-top: 18px;
@@ -2687,8 +2689,8 @@
         gap: 4px;
       }
       .home-lower {
-        margin-top: 18px;
-        padding-top: 14px;
+        margin-top: 10px;
+        padding-top: 8px;
       }
       .home-section-head {
         margin: 14px 2px 18px;
@@ -2718,8 +2720,8 @@
         margin-top: 8px;
       }
       .home-lower {
-        margin-top: 34px;
-        padding-top: 24px;
+        margin-top: 16px;
+        padding-top: 10px;
       }
       .home-section-head {
         margin: 22px 2px 28px;
@@ -2748,8 +2750,8 @@
         padding-bottom: clamp(20px, 2.8vw, 26px);
       }
       .home-lower {
-        margin-top: 42px;
-        padding-top: 28px;
+        margin-top: 20px;
+        padding-top: 12px;
       }
       .home-section-head {
         margin: 22px 2px 30px;
