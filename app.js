@@ -15590,13 +15590,15 @@ function _initBadgeCardTilt(cardId) {
   }
 
   // ── Gyroscope ──────────────────────────────────────────────────────────────
-  let gyroActive = false;
+  // Module-level ref so we can remove the exact same function reference on close,
+  // even if requestPermission resolves after _badgeCardGyroCleanup has been reassigned.
   let baseGamma = null, baseBeta = null;
   let lastGyroRx = 0, lastGyroRy = 0;
   let gyroIdleTimer = null;
   let driftRafId = null;
+  let touchActive = false; // true while any pointer/touch is pressed on the card
 
-  // Gradually drift current gyro tilt back to 0 so touch input starts clean
+  // Gradually drift current gyro tilt back to 0 so touch input starts from neutral
   function startGyroDrift() {
     if (driftRafId) return;
     function drift() {
@@ -15615,41 +15617,39 @@ function _initBadgeCardTilt(cardId) {
 
   function onDeviceOrientation(e) {
     if (e.gamma == null) return;
+    if (touchActive) return; // let touch/pointer own the transform while pressed
     if (baseGamma === null) { baseGamma = e.gamma; baseBeta = e.beta; }
-    // Cancel any ongoing drift when gyro is actively providing input
     if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
-    // Increased multiplier (1.5 vs 0.9) for more responsive tilt
     const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 1.5));
     const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 1.5));
     lastGyroRx = rx; lastGyroRy = ry;
     applyTilt(rx, ry);
-    // Start drift timer — if no gyro event for 800ms, drift back to center
     clearTimeout(gyroIdleTimer);
     gyroIdleTimer = setTimeout(startGyroDrift, 800);
   }
 
-  function startGyro() {
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission()
-        .then(state => {
-          if (state === 'granted') {
-            window.addEventListener('deviceorientation', onDeviceOrientation);
-            gyroActive = true;
-          }
-        })
-        .catch(() => {});
-    } else if (typeof DeviceOrientationEvent !== 'undefined') {
-      // Android / non-gated browser
-      window.addEventListener('deviceorientation', onDeviceOrientation);
-      gyroActive = true;
-    }
-  }
-  startGyro();
+  // Remove any previously registered listener before adding a new one
+  // so that re-opening the card never stacks duplicate listeners on window.
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
 
-  // ── Touch drag tilt ────────────────────────────────────────────────────────
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(state => {
+        if (state === 'granted') window.addEventListener('deviceorientation', onDeviceOrientation);
+      })
+      .catch(() => {});
+  } else if (typeof DeviceOrientationEvent !== 'undefined') {
+    window.addEventListener('deviceorientation', onDeviceOrientation);
+  }
+
+  // ── Touch drag tilt (real device / Chrome device simulation) ─────────────
+  // Touch events gate the gyro: while a finger is on the card, gyro is paused.
   let touchStartX = null, touchStartY = null;
 
   function onTouchStart(e) {
+    touchActive = true;
+    clearTimeout(gyroIdleTimer);
+    if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
     const t = e.touches[0];
     touchStartX = t.clientX;
     touchStartY = t.clientY;
@@ -15668,19 +15668,22 @@ function _initBadgeCardTilt(cardId) {
   }
 
   function onTouchEnd() {
+    touchActive = false;
     touchStartX = null; touchStartY = null;
     card.style.transition = 'transform 0.6s cubic-bezier(.2,.8,.2,1)';
     applyTilt(0, 0, true);
+    // Re-anchor gyro baseline from current physical angle after touch ends
+    baseGamma = null; baseBeta = null;
   }
 
   card.addEventListener('touchstart', onTouchStart, { passive: true });
   card.addEventListener('touchmove',  onTouchMove,  { passive: false });
   card.addEventListener('touchend',   onTouchEnd);
+  card.addEventListener('touchcancel', onTouchEnd);
 
-  // ── Mouse tilt (desktop / live-server testing) ─────────────────────────────
+  // ── Mouse hover tilt (desktop / live-server testing — no click needed) ────
   function onMouseMove(e) {
     const rect = card.getBoundingClientRect();
-    // Map cursor position within the card to [-1, 1]
     const nx = (e.clientX - rect.left)  / rect.width  * 2 - 1;
     const ny = (e.clientY - rect.top)   / rect.height * 2 - 1;
     const ry =  nx * MAX_TILT;
@@ -15698,14 +15701,15 @@ function _initBadgeCardTilt(cardId) {
   card.addEventListener('mouseleave', onMouseLeave);
 
   _badgeCardGyroCleanup = () => {
-    if (gyroActive) window.removeEventListener('deviceorientation', onDeviceOrientation);
+    window.removeEventListener('deviceorientation', onDeviceOrientation);
     clearTimeout(gyroIdleTimer);
     if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
-    card.removeEventListener('touchstart', onTouchStart);
-    card.removeEventListener('touchmove',  onTouchMove);
-    card.removeEventListener('touchend',   onTouchEnd);
-    card.removeEventListener('mousemove',  onMouseMove);
-    card.removeEventListener('mouseleave', onMouseLeave);
+    card.removeEventListener('touchstart',  onTouchStart);
+    card.removeEventListener('touchmove',   onTouchMove);
+    card.removeEventListener('touchend',    onTouchEnd);
+    card.removeEventListener('touchcancel', onTouchEnd);
+    card.removeEventListener('mousemove',   onMouseMove);
+    card.removeEventListener('mouseleave',  onMouseLeave);
   };
 }
 
