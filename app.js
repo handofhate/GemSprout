@@ -5678,7 +5678,14 @@ function _setRapidTapPulse(el, scale = 1, opacity = null) {
   } else {
     el.style.transform = `scale(${scale})`;
   }
-  if (opacity != null) el.style.opacity = String(opacity);
+  if (opacity != null) {
+    if (isEggGem) {
+      if (el.classList.contains('is-visible')) el.style.opacity = String(opacity);
+      else el.style.removeProperty('opacity');
+    } else {
+      el.style.opacity = String(opacity);
+    }
+  }
 }
 
 function handleRapidTap(key, opts = {}) {
@@ -5695,14 +5702,28 @@ function handleRapidTap(key, opts = {}) {
   clearTimeout(state.timer);
   if (state.taps >= required) {
     state.taps = 0;
-    if (pulseEl && idleOpacity != null) pulseEl.style.opacity = String(idleOpacity);
+    if (pulseEl && idleOpacity != null) {
+      if (pulseEl.id === 'egg-gem') {
+        if (pulseEl.classList.contains('is-visible')) pulseEl.style.opacity = String(idleOpacity);
+        else pulseEl.style.removeProperty('opacity');
+      } else {
+        pulseEl.style.opacity = String(idleOpacity);
+      }
+    }
     _rapidTapState[key] = state;
     opts.onTrigger?.();
     return;
   }
   state.timer = setTimeout(() => {
     state.taps = 0;
-    if (pulseEl && idleOpacity != null) pulseEl.style.opacity = String(idleOpacity);
+    if (pulseEl && idleOpacity != null) {
+      if (pulseEl.id === 'egg-gem') {
+        if (pulseEl.classList.contains('is-visible')) pulseEl.style.opacity = String(idleOpacity);
+        else pulseEl.style.removeProperty('opacity');
+      } else {
+        pulseEl.style.opacity = String(idleOpacity);
+      }
+    }
   }, windowMs);
   _rapidTapState[key] = state;
 }
@@ -11598,21 +11619,31 @@ function renderStatsPage(container) {
         : document.getElementById('kid-nav');
       const content = container;
       if (!gem || !nav || !content) return;
-      const navStyles = getComputedStyle(nav);
-      const navHeight = nav.offsetHeight || 0;
-      const navPaddingBottom = parseFloat(navStyles.paddingBottom) || 0;
-      // nav padding includes safe area + 6px base spacing
-      const safeBottom = navPaddingBottom > 0 ? Math.max(0, navPaddingBottom - 6) : 12;
-      content.style.setProperty('--nav-h', `${navHeight}px`);
-      content.style.setProperty('--safe-b', `${safeBottom}px`);
+      const applyStatsGemMetrics = () => {
+        const navStyles = getComputedStyle(nav);
+        const navHeight = nav.offsetHeight || 0;
+        const navPaddingBottom = parseFloat(navStyles.paddingBottom) || 0;
+        // nav padding includes safe area + 6px base spacing
+        const safeBottom = navPaddingBottom > 0 ? Math.max(0, navPaddingBottom - 6) : 12;
+        content.style.setProperty('--nav-h', `${navHeight}px`);
+        content.style.setProperty('--safe-b', `${safeBottom}px`);
+        const gemBottomOffset = safeBottom + navHeight + 12;
+        const gemSize = 45;
+        const reserveGap = 16;
+        const reservedBottom = Math.ceil(gemBottomOffset + gemSize + reserveGap);
+        content.style.setProperty('--content-bottom-space', `${reservedBottom}px`);
+      };
       let rafId = 0;
       const threshold = 6;
+      let resizeObserver = null;
       const updateGemVisibility = () => {
         rafId = 0;
+        applyStatsGemMetrics();
         const overflowPx = Math.max(0, content.scrollHeight - content.clientHeight);
         const scrollable = overflowPx > 24;
         const atBottom = !scrollable || ((content.scrollTop + content.clientHeight) >= (content.scrollHeight - threshold));
         gem.classList.toggle('is-visible', atBottom);
+        if (!atBottom) gem.style.removeProperty('opacity');
       };
       const scheduleUpdate = () => {
         if (rafId) return;
@@ -11620,13 +11651,23 @@ function renderStatsPage(container) {
       };
       const viewport = window.visualViewport || null;
       content.addEventListener('scroll', scheduleUpdate, { passive: true });
+      content.addEventListener('touchmove', scheduleUpdate, { passive: true });
       window.addEventListener('resize', scheduleUpdate);
       if (viewport) viewport.addEventListener('resize', scheduleUpdate);
-      scheduleUpdate();
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => scheduleUpdate());
+        resizeObserver.observe(content);
+        resizeObserver.observe(nav);
+      }
+      requestAnimationFrame(() => requestAnimationFrame(scheduleUpdate));
+      setTimeout(scheduleUpdate, 120);
+      setTimeout(scheduleUpdate, 420);
       container._statsGemCleanup = () => {
         content.removeEventListener('scroll', scheduleUpdate);
+        content.removeEventListener('touchmove', scheduleUpdate);
         window.removeEventListener('resize', scheduleUpdate);
         if (viewport) viewport.removeEventListener('resize', scheduleUpdate);
+        if (resizeObserver) resizeObserver.disconnect();
         if (rafId) cancelAnimationFrame(rafId);
         container._statsGemCleanup = null;
       };
@@ -15526,8 +15567,8 @@ const RC = {
   maintenanceMessage:     'GemSprout is currently undergoing maintenance. Please check back soon.',
   maintenanceButtonText:  'Try Again',
   maintenanceButtonUrl:   '',
-  betaMode:               true,
-  appDownloadUrl:         'https://gemsprout.com/beta',
+  betaMode:               false,
+  appDownloadUrl:         'https://gemsprout.com',
 };
 
 async function checkMaintenanceMode() {
