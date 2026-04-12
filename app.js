@@ -15590,25 +15590,42 @@ function _initBadgeCardTilt(cardId) {
   }
 
   // ── Gyroscope ──────────────────────────────────────────────────────────────
-  // Module-level ref so we can remove the exact same function reference on close,
-  // even if requestPermission resolves after _badgeCardGyroCleanup has been reassigned.
   let baseGamma = null, baseBeta = null;
-  let lastGyroRx = 0, lastGyroRy = 0;
+  let currentRx = 0, currentRy = 0; // smoothed display values
+  let targetRx  = 0, targetRy  = 0; // raw gyro target
   let gyroIdleTimer = null;
+  let gyroRafId = null;   // rAF loop for smooth lerp
   let driftRafId = null;
-  let touchActive = false; // true while any pointer/touch is pressed on the card
+  let touchActive = false;
 
-  // Gradually drift current gyro tilt back to 0 so touch input starts from neutral
+  // Lerp factor: 0.12 = smooth but responsive. Higher = snappier, lower = laggier.
+  const GYRO_LERP = 0.12;
+
+  // rAF loop: each frame lerp current toward target, apply, reschedule if still moving
+  function gyroLerpLoop() {
+    currentRx += (targetRx - currentRx) * GYRO_LERP;
+    currentRy += (targetRy - currentRy) * GYRO_LERP;
+    applyTilt(currentRx, currentRy);
+    const dx = Math.abs(targetRx - currentRx);
+    const dy = Math.abs(targetRy - currentRy);
+    if (dx > 0.05 || dy > 0.05) {
+      gyroRafId = requestAnimationFrame(gyroLerpLoop);
+    } else {
+      gyroRafId = null;
+    }
+  }
+
+  // Gradually drift both target and current back to 0 when gyro goes idle
   function startGyroDrift() {
     if (driftRafId) return;
     function drift() {
-      lastGyroRx *= 0.88;
-      lastGyroRy *= 0.88;
-      applyTilt(lastGyroRx, lastGyroRy, Math.abs(lastGyroRx) < 0.3 && Math.abs(lastGyroRy) < 0.3);
-      if (Math.abs(lastGyroRx) > 0.1 || Math.abs(lastGyroRy) > 0.1) {
+      targetRx  *= 0.88; targetRy  *= 0.88;
+      currentRx *= 0.88; currentRy *= 0.88;
+      applyTilt(currentRx, currentRy, Math.abs(currentRx) < 0.3 && Math.abs(currentRy) < 0.3);
+      if (Math.abs(currentRx) > 0.1 || Math.abs(currentRy) > 0.1) {
         driftRafId = requestAnimationFrame(drift);
       } else {
-        lastGyroRx = 0; lastGyroRy = 0;
+        targetRx = targetRy = currentRx = currentRy = 0;
         driftRafId = null;
       }
     }
@@ -15617,13 +15634,16 @@ function _initBadgeCardTilt(cardId) {
 
   function onDeviceOrientation(e) {
     if (e.gamma == null) return;
-    if (touchActive) return; // let touch/pointer own the transform while pressed
+    if (touchActive) return;
     if (baseGamma === null) { baseGamma = e.gamma; baseBeta = e.beta; }
+    // Cancel drift — gyro is active again
     if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
-    const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 1.5));
-    const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 1.5));
-    lastGyroRx = rx; lastGyroRy = ry;
-    applyTilt(rx, ry);
+    // Update target only — the lerp loop smooths movement to it
+    targetRy =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 1.5));
+    targetRx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 1.5));
+    // Start lerp loop if not already running
+    if (!gyroRafId) gyroRafId = requestAnimationFrame(gyroLerpLoop);
+    // Idle timer: drift back to center if gyro goes quiet
     clearTimeout(gyroIdleTimer);
     gyroIdleTimer = setTimeout(startGyroDrift, 800);
   }
@@ -15672,8 +15692,10 @@ function _initBadgeCardTilt(cardId) {
     touchStartX = null; touchStartY = null;
     card.style.transition = 'transform 0.6s cubic-bezier(.2,.8,.2,1)';
     applyTilt(0, 0, true);
-    // Re-anchor gyro baseline from current physical angle after touch ends
+    // Re-anchor gyro baseline and reset smooth state so gyro resumes from neutral
     baseGamma = null; baseBeta = null;
+    targetRx = targetRy = currentRx = currentRy = 0;
+    if (gyroRafId) { cancelAnimationFrame(gyroRafId); gyroRafId = null; }
   }
 
   card.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -15703,6 +15725,7 @@ function _initBadgeCardTilt(cardId) {
   _badgeCardGyroCleanup = () => {
     window.removeEventListener('deviceorientation', onDeviceOrientation);
     clearTimeout(gyroIdleTimer);
+    if (gyroRafId)  { cancelAnimationFrame(gyroRafId);  gyroRafId  = null; }
     if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
     card.removeEventListener('touchstart',  onTouchStart);
     card.removeEventListener('touchmove',   onTouchMove);

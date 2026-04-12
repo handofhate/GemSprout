@@ -6172,11 +6172,11 @@
           var(--r-clr-5), var(--r-clr-6), var(--r-clr-7), var(--r-clr-1)
         );
 
-      background-size: 200% 400%, 2px 2px, 400% 400%;
+      background-size: 400% 800%, 2px 2px, 600% 600%;
       background-position:
-        0% calc(var(--background-y, 50%) * 1),
+        50% calc(30% + (var(--background-y, 50%) - 50%) * 0.4),
         center center,
-        calc(var(--background-x, 50%) * 1.5) calc(var(--background-y, 50%) * 1.5);
+        calc(50% + (var(--background-x, 50%) - 50%) * 0.5) calc(50% + (var(--background-y, 50%) - 50%) * 0.5);
 
       background-blend-mode: luminosity, overlay;
       filter:
@@ -6210,11 +6210,11 @@
         );
 
       background-blend-mode: overlay;
-      background-size: 2px 2px, 400% 400%;
+      background-size: 2px 2px, 600% 600%;
       /* Moves opposite direction to shine layer */
       background-position:
         center center,
-        calc(var(--background-x, 50%) * -1.5) calc(var(--background-y, 50%) * -1.5);
+        calc(50% - (var(--background-x, 50%) - 50%) * 0.5) calc(50% - (var(--background-y, 50%) - 50%) * 0.5);
 
       filter:
         brightness(calc((var(--pointer-from-center, 0) * 0.5) + 0.85))
@@ -6234,14 +6234,14 @@
 
       background-image: radial-gradient(
         farthest-corner circle at var(--pointer-x, 50%) var(--pointer-y, 30%),
-        hsla(50,  30%, 95%, 0.9)  0%,
-        hsla(150, 20%, 40%, 0.6)  45%,
-        hsla(0,    0%, 0%,  0.85) 100%
+        hsla(50,  20%, 90%, 0.75) 0%,
+        hsla(150, 20%, 30%, 0.65) 45%,
+        hsla(0,    0%, 0%,  1)    100%
       );
 
-      filter: brightness(1.1) contrast(1.6);
+      filter: brightness(0.9) contrast(2);
       mix-blend-mode: overlay;
-      opacity: calc(0.75 + var(--pointer-from-center, 0) * 0.2);
+      opacity: calc(0.6 + var(--pointer-from-center, 0) * 0.15);
     }
 
     .badge-card-content {
