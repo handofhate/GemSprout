@@ -401,8 +401,20 @@ async function rcRestorePurchases() {
   }
 }
 
-const APP_VERSION = '1.2.0-beta';
+const APP_VERSION = '1.3.0-beta';
 const CHANGELOG_ENTRIES = [
+  {
+    version: '1.3.0-beta',
+    title: 'GemSprout Beta 1.3',
+    date: 'April 2026',
+    items: [
+      { icon: 'ph-cards', color: '#7C3AED', text: 'Badge Trading Cards — tap any earned badge to flip open a holographic trading card with a gyroscope-driven 3D tilt effect' },
+      { icon: 'ph-arrow-counter-clockwise', color: '#1D6B57', text: 'Activities can now be undone — swipe an activity row to undo an accidental approval or completion' },
+      { icon: 'ph-bell-ringing', color: '#0E7490', text: 'Notification routing improved — tapping a notification now takes you directly to the right screen' },
+      { icon: 'ph-device-mobile', color: '#16A34A', text: 'Layout and responsiveness improvements across a wide range of screen sizes' },
+      { icon: 'ph-lock-key', color: '#D97706', text: 'Auth reliability improvements and bug fixes for family code handling' },
+    ],
+  },
   {
     version: '1.2.0-beta',
     title: 'GemSprout Beta 1.2',
