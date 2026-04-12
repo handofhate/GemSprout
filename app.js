@@ -237,16 +237,16 @@ let _rcPkgs         = { monthly: null, yearly: null };
 let _rcSelectedPlan = 'yearly';
 
 async function initRevenueCat() {
-  if (!isNative()) { S.isPro = true; return; }
+  if (!isNative()) { S.isPro = RC.betaMode; return; }
   try {
     const { Purchases } = Capacitor.Plugins;
-    if (!Purchases) { S.isPro = true; return; }
+    if (!Purchases) { S.isPro = false; return; }
     await Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
     const { customerInfo } = await Purchases.getCustomerInfo();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
   } catch(e) {
     console.warn('RevenueCat init error:', e);
-    S.isPro = true;
+    S.isPro = false;
   }
 }
 
@@ -401,44 +401,22 @@ async function rcRestorePurchases() {
   }
 }
 
-const APP_VERSION = '1.3.0-beta';
+const APP_VERSION = '1.0';
 const CHANGELOG_ENTRIES = [
   {
-    version: '1.3.0-beta',
-    title: 'GemSprout Beta 1.3',
+    version: '1.0',
+    title: 'Welcome to GemSprout',
     date: 'April 2026',
     items: [
-      { icon: 'ph-cards', color: '#7C3AED', text: 'Badge Trading Cards — tap any earned badge to flip open a holographic trading card with a gyroscope-driven 3D tilt effect' },
-      { icon: 'ph-arrow-counter-clockwise', color: '#1D6B57', text: 'Activities can now be undone — swipe an activity row to undo an accidental approval or completion' },
-      { icon: 'ph-bell-ringing', color: '#0E7490', text: 'Notification routing improved — tapping a notification now takes you directly to the right screen' },
-      { icon: 'ph-device-mobile', color: '#16A34A', text: 'Layout and responsiveness improvements across a wide range of screen sizes' },
-      { icon: 'ph-lock-key', color: '#D97706', text: 'Auth reliability improvements and bug fixes for family code handling' },
-    ],
-  },
-  {
-    version: '1.2.0-beta',
-    title: 'GemSprout Beta 1.2',
-    date: 'April 2026',
-    items: [
-      { icon: 'ph-gift', color: '#1D6B57', text: 'Prizes can now require task-based unlocks in addition to gems, including total tasks, Daily Combo, or specific tasks' },
-      { icon: 'ph-repeat', color: '#0E7490', text: 'Recurring prize controls are improved with cleaner lock states and clearer reset/edit flow for repeat redemptions' },
-      { icon: 'ph-users-three', color: '#6C63FF', text: 'Team prizes now support reset from parent controls so family goals can be repeated without recreating the prize' },
-      { icon: 'ph-music-notes-simple', color: '#D97706', text: 'Week in Review audio playback is more reliable on the first story card and includes better failure logging' },
-      { icon: 'ph-sliders', color: '#5f8f63', text: 'New setting: Hide unavailable prizes, with matching setup option during onboarding for consistent behavior from day one' },
-      { icon: 'ph-flask', color: '#7C3AED', text: 'Dev Settings now include quick preview buttons for Maintenance and Parent Sign-In screens' },
-    ],
-  },
-  {
-    version: '1.1',
-    title: 'GemSprout Beta 1.1',
-    date: 'April 2026',
-    items: [
-      { icon: 'ph-paint-brush',   color: '#1D6B57', text: 'Complete UI overhaul with the new GemSprout 2.0 look and feel' },
-      { icon: 'ph-sparkle',       color: '#D97706', text: 'Refreshed theme, colors, icons, and cleaner onboarding throughout the app' },
-      { icon: 'ph-calendar-star', color: '#7C3AED', text: 'Week in Review now feels more like a real story and adapts better across devices' },
-      { icon: 'ph-bell-ringing',  color: '#0E7490', text: 'Notifications and stacked celebration moments are smoother and easier to manage' },
-      { icon: 'ph-user-circle-gear', color: '#6C63FF', text: 'Kids can now edit their own profile, avatar, and colors from Settings' },
-      { icon: 'ph-device-mobile', color: '#16A34A', text: 'Lots of layout polish for smaller phones, safer scrolling, and better iPhone fit' },
+      { icon: 'ph-paint-brush',          color: '#1D6B57', text: 'Fresh, polished design throughout — new theme, icons, and a cleaner onboarding experience' },
+      { icon: 'ph-cards',                color: '#7C3AED', text: 'Badge Trading Cards — tap any earned badge to flip open a holographic card with a gyroscope-driven 3D tilt effect' },
+      { icon: 'ph-gift',                 color: '#16A34A', text: 'Prizes can require task-based unlocks in addition to gems — set goals around Daily Combo, total tasks, or specific chores' },
+      { icon: 'ph-arrow-counter-clockwise', color: '#0E7490', text: 'Activities can be undone — swipe any activity row to reverse an accidental approval or completion' },
+      { icon: 'ph-calendar-star',        color: '#D97706', text: 'Week in Review plays like a story, with smooth animations and reliable audio from the first card' },
+      { icon: 'ph-user-circle-gear',     color: '#6C63FF', text: 'Kids can edit their own profile, avatar, and accent color from Settings' },
+      { icon: 'ph-bell-ringing',         color: '#0E7490', text: 'Tap a notification to go directly to the relevant screen' },
+      { icon: 'ph-users-three',          color: '#6C63FF', text: 'Team prizes can be reset by parents so family goals can repeat without starting over' },
+      { icon: 'ph-device-mobile',        color: '#16A34A', text: 'Layout and responsiveness improvements across a wide range of screen sizes' },
     ],
   },
 ];
@@ -491,6 +469,30 @@ const WEEK_REVIEW_SLIDE_MS = 10000;
 const WEEK_REVIEW_PREVIEW_MODE = false;
 const WEEK_REVIEW_PREVIEW_SLIDE_INDEX = 1;
 const WEEK_REVIEW_PREVIEW_KID_COUNT = 0;
+const WEEK_REVIEW_MESSAGE_INDEX_KEY = 'wirMessageIndex';
+const WEEK_REVIEW_MESSAGE_ORDER_KEY = 'wirMessageOrder';
+const WEEK_REVIEW_COVER_MESSAGES = [
+  "What a week. Let's take a look at everything your family accomplished together.",
+  "Another week of showing up. Your family put in the work - let's celebrate it.",
+  "Big things happened in your family this week. Here's the recap.",
+  "Savings, tasks, badges - your family had a full week. Let's see it.",
+  "Every task completed, every gem earned. Your family brought it this week.",
+  "Look at your family go. Here's everything you did together this week.",
+  "Consistency is everything. Your family showed up again this week.",
+  "It all adds up. Here's proof of what your family built this week.",
+  "Week after week, your family keeps going. Let's look at this one.",
+  "Hard work, good habits, and a little fun. Sounds like your week.",
+  "Your family made moves this week. Here's the full picture.",
+  "Tasks done, gems earned, savings growing. Let's take it all in.",
+  "This is what effort looks like. Your family's week in numbers.",
+  "Another week in the books. Your family should be proud.",
+  "Small wins add up to big things. Here's your family's week.",
+  "Your kids showed up this week. Let's celebrate that.",
+  "A whole week of your family doing the thing. Here it is.",
+  "Good habits are being built one week at a time. Here's this one.",
+  "Your family put in real effort this week. Let's see what it added up to.",
+  "This is the recap your family earned. Take a look.",
+];
 const DEBUG_FORCE_LOADING_PREVIEW = false; // TEMP: force loading-screen preview at startup
 const DEBUG_FORCE_LOADING_PREVIEW_MS = 3500;
 let _weekReviewStory = null;
@@ -570,6 +572,77 @@ function _weekReviewScaledDelay(value, scale = 1) {
   return Math.max(0, Number((delay * scale).toFixed(3)));
 }
 
+function _weekReviewShuffleMessageOrder(size) {
+  const order = Array.from({ length: size }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
+function _weekReviewReadMessageOrder(size) {
+  let order = null;
+  try {
+    const raw = localStorage.getItem(WEEK_REVIEW_MESSAGE_ORDER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length === size) {
+        const valid = parsed.every(n => Number.isInteger(n) && n >= 0 && n < size);
+        if (valid) order = parsed.slice();
+      }
+    }
+  } catch (_) {}
+  if (!order) {
+    order = _weekReviewShuffleMessageOrder(size);
+    try { localStorage.setItem(WEEK_REVIEW_MESSAGE_ORDER_KEY, JSON.stringify(order)); } catch (_) {}
+    try { localStorage.setItem(WEEK_REVIEW_MESSAGE_INDEX_KEY, '0'); } catch (_) {}
+  }
+  return order;
+}
+
+function _weekReviewNextCoverMessage() {
+  const size = WEEK_REVIEW_COVER_MESSAGES.length;
+  if (!size) return '';
+  let order = _weekReviewReadMessageOrder(size);
+  let index = 0;
+  try {
+    index = parseInt(localStorage.getItem(WEEK_REVIEW_MESSAGE_INDEX_KEY), 10) || 0;
+  } catch (_) {}
+  if (index < 0 || index >= order.length) index = 0;
+  const messageIndex = order[index] ?? 0;
+  const nextIndex = (index + 1) % order.length;
+  try { localStorage.setItem(WEEK_REVIEW_MESSAGE_INDEX_KEY, String(nextIndex)); } catch (_) {}
+  if (nextIndex === 0) {
+    order = _weekReviewShuffleMessageOrder(size);
+    try { localStorage.setItem(WEEK_REVIEW_MESSAGE_ORDER_KEY, JSON.stringify(order)); } catch (_) {}
+  }
+  return WEEK_REVIEW_COVER_MESSAGES[messageIndex] || WEEK_REVIEW_COVER_MESSAGES[0];
+}
+
+function _weekReviewComputeSavedTotals(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const dollars = list
+    .filter(h => h.type === 'savings_deposit')
+    .reduce((s, h) => s + (Number(h.dollars) || 0), 0);
+  const gems = list
+    .filter(h => h.type === 'savings')
+    .reduce((s, h) => {
+      const delta = Number(h.diamonds ?? h.gems ?? 0) || 0;
+      return delta < 0 ? s + Math.abs(delta) : s;
+    }, 0);
+  return { dollars, gems };
+}
+
+function _weekReviewSavedLabel(saved, cur) {
+  const dollars = Number(saved?.dollars) || 0;
+  const gems = Number(saved?.gems) || 0;
+  const parts = [];
+  if (dollars > 0) parts.push(`${cur}${dollars.toFixed(2)}`);
+  if (gems > 0) parts.push(`${gems} gems`);
+  return parts.join(' + ');
+}
+
 function _ordinalDay(n) {
   const v = n % 100;
   if (v >= 11 && v <= 13) return `${n}th`;
@@ -637,35 +710,41 @@ function showWeekReview() {
 
   const { start, end } = _getWeekRange();
   const weekHist  = (D.history || []).filter(h => h.date >= start && h.date <= end);
-  const choreHist = weekHist.filter(h => h.type === 'chore' && !(h.title||'').startsWith('Streak bonus ('));
+  const choreHist = weekHist.filter(h => h.type === 'chore');
+  const choreTaskHist = choreHist.filter(h => !(h.title || '').startsWith('Streak bonus ('));
   const bonusHist = weekHist.filter(h => h.type === 'bonus');
+  const penaltyHist = weekHist.filter(h => h.type === 'penalty');
   const badgeHist = weekHist.filter(h => h.type === 'badge');
-  const savDepHist = weekHist.filter(h => h.type === 'savings_deposit');
+  const savingsHist = weekHist.filter(h => h.type === 'savings_deposit' || h.type === 'savings');
   const savOn = D.settings.savingsEnabled !== false;
   const cur = D.settings.currency || '$';
 
-  const totalDiamonds = choreHist.reduce((s, h) => s + (h.diamonds || 0), 0)
-                      + bonusHist.reduce((s, h) => s + (h.diamonds || 0), 0);
-  const totalChores = choreHist.length;
-  const totalSaved  = savDepHist.reduce((s, h) => s + (h.dollars || 0), 0);
+  const totalDiamonds = choreHist.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                      + bonusHist.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                      - penaltyHist.reduce((s, h) => s + Math.abs(Number(h.diamonds ?? h.gems ?? 0) || 0), 0);
+  const totalChores = choreTaskHist.length;
+  const totalSaved  = _weekReviewComputeSavedTotals(savingsHist);
   const totalBadges = badgeHist.length;
 
   const choreCounts = {};
-  choreHist.forEach(h => { choreCounts[h.title] = (choreCounts[h.title] || 0) + 1; });
+  choreTaskHist.forEach(h => { choreCounts[h.title] = (choreCounts[h.title] || 0) + 1; });
   const topChore = Object.entries(choreCounts).sort((a, b) => b[1] - a[1])[0];
 
   const kidData = kids.map(kid => {
     const kChore   = choreHist.filter(h => h.memberId === kid.id);
+    const kTaskChore = choreTaskHist.filter(h => h.memberId === kid.id);
     const kBonus   = bonusHist.filter(h => h.memberId === kid.id);
+    const kPenalty = penaltyHist.filter(h => h.memberId === kid.id);
     const kBadge   = badgeHist.filter(h => h.memberId === kid.id);
-    const kSavDep  = savDepHist.filter(h => h.memberId === kid.id);
-    const kDiamonds = kChore.reduce((s, h) => s + (h.diamonds || 0), 0)
-                    + kBonus.reduce((s, h) => s + (h.diamonds || 0), 0);
-    const kSaved    = kSavDep.reduce((s, h) => s + (h.dollars || 0), 0);
+    const kSavings = savingsHist.filter(h => h.memberId === kid.id);
+    const kDiamonds = kChore.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                    + kBonus.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                    - kPenalty.reduce((s, h) => s + Math.abs(Number(h.diamonds ?? h.gems ?? 0) || 0), 0);
+    const kSaved    = _weekReviewComputeSavedTotals(kSavings);
     const kChoreCounts = {};
-    kChore.forEach(h => { kChoreCounts[h.title] = (kChoreCounts[h.title] || 0) + 1; });
+    kTaskChore.forEach(h => { kChoreCounts[h.title] = (kChoreCounts[h.title] || 0) + 1; });
     const kTopChore = Object.entries(kChoreCounts).sort((a, b) => b[1] - a[1])[0];
-    return { kid, diamonds: kDiamonds, chores: kChore.length, saved: kSaved, topChore: kTopChore, badges: kBadge, streak: kid.streak?.current || 0 };
+    return { kid, diamonds: kDiamonds, chores: kTaskChore.length, saved: kSaved, topChore: kTopChore, badges: kBadge, streak: kid.streak?.current || 0 };
   });
 
   const slides = _buildWeekReviewSlides({
@@ -699,6 +778,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
   const slides = [];
   const dateRange = _formatWeekReviewDateRange(start, end);
   const coverDateRange = _formatWeekReviewDateRange(start, end, true);
+  const coverMessage = _weekReviewNextCoverMessage();
   const familyCelebrationName = D.family?.name?.trim() || 'The Family';
   const timesLabel = (count) => {
     if (count === 1) return 'Once';
@@ -730,7 +810,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     return previewCoverData.map(({ kid }, idx) => ({
       kid,
       diamonds: 8 + (idx * 4),
-      saved: idx % 2 === 0 ? ((idx + 1) * 0.5) : 0,
+      saved: idx % 2 === 0 ? { dollars: (idx + 1) * 0.5, gems: idx + 2 } : { dollars: 0, gems: 0 },
       chores: 2 + idx,
       topChore: [previewChoreTitles[idx % previewChoreTitles.length], (idx % 6) + 1]
     }));
@@ -756,9 +836,6 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     });
   })();
   const isEmpty = totalChores === 0;
-  const introSub = isEmpty
-    ? 'A softer week for your crew. Here is the story anyway.'
-    : `${kidData.length === 1 ? kidData[0].kid.name : 'Your family'} wrapped up the week with tasks, savings, and a little momentum.`;
   slides.push({
     type: 'cover',
     gradient: 'linear-gradient(160deg,#3f6c5f 0%,#26443d 54%,#1b2f2a 100%)',
@@ -766,17 +843,14 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     icon: '<i class="ph-duotone ph-calendar-star" style="color:rgba(244,239,228,0.84);font-size:1rem"></i>',
     bigStat: coverDateRange,
     dateRangeText: dateRange,
-    subStat: introSub,
-    rows: previewCoverData.map(({ kid, chores }) => ({
-      avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'),
-      name: kid.name,
-      stat: kid.role === 'kid' ? `${kid.diamonds || 0} total gems` : 'Parent profile',
-      sub: chores > 0 ? `${chores} task${chores === 1 ? '' : 's'} this week` : 'Ready for next week'
-    }))
+    subStat: '',
+    coverMessage,
+    rows: []
   });
 
   if (totalDiamonds > 0) {
-    const savingsSub = (savOn && totalSaved > 0) ? ` - ${cur}${totalSaved.toFixed(2)} saved` : '';
+    const totalSavedLabel = _weekReviewSavedLabel(totalSaved, cur);
+    const savingsSub = (savOn && totalSavedLabel) ? ` - ${totalSavedLabel} saved` : '';
     slides.push({
       gradient: 'linear-gradient(160deg,#2f7f88 0%,#1f5f6a 54%,#173f49 100%)',
       label: 'Gems Earned',
@@ -786,8 +860,9 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
       rows: (previewSlideRows || kidData
       .filter(({ diamonds }) => diamonds > 0))
       .map(({ kid, diamonds, saved }) => {
-        const sub = (savOn && saved > 0)
-          ? `${cur}${saved.toFixed(2)} saved this week`
+        const savedLabel = savOn ? _weekReviewSavedLabel(saved, cur) : '';
+        const sub = savedLabel
+          ? `${savedLabel} saved this week`
           : '';
         return { avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'), name: kid.name, sub, stat: `${diamonds} gems` };
       })
@@ -1012,11 +1087,12 @@ function _weekReviewSyncAudio() {
 }
 
 function _devPreviewMaintenanceScreen() {
-  closeSettings();
-  showMaintenanceScreen(
-    'Scheduled Maintenance',
-    'Preview mode for the maintenance experience shown when Remote Config enables downtime.'
-  );
+  _runDevScreenPreview(() => {
+    showMaintenanceScreen(
+      'Scheduled Maintenance',
+      'Preview mode for the maintenance experience shown when Remote Config enables downtime.'
+    );
+  }, { devSectionKey: 'screens', backButtonSelector: '' });
 }
 
 function _devPreviewParentSignInScreen() {
@@ -1027,13 +1103,100 @@ function _devPreviewParentSignInScreen() {
     toast('Add at least one parent profile first');
     return;
   }
-  closeSettings();
-  showParentSignIn(parent.id, () => {});
+  _runDevScreenPreview(() => {
+    showParentSignIn(parent.id, () => {});
+  }, { devSectionKey: 'screens', backButtonSelector: 'button[onclick*="renderHome()"]' });
 }
 
 function _devPreviewLoadingScreen() {
+  _runDevScreenPreview(() => {
+    showLoading();
+  }, { devSectionKey: 'screens', backButtonSelector: '' });
+}
+
+function _captureSettingsRestoreContext(devSectionKey = 'screens') {
+  const pane = document.querySelector('#settings-root .settings-subpane');
+  return {
+    page: S.settingsPage || 'main',
+    scrollTop: pane?.scrollTop || 0,
+    devSectionKey,
+  };
+}
+
+function _closeDevPreviewToSettings() {
+  // Remove the floating close button.
+  const existing = document.getElementById('dev-screen-preview-close');
+  if (existing) existing.remove();
+  // Deactivate screen-auth (maintenance/loading set position:fixed + z-index:9999
+  // via the .loading class, which would sit on top of settings even after restore).
+  const authEl = document.getElementById('screen-auth');
+  if (authEl) {
+    authEl.classList.remove('active', 'loading');
+    authEl.removeAttribute('style');
+  }
+  const ctx = S._devScreenPreviewContext;
+  S._devScreenPreviewContext = null;
+  if (!ctx) {
+    if (S.currentUser) routeToView(S.currentUser);
+    else renderHome();
+    return;
+  }
+  _restoreSettingsAfterDevCelebration(ctx.page, ctx.scrollTop, ctx.devSectionKey || '');
+}
+
+function _applyDevPreviewChrome(opts = {}) {
+  // Remove any stale button from a previous preview before adding a fresh one.
+  const stale = document.getElementById('dev-screen-preview-close');
+  if (stale) stale.remove();
+  // Mount the button directly on body as position:fixed so it floats above
+  // everything regardless of the preview screen's own stacking context
+  // (screen-auth.loading uses position:fixed + overflow:hidden which would
+  // clip or interfere with an absolutely-positioned child).
+  const closeBtn = document.createElement('button');
+  closeBtn.id = 'dev-screen-preview-close';
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Exit preview');
+  closeBtn.textContent = 'Exit Preview';
+  closeBtn.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;height:34px;padding:0 12px;border:none;border-radius:999px;background:rgba(255,255,255,0.94);color:#274239;display:inline-flex;align-items:center;justify-content:center;font-size:0.76rem;font-weight:800;letter-spacing:0.02em;box-shadow:0 8px 20px rgba(28,40,34,0.2);z-index:19999;cursor:pointer';
+  closeBtn.onclick = _closeDevPreviewToSettings;
+  document.body.appendChild(closeBtn);
+  const selector = String(opts.backButtonSelector || '').trim();
+  if (selector) {
+    const screen = document.getElementById('screen-auth');
+    if (screen) {
+      screen.querySelectorAll(selector).forEach(btn => {
+        btn.setAttribute('onclick', '_closeDevPreviewToSettings(); return false;');
+      });
+    }
+  }
+}
+
+function _runDevScreenPreview(renderFn, opts = {}) {
+  const fn = typeof renderFn === 'function' ? renderFn : null;
+  if (!fn) return;
+  const ctx = _captureSettingsRestoreContext(opts.devSectionKey || 'screens');
   closeSettings();
-  showLoading();
+  // Wait for closeSettings' 230ms exit animation to finish before rendering the
+  // preview screen, otherwise the preview renders while settings is still in the
+  // DOM and the two screens stack visually.
+  setTimeout(async () => {
+    S._devScreenPreviewContext = ctx;
+    try {
+      await fn();
+    } finally {
+      _applyDevPreviewChrome(opts);
+    }
+  }, 250);
+}
+
+async function _devPreviewPaywall() {
+  await _runDevScreenPreview(async () => {
+    S.isPro = false;
+    await showPaywall();
+  }, {
+    devSectionKey: 'screens',
+    backButtonSelector: '.paywall-top button[onclick*="renderHome()"]',
+  });
 }
 
 function _weekReviewStopAudio() {
@@ -1415,9 +1578,6 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
     delay: _weekReviewScaledDelay(rowDelayBase + i, timingScale),
     motionClass: row.motionClass || rowMotionClass(i),
   }, i)).join('');
-  const gemCount = Number(totalDiamonds) || 0;
-  const savingsAmount = Number(String(totalSaved).replace(/[^0-9.-]/g, '')) || 0;
-  const badgeCount = Number(totalBadges) || 0;
   const labelDelay = 0;
   const isCover = slide.type === 'cover';
   const isFinale = slide.type === 'finale';
@@ -1426,18 +1586,11 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
   const finaleMessageHTML = slide.finaleMessage
     ? `<div class="wr-finale-message wr-reveal wr-reveal-from-right"${previewAttr} style="--wr-delay:${_weekReviewScaledDelay(1, timingScale)}s">${slide.finaleMessage}</div>`
     : '';
-  const coverChips = [];
-  if (gemCount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>`);
-  }
-  if (savingsAmount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${totalSaved} saved</div>`);
-  }
-  if (badgeCount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-medal" style="font-size:1rem"></i> ${totalBadges} badges</div>`);
-  }
+  const coverQuoteHTML = (isCover && slide.coverMessage)
+    ? `<div class="wr-cover-quote-wrap wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><div class="wr-cover-quote">${esc(slide.coverMessage)}</div></div>`
+    : '';
   return `
-    <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}${slide.noLabel ? ' wr-card-no-label' : ''}" style="background:${slide.gradient}">
+    <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}${slide.noLabel ? ' wr-card-no-label' : ''}${isCover ? ' wr-card-cover' : ''}" style="background:${slide.gradient}">
       <div class="wr-card-label"${previewAttr}>${slide.icon}${slide.label}</div>
       <div class="wr-card-body">
         ${slide.type === 'finale' ? `
@@ -1449,11 +1602,13 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
             ${finaleMessageHTML}
             <div class="wr-card-sub wr-reveal wr-reveal-from-right"${previewAttr} style="--wr-delay:${_weekReviewScaledDelay(1, timingScale)}s">${slide.subStat}</div>
           </div>
+        ` : (isCover ? `
+          <div class="wr-card-big wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${headerDelay}s;margin-bottom:2px">${slide.bigStat}</div>
         ` : `
           <div class="wr-card-big wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${headerDelay}s">${slide.bigStat}</div>
           <div class="wr-card-sub wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${subDelay}s">${slide.subStat}</div>
-        `}
-        ${slide.type === 'cover' && coverChips.length ? `<div class="wr-cover-chip-row">${coverChips.join('')}</div>` : ''}
+        `)}
+        ${coverQuoteHTML}
         ${(slide.rows || []).length ? `<div class="wr-kid-list${listClass}">${rowsHtml}</div>` : ''}
       </div>
     </div>`;
@@ -1586,7 +1741,7 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-tap-left { left:0; }
       .wr-tap-right { right:0; }
       .wr-slide { position:relative; width:100%; min-height:0; display:flex; flex-direction:column; justify-content:center; animation:wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-      .wr-card { width:100%; max-height:100%; border-radius:30px; padding:26px 24px 26px; box-shadow:0 18px 40px rgba(34, 28, 20, 0.14); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
+      .wr-card { width:100%; max-height:100%; border-radius:30px; padding:26px 24px 26px; border:1px solid rgba(255,255,255,0.14); box-shadow:0 8px 32px rgba(0,0,0,0.3); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
       .wr-reveal { opacity:1; --wr-from-x:0px; --wr-from-y:0px; transform:translate3d(var(--wr-from-x), var(--wr-from-y), 0) scale(1); will-change:transform; animation: wr-reveal ${revealDuration}s cubic-bezier(0.16,1,0.3,1) both; animation-delay: var(--wr-delay, 0s); }
       .wr-reveal[data-preview="1"] { opacity:1; animation:none; transform:none; }
       #week-review-overlay.wr-paused .wr-progress-fill.active,
@@ -1594,8 +1749,19 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-card-label { display:flex; align-items:center; gap:8px; font-size:0.86rem; font-weight:900; text-transform:uppercase; letter-spacing:0.12em; color:rgba(255,248,239,0.64); margin-bottom:20px; }
       .wr-card-no-label .wr-card-label { display:none; }
       .wr-card-body { flex:1; display:flex; flex-direction:column; justify-content:center; gap:18px; padding-bottom:10px; }
+      .wr-card-cover .wr-card-body { display:flex; flex-direction:column; justify-content:space-between; }
       .wr-card-big { font-size:clamp(3.4rem,15vw,5.6rem); font-weight:900; color:#fff9f1; line-height:0.92; letter-spacing:-0.05em; margin-bottom:16px; text-wrap:balance; }
       .wr-card-sub { font-size:1.18rem; color:rgba(255,246,238,0.78); line-height:1.5; max-width:28rem; }
+      .wr-cover-quote-wrap { flex:1 1 auto; display:flex; align-items:center; justify-content:center; min-height:0; }
+      .wr-cover-quote {
+        text-align:center;
+        font-size:clamp(28px, 7vw, 40px);
+        font-weight:700;
+        line-height:1.45;
+        text-indent:0;
+        padding:20px 24px 28px;
+        color:rgba(250,248,244,0.96);
+      }
       .wr-kid-list { display:flex; flex-direction:column; gap:16px; margin-top:14px; overflow:hidden; }
       .wr-kid-list-count-3,
       .wr-kid-list-count-4,
@@ -1657,6 +1823,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-card { min-height: var(--wr-card-uniform-height, clamp(430px, 58dvh, 560px)); height:var(--wr-card-uniform-height, auto); padding:24px 22px 24px; }
         .wr-card-label { font-size: 0.82rem; }
         .wr-card-body { gap: 16px; padding-bottom: 8px; }
+        .wr-card-cover .wr-card-body { justify-content: space-between; }
         .wr-card-big { font-size: clamp(3.1rem, 14vw, 4.9rem); }
         .wr-card-sub { font-size: 1.12rem; }
         .wr-kid-list { gap: 14px; margin-top: 10px; }
@@ -1704,6 +1871,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-card { min-height: 0; height: 100%; max-height: none; padding: 18px 16px 18px; border-radius: 24px; }
         .wr-card-label { font-size: 0.72rem; margin-bottom: 12px; gap: 6px; }
         .wr-card-body { justify-content: flex-start; gap: 10px; padding-bottom: 0; }
+        .wr-card-cover .wr-card-body { justify-content: space-between; }
         .wr-card-big { font-size: clamp(2.3rem, 11.5vw, 3.4rem); margin-bottom: 8px; }
         .wr-card-sub { font-size: 0.88rem; line-height: 1.32; max-width: 18rem; }
         .wr-cover-chip-row { gap: 5px; margin-top: 4px; }
@@ -1769,7 +1937,11 @@ function _renderWeekReviewStory() {
   })();
   const totalBadges = _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0';
   if (_weekReviewShouldUseUniformCardHeight()) {
-    _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
+      });
+    });
   } else {
     overlay.style.removeProperty('--wr-card-uniform-height');
   }
@@ -2377,6 +2549,9 @@ let S = {            // UI state (not persisted)
   _activeViewRole:       '',
   _historyMemberId:      null,
   _testOnboarding:       null,
+  _devSettingsUnlocked:  false,
+  _devUnlockTapCount:    0,
+  _devUnlockWindowStart: 0,
 };
 
 function getMainScrollerForCurrentView() {
@@ -3565,9 +3740,23 @@ function getChoreProgress(chore, memberId, dateStr = today()) {
 
 function fmtDate(str) {
   if (!str) return '';
-  const [y,m,d] = str.split('-');
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${months[+m-1]} ${+d}`;
+  const [y, m, d] = String(str).split('-');
+  if (!y || !m || !d) return String(str);
+  return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${y}`;
+}
+
+function fmtDateTime(ts) {
+  const ms = Number(ts);
+  if (!Number.isFinite(ms)) return '';
+  const dt = new Date(ms);
+  if (Number.isNaN(dt.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(dt);
 }
 
 function fmtDmds(n) { return `${n} gems`; }
@@ -5483,9 +5672,12 @@ const _rapidTapState = {};
 function _setRapidTapPulse(el, scale = 1, opacity = null) {
   if (!el) return;
   const isEggGem = el.id === 'egg-gem';
-  el.style.transform = isEggGem
-    ? `translate(-50%, -50%) scale(${scale})`
-    : `scale(${scale})`;
+  if (isEggGem) {
+    el.style.removeProperty('transform');
+    el.style.setProperty('--egg-scale', String(scale));
+  } else {
+    el.style.transform = `scale(${scale})`;
+  }
   if (opacity != null) el.style.opacity = String(opacity);
 }
 
@@ -5503,7 +5695,7 @@ function handleRapidTap(key, opts = {}) {
   clearTimeout(state.timer);
   if (state.taps >= required) {
     state.taps = 0;
-    if (pulseEl && idleOpacity != null) pulseEl.style.opacity = '1';
+    if (pulseEl && idleOpacity != null) pulseEl.style.opacity = String(idleOpacity);
     _rapidTapState[key] = state;
     opts.onTrigger?.();
     return;
@@ -5605,7 +5797,7 @@ function launchDollarRain(count = 160, rootElement = null) {
 const _celebQueue = [];
 
 function showCelebration(opts) {
-  if (isParentSignedIn()) return;
+  if (isParentSignedIn() && !opts?._devBypassParentBlock) return;
   _celebQueue.push(opts);
   // Defer so all synchronous calls batch before any rendering,
   // ensuring the first modal knows the full queue size.
@@ -5672,103 +5864,128 @@ function dismissAllCelebrations() {
   closeCelebration();
 }
 
-function testWhileAwayModal() {
+function testWhileAwayModal(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned gems!',
     diamonds: 5,
-    onClose:  () => {},
+    onClose,
   });
 }
 
-function testGemCelebration() {
+function testGemCelebration(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:     '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57"></i> Gems Earned!',
     sub:      'You knocked out a task and earned some fresh gems.',
     diamonds: 12,
-    onClose:  () => {},
+    onClose,
   });
 }
 
-function testComboCelebration() {
+function testComboCelebration(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:     '<i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i> Daily Combo Complete!',
     sub:      'Three tasks in one day. Bonus gems unlocked.',
     diamonds: 18,
     rainType: 'combo',
-    onClose:  () => {},
+    onClose,
   });
 }
 
-function testQueuedCelebrations() {
+function testQueuedCelebrations(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
+  const bypass = opts._devBypassParentBlock !== false;
+  let closed = false;
+  const onCloseOnce = () => {
+    if (closed) return;
+    closed = true;
+    onClose();
+  };
   showCelebration({
+    _devBypassParentBlock: bypass,
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned gems!',
     diamonds: 5,
-    onClose:  () => {},
+    onClose:  onCloseOnce,
   });
   showCelebration({
+    _devBypassParentBlock: bypass,
     icon:     '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Great job on your homework!',
     diamonds: 10,
-    onClose:  () => {},
+    onClose:  onCloseOnce,
   });
   showCelebration({
+    _devBypassParentBlock: bypass,
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Clean Your Room" and you earned gems!',
     diamonds: 8,
-    onClose:  () => {},
+    onClose: onCloseOnce,
   });
 }
 
-function testSavingsDeposit() {
+function testSavingsDeposit(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   const cur = D.settings.currency || '$';
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:    '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:3rem"></i>',
     title:   '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i> Savings Deposit!',
     sub:     'Birthday money from Grandma!',
     dollars: 20,
     cur,
-    onClose: () => {},
+    onClose,
   });
 }
 
-function testBadgeCelebration() {
+function testBadgeCelebration(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   const badgeIcon = '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>';
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:      '<i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:3rem"></i>',
     title:     '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i> New Badge!',
     sub:       'You unlocked Shiny Helper.',
     badgeIcon,
-    onClose:   () => {},
+    onClose,
   });
 }
 
-function testSpendApproved() {
+function testSpendApproved(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   const cur = D.settings.currency || '$';
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:        '<i class="ph-duotone ph-shopping-bag" style="color:#16A34A;font-size:3rem"></i>',
     title:       '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Spend Approved!',
     sub:         '"Lego set" for $15.00 approved. Balance: $32.50',
     noAnimation: true,
-    onClose:     () => {},
+    onClose,
   });
 }
 
-function testSpendDenied() {
+function testSpendDenied(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:        '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>',
     title:       '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time',
     sub:         'Your spend request for "Video game" for $60.00 wasn\'t approved.',
     noAnimation: true,
     btnLabel:    'Okay',
-    onClose:     () => {},
+    onClose,
   });
 }
 
@@ -5929,15 +6146,26 @@ async function devShowPushDiagnostics() {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  const escapedCopy = JSON.stringify(info, null, 2).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  S._devPushDiagnosticsClipboard = JSON.stringify(info, null, 2);
 
   showQuickActionModal(`
     <div style="padding:8px">
       <div style="font-weight:700;margin-bottom:10px"><i class="ph-duotone ph-bug" style="vertical-align:middle;margin-right:6px"></i>Push Diagnostics</div>
       <div style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin-bottom:10px">${lines.map(x => esc(x)).join('<br>')}</div>
       <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.5;max-height:220px;overflow:auto">${escapedJson}</div>
-      <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedCopy}').then(()=>toast('Diagnostics copied')).catch(()=>toast('Copy failed'))">Copy Diagnostics JSON</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="devCopyPushDiagnostics()">Copy Diagnostics JSON</button>
     </div>`);
+}
+
+function devCopyPushDiagnostics() {
+  const txt = String(S._devPushDiagnosticsClipboard || '');
+  if (!txt) {
+    toast('No diagnostics available');
+    return;
+  }
+  navigator.clipboard?.writeText(txt)
+    .then(() => toast('Diagnostics copied'))
+    .catch(() => toast('Copy failed'));
 }
 
 function testCameraPermission() {
@@ -6642,6 +6870,21 @@ function renderSettings() {
   if (S.settingsPage === 'account') html += _renderSettingsAccount(_settingsPageEnterClass, true);
   if (S.settingsPage === 'notifications') html += _renderSettingsNotifications(_settingsPageEnterClass, true);
   root.innerHTML = html;
+  _bindSettingsDevAccordion();
+}
+
+function _bindSettingsDevAccordion() {
+  const root = document.getElementById('settings-root');
+  if (!root) return;
+  const sections = Array.from(root.querySelectorAll('.settings-dev-card details.settings-dev-section'));
+  sections.forEach(section => {
+    section.addEventListener('toggle', () => {
+      if (!section.open) return;
+      sections.forEach(other => {
+        if (other !== section) other.open = false;
+      });
+    });
+  });
 }
 
 function _settingsAuthProviders() {
@@ -6653,6 +6896,90 @@ function _settingsAuthProviders() {
     }));
   }
   return _authProviders;
+}
+
+function tapSettingsVersionForDevUnlock() {
+  if (S._devSettingsUnlocked) return;
+  const now = Date.now();
+  const windowMs = 3000;
+  const needed = 7;
+  if (!S._devUnlockWindowStart || (now - S._devUnlockWindowStart) > windowMs) {
+    S._devUnlockWindowStart = now;
+    S._devUnlockTapCount = 0;
+  }
+  S._devUnlockTapCount += 1;
+  const remaining = needed - S._devUnlockTapCount;
+  if (remaining <= 0) {
+    const pane = document.querySelector('#settings-root .settings-subpane');
+    const scrollTop = pane?.scrollTop || 0;
+    S._devSettingsUnlocked = true;
+    S._devUnlockTapCount = 0;
+    S._devUnlockWindowStart = 0;
+    toast('Developer options unlocked');
+    renderSettings();
+    requestAnimationFrame(() => {
+      const nextPane = document.querySelector('#settings-root .settings-subpane');
+      if (!nextPane) return;
+      // Restore scroll position first (no animation), then smoothly scroll to
+      // the newly revealed dev section at the bottom.
+      nextPane.scrollTop = scrollTop;
+      requestAnimationFrame(() => {
+        const start = nextPane.scrollTop;
+        const end = nextPane.scrollHeight - nextPane.clientHeight;
+        const duration = 900;
+        const startTime = performance.now();
+        function easeInOutCubic(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+        function step(now) {
+          const t = Math.min((now - startTime) / duration, 1);
+          nextPane.scrollTop = start + (end - start) * easeInOutCubic(t);
+          if (t < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      });
+    });
+    return;
+  }
+  if (S._devUnlockTapCount >= 3) {
+    toast(`${remaining} more taps to unlock developer options`);
+  }
+}
+
+function _restoreSettingsAfterDevCelebration(page = 'main', scrollTop = 0, devSectionKey = '') {
+  const sr = document.getElementById('settings-root');
+  if (!sr) return;
+  S.settingsPage = page;
+  _settingsPageEnterClass = 'settings-subpane-enter';
+  sr.classList.add('open');
+  renderSettings();
+  _settingsPageEnterClass = '';
+  if (devSectionKey) {
+    const all = Array.from(sr.querySelectorAll('.settings-dev-card details.settings-dev-section'));
+    const target = sr.querySelector(`.settings-dev-card details.settings-dev-section[data-dev-section="${devSectionKey}"]`);
+    if (target) {
+      all.forEach(d => { d.open = (d === target); });
+    }
+  }
+  requestAnimationFrame(() => {
+    const pane = sr.querySelector('.settings-subpane');
+    if (!pane) return;
+    pane.scrollTop = scrollTop;
+    requestAnimationFrame(() => { pane.scrollTop = scrollTop; });
+  });
+}
+
+function runDevSettingsCelebrationTest(testFn, devSectionKey = '') {
+  const fn = typeof testFn === 'function' ? testFn : null;
+  if (!fn) return;
+  const pane = document.querySelector('#settings-root .settings-subpane');
+  const scrollTop = pane?.scrollTop || 0;
+  const page = S.settingsPage || 'main';
+  closeSettings();
+  setTimeout(() => {
+    fn({
+      onClose: () => _restoreSettingsAfterDevCelebration(page, scrollTop, devSectionKey),
+      _devBypassParentBlock: true,
+    });
+  }, 0);
 }
 
 function _ensureMemberAuthProviders(member) {
@@ -6867,58 +7194,88 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         </div>` : ''}
       </div>
 
-      ${RC.betaMode ? `<div style="height:14px"></div>
-      <div class="section-row"><span class="section-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
-      <div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
-        <div style="background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:#78350F;line-height:1.5">
-          <strong>For testers only.</strong> These settings exist to help us find and fix bugs before launch. They will not be present in the final App Store release.
+      <div style="height:4px"></div>
+      <button class="settings-link-row settings-whats-new-link" onclick="showChangelog()">
+        <div>
+          <div class="settings-link-title"><i class="ph-duotone ph-newspaper" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> What's New</div>
+          <div class="settings-link-sub">See recent updates and release notes</div>
         </div>
-        <div class="card" style="background:#F0FDF4;border:1.5px solid var(--green);margin-bottom:10px">
-          <div class="card-title" style="font-size:0.9rem"><i class="ph-duotone ph-cloud" style="color:#10B981;font-size:1rem;vertical-align:middle"></i> Cloud Sync</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:0.85rem;color:var(--green);font-weight:600"><i class="ph-duotone ph-check-circle" style="color:var(--green);vertical-align:middle"></i> Automatic</span>
-            <button class="btn btn-secondary btn-sm" onclick="location.reload(true)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload App</button>
-          </div>
-          ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
-        </div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testGemCelebration()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> Test Gem Celebration</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testComboCelebration()"><i class="ph-duotone ph-lightning" style="font-size:1rem;vertical-align:middle"></i> Test Combo Celebration</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Test While You Were Away</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()"><i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Test Queued Notifications (3)</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> Test Savings Deposit</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testBadgeCelebration()"><i class="ph-duotone ph-medal" style="font-size:1rem;vertical-align:middle"></i> Test Badge Celebration</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()"><i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Test Spend Approved</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()"><i class="ph-duotone ph-x-circle" style="font-size:1rem;vertical-align:middle"></i> Test Spend Denied</button>
-        <div style="height:10px"></div>
-        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:4px"></i> Push Notifications</div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devTestPushPermission()"><i class="ph-duotone ph-lock-open" style="font-size:0.9rem;vertical-align:middle"></i> Request Permission</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devShowPushToken()"><i class="ph-duotone ph-identification-card" style="font-size:0.9rem;vertical-align:middle"></i> Register &amp; Show FCM Token</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devShowPushDiagnostics()"><i class="ph-duotone ph-bug" style="font-size:0.9rem;vertical-align:middle"></i> Push Diagnostics</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();showPaywall()"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="startTestOnboarding()"><i class="ph-duotone ph-rocket-launch" style="font-size:1rem;vertical-align:middle"></i> Test Onboarding</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="closeSettings();showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle"></i> Test Week in Review</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewMaintenanceScreen()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Preview Maintenance Screen</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewParentSignInScreen()"><i class="ph-duotone ph-sign-in" style="font-size:1rem;vertical-align:middle"></i> Preview Parent Sign-In</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewLoadingScreen()"><i class="ph-duotone ph-spinner-gap" style="font-size:1rem;vertical-align:middle"></i> Preview Loading Screen</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="try{localStorage.removeItem(CHANGELOG_SEEN_KEY)}catch(_){};showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle"></i> Test What's New</button>
-        <div style="height:10px"></div>
-        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="_devShowInviteTest()"><i class="ph-duotone ph-flask" style="font-size:0.9rem;vertical-align:middle"></i> Test Invite System</button>
-        <button class="btn btn-secondary btn-full" onclick="_devResetInviteTest()"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:0.9rem;vertical-align:middle"></i> Reset Invite Test</button>
-        <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">Reset clears all invites for this family and the last test user doc automatically.</div>
-        <div style="height:10px"></div>
-        <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
-      </div>` : ''}
+        <i class="ph-duotone ph-caret-right" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
+      </button>
+      <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px;cursor:pointer" onclick="tapSettingsVersionForDevUnlock()">GemSprout v${APP_VERSION}</div>
 
-      <div style="height:20px"></div>
-      <div class="settings-footer-stack">
-        <button class="btn btn-secondary btn-full" onclick="showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle;margin-right:6px"></i> Week in Review</button>
-        <button class="btn btn-secondary btn-full" onclick="showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle;margin-right:6px"></i> What's New</button>
-      </div>
-      <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px">GemSprout v${APP_VERSION}</div>
+      ${S._devSettingsUnlocked ? `<div style="height:14px"></div>
+      <div class="section-row"><span class="section-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
+      <div class="card settings-dev-card" style="border:2px solid #E5E7EB;background:#F9FAFB">
+        <details class="settings-dev-section" data-dev-section="animations">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:4px"></i> Animations</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Test celebration animations</div>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testGemCelebration,'animations')">Gem Celebration</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testComboCelebration,'animations')">Combo Celebration</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testBadgeCelebration,'animations')">Badge Celebration</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="notification-modals">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-chat-circle-text" style="vertical-align:middle;margin-right:4px"></i> Notification Modals</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Test kid-view notification modals</div>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testWhileAwayModal,'notification-modals')">While You Were Away</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testQueuedCelebrations,'notification-modals')">While You Were Away (Stacked)</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testSavingsDeposit,'notification-modals')">Savings Deposit</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testSpendApproved,'notification-modals')">Spend Approved</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testSpendDenied,'notification-modals')">Spend Denied</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="push-notifications">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:4px"></i> Push Notifications</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Test push notification configuration</div>
+            <button class="btn btn-secondary btn-full" onclick="devTestPushPermission()">Request Permission</button>
+            <button class="btn btn-secondary btn-full" onclick="devShowPushToken()">Register and Show FCM Token</button>
+            <button class="btn btn-secondary btn-full" onclick="devSendTestPushNotification()">Send Test Approval Notification</button>
+            <button class="btn btn-secondary btn-full" onclick="devShowPushDiagnostics()">Push Diagnostics</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="screens">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-devices" style="vertical-align:middle;margin-right:4px"></i> Screens</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Open difficult to access pages to preview and test</div>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewPaywall()">Paywall</button>
+            <button class="btn btn-secondary btn-full" onclick="startTestOnboarding()">Onboarding</button>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewLoadingScreen()">Loading</button>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewMaintenanceScreen()">Maintenance</button>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewParentSignInScreen()">Sign-In</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="other">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-dots-three-outline" style="vertical-align:middle;margin-right:4px"></i> Other</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Additional functions for testing</div>
+            <button class="btn btn-secondary btn-full" onclick="testCameraPermission()">Test Camera Permission</button>
+            <button class="btn btn-secondary btn-full" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
+          </div>
+        </details>
+      </div>` : ''}
 
     </div>
     </div>`;
@@ -6981,6 +7338,9 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
         </div>
         ${_anyLinked && _linkedCount === 1 ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">At least one sign-in method must stay linked.</div>` : ''}
         ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">Sign in with Google or Apple to enable push notifications and secure your profile</div>` : ''}
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:10px;text-align:center">
+          Last synced: ${s.lastSync ? fmtDateTime(s.lastSync) : 'Not yet'}
+        </div>
       </div>
 
       <div style="height:14px"></div>
@@ -7519,7 +7879,7 @@ async function registerBiometricWithCallback(onComplete) {
     toast(`${label} set up!`);
   } catch(e) {
     if (e.name !== 'NotAllowedError' && e.message !== 'Authentication cancelled.') {
-      alert(`Could not set up ${label}: ` + e.message);
+      toast(`Could not set up ${label}: ` + e.message);
     }
   } finally {
     if (onComplete) onComplete();
@@ -8182,17 +8542,19 @@ async function _submitParentInvite(testMode = false) {
   }
 }
 
-function cancelSetup() {
-  S._setupBiometricDecisionRequired = false;
-  S._setupBiometricOfferAnswered = false;
-  if (_exitTestOnboarding('Onboarding preview closed - nothing was saved.')) return;
-  const currentUserId = S.currentUser?.id || getCurrentUserId();
-  const freshUser = currentUserId ? getMember(currentUserId) : null;
-  if (freshUser) {
-    S.currentUser = freshUser;
-    routeToView(freshUser);
-  }
-  else renderHome();
+function cancelSetup(btn = null) {
+  _setupRunWithTapFeedback(() => {
+    S._setupBiometricDecisionRequired = false;
+    S._setupBiometricOfferAnswered = false;
+    if (_exitTestOnboarding('Onboarding preview closed - nothing was saved.')) return;
+    const currentUserId = S.currentUser?.id || getCurrentUserId();
+    const freshUser = currentUserId ? getMember(currentUserId) : null;
+    if (freshUser) {
+      S.currentUser = freshUser;
+      routeToView(freshUser);
+    }
+    else renderHome();
+  }, btn);
 }
 
 function _cloneOnboardingTestState(value) {
@@ -8202,22 +8564,41 @@ function _cloneOnboardingTestState(value) {
 
 function startTestOnboarding() {
   if (S._testOnboarding?.active) return;
+  const settingsContext = _captureSettingsRestoreContext('screens');
   S._testOnboarding = {
     active: true,
     snapshotD: _cloneOnboardingTestState(D),
     snapshotCurrentUserId: getCurrentUserId(),
     snapshotKidTab: S.kidTab,
     snapshotParentTab: S.parentTab,
+    settingsContext,
   };
   closeSettings();
-  showScreen('screen-setup');
-  renderSetupGate();
+  setTimeout(() => {
+    showScreen('screen-setup');
+    renderSetupGate();
+    // Inject the Exit Preview button on body (position:fixed) so it floats
+    // above the full screen rather than being clipped inside the card.
+    const stale = document.getElementById('dev-screen-preview-close');
+    if (stale) stale.remove();
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'dev-screen-preview-close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Exit onboarding preview');
+    closeBtn.textContent = 'Exit Preview';
+    closeBtn.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;height:34px;padding:0 12px;border:none;border-radius:999px;background:rgba(255,255,255,0.94);color:#274239;display:inline-flex;align-items:center;justify-content:center;font-size:0.76rem;font-weight:800;letter-spacing:0.02em;box-shadow:0 8px 20px rgba(28,40,34,0.2);z-index:19999;cursor:pointer';
+    closeBtn.onclick = closeTestOnboardingPreview;
+    document.body.appendChild(closeBtn);
+  }, 250);
 }
 
 function _exitTestOnboarding(message = '') {
   const test = S._testOnboarding;
   if (!test?.active) return false;
+  const settingsCtx = test.settingsContext || null;
   S._testOnboarding = null;
+  const closeBtn = document.getElementById('dev-screen-preview-close');
+  if (closeBtn) closeBtn.remove();
   D = normalizeData(test.snapshotD || defaultData());
   S.setupStep = 0;
   S.setupMembers = [];
@@ -8227,10 +8608,25 @@ function _exitTestOnboarding(message = '') {
   const userId = test.snapshotCurrentUserId || '';
   setCurrentUserId(userId);
   S.currentUser = userId ? getMember(userId) : null;
-  if (S.currentUser) routeToView(S.currentUser);
-  else renderHome();
+  if (settingsCtx) {
+    _restoreSettingsAfterDevCelebration(settingsCtx.page || 'main', settingsCtx.scrollTop || 0, settingsCtx.devSectionKey || 'screens');
+  } else if (S.currentUser) {
+    routeToView(S.currentUser);
+  } else {
+    renderHome();
+  }
   if (message) toast(message);
   return true;
+}
+
+function closeTestOnboardingPreview(evt = null) {
+  evt?.preventDefault?.();
+  evt?.stopPropagation?.();
+  if (S._closingTestOnboardingPreview) return false;
+  S._closingTestOnboardingPreview = true;
+  _exitTestOnboarding('Onboarding preview closed - nothing was saved.');
+  setTimeout(() => { S._closingTestOnboardingPreview = false; }, 400);
+  return false;
 }
 
 function goSetup(opts = {}) {
@@ -8264,13 +8660,37 @@ function goSetup(opts = {}) {
   renderSetupStep();
 }
 
+function _splitSetupStepContent(content = '') {
+  const html = String(content || '');
+  const match = html.match(/(<div class="flex gap-10[\s\S]*<\/div>)\s*$/);
+  if (!match) return { body: html, nav: '' };
+  return {
+    body: html.slice(0, match.index).trimEnd(),
+    nav: match[1],
+  };
+}
+
+function _setupRunWithTapFeedback(action, sourceBtn = null) {
+  const run = (typeof action === 'function') ? action : () => {};
+  run();
+}
+
+function _setupPulseTapFeedback(btn = null) {
+  _setupRunWithTapFeedback(() => {}, btn);
+}
+
+function setupBackToGate(btn = null) {
+  _setupRunWithTapFeedback(() => renderSetupGate(), btn);
+}
+
 function renderSetupStep(opts = {}) {
   const preserveScroll = !!opts.preserveScroll;
   const existingScreen = document.getElementById('screen-setup');
   const existingGate = document.getElementById('setup-gate');
   const existingContent = document.getElementById('setup-content');
+  const existingStepScroll = existingContent?.querySelector?.('.setup-step-scroll');
   const savedScreenScroll = preserveScroll ? (existingScreen?.scrollTop || 0) : 0;
-  const savedContentScroll = preserveScroll ? (existingContent?.scrollTop || 0) : 0;
+  const savedContentScroll = preserveScroll ? (existingStepScroll?.scrollTop || 0) : 0;
   const step  = S.setupStep;
   const total = SETUP_STEPS.length;
   const dots  = SETUP_STEPS.map((_,i) =>
@@ -8292,12 +8712,12 @@ function renderSetupStep(opts = {}) {
       </div>
       ${D.setup || S._testOnboarding?.active ? `
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup()">Cancel</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>` : `
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBackToGate(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>`}`;
       break;
 
@@ -8312,8 +8732,8 @@ function renderSetupStep(opts = {}) {
         <i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:6px"></i> Invite a Parent
       </button>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>`;
       break;
 
@@ -8326,8 +8746,8 @@ function renderSetupStep(opts = {}) {
       <div id="members-list">${S.setupMembers.map((m,i)=>memberSetupCard(m,i)).join('')}</div>
       <button class="btn btn-secondary btn-full mt-8" onclick="addMemberCard()" style="margin-bottom:14px">+ Add a kid</button>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
       </div>`;
       break;
 
@@ -8347,8 +8767,8 @@ function renderSetupStep(opts = {}) {
           </label>`).join('')}
       </div>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
       </div>`;
       break;
 
@@ -8368,8 +8788,8 @@ function renderSetupStep(opts = {}) {
           </label>`).join('')}
       </div>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>`;
       break;
 
@@ -8427,8 +8847,8 @@ function renderSetupStep(opts = {}) {
         </div>
       </div>
       <div class="flex gap-10" style="margin-top:16px">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Finish! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i></button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Finish! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i></button>
       </div>`;
       break;
     }
@@ -8471,19 +8891,27 @@ function renderSetupStep(opts = {}) {
 
   if (existingGate) existingGate.style.display = 'none';
   if (existingContent) existingContent.style.display = '';
+  const split = _splitSetupStepContent(content);
   document.getElementById('setup-content').innerHTML = `
-    <div class="step-indicator" style="padding-top:16px">${dots}</div>
-    <div class="setup-step active">${content}</div>`;
+    <div class="setup-flow" style="position:relative">
+      ${S._testOnboarding?.active ? `<button type="button" aria-label="Exit onboarding preview" onclick="return closeTestOnboardingPreview(event)" onpointerup="return closeTestOnboardingPreview(event)" style="position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;height:34px;padding:0 12px;border:none;border-radius:999px;background:rgba(255,255,255,0.94);color:#274239;display:inline-flex;align-items:center;justify-content:center;font-size:0.76rem;font-weight:800;letter-spacing:0.02em;box-shadow:0 8px 20px rgba(28,40,34,0.2);z-index:5;cursor:pointer">Exit Preview</button>` : ''}
+      <div class="step-indicator" style="padding-top:16px">${dots}</div>
+      <div class="setup-step active">
+        <div class="setup-step-scroll">${split.body}</div>
+        ${split.nav ? `<div class="setup-step-nav">${split.nav}</div>` : ''}
+      </div>
+    </div>`;
   const nextScreen = document.getElementById('screen-setup');
   const nextContent = document.getElementById('setup-content');
+  const nextStepScroll = nextContent?.querySelector?.('.setup-step-scroll');
   const restore = () => {
     if (preserveScroll) {
       if (nextScreen) nextScreen.scrollTop = savedScreenScroll;
-      if (nextContent) nextContent.scrollTop = savedContentScroll;
+      if (nextStepScroll) nextStepScroll.scrollTop = savedContentScroll;
       return;
     }
     if (nextScreen) nextScreen.scrollTop = 0;
-    if (nextContent) nextContent.scrollTop = 0;
+    if (nextStepScroll) nextStepScroll.scrollTop = 0;
     window.scrollTo(0, 0);
   };
   restore();
@@ -8750,12 +9178,12 @@ function setParentBday(i) {
   if (S.setupParents[i]) S.setupParents[i].birthday = (mm && dd) ? `${mm}-${dd}` : '';
 }
 
-function setupNext() {
+function setupNext(btn = null) {
   const stepName = SETUP_STEPS[S.setupStep];
 
   if (stepName === 'welcome') {
     const name = document.getElementById('setup-family-name')?.value.trim();
-    if (!name) { toast('Please enter a family name'); return; }
+    if (!name) { _setupPulseTapFeedback(btn); toast('Please enter a family name'); return; }
     D.family.name = name;
   }
 
@@ -8765,7 +9193,7 @@ function setupNext() {
       if (ni) p.name = ni.value.trim();
       setParentBday(i);
     });
-    if (S.setupParents.some(p=>!p.name)) { toast('Please give yourself a name'); return; }
+    if (S.setupParents.some(p=>!p.name)) { _setupPulseTapFeedback(btn); toast('Please give yourself a name'); return; }
   }
 
   if (stepName === 'members') {
@@ -8775,8 +9203,8 @@ function setupNext() {
       if (ni) m.name = ni.value.trim();
       setMemberBday(i); // flush birthday selects
     });
-    if (S.setupMembers.length === 0) { toast('Add at least one family member'); return; }
-    if (S.setupMembers.some(m=>!m.name)) { toast('Each family member needs a name'); return; }
+    if (S.setupMembers.length === 0) { _setupPulseTapFeedback(btn); toast('Add at least one family member'); return; }
+    if (S.setupMembers.some(m=>!m.name)) { _setupPulseTapFeedback(btn); toast('Each family member needs a name'); return; }
   }
 
   if (stepName === 'chores') {
@@ -8813,6 +9241,7 @@ function setupNext() {
     const pinEl = document.getElementById('setup-pin');
     const pin   = pinEl?.value.trim() || '';
     if (!/^\d{4}$/.test(pin)) {
+      _setupPulseTapFeedback(btn);
       const err = document.getElementById('setup-pin-error');
       if (err) {
         err.textContent = 'Please enter a 4-digit pin. It must be all numbers.';
@@ -8846,19 +9275,28 @@ function setupNext() {
         if (FirebaseMessaging) FirebaseMessaging.requestPermissions().catch(() => {});
       } catch(e) {}
     }
-    S.setupStep++;
-    if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
-    renderSetupStep();
+    _setupRunWithTapFeedback(() => {
+      S.setupStep++;
+      if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
+      renderSetupStep();
+    }, btn);
     return;
   }
 
-  S.setupStep++;
-  if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
-  renderSetupStep();
+  _setupRunWithTapFeedback(() => {
+    S.setupStep++;
+    if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
+    renderSetupStep();
+  }, btn);
 }
 
-function setupBack() {
-  if (S.setupStep > 0) { S.setupStep--; renderSetupStep(); }
+function setupBack(btn = null) {
+  if (S.setupStep > 0) {
+    _setupRunWithTapFeedback(() => {
+      S.setupStep--;
+      renderSetupStep();
+    }, btn);
+  }
 }
 
 function handleSetupPinInput(el) {
@@ -9062,6 +9500,7 @@ function switchKidTab(tab) {
 
 function renderKidTab() {
   try {
+  document.getElementById('kid-content')?._statsGemCleanup?.();
   document.getElementById('kid-content')?.classList.remove('stats-page-content');
   switch(S.kidTab) {
     case 'chores': renderKidChores(); break;
@@ -10755,6 +11194,7 @@ function switchParentTab(tab) {
 
 function renderParentTab() {
   try {
+  document.getElementById('parent-content')?._statsGemCleanup?.();
   document.getElementById('parent-content')?.classList.remove('stats-page-content');
   switch(S.parentTab) {
     case 'home':     renderParentHome();     break;
@@ -11145,23 +11585,51 @@ function renderStatsPage(container) {
 
   html += `
     <div class="tab-end-cap tab-end-cap-gem" aria-hidden="true">
-      <img src="gemsprout.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
+      <img src="gemsprout.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;cursor:pointer">
     </div>
   </div>`;
   container.innerHTML = html;
+  container._statsGemCleanup?.();
   setTimeout(() => {
     try {
-      const gem = document.getElementById('egg-gem');
-      const cap = gem?.closest?.('.tab-end-cap-gem');
-      const nav = document.querySelector('.nav-bar');
+      const gem = container.querySelector('#egg-gem');
+      const nav = container.id === 'parent-content'
+        ? document.getElementById('parent-nav')
+        : document.getElementById('kid-nav');
       const content = container;
-      if (!gem || !cap || !nav || !content) return;
-      const contentStyles = getComputedStyle(content);
-      const contentPaddingBottom = parseFloat(contentStyles.paddingBottom) || 0;
+      if (!gem || !nav || !content) return;
+      const navStyles = getComputedStyle(nav);
       const navHeight = nav.offsetHeight || 0;
-      const capHeight = cap.offsetHeight || 0;
-      const visibleGap = Math.max(0, capHeight + contentPaddingBottom - navHeight);
-      cap.style.setProperty('--stats-visible-gap', `${visibleGap}px`);
+      const navPaddingBottom = parseFloat(navStyles.paddingBottom) || 0;
+      // nav padding includes safe area + 6px base spacing
+      const safeBottom = navPaddingBottom > 0 ? Math.max(0, navPaddingBottom - 6) : 12;
+      content.style.setProperty('--nav-h', `${navHeight}px`);
+      content.style.setProperty('--safe-b', `${safeBottom}px`);
+      let rafId = 0;
+      const threshold = 6;
+      const updateGemVisibility = () => {
+        rafId = 0;
+        const overflowPx = Math.max(0, content.scrollHeight - content.clientHeight);
+        const scrollable = overflowPx > 24;
+        const atBottom = !scrollable || ((content.scrollTop + content.clientHeight) >= (content.scrollHeight - threshold));
+        gem.classList.toggle('is-visible', atBottom);
+      };
+      const scheduleUpdate = () => {
+        if (rafId) return;
+        rafId = requestAnimationFrame(updateGemVisibility);
+      };
+      const viewport = window.visualViewport || null;
+      content.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      if (viewport) viewport.addEventListener('resize', scheduleUpdate);
+      scheduleUpdate();
+      container._statsGemCleanup = () => {
+        content.removeEventListener('scroll', scheduleUpdate);
+        window.removeEventListener('resize', scheduleUpdate);
+        if (viewport) viewport.removeEventListener('resize', scheduleUpdate);
+        if (rafId) cancelAnimationFrame(rafId);
+        container._statsGemCleanup = null;
+      };
     } catch {}
   }, 0);
 }
@@ -14172,6 +14640,8 @@ function showAdvancedEditor() {
   const root = document.getElementById('adv-editor-root');
   root.classList.add('open');
   _advRender();
+  const body = root.querySelector('.adv-body');
+  if (body) body.scrollTop = 0;
   root.scrollTop = 0;
 }
 
@@ -14343,12 +14813,15 @@ function _doAdvDeleteHistory(entryId) {
 
 function _advRenderPreserving() {
   const root = document.getElementById('adv-editor-root');
-  const scroll = root ? root.scrollTop : 0;
+  const body = root?.querySelector('.adv-body');
+  const scroll = body ? body.scrollTop : (root ? root.scrollTop : 0);
   const openIds = new Set([...(root?.querySelectorAll('details.adv-member-card[open]') || [])]
     .map(d => d.dataset.memberId).filter(Boolean));
   _advRender();
   if (root) {
-    root.scrollTop = scroll;
+    const nextBody = root.querySelector('.adv-body');
+    if (nextBody) nextBody.scrollTop = scroll;
+    else root.scrollTop = scroll;
     openIds.forEach(id => {
       const el = root.querySelector(`details.adv-member-card[data-member-id="${id}"]`);
       if (el) el.open = true;
@@ -14607,9 +15080,9 @@ function _advRender() {
       }).join('');
 
   root.innerHTML = `
-    <div class="adv-header">
+    <div class="adv-header" style="background:linear-gradient(135deg,#6C63FF,#FF6584);border-bottom:1px solid rgba(255,255,255,0.2)">
       <i class="ph-duotone ph-database" style="font-size:1.3rem"></i>
-      <span class="adv-header-title">Data Editor</span>
+      <span class="adv-header-title">Advanced Data Editor</span>
       <div class="adv-header-actions">
         <span id="adv-save-status" class="adv-status"></span>
         <button class="adv-header-btn" style="padding:5px 12px" onclick="cancelAdvancedEditor()">Cancel</button>
