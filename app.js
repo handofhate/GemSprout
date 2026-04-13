@@ -445,7 +445,7 @@ function showChangelog(markSeen = false) {
   showQuickActionModal(`
     <div style="text-align:center;margin-bottom:16px">
       <i class="ph-duotone ph-leaf" style="color:#16A34A;font-size:2.2rem"></i>
-      <div class="modal-title" style="margin-top:6px">What's New in GemSprout Beta</div>
+      <div class="modal-title" style="margin-top:6px">Welcome To GemSprout</div>
     </div>
     ${entriesHtml}
     <div class="modal-actions" style="margin-top:16px">
@@ -5693,10 +5693,19 @@ function handleRapidTap(key, opts = {}) {
   const windowMs = opts.windowMs || 2500;
   const pulseEl = opts.pulseEl || null;
   const idleOpacity = opts.idleOpacity ?? null;
+  const opacityStep = Number(opts.opacityStep ?? 0.15);
+  const minOpacity = (opts.minOpacity == null) ? null : Number(opts.minOpacity);
+  const maxOpacity = (opts.maxOpacity == null) ? null : Number(opts.maxOpacity);
   const state = _rapidTapState[key] || { taps: 0, timer: null };
   state.taps += 1;
   if (pulseEl) {
-    _setRapidTapPulse(pulseEl, 1.4, idleOpacity != null ? Math.min(idleOpacity + state.taps * 0.15, 1) : null);
+    let tapOpacity = null;
+    if (idleOpacity != null) {
+      tapOpacity = idleOpacity + (state.taps * opacityStep);
+      if (minOpacity != null) tapOpacity = Math.max(minOpacity, tapOpacity);
+      if (maxOpacity != null) tapOpacity = Math.min(maxOpacity, tapOpacity);
+    }
+    _setRapidTapPulse(pulseEl, 1.4, tapOpacity);
     setTimeout(() => _setRapidTapPulse(pulseEl, 1), 120);
   }
   clearTimeout(state.timer);
@@ -5748,6 +5757,9 @@ function easterEggTap() {
   handleRapidTap('egg-gem', {
     pulseEl: document.getElementById('egg-gem'),
     idleOpacity: 0.25,
+    opacityStep: 0.12,
+    minOpacity: 0.25,
+    maxOpacity: 1,
     onTrigger: () => launchAvatarRain('gemsprout.png', 80),
   });
 }
@@ -7084,8 +7096,8 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           <label class="toggle"><input type="checkbox" ${s.showLockedRecurringPrizes===false?'checked':''} onchange="saveSetting('showLockedRecurringPrizes',!this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
-          <div><div class="toggle-label">Show swipe hints</div>
-            <div class="toggle-sub">Auto-bounce hint cards the first time they appear</div></div>
+          <div><div class="toggle-label">Show UI hints</div>
+            <div class="toggle-sub">Auto-bounce hint cards and highlight the quick actions button when they first appear</div></div>
           <label class="toggle"><input type="checkbox" ${s.tooltipBounceEnabled!==false?'checked':''} onchange="saveSetting('tooltipBounceEnabled',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="form-group mb-0">
@@ -7204,14 +7216,11 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderSettings();renderParentHome()"><span class="toggle-track"></span></label>
       </div>
       <div class="card">
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.notListeningEnabled!==false?'14px':'0'}">
-          Adds a hold-to-track button on the dashboard that deducts gems for not listening - seconds accumulate indefinitely, leftovers carry over until a full interval is reached
-        </p>
         ${s.notListeningEnabled!==false ? `
         <div class="form-group mb-0">
           <label class="form-label">Seconds per gem lost</label>
           <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
-          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Hold the button to track time, then release to apply it. One gem is lost per interval, and leftover seconds carry forward indefinitely.</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Adds a hold-to-track button on the dashboard that deducts gems for not listening - seconds accumulate indefinitely, leftovers carry over until a full interval is reached</div>
         </div>` : ''}
       </div>
 
@@ -7226,8 +7235,8 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
       <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px;cursor:pointer" onclick="tapSettingsVersionForDevUnlock()">GemSprout v${APP_VERSION}</div>
 
       ${S._devSettingsUnlocked ? `<div style="height:14px"></div>
-      <div class="section-row"><span class="section-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
-      <div class="card settings-dev-card" style="border:2px solid #E5E7EB;background:#F9FAFB">
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-terminal" style="font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
+      <div class="card settings-dev-card">
         <details class="settings-dev-section" data-dev-section="animations">
           <summary class="settings-dev-section-title">
             <span class="settings-dev-summary-main"><i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:4px"></i> Animations</span>
@@ -7278,7 +7287,6 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           <div class="settings-dev-section-body">
             <div class="settings-dev-tip">Open difficult to access pages to preview and test</div>
             <button class="btn btn-secondary btn-full" onclick="_devPreviewPaywall()">Paywall</button>
-            <button class="btn btn-secondary btn-full" onclick="startTestOnboarding()">Onboarding</button>
             <button class="btn btn-secondary btn-full" onclick="_devPreviewLoadingScreen()">Loading</button>
             <button class="btn btn-secondary btn-full" onclick="_devPreviewMaintenanceScreen()">Maintenance</button>
             <button class="btn btn-secondary btn-full" onclick="_devPreviewParentSignInScreen()">Sign-In</button>
@@ -8567,7 +8575,6 @@ function cancelSetup(btn = null) {
   _setupRunWithTapFeedback(() => {
     S._setupBiometricDecisionRequired = false;
     S._setupBiometricOfferAnswered = false;
-    if (_exitTestOnboarding('Onboarding preview closed - nothing was saved.')) return;
     const currentUserId = S.currentUser?.id || getCurrentUserId();
     const freshUser = currentUserId ? getMember(currentUserId) : null;
     if (freshUser) {
@@ -8576,78 +8583,6 @@ function cancelSetup(btn = null) {
     }
     else renderHome();
   }, btn);
-}
-
-function _cloneOnboardingTestState(value) {
-  try { return JSON.parse(JSON.stringify(value)); }
-  catch { return null; }
-}
-
-function startTestOnboarding() {
-  if (S._testOnboarding?.active) return;
-  const settingsContext = _captureSettingsRestoreContext('screens');
-  S._testOnboarding = {
-    active: true,
-    snapshotD: _cloneOnboardingTestState(D),
-    snapshotCurrentUserId: getCurrentUserId(),
-    snapshotKidTab: S.kidTab,
-    snapshotParentTab: S.parentTab,
-    settingsContext,
-  };
-  closeSettings();
-  setTimeout(() => {
-    showScreen('screen-setup');
-    renderSetupGate();
-    // Inject the Exit Preview button on body (position:fixed) so it floats
-    // above the full screen rather than being clipped inside the card.
-    const stale = document.getElementById('dev-screen-preview-close');
-    if (stale) stale.remove();
-    const closeBtn = document.createElement('button');
-    closeBtn.id = 'dev-screen-preview-close';
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('aria-label', 'Exit onboarding preview');
-    closeBtn.textContent = 'Exit Preview';
-    closeBtn.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;height:34px;padding:0 12px;border:none;border-radius:999px;background:rgba(255,255,255,0.94);color:#274239;display:inline-flex;align-items:center;justify-content:center;font-size:0.76rem;font-weight:800;letter-spacing:0.02em;box-shadow:0 8px 20px rgba(28,40,34,0.2);z-index:19999;cursor:pointer';
-    closeBtn.onclick = closeTestOnboardingPreview;
-    document.body.appendChild(closeBtn);
-  }, 250);
-}
-
-function _exitTestOnboarding(message = '') {
-  const test = S._testOnboarding;
-  if (!test?.active) return false;
-  const settingsCtx = test.settingsContext || null;
-  S._testOnboarding = null;
-  const closeBtn = document.getElementById('dev-screen-preview-close');
-  if (closeBtn) closeBtn.remove();
-  D = normalizeData(test.snapshotD || defaultData());
-  S.setupStep = 0;
-  S.setupMembers = [];
-  S.setupParents = [];
-  S.kidTab = test.snapshotKidTab || 'chores';
-  S.parentTab = test.snapshotParentTab || 'home';
-  const userId = test.snapshotCurrentUserId || '';
-  setCurrentUserId(userId);
-  S.currentUser = userId ? getMember(userId) : null;
-  if (settingsCtx) {
-    _restoreSettingsAfterDevCelebration(settingsCtx.page || 'main', settingsCtx.scrollTop || 0, settingsCtx.devSectionKey || 'screens');
-  } else if (S.currentUser) {
-    routeToView(S.currentUser);
-  } else {
-    renderHome();
-  }
-  if (message) toast(message);
-  return true;
-}
-
-function closeTestOnboardingPreview(evt = null) {
-  evt?.preventDefault?.();
-  evt?.stopPropagation?.();
-  if (S._closingTestOnboardingPreview) return false;
-  S._closingTestOnboardingPreview = true;
-  _exitTestOnboarding('Onboarding preview closed - nothing was saved.');
-  setTimeout(() => { S._closingTestOnboardingPreview = false; }, 400);
-  return false;
 }
 
 function goSetup(opts = {}) {
@@ -8905,7 +8840,7 @@ function renderSetupStep(opts = {}) {
         <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.84rem;font-weight:700;color:#6C63FF;text-decoration:none;word-break:break-all">${RC.appDownloadUrl}</a>
       </div>` : ''}
 
-      <button class="btn btn-primary btn-full" onclick="finishSetup()">${S._testOnboarding?.active ? 'Exit Preview' : "Let's go!"}</button>`;
+      <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go!</button>`;
       break;
     }
   }
@@ -8915,7 +8850,6 @@ function renderSetupStep(opts = {}) {
   const split = _splitSetupStepContent(content);
   document.getElementById('setup-content').innerHTML = `
     <div class="setup-flow" style="position:relative">
-      ${S._testOnboarding?.active ? `<button type="button" aria-label="Exit onboarding preview" onclick="return closeTestOnboardingPreview(event)" onpointerup="return closeTestOnboardingPreview(event)" style="position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;height:34px;padding:0 12px;border:none;border-radius:999px;background:rgba(255,255,255,0.94);color:#274239;display:inline-flex;align-items:center;justify-content:center;font-size:0.76rem;font-weight:800;letter-spacing:0.02em;box-shadow:0 8px 20px rgba(28,40,34,0.2);z-index:5;cursor:pointer">Exit Preview</button>` : ''}
       <div class="step-indicator" style="padding-top:16px">${dots}</div>
       <div class="setup-step active">
         <div class="setup-step-scroll">${split.body}</div>
@@ -9342,7 +9276,6 @@ function finishSetup() {
   }
   S._setupBiometricDecisionRequired = false;
   S._setupBiometricOfferAnswered = false;
-  if (_exitTestOnboarding('Onboarding preview finished - nothing was saved.')) return;
   const wasSetup = !!D.setup;
   const mergedParents = S.setupParents.map(p => {
     const existing = D.family.members.find(x=>x.id===p.id) || {};
@@ -10290,7 +10223,7 @@ function renderKidDiamonds() {
       const def = getBaseBadgeDef(b.id);
       const have = earned.includes(b.id);
       const tap = have
-        ? ` onclick="openBadgeCard('${b.id}','base')"`
+        ? ` onclick="openBadgeCard('${b.id}','base','','0','${m.id}')"`
         : (tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")} — not earned yet.')"` : '');
       return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${tap}>
         <span class="badge-chip-icon">${def.icon}</span>${esc(def.name)}
@@ -10304,7 +10237,7 @@ function renderKidDiamonds() {
         if (!have && b.secret) return '';
         const choreTitle = chore.title || '';
         const tap = have
-          ? ` onclick="openBadgeCard('${b.id}','chore',${JSON.stringify(choreTitle).replace(/"/g,'&quot;')},${b.count||0})"`
+          ? ` onclick="openBadgeCard('${b.id}','chore',${JSON.stringify(choreTitle).replace(/"/g,'&quot;')},${b.count||0},'${m.id}')"`
           : (tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")} — not earned yet.')"` : '');
         return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${tap}>
           <span class="badge-chip-icon">${b.icon||'<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>'}</span>${esc(b.name||'')}
@@ -11468,6 +11401,22 @@ function renderMemberStatsCard(member, collapse, histIdx) {
     _statTile('<i class="ph-duotone ph-shopping-bag" style="color:#6C63FF"></i>', 'Total Spent', `${cur}${(s.totalWithdrawn||0).toFixed(2)}`, '#4c1d95', 'from savings')
   ) : '';
 
+  const earnedAllBadgeSet = new Set(member.badges || []);
+  const defaultBadgeItems = (BADGE_DEFS || []).map(def => {
+    const resolved = getBaseBadgeDef(def.id);
+    return { ...resolved, have: earnedAllBadgeSet.has(def.id) };
+  });
+  const defaultBadgeGrid = defaultBadgeItems.length === 0 ? '' : `
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-seal-check" style="color:#6C63FF;vertical-align:middle"></i> Default Badges</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${defaultBadgeItems.map(({ id, name, icon, have }) =>
+          `<div class="badge-chip ${have ? 'earned' : 'badge-chip-locked'}" title="${esc(name)}"${have ? ` onclick="openBadgeCard('${id}','base','','0','${member.id}')"` : ''}>
+            <span class="badge-chip-icon">${icon || '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>'}</span>${esc(name || id || 'Badge')}</div>`
+        ).join('')}
+      </div>
+    </div>`;
+
   const earnedBadgeSet = new Set((member.badges||[]).filter(b => b.startsWith('cb_')));
   const choreBadgeItems = [];
   for (const chore of D.chores) {
@@ -11482,10 +11431,12 @@ function renderMemberStatsCard(member, collapse, histIdx) {
     <div style="margin-bottom:18px">
       <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-medal" style="color:#7C3AED;vertical-align:middle"></i> Task Badges</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
-        ${choreBadgeItems.map(({b, chore, have}) =>
-          `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} - ${b.count}">
+        ${choreBadgeItems.map(({b, chore, have}) => {
+          const choreTitle = chore.title || '';
+          const choreTitleArg = JSON.stringify(choreTitle).replace(/"/g, '&quot;');
+          return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} - ${b.count}"${have ? ` onclick="openBadgeCard('${b.id}','chore',${choreTitleArg},${b.count || 0},'${member.id}')"` : ''}>
             <span class="badge-chip-icon">${b.icon||'<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>'}</span>${esc(b.name||'')}</div>`
-        ).join('')}
+        }).join('')}
       </div>
     </div>`;
 
@@ -11560,6 +11511,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
       ${rewardSection}
       ${savingsSection}
       ${badgeSection}
+      ${defaultBadgeGrid}
       ${choreBadgeGrid}
       ${penaltySection}
       ${extraSection}
@@ -11796,6 +11748,7 @@ let _parentQuickFanOpen = false;
 let _parentQuickHover = null;
 let _parentQuickSuppressClick = false;
 let _parentQuickCloseTimer = null;
+let _parentQuickCoachTimer = null;
 let _modalLaunchOrigin = null;
 let _activeFamilySnapshot = null;
 let _snapshotTimePicker = null;
@@ -12507,6 +12460,31 @@ function _layoutParentQuickFan() {
     node.style.top = `${top}px`;
   });
 }
+function _maybeShowParentQuickCoachMark() {
+  if (D.settings.tooltipBounceEnabled === false) return;
+  const host = document.getElementById('parent-quick-launch');
+  const trigger = host?.querySelector?.('.hero-quick-trigger');
+  if (!host) return;
+  host.classList.remove('coach-mark');
+  void host.offsetWidth;
+  host.classList.add('coach-mark');
+  if (_parentQuickCoachTimer) clearTimeout(_parentQuickCoachTimer);
+  if (trigger) {
+    const handleEnd = () => {
+      host.classList.remove('coach-mark');
+      trigger.removeEventListener('animationend', handleEnd);
+      if (_parentQuickCoachTimer) {
+        clearTimeout(_parentQuickCoachTimer);
+        _parentQuickCoachTimer = null;
+      }
+    };
+    trigger.addEventListener('animationend', handleEnd);
+  }
+  _parentQuickCoachTimer = setTimeout(() => {
+    host.classList.remove('coach-mark');
+    _parentQuickCoachTimer = null;
+  }, 2800);
+}
 function toggleStatsKid(kidId) {
   if (_expandedStatsKids.has(kidId)) _expandedStatsKids.delete(kidId);
   else _expandedStatsKids.add(kidId);
@@ -12593,7 +12571,7 @@ function renderParentHome() {
             aria-expanded="false"
           >
             <button class="hero-quick-trigger" type="button" aria-label="Quick actions" onclick="toggleParentQuickLaunch()">
-              <i class="ph-duotone ph-lightning"></i>
+              <i class="ph-duotone ph-plus-circle"></i>
             </button>
             <div class="hero-quick-fan" onclick="closeParentQuickFanIfBackdrop(event)">${quickActionsHtml}</div>
           </div>` : ''}
@@ -12825,6 +12803,7 @@ function renderParentHome() {
   }
 
   document.getElementById('parent-content').innerHTML = html;
+  _maybeShowParentQuickCoachMark();
   _bindSnapshotSummaryAutoDismiss();
   _bindSnapshotSwipeAutoDismiss();
   if (_snapshotSummarySuppressHintBounceOnce) {
@@ -15867,7 +15846,10 @@ console.log('GemSprout fully loaded!');
 
 let _badgeCardGyroCleanup = null;
 
-function openBadgeCard(badgeId, type, choreTitle, choreCount) {
+function openBadgeCard(badgeId, type, choreTitle, choreCount, memberIdOverride = '') {
+  const targetMember = (memberIdOverride ? getMember(memberIdOverride) : null) || S.currentUser || null;
+  const targetMemberId = targetMember?.id || '';
+  const targetMemberName = targetMember?.name || '';
   // Resolve badge definition
   let icon, name, earnDesc;
   if (type === 'chore') {
@@ -15890,7 +15872,7 @@ function openBadgeCard(badgeId, type, choreTitle, choreCount) {
   }
 
   // TTS for tiny mode
-  const tiny = isTiny(S.currentUser);
+  const tiny = !!targetMember && isTiny(targetMember);
   if (tiny) speak(`${name}. ${earnDesc}.`);
 
   // Extract hex color from icon string (e.g. color:#F97316) to tint the card
@@ -15898,8 +15880,8 @@ function openBadgeCard(badgeId, type, choreTitle, choreCount) {
   const accent = accentMatch ? accentMatch[1] : '#7C3AED';
 
   // Look up when this badge was earned from history
-  const memberId = S.currentUser?.id;
-  const memberName = S.currentUser?.name || '';
+  const memberId = targetMemberId;
+  const memberName = targetMemberName;
   const badgeKey = type === 'chore' ? `cb_${badgeId}` : badgeId;
   const earnedEntry = (D.history || []).find(h => {
     if (h.type !== 'badge' || h.memberId !== memberId) return false;

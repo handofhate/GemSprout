@@ -2047,6 +2047,7 @@
     .hero-quick-trigger {
       width: 52px;
       height: 52px;
+      position: relative;
       border: 0;
       border-radius: 18px;
       background: rgba(255,255,255,0.16);
@@ -2067,13 +2068,26 @@
       background: rgba(255,255,255,0.22);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.26), 0 8px 18px rgba(17, 28, 24, 0.22);
     }
-    .hero-quick-hint {
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      opacity: 0.76;
-      white-space: nowrap;
+    .hero-quick-launch.coach-mark .hero-quick-trigger {
+      animation: quickCoachTriggerPulse 0.72s ease-in-out 3;
+    }
+    .hero-quick-launch.coach-mark .hero-quick-trigger::after {
+      content: '';
+      position: absolute;
+      inset: -7px;
+      border-radius: 22px;
+      border: 1.5px solid rgba(255,255,255,0.62);
+      box-shadow: 0 0 0 0 rgba(255,255,255,0.28);
+      animation: quickCoachRingPulse 0.72s ease-out 3;
+      pointer-events: none;
+    }
+    @keyframes quickCoachTriggerPulse {
+      0%, 100% { transform: scale(1); background: rgba(255,255,255,0.16); }
+      50% { transform: scale(1.08); background: rgba(255,255,255,0.28); }
+    }
+    @keyframes quickCoachRingPulse {
+      0% { opacity: 0.72; transform: scale(0.92); }
+      100% { opacity: 0; transform: scale(1.28); }
     }
     .hero-quick-fan {
       position: fixed;
@@ -2233,9 +2247,6 @@
       .hero-quick-action i {
         width: 54px;
         height: 54px;
-      }
-      .hero-quick-hint {
-        font-size: 0.63rem;
       }
     }
 
@@ -3446,7 +3457,8 @@
 
     /* ══════════════════════════════════════════
        SYNC STATUS
-    ══════════════════════════════════════════ */`r`n/* ══════════════════════════════════════════
+    ══════════════════════════════════════════ */
+    /* ══════════════════════════════════════════
        ICON PICKER (Phosphor duotone, for chores/prizes)
     ══════════════════════════════════════════ */
     .icon-picker {
@@ -6475,8 +6487,13 @@
     }
 
     .badge-card-close-hint {
-      position: relative; /* above backdrop */
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+      z-index: 6;
       font-size: 0.78rem;
       color: rgba(255,255,255,0.4);
       text-align: center;
+      pointer-events: none;
     }
