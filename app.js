@@ -1,4 +1,4 @@
-﻿const FIREBASE_CONFIG = {
+const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU",
   authDomain:        "gemsprout1.firebaseapp.com",
   projectId:         "gemsprout1",
@@ -73,17 +73,11 @@ async function initPushNotifications(firebaseUser) {
     });
     // Foreground message: re-render immediately so the pending row appears without a tab switch
     FirebaseMessaging.addListener('notificationReceived', (event) => {
-      const t = event?.notification?.data?.type;
-      if ((t === 'approval_request' || t === 'spend_request') && S.currentUser?.role === 'parent') {
-        renderCurrentView();
-      }
+      _handleNotificationReceived(event);
     });
-    // Notification tap: navigate to the overview tab (PIN gate handled separately)
+    // Notification tap: route to the right tab and refresh so pending rows are visible immediately.
     FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
-      const t = event?.notification?.data?.type;
-      if (t === 'approval_request' || t === 'spend_request') {
-        _handleApprovalNotificationTap();
-      }
+      _handleNotificationAction(event);
     });
     // Schedule interest day local notification now that permissions are confirmed
     scheduleInterestDayNotification();
@@ -92,14 +86,108 @@ async function initPushNotifications(firebaseUser) {
   }
 }
 
-function _handleApprovalNotificationTap() {
-  if (S.currentUser?.role === 'parent') {
-    switchParentTab('home');
-  } else if (document.getElementById('screen-pin')?.classList.contains('active')) {
-    // App is at PIN gate; after successful unlock, land on overview
-    S._afterPinNav = 'overview';
+function _notificationTypeFromEvent(event) {
+  const data = event?.notification?.data || {};
+  return String(data.type || data.notificationType || data.kind || '').trim().toLowerCase();
+}
+
+function _normalizeParentTab(value) {
+  const tab = String(value || '').trim().toLowerCase();
+  return ['home', 'chores', 'prizes', 'levels', 'stats'].includes(tab) ? tab : '';
+}
+
+function _normalizeKidTab(value) {
+  const tab = String(value || '').trim().toLowerCase();
+  return ['chores', 'diamonds', 'shop', 'team', 'stats'].includes(tab) ? tab : '';
+}
+
+function _routeFromNotification(event) {
+  const data = event?.notification?.data || {};
+  const type = _notificationTypeFromEvent(event);
+  const explicitParentTab = _normalizeParentTab(data.parentTab);
+  const explicitKidTab = _normalizeKidTab(data.kidTab);
+  if (explicitParentTab || explicitKidTab) {
+    return { type, parentTab: explicitParentTab || 'home', kidTab: explicitKidTab || '' };
   }
-  // Otherwise (profile picker / no session), the badge will be visible when they sign in
+
+  // Known payloads today.
+  if (type === 'approval_request' || type === 'spend_request') {
+    return { type, parentTab: 'home', kidTab: 'diamonds' };
+  }
+
+  // Best-effort routing for future notification types.
+  if (type.includes('prize')) return { type, parentTab: 'prizes', kidTab: 'shop' };
+  if (type.includes('chore') || type.includes('task')) return { type, parentTab: 'chores', kidTab: 'chores' };
+  if (type.includes('level') || type.includes('badge')) return { type, parentTab: 'levels', kidTab: 'stats' };
+  if (type.includes('savings') || type.includes('interest') || type.includes('spend')) {
+    return { type, parentTab: 'home', kidTab: 'diamonds' };
+  }
+  if (type) return { type, parentTab: 'home', kidTab: '' };
+  return null;
+}
+
+async function _refreshFamilyFromServerAndRender() {
+  if (isE2EMode()) { renderCurrentView(); return; }
+  try {
+    const snap = await db.doc(getFamilyDoc()).get({ source: 'server' });
+    if (snap.exists) {
+      const incoming = normalizeData(snap.data());
+      const incomingSync = Number(incoming.settings?.lastSync || 0);
+      const localSync = Number(D.settings?.lastSync || 0);
+      const isOlderThanLocal = !!incomingSync && !!localSync && incomingSync < localSync;
+      if (!isOlderThanLocal) {
+        D = incoming;
+        try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+        if (S.currentUser?.id) {
+          const fresh = getMember(S.currentUser.id);
+          if (fresh) S.currentUser = fresh;
+        }
+      }
+    }
+  } catch(e) {}
+  renderCurrentView();
+}
+
+function _applyDeferredPostPinNav() {
+  const nav = S._afterPinNav;
+  if (!nav) return;
+  S._afterPinNav = null;
+  if (typeof nav === 'string') {
+    if (nav === 'overview') S.parentTab = 'home'; // legacy support
+    return;
+  }
+  if (nav.parentTab) S.parentTab = nav.parentTab;
+  if (nav.kidTab) S.kidTab = nav.kidTab;
+  if (nav.refresh) setTimeout(() => { _refreshFamilyFromServerAndRender(); }, 0);
+}
+
+function _handleNotificationReceived(event) {
+  const route = _routeFromNotification(event);
+  if (!route) return;
+  // If parent is actively using the app, keep inbox/overview current immediately.
+  if (S.currentUser?.role === 'parent' && route.parentTab === 'home') {
+    _refreshFamilyFromServerAndRender();
+  }
+}
+
+function _handleNotificationAction(event) {
+  const route = _routeFromNotification(event) || { type: '', parentTab: 'home', kidTab: '' };
+  if (S.currentUser?.role === 'parent') {
+    switchParentTab(route.parentTab || 'home');
+    _refreshFamilyFromServerAndRender();
+    return;
+  }
+  if (S.currentUser?.role === 'kid' && route.kidTab) {
+    switchKidTab(route.kidTab);
+    _refreshFamilyFromServerAndRender();
+    return;
+  }
+  if (document.getElementById('screen-pin')?.classList.contains('active')) {
+    // App is at PIN gate; route + refresh after unlock.
+    S._afterPinNav = { parentTab: route.parentTab || 'home', kidTab: route.kidTab || '', refresh: true };
+  }
+  // If no active session/profile yet, apply after route/auth restores the current user.
+  S._pendingNotificationRoute = { parentTab: route.parentTab || 'home', kidTab: route.kidTab || '' };
 }
 
 // Interest day local notification
@@ -149,16 +237,16 @@ let _rcPkgs         = { monthly: null, yearly: null };
 let _rcSelectedPlan = 'yearly';
 
 async function initRevenueCat() {
-  if (!isNative()) { S.isPro = true; return; }
+  if (!isNative()) { S.isPro = RC.betaMode; return; }
   try {
     const { Purchases } = Capacitor.Plugins;
-    if (!Purchases) { S.isPro = true; return; }
+    if (!Purchases) { S.isPro = false; return; }
     await Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
     const { customerInfo } = await Purchases.getCustomerInfo();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
   } catch(e) {
     console.warn('RevenueCat init error:', e);
-    S.isPro = true;
+    S.isPro = false;
   }
 }
 
@@ -201,53 +289,63 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
   const mCard = cardBase + `border:2px solid ${mSel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${mSel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   const yCard = cardBase + `border:2px solid ${ySel ? '#2a7560' : 'rgba(39,66,57,0.16)'};background:${ySel ? 'rgba(231,245,238,0.95)' : 'rgba(255,251,244,0.88)'};`;
   return `
-  <div style="display:flex;flex-direction:column;height:100%;min-height:100vh;background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 58%,#e9ddc8 58%,#f4efe4 100%);overflow:auto">
-    <div style="position:relative;text-align:center;padding:calc(env(safe-area-inset-top,20px) + 36px) 24px 20px">
-      <button onclick="renderHome()" style="position:absolute;top:calc(env(safe-area-inset-top,20px) + 8px);left:16px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
-      <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
-      <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
-      <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">Family rhythms, savings, and growth across one home or two</div>
-    </div>
+  <div class="paywall-shell">
+    <div class="paywall-top">
+      <div class="paywall-top-inner">
+        <div style="position:relative;text-align:center;padding:26px 0 20px">
+          <button onclick="renderHome()" style="position:absolute;top:8px;left:-8px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1"><i class="ph-duotone ph-x"></i></button>
+          <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)">
+          <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
+          <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">An easy to use family system for rewards, savings, and shared goals</div>
+        </div>
 
-    <div style="padding:0 24px;display:flex;flex-direction:column;gap:10px">
-      ${[
-        ['ph-check-circle','Daily rhythms with flexible parent approval and photo proof'],
-        ['ph-bell-ringing','Push notifications when kids complete tasks'],
-        ['ph-piggy-bank',  'Savings, matching, interest, and spend requests in one place'],
-        ['ph-users',       'Built for modern families, including split-household rhythms'],
-      ].map(([icon, text]) => `
-        <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
-          <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
-          <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
-        </div>`).join('')}
-    </div>
-
-    <div style="padding:20px 24px 0;display:flex;gap:12px">
-      <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
-        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
-        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
-        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per month</div>
-      </div>
-      <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
-        <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
-        <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
-        <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${yPrice}</div>
-        <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per year</div>
+        <div style="padding:0 0 18px;display:flex;flex-direction:column;gap:10px">
+          ${[
+            ['ph-check-circle','Configurable daily tasks with parent approvals and optional photo verification'],
+            ['ph-bell-ringing','Instant alerts when kids complete tasks or request actions'],
+            ['ph-piggy-bank',  'Rewards and savings with optional parent-matching and interest'],
+          ].map(([icon, text]) => `
+            <div style="display:flex;align-items:center;gap:12px;background:rgba(249,253,251,0.74);border:1px solid rgba(39,66,57,0.12);border-radius:14px;padding:10px 12px">
+              <i class="ph-duotone ${icon}" style="color:#2a7560;font-size:1.2rem;flex-shrink:0"></i>
+              <div style="color:#29423a;font-size:0.9rem;line-height:1.4">${text}</div>
+            </div>`).join('')}
+        </div>
       </div>
     </div>
 
-    <div style="padding:20px 24px 0">
-      <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
-        Start ${trialDays}-Day Free Trial
-      </button>
-      <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
-        Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
-      </div>
-    </div>
+    <div class="paywall-bottom">
+      <div class="paywall-bottom-inner">
+        <div class="paywall-bottom-scroll">
+          <div style="padding:20px 24px 0;display:flex;gap:12px">
+          <div id="rc-card-monthly" onclick="_rcSelectPlan('monthly')" style="${mCard};flex:1">
+            <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Monthly</div>
+            <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${mPrice}</div>
+            <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per month</div>
+          </div>
+          <div id="rc-card-yearly" onclick="_rcSelectPlan('yearly')" style="${yCard};flex:1;position:relative">
+            <div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#d97706;color:#fff;font-size:0.68rem;font-weight:800;padding:2px 10px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em">Best Value</div>
+            <div style="color:#567167;font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Yearly</div>
+            <div style="color:#1f3932;font-size:1.3rem;font-weight:900;margin-top:4px">${yPrice}</div>
+            <div style="color:#637d72;font-size:0.75rem;margin-top:2px">per year</div>
+          </div>
+        </div>
 
-    <div style="margin-top:auto;padding:20px 24px 36px;display:flex;justify-content:center;gap:20px">
-      <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
-      <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+        <div style="padding:20px 24px 0">
+          <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
+            Start ${trialDays}-Day Free Trial
+          </button>
+          <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
+            Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
+          </div>
+        </div>
+        </div>
+
+        <div class="paywall-footer">
+          <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
+          <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+          <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Terms</a>
+        </div>
+      </div>
     </div>
   </div>`;
 }
@@ -304,32 +402,22 @@ async function rcRestorePurchases() {
   }
 }
 
-const APP_VERSION = '1.2.0-beta';
+const APP_VERSION = '1.0';
 const CHANGELOG_ENTRIES = [
   {
-    version: '1.2.0-beta',
-    title: 'GemSprout Beta 1.2',
+    version: '1.0',
+    title: 'Welcome to GemSprout',
     date: 'April 2026',
     items: [
-      { icon: 'ph-gift', color: '#1D6B57', text: 'Prizes can now require task-based unlocks in addition to gems, including total tasks, Daily Combo, or specific tasks' },
-      { icon: 'ph-repeat', color: '#0E7490', text: 'Recurring prize controls are improved with cleaner lock states and clearer reset/edit flow for repeat redemptions' },
-      { icon: 'ph-users-three', color: '#6C63FF', text: 'Team prizes now support reset from parent controls so family goals can be repeated without recreating the prize' },
-      { icon: 'ph-music-notes-simple', color: '#D97706', text: 'Week in Review audio playback is more reliable on the first story card and includes better failure logging' },
-      { icon: 'ph-sliders', color: '#5f8f63', text: 'New setting: Hide unavailable prizes, with matching setup option during onboarding for consistent behavior from day one' },
-      { icon: 'ph-flask', color: '#7C3AED', text: 'Dev Settings now include quick preview buttons for Maintenance and Parent Sign-In screens' },
-    ],
-  },
-  {
-    version: '1.1',
-    title: 'GemSprout Beta 1.1',
-    date: 'April 2026',
-    items: [
-      { icon: 'ph-paint-brush',   color: '#1D6B57', text: 'Complete UI overhaul with the new GemSprout 2.0 look and feel' },
-      { icon: 'ph-sparkle',       color: '#D97706', text: 'Refreshed theme, colors, icons, and cleaner onboarding throughout the app' },
-      { icon: 'ph-calendar-star', color: '#7C3AED', text: 'Week in Review now feels more like a real story and adapts better across devices' },
-      { icon: 'ph-bell-ringing',  color: '#0E7490', text: 'Notifications and stacked celebration moments are smoother and easier to manage' },
-      { icon: 'ph-user-circle-gear', color: '#6C63FF', text: 'Kids can now edit their own profile, avatar, and colors from Settings' },
-      { icon: 'ph-device-mobile', color: '#16A34A', text: 'Lots of layout polish for smaller phones, safer scrolling, and better iPhone fit' },
+      { icon: 'ph-paint-brush',          color: '#1D6B57', text: 'Fresh, polished design throughout — new theme, icons, and a cleaner onboarding experience' },
+      { icon: 'ph-cards',                color: '#7C3AED', text: 'Badge Trading Cards — tap any earned badge to flip open a holographic card with a gyroscope-driven 3D tilt effect' },
+      { icon: 'ph-gift',                 color: '#16A34A', text: 'Prizes can require task-based unlocks in addition to gems — set goals around Daily Combo, total tasks, or specific chores' },
+      { icon: 'ph-arrow-counter-clockwise', color: '#0E7490', text: 'Activities can be undone — swipe any activity row to reverse an accidental approval or completion' },
+      { icon: 'ph-calendar-star',        color: '#D97706', text: 'Week in Review plays like a story, with smooth animations and reliable audio from the first card' },
+      { icon: 'ph-user-circle-gear',     color: '#6C63FF', text: 'Kids can edit their own profile, avatar, and accent color from Settings' },
+      { icon: 'ph-bell-ringing',         color: '#0E7490', text: 'Tap a notification to go directly to the relevant screen' },
+      { icon: 'ph-users-three',          color: '#6C63FF', text: 'Team prizes can be reset by parents so family goals can repeat without starting over' },
+      { icon: 'ph-device-mobile',        color: '#16A34A', text: 'Layout and responsiveness improvements across a wide range of screen sizes' },
     ],
   },
 ];
@@ -358,7 +446,7 @@ function showChangelog(markSeen = false) {
   showQuickActionModal(`
     <div style="text-align:center;margin-bottom:16px">
       <i class="ph-duotone ph-leaf" style="color:#16A34A;font-size:2.2rem"></i>
-      <div class="modal-title" style="margin-top:6px">What's New in GemSprout Beta</div>
+      <div class="modal-title" style="margin-top:6px">Welcome To GemSprout</div>
     </div>
     ${entriesHtml}
     <div class="modal-actions" style="margin-top:16px">
@@ -382,6 +470,30 @@ const WEEK_REVIEW_SLIDE_MS = 10000;
 const WEEK_REVIEW_PREVIEW_MODE = false;
 const WEEK_REVIEW_PREVIEW_SLIDE_INDEX = 1;
 const WEEK_REVIEW_PREVIEW_KID_COUNT = 0;
+const WEEK_REVIEW_MESSAGE_INDEX_KEY = 'wirMessageIndex';
+const WEEK_REVIEW_MESSAGE_ORDER_KEY = 'wirMessageOrder';
+const WEEK_REVIEW_COVER_MESSAGES = [
+  "What a week. Let's take a look at everything your family accomplished together.",
+  "Another week of showing up. Your family put in the work - let's celebrate it.",
+  "Big things happened in your family this week. Here's the recap.",
+  "Savings, tasks, badges - your family had a full week. Let's see it.",
+  "Every task completed, every gem earned. Your family brought it this week.",
+  "Look at your family go. Here's everything you did together this week.",
+  "Consistency is everything. Your family showed up again this week.",
+  "It all adds up. Here's proof of what your family built this week.",
+  "Week after week, your family keeps going. Let's look at this one.",
+  "Hard work, good habits, and a little fun. Sounds like your week.",
+  "Your family made moves this week. Here's the full picture.",
+  "Tasks done, gems earned, savings growing. Let's take it all in.",
+  "This is what effort looks like. Your family's week in numbers.",
+  "Another week in the books. Your family should be proud.",
+  "Small wins add up to big things. Here's your family's week.",
+  "Your kids showed up this week. Let's celebrate that.",
+  "A whole week of your family doing the thing. Here it is.",
+  "Good habits are being built one week at a time. Here's this one.",
+  "Your family put in real effort this week. Let's see what it added up to.",
+  "This is the recap your family earned. Take a look.",
+];
 const DEBUG_FORCE_LOADING_PREVIEW = false; // TEMP: force loading-screen preview at startup
 const DEBUG_FORCE_LOADING_PREVIEW_MS = 3500;
 let _weekReviewStory = null;
@@ -461,6 +573,77 @@ function _weekReviewScaledDelay(value, scale = 1) {
   return Math.max(0, Number((delay * scale).toFixed(3)));
 }
 
+function _weekReviewShuffleMessageOrder(size) {
+  const order = Array.from({ length: size }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
+function _weekReviewReadMessageOrder(size) {
+  let order = null;
+  try {
+    const raw = localStorage.getItem(WEEK_REVIEW_MESSAGE_ORDER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length === size) {
+        const valid = parsed.every(n => Number.isInteger(n) && n >= 0 && n < size);
+        if (valid) order = parsed.slice();
+      }
+    }
+  } catch (_) {}
+  if (!order) {
+    order = _weekReviewShuffleMessageOrder(size);
+    try { localStorage.setItem(WEEK_REVIEW_MESSAGE_ORDER_KEY, JSON.stringify(order)); } catch (_) {}
+    try { localStorage.setItem(WEEK_REVIEW_MESSAGE_INDEX_KEY, '0'); } catch (_) {}
+  }
+  return order;
+}
+
+function _weekReviewNextCoverMessage() {
+  const size = WEEK_REVIEW_COVER_MESSAGES.length;
+  if (!size) return '';
+  let order = _weekReviewReadMessageOrder(size);
+  let index = 0;
+  try {
+    index = parseInt(localStorage.getItem(WEEK_REVIEW_MESSAGE_INDEX_KEY), 10) || 0;
+  } catch (_) {}
+  if (index < 0 || index >= order.length) index = 0;
+  const messageIndex = order[index] ?? 0;
+  const nextIndex = (index + 1) % order.length;
+  try { localStorage.setItem(WEEK_REVIEW_MESSAGE_INDEX_KEY, String(nextIndex)); } catch (_) {}
+  if (nextIndex === 0) {
+    order = _weekReviewShuffleMessageOrder(size);
+    try { localStorage.setItem(WEEK_REVIEW_MESSAGE_ORDER_KEY, JSON.stringify(order)); } catch (_) {}
+  }
+  return WEEK_REVIEW_COVER_MESSAGES[messageIndex] || WEEK_REVIEW_COVER_MESSAGES[0];
+}
+
+function _weekReviewComputeSavedTotals(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const dollars = list
+    .filter(h => h.type === 'savings_deposit')
+    .reduce((s, h) => s + (Number(h.dollars) || 0), 0);
+  const gems = list
+    .filter(h => h.type === 'savings')
+    .reduce((s, h) => {
+      const delta = Number(h.diamonds ?? h.gems ?? 0) || 0;
+      return delta < 0 ? s + Math.abs(delta) : s;
+    }, 0);
+  return { dollars, gems };
+}
+
+function _weekReviewSavedLabel(saved, cur) {
+  const dollars = Number(saved?.dollars) || 0;
+  const gems = Number(saved?.gems) || 0;
+  const parts = [];
+  if (dollars > 0) parts.push(`${cur}${dollars.toFixed(2)}`);
+  if (gems > 0) parts.push(`${gems} gems`);
+  return parts.join(' + ');
+}
+
 function _ordinalDay(n) {
   const v = n % 100;
   if (v >= 11 && v <= 13) return `${n}th`;
@@ -528,35 +711,41 @@ function showWeekReview() {
 
   const { start, end } = _getWeekRange();
   const weekHist  = (D.history || []).filter(h => h.date >= start && h.date <= end);
-  const choreHist = weekHist.filter(h => h.type === 'chore' && !(h.title||'').startsWith('Streak bonus ('));
+  const choreHist = weekHist.filter(h => h.type === 'chore');
+  const choreTaskHist = choreHist.filter(h => !(h.title || '').startsWith('Streak bonus ('));
   const bonusHist = weekHist.filter(h => h.type === 'bonus');
+  const penaltyHist = weekHist.filter(h => h.type === 'penalty');
   const badgeHist = weekHist.filter(h => h.type === 'badge');
-  const savDepHist = weekHist.filter(h => h.type === 'savings_deposit');
+  const savingsHist = weekHist.filter(h => h.type === 'savings_deposit' || h.type === 'savings');
   const savOn = D.settings.savingsEnabled !== false;
   const cur = D.settings.currency || '$';
 
-  const totalDiamonds = choreHist.reduce((s, h) => s + (h.diamonds || 0), 0)
-                      + bonusHist.reduce((s, h) => s + (h.diamonds || 0), 0);
-  const totalChores = choreHist.length;
-  const totalSaved  = savDepHist.reduce((s, h) => s + (h.dollars || 0), 0);
+  const totalDiamonds = choreHist.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                      + bonusHist.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                      - penaltyHist.reduce((s, h) => s + Math.abs(Number(h.diamonds ?? h.gems ?? 0) || 0), 0);
+  const totalChores = choreTaskHist.length;
+  const totalSaved  = _weekReviewComputeSavedTotals(savingsHist);
   const totalBadges = badgeHist.length;
 
   const choreCounts = {};
-  choreHist.forEach(h => { choreCounts[h.title] = (choreCounts[h.title] || 0) + 1; });
+  choreTaskHist.forEach(h => { choreCounts[h.title] = (choreCounts[h.title] || 0) + 1; });
   const topChore = Object.entries(choreCounts).sort((a, b) => b[1] - a[1])[0];
 
   const kidData = kids.map(kid => {
     const kChore   = choreHist.filter(h => h.memberId === kid.id);
+    const kTaskChore = choreTaskHist.filter(h => h.memberId === kid.id);
     const kBonus   = bonusHist.filter(h => h.memberId === kid.id);
+    const kPenalty = penaltyHist.filter(h => h.memberId === kid.id);
     const kBadge   = badgeHist.filter(h => h.memberId === kid.id);
-    const kSavDep  = savDepHist.filter(h => h.memberId === kid.id);
-    const kDiamonds = kChore.reduce((s, h) => s + (h.diamonds || 0), 0)
-                    + kBonus.reduce((s, h) => s + (h.diamonds || 0), 0);
-    const kSaved    = kSavDep.reduce((s, h) => s + (h.dollars || 0), 0);
+    const kSavings = savingsHist.filter(h => h.memberId === kid.id);
+    const kDiamonds = kChore.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                    + kBonus.reduce((s, h) => s + (Number(h.diamonds ?? h.gems ?? 0) || 0), 0)
+                    - kPenalty.reduce((s, h) => s + Math.abs(Number(h.diamonds ?? h.gems ?? 0) || 0), 0);
+    const kSaved    = _weekReviewComputeSavedTotals(kSavings);
     const kChoreCounts = {};
-    kChore.forEach(h => { kChoreCounts[h.title] = (kChoreCounts[h.title] || 0) + 1; });
+    kTaskChore.forEach(h => { kChoreCounts[h.title] = (kChoreCounts[h.title] || 0) + 1; });
     const kTopChore = Object.entries(kChoreCounts).sort((a, b) => b[1] - a[1])[0];
-    return { kid, diamonds: kDiamonds, chores: kChore.length, saved: kSaved, topChore: kTopChore, badges: kBadge, streak: kid.streak?.current || 0 };
+    return { kid, diamonds: kDiamonds, chores: kTaskChore.length, saved: kSaved, topChore: kTopChore, badges: kBadge, streak: kid.streak?.current || 0 };
   });
 
   const slides = _buildWeekReviewSlides({
@@ -590,6 +779,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
   const slides = [];
   const dateRange = _formatWeekReviewDateRange(start, end);
   const coverDateRange = _formatWeekReviewDateRange(start, end, true);
+  const coverMessage = _weekReviewNextCoverMessage();
   const familyCelebrationName = D.family?.name?.trim() || 'The Family';
   const timesLabel = (count) => {
     if (count === 1) return 'Once';
@@ -621,7 +811,7 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     return previewCoverData.map(({ kid }, idx) => ({
       kid,
       diamonds: 8 + (idx * 4),
-      saved: idx % 2 === 0 ? ((idx + 1) * 0.5) : 0,
+      saved: idx % 2 === 0 ? { dollars: (idx + 1) * 0.5, gems: idx + 2 } : { dollars: 0, gems: 0 },
       chores: 2 + idx,
       topChore: [previewChoreTitles[idx % previewChoreTitles.length], (idx % 6) + 1]
     }));
@@ -647,9 +837,6 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     });
   })();
   const isEmpty = totalChores === 0;
-  const introSub = isEmpty
-    ? 'A softer week for your crew. Here is the story anyway.'
-    : `${kidData.length === 1 ? kidData[0].kid.name : 'Your family'} wrapped up the week with tasks, savings, and a little momentum.`;
   slides.push({
     type: 'cover',
     gradient: 'linear-gradient(160deg,#3f6c5f 0%,#26443d 54%,#1b2f2a 100%)',
@@ -657,17 +844,14 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
     icon: '<i class="ph-duotone ph-calendar-star" style="color:rgba(244,239,228,0.84);font-size:1rem"></i>',
     bigStat: coverDateRange,
     dateRangeText: dateRange,
-    subStat: introSub,
-    rows: previewCoverData.map(({ kid, chores }) => ({
-      avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'),
-      name: kid.name,
-      stat: kid.role === 'kid' ? `${kid.diamonds || 0} total gems` : 'Parent profile',
-      sub: chores > 0 ? `${chores} task${chores === 1 ? '' : 's'} this week` : 'Ready for next week'
-    }))
+    subStat: '',
+    coverMessage,
+    rows: []
   });
 
   if (totalDiamonds > 0) {
-    const savingsSub = (savOn && totalSaved > 0) ? ` - ${cur}${totalSaved.toFixed(2)} saved` : '';
+    const totalSavedLabel = _weekReviewSavedLabel(totalSaved, cur);
+    const savingsSub = (savOn && totalSavedLabel) ? ` - ${totalSavedLabel} saved` : '';
     slides.push({
       gradient: 'linear-gradient(160deg,#2f7f88 0%,#1f5f6a 54%,#173f49 100%)',
       label: 'Gems Earned',
@@ -677,8 +861,9 @@ function _buildWeekReviewSlides({ kidData, totalDiamonds, totalChores, totalSave
       rows: (previewSlideRows || kidData
       .filter(({ diamonds }) => diamonds > 0))
       .map(({ kid, diamonds, saved }) => {
-        const sub = (savOn && saved > 0)
-          ? `${cur}${saved.toFixed(2)} saved this week`
+        const savedLabel = savOn ? _weekReviewSavedLabel(saved, cur) : '';
+        const sub = savedLabel
+          ? `${savedLabel} saved this week`
           : '';
         return { avatar: renderMemberAvatarHtml(kid, '<i class="ph-duotone ph-smiley" style="color:#5b6f67;font-size:1.35rem"></i>'), name: kid.name, sub, stat: `${diamonds} gems` };
       })
@@ -903,13 +1088,12 @@ function _weekReviewSyncAudio() {
 }
 
 function _devPreviewMaintenanceScreen() {
-  closeSettings();
-  showMaintenanceScreen(
-    'Scheduled Maintenance',
-    'Preview mode for the maintenance experience shown when Remote Config enables downtime.',
-    'Open Status Page',
-    'https://gemsprout.com'
-  );
+  _runDevScreenPreview(() => {
+    showMaintenanceScreen(
+      'Scheduled Maintenance',
+      'Preview mode for the maintenance experience shown when Remote Config enables downtime.'
+    );
+  }, { devSectionKey: 'screens', backButtonSelector: '' });
 }
 
 function _devPreviewParentSignInScreen() {
@@ -920,8 +1104,100 @@ function _devPreviewParentSignInScreen() {
     toast('Add at least one parent profile first');
     return;
   }
+  _runDevScreenPreview(() => {
+    showParentSignIn(parent.id, () => {});
+  }, { devSectionKey: 'screens', backButtonSelector: 'button[onclick*="renderHome()"]' });
+}
+
+function _devPreviewLoadingScreen() {
+  _runDevScreenPreview(() => {
+    showLoading();
+  }, { devSectionKey: 'screens', backButtonSelector: '' });
+}
+
+function _captureSettingsRestoreContext(devSectionKey = 'screens') {
+  const pane = document.querySelector('#settings-root .settings-subpane');
+  return {
+    page: S.settingsPage || 'main',
+    scrollTop: pane?.scrollTop || 0,
+    devSectionKey,
+  };
+}
+
+function _closeDevPreviewToSettings() {
+  // Remove the floating close button.
+  const existing = document.getElementById('dev-screen-preview-close');
+  if (existing) existing.remove();
+  // Deactivate screen-auth (maintenance/loading set position:fixed + z-index:9999
+  // via the .loading class, which would sit on top of settings even after restore).
+  const authEl = document.getElementById('screen-auth');
+  if (authEl) {
+    authEl.classList.remove('active', 'loading');
+    authEl.removeAttribute('style');
+  }
+  const ctx = S._devScreenPreviewContext;
+  S._devScreenPreviewContext = null;
+  if (!ctx) {
+    if (S.currentUser) routeToView(S.currentUser);
+    else renderHome();
+    return;
+  }
+  _restoreSettingsAfterDevCelebration(ctx.page, ctx.scrollTop, ctx.devSectionKey || '');
+}
+
+function _applyDevPreviewChrome(opts = {}) {
+  // Remove any stale button from a previous preview before adding a fresh one.
+  const stale = document.getElementById('dev-screen-preview-close');
+  if (stale) stale.remove();
+  // Mount the button directly on body as position:fixed so it floats above
+  // everything regardless of the preview screen's own stacking context
+  // (screen-auth.loading uses position:fixed + overflow:hidden which would
+  // clip or interfere with an absolutely-positioned child).
+  const closeBtn = document.createElement('button');
+  closeBtn.id = 'dev-screen-preview-close';
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', 'Exit preview');
+  closeBtn.textContent = 'Exit Preview';
+  closeBtn.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;height:34px;padding:0 12px;border:none;border-radius:999px;background:rgba(255,255,255,0.94);color:#274239;display:inline-flex;align-items:center;justify-content:center;font-size:0.76rem;font-weight:800;letter-spacing:0.02em;box-shadow:0 8px 20px rgba(28,40,34,0.2);z-index:19999;cursor:pointer';
+  closeBtn.onclick = _closeDevPreviewToSettings;
+  document.body.appendChild(closeBtn);
+  const selector = String(opts.backButtonSelector || '').trim();
+  if (selector) {
+    const screen = document.getElementById('screen-auth');
+    if (screen) {
+      screen.querySelectorAll(selector).forEach(btn => {
+        btn.setAttribute('onclick', '_closeDevPreviewToSettings(); return false;');
+      });
+    }
+  }
+}
+
+function _runDevScreenPreview(renderFn, opts = {}) {
+  const fn = typeof renderFn === 'function' ? renderFn : null;
+  if (!fn) return;
+  const ctx = _captureSettingsRestoreContext(opts.devSectionKey || 'screens');
   closeSettings();
-  showParentSignIn(parent.id, () => {});
+  // Wait for closeSettings' 230ms exit animation to finish before rendering the
+  // preview screen, otherwise the preview renders while settings is still in the
+  // DOM and the two screens stack visually.
+  setTimeout(async () => {
+    S._devScreenPreviewContext = ctx;
+    try {
+      await fn();
+    } finally {
+      _applyDevPreviewChrome(opts);
+    }
+  }, 250);
+}
+
+async function _devPreviewPaywall() {
+  await _runDevScreenPreview(async () => {
+    S.isPro = false;
+    await showPaywall();
+  }, {
+    devSectionKey: 'screens',
+    backButtonSelector: '.paywall-top button[onclick*="renderHome()"]',
+  });
 }
 
 function _weekReviewStopAudio() {
@@ -948,10 +1224,7 @@ function _renderWeekReviewStory() {
   return `
     <style>
       #week-review-overlay {
-        background:
-          radial-gradient(circle at top left, rgba(232,199,106,0.16), transparent 24%),
-          radial-gradient(circle at top right, rgba(95,143,99,0.14), transparent 26%),
-          linear-gradient(180deg, #26443d 0%, #355d4f 34%, #e9ddc8 34%, #f4efe4 100%);
+        background: linear-gradient(180deg, #365e4f 0%, #365e4f 45%, #f4efe4 45%, #f4efe4 100%);
         color: #273229;
         font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
         touch-action: manipulation;
@@ -991,7 +1264,7 @@ function _renderWeekReviewStory() {
       }
       .wr-shell {
         position:relative;
-        min-height:100vh;
+        min-height:100dvh;
         display:flex;
         flex-direction:column;
         padding:calc(env(safe-area-inset-top, 16px) + 10px) 16px calc(env(safe-area-inset-bottom, 12px) + 12px);
@@ -1306,9 +1579,6 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
     delay: _weekReviewScaledDelay(rowDelayBase + i, timingScale),
     motionClass: row.motionClass || rowMotionClass(i),
   }, i)).join('');
-  const gemCount = Number(totalDiamonds) || 0;
-  const savingsAmount = Number(String(totalSaved).replace(/[^0-9.-]/g, '')) || 0;
-  const badgeCount = Number(totalBadges) || 0;
   const labelDelay = 0;
   const isCover = slide.type === 'cover';
   const isFinale = slide.type === 'finale';
@@ -1317,18 +1587,11 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
   const finaleMessageHTML = slide.finaleMessage
     ? `<div class="wr-finale-message wr-reveal wr-reveal-from-right"${previewAttr} style="--wr-delay:${_weekReviewScaledDelay(1, timingScale)}s">${slide.finaleMessage}</div>`
     : '';
-  const coverChips = [];
-  if (gemCount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>`);
-  }
-  if (savingsAmount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${totalSaved} saved</div>`);
-  }
-  if (badgeCount > 0) {
-    coverChips.push(`<div class="wr-cover-chip wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><i class="ph-duotone ph-medal" style="font-size:1rem"></i> ${totalBadges} badges</div>`);
-  }
+  const coverQuoteHTML = (isCover && slide.coverMessage)
+    ? `<div class="wr-cover-quote-wrap wr-reveal wr-reveal-from-bottom-card"${previewAttr} style="--wr-delay:${subDelay}s"><div class="wr-cover-quote">${esc(slide.coverMessage)}</div></div>`
+    : '';
   return `
-    <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}${slide.noLabel ? ' wr-card-no-label' : ''}" style="background:${slide.gradient}">
+    <div class="wr-card ${slide.type === 'finale' ? 'wr-finale' : ''}${slide.noLabel ? ' wr-card-no-label' : ''}${isCover ? ' wr-card-cover' : ''}" style="background:${slide.gradient}">
       <div class="wr-card-label"${previewAttr}>${slide.icon}${slide.label}</div>
       <div class="wr-card-body">
         ${slide.type === 'finale' ? `
@@ -1340,11 +1603,13 @@ function _weekReviewCardBodyHTML(slide, { previewAttr = '', totalDiamonds = '0',
             ${finaleMessageHTML}
             <div class="wr-card-sub wr-reveal wr-reveal-from-right"${previewAttr} style="--wr-delay:${_weekReviewScaledDelay(1, timingScale)}s">${slide.subStat}</div>
           </div>
+        ` : (isCover ? `
+          <div class="wr-card-big wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${headerDelay}s;margin-bottom:2px">${slide.bigStat}</div>
         ` : `
           <div class="wr-card-big wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${headerDelay}s">${slide.bigStat}</div>
           <div class="wr-card-sub wr-reveal wr-reveal-from-left"${previewAttr} style="--wr-delay:${subDelay}s">${slide.subStat}</div>
-        `}
-        ${slide.type === 'cover' && coverChips.length ? `<div class="wr-cover-chip-row">${coverChips.join('')}</div>` : ''}
+        `)}
+        ${coverQuoteHTML}
         ${(slide.rows || []).length ? `<div class="wr-kid-list${listClass}">${rowsHtml}</div>` : ''}
       </div>
     </div>`;
@@ -1430,10 +1695,7 @@ function _weekReviewHTML(slides, currentIndex) {
   return `
     <style>
       #week-review-overlay {
-        background:
-          radial-gradient(circle at top left, rgba(232,199,106,0.16), transparent 24%),
-          radial-gradient(circle at top right, rgba(95,143,99,0.14), transparent 26%),
-          linear-gradient(180deg, #26443d 0%, #355d4f 34%, #e9ddc8 34%, #f4efe4 100%);
+        background: linear-gradient(180deg, #365e4f 0%, #365e4f 45%, #f4efe4 45%, #f4efe4 100%);
         color: #273229;
         font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
         touch-action: manipulation;
@@ -1450,8 +1712,8 @@ function _weekReviewHTML(slides, currentIndex) {
         from { opacity: 1; transform: translate3d(var(--wr-from-x, 0px), var(--wr-from-y, 18px), 0) scale(1); }
         to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
       }
-      .wr-reveal-from-bottom { --wr-from-x:0px; --wr-from-y:calc(100vh + 120px); }
-      .wr-reveal-from-bottom-card { --wr-from-x:0px; --wr-from-y:calc(100vh + 160px); }
+      .wr-reveal-from-bottom { --wr-from-x:0px; --wr-from-y:calc(100dvh + 120px); }
+      .wr-reveal-from-bottom-card { --wr-from-x:0px; --wr-from-y:calc(100dvh + 160px); }
       .wr-reveal-from-left { --wr-from-x:calc(-100vw - 160px); --wr-from-y:0px; }
       .wr-reveal-from-right { --wr-from-x:calc(100vw + 160px); --wr-from-y:0px; }
       .wr-shell {
@@ -1480,7 +1742,7 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-tap-left { left:0; }
       .wr-tap-right { right:0; }
       .wr-slide { position:relative; width:100%; min-height:0; display:flex; flex-direction:column; justify-content:center; animation:wr-scene-in 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-      .wr-card { width:100%; max-height:100%; border-radius:30px; padding:26px 24px 26px; box-shadow:0 18px 40px rgba(34, 28, 20, 0.14); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
+      .wr-card { width:100%; max-height:100%; border-radius:30px; padding:26px 24px 26px; border:1px solid rgba(255,255,255,0.14); box-shadow:0 8px 32px rgba(0,0,0,0.3); min-height:var(--wr-card-uniform-height, clamp(460px, 62dvh, 620px)); height:var(--wr-card-uniform-height, auto); display:flex; flex-direction:column; justify-content:flex-start; user-select:none; -webkit-user-select:none; }
       .wr-reveal { opacity:1; --wr-from-x:0px; --wr-from-y:0px; transform:translate3d(var(--wr-from-x), var(--wr-from-y), 0) scale(1); will-change:transform; animation: wr-reveal ${revealDuration}s cubic-bezier(0.16,1,0.3,1) both; animation-delay: var(--wr-delay, 0s); }
       .wr-reveal[data-preview="1"] { opacity:1; animation:none; transform:none; }
       #week-review-overlay.wr-paused .wr-progress-fill.active,
@@ -1488,8 +1750,19 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-card-label { display:flex; align-items:center; gap:8px; font-size:0.86rem; font-weight:900; text-transform:uppercase; letter-spacing:0.12em; color:rgba(255,248,239,0.64); margin-bottom:20px; }
       .wr-card-no-label .wr-card-label { display:none; }
       .wr-card-body { flex:1; display:flex; flex-direction:column; justify-content:center; gap:18px; padding-bottom:10px; }
+      .wr-card-cover .wr-card-body { display:flex; flex-direction:column; justify-content:space-between; }
       .wr-card-big { font-size:clamp(3.4rem,15vw,5.6rem); font-weight:900; color:#fff9f1; line-height:0.92; letter-spacing:-0.05em; margin-bottom:16px; text-wrap:balance; }
       .wr-card-sub { font-size:1.18rem; color:rgba(255,246,238,0.78); line-height:1.5; max-width:28rem; }
+      .wr-cover-quote-wrap { flex:1 1 auto; display:flex; align-items:center; justify-content:center; min-height:0; }
+      .wr-cover-quote {
+        text-align:center;
+        font-size:clamp(28px, 7vw, 40px);
+        font-weight:700;
+        line-height:1.45;
+        text-indent:0;
+        padding:20px 24px 28px;
+        color:rgba(250,248,244,0.96);
+      }
       .wr-kid-list { display:flex; flex-direction:column; gap:16px; margin-top:14px; overflow:hidden; }
       .wr-kid-list-count-3,
       .wr-kid-list-count-4,
@@ -1542,15 +1815,16 @@ function _weekReviewHTML(slides, currentIndex) {
       .wr-measure-host { position:absolute; inset:0; pointer-events:none; visibility:hidden; z-index:-1; overflow:hidden; }
       .wr-measure-slide { position:absolute; inset:0; display:flex; align-items:center; }
       .wr-measure-host .wr-card { min-height:0 !important; height:auto !important; }
-      .wr-bottom-note { position:absolute; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom, 0px) + 8px); text-align:center; color:rgba(255,255,255,0.78); font-size:0.84rem; font-weight:700; }
+      .wr-bottom-note { position:absolute; left:16px; right:16px; bottom:8px; text-align:center; color:rgba(255,255,255,0.78); font-size:0.84rem; font-weight:700; }
       @media (max-width: 640px) {
-        .wr-reveal-from-bottom { --wr-from-y: calc(100vh + 96px); }
-        .wr-reveal-from-bottom-card { --wr-from-y: calc(100vh + 120px); }
+        .wr-reveal-from-bottom { --wr-from-y: calc(100dvh + 96px); }
+        .wr-reveal-from-bottom-card { --wr-from-y: calc(100dvh + 120px); }
         .wr-reveal-from-left { --wr-from-x: calc(-100vw - 120px); }
         .wr-reveal-from-right { --wr-from-x: calc(100vw + 120px); }
         .wr-card { min-height: var(--wr-card-uniform-height, clamp(430px, 58dvh, 560px)); height:var(--wr-card-uniform-height, auto); padding:24px 22px 24px; }
         .wr-card-label { font-size: 0.82rem; }
         .wr-card-body { gap: 16px; padding-bottom: 8px; }
+        .wr-card-cover .wr-card-body { justify-content: space-between; }
         .wr-card-big { font-size: clamp(3.1rem, 14vw, 4.9rem); }
         .wr-card-sub { font-size: 1.12rem; }
         .wr-kid-list { gap: 14px; margin-top: 10px; }
@@ -1583,7 +1857,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-kid-list-compact .wr-kid-badge-name { font-size: 0.62rem; }
         .wr-cover-chip-row { gap: 6px; }
         .wr-cover-chip { width: 104px; min-width: 104px; padding: 8px 6px; font-size: 0.65rem; gap: 4px; }
-        .wr-bottom-note { left: 18px; right: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); font-size: 0.76rem; }
+        .wr-bottom-note { left: 18px; right: 18px; bottom: 6px; font-size: 0.76rem; }
       }
       @media (max-width: 420px) and (max-height: 760px) {
         .wr-shell { padding: env(safe-area-inset-top,20px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); }
@@ -1598,6 +1872,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-card { min-height: 0; height: 100%; max-height: none; padding: 18px 16px 18px; border-radius: 24px; }
         .wr-card-label { font-size: 0.72rem; margin-bottom: 12px; gap: 6px; }
         .wr-card-body { justify-content: flex-start; gap: 10px; padding-bottom: 0; }
+        .wr-card-cover .wr-card-body { justify-content: space-between; }
         .wr-card-big { font-size: clamp(2.3rem, 11.5vw, 3.4rem); margin-bottom: 8px; }
         .wr-card-sub { font-size: 0.88rem; line-height: 1.32; max-width: 18rem; }
         .wr-cover-chip-row { gap: 5px; margin-top: 4px; }
@@ -1622,7 +1897,7 @@ function _weekReviewHTML(slides, currentIndex) {
         .wr-finale-icon i { transform: translateY(-14px); }
         .wr-finale-message { font-size: clamp(1.8rem, 8.6vw, 2.6rem); }
         .wr-finale .wr-card-sub { margin-top: 8px; font-size: 0.9rem; line-height: 1.28; }
-        .wr-bottom-note { font-size: 0.68rem; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+        .wr-bottom-note { font-size: 0.68rem; left: 12px; right: 12px; bottom: 4px; }
       }
     </style>
     <div class="wr-shell">
@@ -1663,7 +1938,11 @@ function _renderWeekReviewStory() {
   })();
   const totalBadges = _weekReviewFindSlideByLabelPrefix(slides, 'Badges Earned')?.bigStat || '0';
   if (_weekReviewShouldUseUniformCardHeight()) {
-    _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        _weekReviewApplyUniformCardHeight(overlay, slides, { totalDiamonds, totalSaved, totalBadges });
+      });
+    });
   } else {
     overlay.style.removeProperty('--wr-card-uniform-height');
   }
@@ -1719,6 +1998,7 @@ async function scheduleInterestDayNotification() {
 const APP_UNLOCK_KEY    = 'gemsprout.appUnlocked';
 const CURRENT_USER_KEY  = 'gemsprout.currentUserId';
 const PARENT_AUTH_KEY   = 'gemsprout.parentAuthUid';
+const PARENT_AUTH_FAMILY_KEY = 'gemsprout.parentAuthFamilyCode';
 const PARENT_AUTH_PROVIDER_KEY = 'gemsprout.parentAuthProvider';
 const E2E_MODE_KEY = 'gemsprout.e2eMode';
 const DEBUG_FORCE_PRIZE_STATE_PREVIEW = false; // TEMP: visual preview for locked/redeemed prize states
@@ -1755,15 +2035,33 @@ function getParentAuthUid() {
   try { return localStorage.getItem(PARENT_AUTH_KEY) || null; } catch { return null; }
 }
 
+function _getParentAuthFamilyCode() {
+  try { return localStorage.getItem(PARENT_AUTH_FAMILY_KEY) || ''; } catch { return ''; }
+}
+
 function setParentAuthUid(uid) {
   try {
-    if (uid) localStorage.setItem(PARENT_AUTH_KEY, uid);
-    else localStorage.removeItem(PARENT_AUTH_KEY);
+    if (uid) {
+      localStorage.setItem(PARENT_AUTH_KEY, uid);
+      localStorage.setItem(PARENT_AUTH_FAMILY_KEY, getFamilyCode() || '');
+    } else {
+      localStorage.removeItem(PARENT_AUTH_KEY);
+      localStorage.removeItem(PARENT_AUTH_FAMILY_KEY);
+      _pushInitUid = '';
+    }
   } catch {}
 }
 
 function isParentSignedIn() {
-  return !!getParentAuthUid();
+  const uid = getParentAuthUid();
+  if (!uid) return false;
+  const trustedFamily = _getParentAuthFamilyCode();
+  const activeFamily = getFamilyCode() || '';
+  if (!trustedFamily || (activeFamily && trustedFamily !== activeFamily)) {
+    setParentAuthUid(null);
+    return false;
+  }
+  return true;
 }
 
 function _isRecentParentAuthForMember(member) {
@@ -1771,16 +2069,83 @@ function _isRecentParentAuthForMember(member) {
   if (!recent || !recent.uid || !member) return false;
   const ageMs = Date.now() - recent.at;
   if (ageMs > 2 * 60 * 1000) return false;
+  if (recent.familyCode && recent.familyCode !== (getFamilyCode() || '')) return false;
   const email = recent.email || '';
+  return _isAuthIdentityLinkedToMember(member, recent.uid, email);
+}
+
+function _isMemberAuthConfigured(member) {
+  if (!member) return false;
+  return !!member.authUid || ((member.authProviders || []).length > 0);
+}
+
+function _isAuthIdentityLinkedToMember(member, uid = '', email = '') {
+  if (!member || !uid) return false;
+  const normalizedEmail = String(email || '').toLowerCase();
   const providers = member.authProviders || [];
-  return member.authUid === recent.uid || providers.some(p => p.uid === recent.uid || (email && p.email?.toLowerCase() === email));
+  if (providers.length) {
+    return providers.some(p => p.uid === uid || (normalizedEmail && p.email?.toLowerCase() === normalizedEmail));
+  }
+  // Legacy fallback for older profiles that only had authUid.
+  return member.authUid === uid;
+}
+
+function _findOtherParentLinkedToAuth(uid = '', email = '', excludeMemberId = '') {
+  if (!uid) return null;
+  return (D.family?.members || []).find(m =>
+    m?.role === 'parent' &&
+    !m?.deleted &&
+    m.id !== excludeMemberId &&
+    _isAuthIdentityLinkedToMember(m, uid, email)
+  ) || null;
+}
+
+function _shouldAutoMapCurrentAuthAsKid() {
+  const u = auth.currentUser;
+  if (!u) return false;
+  // Safety: never remap signed-in provider accounts during kid-join flow.
+  return !!u.isAnonymous;
+}
+
+let _pushInitUid = '';
+function _ensureParentPushRegistration() {
+  const trustedUid = getParentAuthUid();
+  const firebaseUid = auth.currentUser?.uid || '';
+  if (!trustedUid || !firebaseUid || trustedUid !== firebaseUid) return;
+  if (_pushInitUid === trustedUid) return;
+  _pushInitUid = trustedUid;
+  initPushNotifications(auth.currentUser);
+}
+
+async function _isParentAuthUserAllowedForActiveFamily(firebaseUser) {
+  const uid = firebaseUser?.uid || '';
+  const activeFamily = getFamilyCode() || '';
+  if (!uid || !activeFamily) return { ok: true };
+  try {
+    const snap = await db.doc(`users/${uid}`).get();
+    const linkedFamily = snap.exists ? String(snap.data()?.familyCode || '') : '';
+    if (linkedFamily && linkedFamily !== activeFamily) {
+      return { ok: false, linkedFamily };
+    }
+  } catch {}
+  return { ok: true };
 }
 
 function ensureParentAuth(member, onSuccess) {
   if (!member || member.role !== 'parent') return true;
-  if (isParentSignedIn()) return true;
+  if (isParentSignedIn()) {
+    const trustedUid = getParentAuthUid() || '';
+    const trustedEmail = String(auth.currentUser?.email || '').toLowerCase();
+    if (_isMemberAuthConfigured(member) && !_isAuthIdentityLinkedToMember(member, trustedUid, trustedEmail)) {
+      setParentAuthUid(null);
+    } else {
+      _ensureParentPushRegistration();
+      return true;
+    }
+  }
   if (_isRecentParentAuthForMember(member)) {
     setParentAuthUid(S._recentParentAuth.uid);
+    _ensureParentPushRegistration();
     return true;
   }
   showParentSignIn(member.id, onSuccess);
@@ -1851,6 +2216,7 @@ async function signOutParent() {
     console.warn('Sign out error:', e.message);
   } finally {
     setParentAuthUid(null);
+    S._recentParentAuth = null;
   }
 }
 
@@ -1862,7 +2228,6 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   } catch {}
   const member = getMember(memberId);
   if (!member) return;
-  if (!member.authUid) member.authUid = firebaseUser.uid;
   if (!member.authProviders) member.authProviders = [];
   const pid   = overrideProviderId || firebaseUser.providerData?.[0]?.providerId || 'unknown';
   const email = firebaseUser.email || firebaseUser.providerData?.[0]?.email || '';
@@ -1870,6 +2235,7 @@ async function linkParentAuth(firebaseUser, memberId, overrideProviderId) {
   const idx = member.authProviders.findIndex(p => p.providerId === pid);
   if (idx >= 0) member.authProviders[idx] = entry; else member.authProviders.push(entry);
   member.authUids = member.authProviders.map(p => p.uid); // for future Firestore array-contains queries
+  member.authUid = member.authProviders[0]?.uid || firebaseUser.uid;
   saveData();
   db.doc(`users/${firebaseUser.uid}`).set({ familyCode: getFamilyCode(), uid: firebaseUser.uid, email: (firebaseUser.email || '').toLowerCase() }, { merge: true })
     .catch(e => console.warn('users doc write failed:', e));
@@ -1950,6 +2316,7 @@ function signOutAndGoHome() {
   S.currentUser = null;
   setCurrentUserId('');
   setParentAuthUid(null);
+  S._recentParentAuth = null;
   try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   if (wasParent) signOutParent().finally(() => {
     auth.signInAnonymously().catch(() => {});
@@ -2171,6 +2538,8 @@ let S = {            // UI state (not persisted)
   syncStatus:           'idle', // 'idle' | 'syncing' | 'ok' | 'error'
   lastLocalSave:        0,
   _afterPinNav:         null,
+  _pendingNotificationRoute: null,
+  _lastParentForegroundRefreshAt: 0,
   _authPromptShown:      false,
   _pinPromptShown:       false,
   _parentSignInCallback: null,
@@ -2179,7 +2548,11 @@ let S = {            // UI state (not persisted)
   _scrollMemory:         {},
   _activeViewUserId:     '',
   _activeViewRole:       '',
+  _historyMemberId:      null,
   _testOnboarding:       null,
+  _devSettingsUnlocked:  false,
+  _devUnlockTapCount:    0,
+  _devUnlockWindowStart: 0,
 };
 
 function getMainScrollerForCurrentView() {
@@ -2664,11 +3037,11 @@ function subscribeToFirestore(onFirstLoad) {
           if (_freshUser) S.currentUser = _freshUser;
         }
         // Trigger celebration if kid is viewing and chores got approved
-        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
+        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid' && !isParentSignedIn()) {
           checkForApprovalCelebration(prevPending, S.currentUser);
         }
         // Trigger celebration for new manual bonus gems, savings deposits, spend outcomes, or declines
-        if (!firstSnapshot && S.currentUser?.role === 'kid') {
+        if (!firstSnapshot && S.currentUser?.role === 'kid' && !isParentSignedIn()) {
           checkForNewBonuses(S.currentUser, false);
           checkForNewSavingsDeposits(S.currentUser, false);
           checkForSavingsRequestOutcomes(S.currentUser, false);
@@ -2679,7 +3052,7 @@ function subscribeToFirestore(onFirstLoad) {
     if (firstSnapshot) {
       firstSnapshot = false;
       // Check for approvals that happened while the app was closed
-      if (S.currentUser?.role === 'kid') {
+      if (S.currentUser?.role === 'kid' && !isParentSignedIn()) {
         const savedKeys = loadPendingSnapshot(S.currentUser.id);
         if (savedKeys.size > 0) checkForApprovalCelebration(savedKeys, S.currentUser, true);
         clearPendingSnapshot(S.currentUser.id);
@@ -2694,7 +3067,7 @@ function subscribeToFirestore(onFirstLoad) {
       else if (_didUpdate) renderCurrentView();
     } else if (_didUpdate) {
       renderCurrentView();
-      if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
+      if (S.currentUser?.role === 'kid' && !isParentSignedIn()) checkForNewBadges(S.currentUser, false);
     }
   }, err => {
     console.warn('Firestore listener error:', err);
@@ -3368,9 +3741,23 @@ function getChoreProgress(chore, memberId, dateStr = today()) {
 
 function fmtDate(str) {
   if (!str) return '';
-  const [y,m,d] = str.split('-');
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${months[+m-1]} ${+d}`;
+  const [y, m, d] = String(str).split('-');
+  if (!y || !m || !d) return String(str);
+  return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${y}`;
+}
+
+function fmtDateTime(ts) {
+  const ms = Number(ts);
+  if (!Number.isFinite(ms)) return '';
+  const dt = new Date(ms);
+  if (Number.isNaN(dt.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(dt);
 }
 
 function fmtDmds(n) { return `${n} gems`; }
@@ -3593,10 +3980,21 @@ function doApproveChore(choreId, memberId, entryId) {
   if (entry.entryType === 'before') {
     entry.status = 'approved';
   } else {
+    const memberBefore = _captureMemberUndoSnapshot(member);
+    const completionsBefore = normalizeCompletionEntries(chore.completions?.[memberId]);
     entry.status = 'done';
     member.gems      = (member.gems      || 0) + chore.gems;
     member.totalEarned = (member.totalEarned || 0) + chore.gems;
-    addHistory('chore', memberId, chore.title, chore.gems);
+    addHistory('chore', memberId, chore.title, chore.gems, {
+      undoAction: 'approve_completion',
+      choreId: chore.id,
+      completionId: entry.id,
+      slotId: entry.slotId || null,
+      entryType: entry.entryType || null,
+      pointsAwarded: chore.gems,
+      memberBefore,
+      completionsBefore,
+    });
     checkAfterDiamondsAwarded(member, chore.gems);
     checkChoreBadges(chore, memberId);
     // Auto-here: approving a chore means the kid must be home
@@ -3629,7 +4027,7 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
   saveData();
 }
 
-function doRedeemPrize(prizeId, memberId) {
+function doRedeemPrize(prizeId, memberId, opts = {}) {
   const prize  = D.prizes.find(p => p.id === prizeId);
   const member = getMember(memberId);
   if (!prize || !member) return { ok: false, reason: 'missing' };
@@ -3647,10 +4045,19 @@ function doRedeemPrize(prizeId, memberId) {
     return { ok: false, reason: 'window_locked', message: getPrizeLockedWindowMessage(normalizedPrize.recurrence, redemptionDate) };
   }
   const cost = Math.max(0, Number(normalizedPrize.cost) || 0);
+  const memberBefore = _captureMemberUndoSnapshot(member);
+  const redemptionsBefore = Array.isArray(prize.redemptions) ? _cloneForUndo(prize.redemptions) : [];
   const newBalance = Math.max(0, (member.gems || 0) - cost);
   member.gems = newBalance;
   member.diamonds = newBalance;
-  addHistory('prize', memberId, normalizedPrize.title, -cost);
+  addHistory('prize', memberId, normalizedPrize.title, -cost, {
+    undoAction: 'prize_redeem',
+    prizeId: prize.id,
+    memberBefore,
+    redemptionsBefore,
+    requestId: opts.requestId || null,
+    requestBefore: opts.requestBefore ? _cloneForUndo(opts.requestBefore) : null,
+  });
   if (!prize.redemptions) prize.redemptions = [];
   prize.redemptions.push({
     memberId,
@@ -3685,10 +4092,18 @@ function doContributeToGoal(memberId, goalId, gems) {
   const applied = Math.min(requested, owned, remaining);
   if (requested <= 0) return { ok: false, reason: 'invalid' };
   if (applied <= 0) return { ok: false, reason: remaining <= 0 ? 'complete' : 'insufficient', requested, owned, remaining };
+  const memberBefore = _captureMemberUndoSnapshot(member);
+  const contributionsBefore = _cloneForUndo(goal.contributions || {});
   member.gems -= applied;
+  member.diamonds = member.gems;
   goal.contributions = goal.contributions || {};
   goal.contributions[memberId] = (goal.contributions[memberId]||0) + applied;
-  addHistory('goal', memberId, goal.title, -applied);
+  addHistory('goal', memberId, goal.title, -applied, {
+    undoAction: 'goal_contribution',
+    goalId: goal.id,
+    memberBefore,
+    contributionsBefore,
+  });
   saveData();
   return {
     ok: true,
@@ -3702,10 +4117,23 @@ function doContributeToGoal(memberId, goalId, gems) {
 }
 
 function addHistory(type, memberId, title, gems, extra = {}) {
-  D.history.unshift({ id:genId(), type, memberId, title, gems, date:today(), ...extra });
+  D.history.unshift({ id:genId(), type, memberId, title, gems, date:today(), createdAt: Date.now(), ...extra });
+}
+
+function _cleanupUndoDemoEntries() {
+  D.history = Array.isArray(D.history) ? D.history : [];
+  const before = D.history.length;
+  D.history = D.history.filter(h => !h?.demoUndoSeed && !(String(h?.title || '').includes('TEMP: Demo undo entry')));
+  if (D.history.length !== before) {
+    saveData();
+  }
+  try { localStorage.removeItem('gemsprout.debugUndoActivitySeeded'); } catch {}
 }
 
 function historyIcon(h) {
+  if (h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title)) {
+    return '<i class="ph-duotone ph-arrow-u-up-left" style="color:#6B7280"></i>';
+  }
   if (h.type === 'chore') {
     if ((h.title||'').startsWith('Streak bonus')) return '<i class="ph-duotone ph-fire" style="color:#F97316"></i>';
     return '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>';
@@ -3728,6 +4156,7 @@ function historyIcon(h) {
 }
 
 function historyBadge(h) {
+  if (h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title)) return { color:'#6b7280', bg:'#F3F4F6' };
   if (h.type === 'chore') {
     if ((h.title||'').startsWith('Streak bonus')) return { color:'#c2410c', bg:'#FFF7ED' };
     return { color:'#166534', bg:'#DCFCE7' };
@@ -3754,17 +4183,367 @@ function isUndoHistoryEntry(title = '') {
 function cleanActivityTitle(title = '') {
   return String(title || '')
     .replace(/<[^>]+>/g, '')
-    .replace(/^.*?(?:Undo:|Removed:)\s*/iu, 'Undo: ')
+    .replace(/^.*?(?:Undo:|Removed:)\s*/iu, '')
     .replace(/^[^\p{L}\p{N}]+/u, '')
     .trim();
 }
 
-function renderActivityRow(h) {
+function numberToWordsInt(value) {
+  const n = Math.max(0, Math.floor(Number(value) || 0));
+  const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+  const under100 = (x) => {
+    if (x < 10) return ones[x];
+    if (x < 20) return teens[x - 10];
+    const t = Math.floor(x / 10);
+    const u = x % 10;
+    return u ? `${tens[t]} ${ones[u]}` : tens[t];
+  };
+
+  if (n < 100) return under100(n);
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const rest = n % 100;
+    return rest ? `${ones[h]} hundred ${under100(rest)}` : `${ones[h]} hundred`;
+  }
+  if (n < 1000000) {
+    const k = Math.floor(n / 1000);
+    const rest = n % 1000;
+    return rest ? `${numberToWordsInt(k)} thousand ${numberToWordsInt(rest)}` : `${numberToWordsInt(k)} thousand`;
+  }
+  return String(n).split('').map(d => ones[Number(d)]).join(' ');
+}
+
+function formatDollarsNaturally(amount) {
+  const centsTotal = Math.max(0, Math.round((Number(amount) || 0) * 100));
+  const dollars = Math.floor(centsTotal / 100);
+  const cents = centsTotal % 100;
+  if (dollars <= 0) {
+    return `${numberToWordsInt(cents)} cent${cents === 1 ? '' : 's'}`;
+  }
+  const dollarsPart = `${numberToWordsInt(dollars)} dollar${dollars === 1 ? '' : 's'}`;
+  if (cents <= 0) return dollarsPart;
+  return `${dollarsPart} and ${numberToWordsInt(cents)} cent${cents === 1 ? '' : 's'}`;
+}
+
+const HISTORY_UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
+const HISTORY_UNDO_MAX_DEPTH = 200;
+
+function _captureMemberUndoSnapshot(member) {
+  if (!member) return null;
+  normalizeMember(member);
+  return JSON.parse(JSON.stringify({
+    gems: member.gems || 0,
+    diamonds: member.diamonds || member.gems || 0,
+    totalEarned: member.totalEarned || 0,
+    xp: member.xp || 0,
+    badges: Array.isArray(member.badges) ? [...member.badges] : [],
+    streak: member.streak || { current: 0, best: 0, lastDate: null },
+    comboStreak: member.comboStreak || { current: 0, best: 0, lastDate: null },
+    comboBonusDate: member.comboBonusDate || null,
+    savings: member.savings || 0,
+    savingsGifted: member.savingsGifted || 0,
+    savingsMatched: member.savingsMatched || 0,
+    savingsInterest: member.savingsInterest || 0,
+    savingsInterestLastDate: member.savingsInterestLastDate || '',
+    nlTodaySecs: member.nlTodaySecs || 0,
+    nlPendingSecs: member.nlPendingSecs || 0,
+    nlLifetimeSecs: member.nlLifetimeSecs || 0,
+    nlDate: member.nlDate || '',
+  }));
+}
+
+function _restoreMemberUndoSnapshot(member, snap) {
+  if (!member || !snap) return false;
+  normalizeMember(member);
+  member.gems = Math.max(0, Number(snap.gems || 0));
+  member.diamonds = Math.max(0, Number(snap.diamonds ?? snap.gems ?? 0));
+  member.totalEarned = Math.max(0, Number(snap.totalEarned || 0));
+  member.xp = Math.max(0, Number(snap.xp || 0));
+  member.badges = Array.isArray(snap.badges) ? [...snap.badges] : [];
+  member.streak = snap.streak ? JSON.parse(JSON.stringify(snap.streak)) : { current: 0, best: 0, lastDate: null };
+  member.comboStreak = snap.comboStreak ? JSON.parse(JSON.stringify(snap.comboStreak)) : { current: 0, best: 0, lastDate: null };
+  member.comboBonusDate = snap.comboBonusDate || null;
+  member.savings = parseFloat((Number(snap.savings || 0)).toFixed(2));
+  member.savingsGifted = parseFloat((Number(snap.savingsGifted || 0)).toFixed(2));
+  member.savingsMatched = parseFloat((Number(snap.savingsMatched || 0)).toFixed(2));
+  member.savingsInterest = parseFloat((Number(snap.savingsInterest || 0)).toFixed(2));
+  member.savingsInterestLastDate = snap.savingsInterestLastDate || '';
+  member.nlTodaySecs = Math.max(0, Number(snap.nlTodaySecs || 0));
+  member.nlPendingSecs = Math.max(0, Number(snap.nlPendingSecs || 0));
+  member.nlLifetimeSecs = Math.max(0, Number(snap.nlLifetimeSecs || 0));
+  member.nlDate = snap.nlDate || '';
+  return true;
+}
+
+function _supportsUndoAction(h) {
+  const action = String(h?.undoAction || '');
+  return [
+    'approve_completion',
+    'parent_mark_done',
+    'manual_gems_adjust',
+    'manual_savings_adjust',
+    'not_listening_apply',
+    'prize_redeem',
+    'goal_contribution',
+    'approve_savings_request',
+    'deny_savings_request',
+    'deny_prize_request',
+  ].includes(action);
+}
+
+function _getUndoBlockReason(h) {
+  if (!h) return 'Cannot undo: Missing activity entry';
+  if (S.currentUser?.role !== 'parent') return 'Cannot undo: Parent-only action';
+  if (!_supportsUndoAction(h)) return 'Non-undoable activity';
+  if (!h.createdAt) return 'Cannot undo: Unsupported activity (historical age)';
+
+  const idx = (D.history || []).findIndex(x => x.id === h.id);
+  if (idx < 0) return 'Cannot undo: Missing activity entry';
+  if (idx > HISTORY_UNDO_MAX_DEPTH) return 'Cannot undo: More than 200 new activities';
+  if ((Date.now() - Number(h.createdAt || 0)) > HISTORY_UNDO_WINDOW_MS) return 'Cannot undo: Older than 24 hours';
+
+  const newerForMember = (D.history || []).slice(0, idx).some(x =>
+    x && x.memberId === h.memberId && x.id !== h.id
+  );
+  if (newerForMember) return 'Cannot undo: Recent activity depends on this';
+
+  const member = getMember(h.memberId);
+  if (!member) return 'Cannot undo: Original member no longer exists';
+  if ((h.undoAction === 'approve_completion' || h.undoAction === 'parent_mark_done') && !D.chores.find(c => c.id === h.choreId)) {
+    return 'Cannot undo: Original task no longer exists';
+  }
+  if (h.undoAction === 'prize_redeem' && !D.prizes.find(p => p.id === h.prizeId)) return 'Cannot undo: Original prize no longer exists';
+  if (h.undoAction === 'goal_contribution' && !(D.teamGoals || []).find(g => g.id === h.goalId)) return 'Cannot undo: Original team prize no longer exists';
+  return '';
+}
+
+function _isUndoableHistoryEntry(h) {
+  return !_getUndoBlockReason(h);
+}
+
+function _removeCompletionEntry(chore, memberId, completionId, fallback = {}) {
+  if (!chore || !memberId) return null;
+  const entries = normalizeCompletionEntries(chore.completions?.[memberId]);
+  if (!entries.length) return null;
+
+  let idx = completionId ? entries.findIndex(e => e.id === completionId) : -1;
+  if (idx === -1 && fallback.slotId) idx = entries.findIndex(e => e.status === 'done' && e.slotId === fallback.slotId && e.entryType !== 'before');
+  if (idx === -1 && fallback.entryType) idx = entries.findIndex(e => e.status === 'done' && (e.entryType || null) === fallback.entryType);
+  if (idx === -1) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i]?.status === 'done' && entries[i]?.entryType !== 'before') { idx = i; break; }
+    }
+  }
+  if (idx < 0) return null;
+
+  const [removed] = entries.splice(idx, 1);
+  if (!chore.completions) chore.completions = {};
+  if (!entries.length) delete chore.completions[memberId];
+  else chore.completions[memberId] = entries;
+  return removed || null;
+}
+
+function _deductAwardedGems(member, gems) {
+  const pts = Math.max(0, Number(gems) || 0);
+  if (!member || pts <= 0) return 0;
+  const actual = Math.min(pts, Math.max(0, Number(member.gems || 0)));
+  member.gems = Math.max(0, (member.gems || 0) - actual);
+  member.totalEarned = Math.max(0, (member.totalEarned || 0) - pts);
+  if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - pts);
+  return actual;
+}
+
+function undoActivityHistoryEntry(historyId) {
+  const h = (D.history || []).find(x => x.id === historyId);
+  if (!h) { toast('Activity entry not found'); return; }
+  const blockReason = _getUndoBlockReason(h);
+  if (blockReason) { toast(blockReason); return; }
+
+  const chore = D.chores.find(c => c.id === h.choreId);
+  const member = getMember(h.memberId);
+  if (!member) { toast('Original member no longer exists'); return; }
+
+  let ok = false;
+  const action = String(h.undoAction || '');
+
+  if (action === 'approve_completion' || action === 'parent_mark_done') {
+    if (!chore) { toast('Original task no longer exists'); return; }
+    if (h.memberBefore) _restoreMemberUndoSnapshot(member, h.memberBefore);
+    if (h.completionsBefore) {
+      const before = Array.isArray(h.completionsBefore) ? normalizeCompletionEntries(h.completionsBefore) : [];
+      if (!chore.completions) chore.completions = {};
+      if (!before.length) delete chore.completions[h.memberId];
+      else chore.completions[h.memberId] = before;
+      ok = true;
+    } else {
+      let removedCount = 0;
+      if (action === 'approve_completion') {
+        const removed = _removeCompletionEntry(chore, h.memberId, h.completionId, {
+          slotId: h.slotId || null,
+          entryType: h.entryType || null,
+        });
+        if (removed) removedCount = 1;
+      } else {
+        const ids = Array.isArray(h.completionIds) ? h.completionIds : [];
+        if (ids.length) {
+          ids.forEach(id => { if (_removeCompletionEntry(chore, h.memberId, id)) removedCount += 1; });
+        } else {
+          if (_removeCompletionEntry(chore, h.memberId, h.completionId || null, { slotId: h.slotId || null })) removedCount = 1;
+        }
+      }
+      if (removedCount > 0) {
+        const expectedPts = Math.max(0, Number(h.pointsAwarded || h.gems || 0));
+        _deductAwardedGems(member, expectedPts);
+        ok = true;
+      }
+    }
+  } else if (action === 'manual_gems_adjust' || action === 'manual_savings_adjust' || action === 'not_listening_apply') {
+    ok = _restoreMemberUndoSnapshot(member, h.memberBefore);
+  } else if (action === 'prize_redeem') {
+    const prize = D.prizes.find(p => p.id === h.prizeId);
+    if (!prize) { toast('Original prize no longer exists'); return; }
+    const restoredMember = _restoreMemberUndoSnapshot(member, h.memberBefore);
+    if (Array.isArray(h.redemptionsBefore)) {
+      prize.redemptions = _cloneForUndo(h.redemptionsBefore);
+    }
+    if (h.requestId && h.requestBefore) {
+      const req = (D.prizeRequests || []).find(r => r.id === h.requestId);
+      if (req) {
+        req.status = h.requestBefore.status || req.status;
+        req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+      }
+    }
+    ok = restoredMember;
+  } else if (action === 'goal_contribution') {
+    const goal = (D.teamGoals || []).find(g => g.id === h.goalId);
+    if (!goal) { toast('Original team prize no longer exists'); return; }
+    const restoredMember = _restoreMemberUndoSnapshot(member, h.memberBefore);
+    if (h.contributionsBefore && typeof h.contributionsBefore === 'object') {
+      goal.contributions = _cloneForUndo(h.contributionsBefore);
+    }
+    ok = restoredMember;
+  } else if (action === 'approve_savings_request') {
+    const restoredMember = _restoreMemberUndoSnapshot(member, h.memberBefore);
+    const req = (D.savingsRequests || []).find(r => r.id === h.requestId);
+    if (req && h.requestBefore) {
+      req.status = h.requestBefore.status || req.status;
+      req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+    }
+    ok = restoredMember;
+  } else if (action === 'deny_savings_request') {
+    const req = (D.savingsRequests || []).find(r => r.id === h.requestId);
+    if (!req || !h.requestBefore) { ok = false; }
+    else {
+      req.status = h.requestBefore.status || req.status;
+      req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+      ok = true;
+    }
+  } else if (action === 'deny_prize_request') {
+    const req = (D.prizeRequests || []).find(r => r.id === h.requestId);
+    if (!req || !h.requestBefore) { ok = false; }
+    else {
+      req.status = h.requestBefore.status || req.status;
+      req.resolvedAt = h.requestBefore.resolvedAt ?? null;
+      ok = true;
+    }
+  } else {
+    ok = _restoreMemberUndoSnapshot(member, h.memberBefore);
+  }
+
+  if (!ok) { toast('Nothing to undo (it may already be changed)'); return; }
+
+  // Remove the original action from history so stats/counts revert cleanly.
+  D.history = (D.history || []).filter(x => x.id !== h.id);
+  if (action === 'manual_savings_adjust') {
+    addHistory('savings', h.memberId, `Undo: ${cleanActivityTitle(h.title)}`, 0, { undoSourceHistoryId: h.id });
+  } else {
+    const reversal = -Number(h.gems || 0);
+    addHistory(reversal >= 0 ? 'bonus' : 'penalty', h.memberId, `Undo: ${cleanActivityTitle(h.title)}`, reversal, { undoSourceHistoryId: h.id });
+  }
+  saveData();
+  toast(`Undid "${cleanActivityTitle(h.title)}" for ${member.name}`);
+  _suppressActivityHintBounceOnce();
+  if (chore?.id) refreshOpenFamilySnapshot({ memberId: h.memberId, choreId: chore.id });
+  if (document.getElementById('settings-root')?.classList.contains('open')) {
+    renderFullHistory(S._historyMemberId, { suppressBounce: true });
+  }
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+  syncAppBadge();
+}
+
+function renderActivityRow(h, opts = {}) {
   const mem = getMember(h.memberId);
   const badge = historyBadge(h);
   const icon = historyIcon(h);
   const delta = Number(h.gems || 0);
+  const absDelta = Math.abs(delta);
   const deltaClass = delta > 0 ? 'positive' : delta < 0 ? 'negative' : 'neutral';
+  const isUndoneVisual = !!(h?.undoSourceHistoryId || isUndoHistoryEntry(h?.title));
+  const cleanTitle = cleanActivityTitle(h.title || 'Activity');
+  const tinyKidSelf = S.currentUser?.role === 'kid' && isTiny(S.currentUser) && S.currentUser?.id === h.memberId;
+  let tinyTtsText = '';
+  if (isUndoHistoryEntry(h?.title)) {
+    tinyTtsText = `${cleanTitle}.`;
+  } else if (h.type === 'chore') {
+    tinyTtsText = /streak bonus/i.test(String(h.title || ''))
+      ? `Streak bonus! You earned ${h.gems || 0} gems!`
+      : `${cleanTitle}. You earned ${h.gems || 0} gems!`;
+  } else if (h.type === 'decline') {
+    tinyTtsText = `${cleanTitle} was not approved.`;
+  } else if (h.type === 'prize') {
+    tinyTtsText = absDelta === 0
+      ? `You got ${cleanTitle}!`
+      : `You got ${cleanTitle}! That cost you ${absDelta} gems.`;
+  } else if (h.type === 'goal') {
+    tinyTtsText = `You put ${absDelta} gems toward ${cleanTitle}!`;
+  } else if (h.type === 'savings') {
+    tinyTtsText = (delta !== 0 && /converted/i.test(String(h.title || '')))
+      ? `${cleanTitle}.`
+      : delta !== 0
+      ? `${cleanTitle}. ${delta > 0 ? 'You got' : 'You spent'} ${absDelta} gems.`
+      : (() => {
+          const moneyMatch = String(h.title || '').match(/\+?\s*\$([0-9]+(?:\.[0-9]+)?)/);
+          if (!moneyMatch) return `${cleanTitle}.`;
+          const naturalAmt = formatDollarsNaturally(parseFloat(moneyMatch[1]));
+          if (/match/i.test(cleanTitle)) return `Parent match added ${naturalAmt} to your savings.`;
+          if (/interest/i.test(cleanTitle)) return `Interest added ${naturalAmt} to your savings.`;
+          return `${naturalAmt} was added to your savings.`;
+        })();
+  } else if (h.type === 'savings_deposit') {
+    tinyTtsText = Number.isFinite(Number(h?.dollars)) && Number(h.dollars) > 0
+      ? `You earned an extra ${formatDollarsNaturally(h.dollars)} from parent matched savings!`
+      : `${cleanTitle}. Money was added to your savings!`;
+  } else if (h.type === 'savings_withdraw') {
+    tinyTtsText = `${cleanTitle}. Money came out of your savings.`;
+  } else if (h.type === 'bonus') {
+    const isParentDefaultBonus = String(h.title || '').trim() === 'A special bonus from your parent!'
+      || cleanTitle === 'A special bonus from your parent!';
+    tinyTtsText = (h.gems || 0) < 0
+      ? `You lost ${Math.abs(h.gems || 0)} gems for ${cleanTitle}.`
+      : /combo/i.test(String(h.title || ''))
+      ? `Combo bonus! You earned ${h.gems || 0} gems!`
+      : isParentDefaultBonus
+        ? `Bonus! You earned ${h.gems || 0} gems!`
+        : `Bonus! You earned ${h.gems || 0} gems for ${cleanTitle}!`;
+  } else if (h.type === 'penalty') {
+    tinyTtsText = `${cleanTitle}. You lost ${absDelta} gems.`;
+  } else if (h.type === 'badge') {
+    tinyTtsText = `You earned the ${cleanTitle} badge!`;
+  } else if (h.type === 'level') {
+    const levelMatch = String(h.title || '').match(/level up\s*-\s*(.+?)!?\s*$/i);
+    const levelName = (levelMatch?.[1] || cleanTitle.replace(/^level up\s*-\s*/i, '').replace(/[!]+$/g, '').trim() || cleanTitle).trim();
+    tinyTtsText = `You leveled up! You are now a ${levelName}!`;
+  } else {
+    tinyTtsText = `${cleanTitle}.`;
+  }
+  const tinyTtsAttr = tinyKidSelf && tinyTtsText
+    ? ` onclick="speak('${tinyTtsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');"`
+    : '';
   const metaBits = [];
 
   if (mem) metaBits.push(`${renderMemberAvatarHtml(mem)} ${esc(mem.name)}`);
@@ -3772,18 +4551,38 @@ function renderActivityRow(h) {
 
   if (h.choreTitle) metaBits.push(esc(h.choreTitle));
   metaBits.push(fmtDate(h.date));
-
-  return `<div class="activity-row">
+  const blockReason = _getUndoBlockReason(h);
+  const canUndo = !blockReason;
+  const showReason = !!opts.showUndoReasons;
+  const showBlockedReason = showReason && _supportsUndoAction(h) && !!blockReason && S.currentUser?.role === 'parent';
+  const rowHtml = `<div class="activity-row${canUndo ? ' activity-row-swipe' : ''}${isUndoneVisual ? ' activity-row-undone' : ''}"${tinyTtsAttr}>
     <span class="activity-badge" style="background:${badge.bg};color:${badge.color}">${icon}</span>
     <div class="activity-body">
-      <div class="activity-title">${esc(cleanActivityTitle(h.title))}</div>
+      <div class="activity-title">${esc(cleanTitle)}</div>
       <div class="activity-meta">${metaBits.join(' <span class="activity-dot">&middot;</span> ')}</div>
+      ${showBlockedReason ? `<div class="activity-undo-wrap"><span class="activity-undo-note">${esc(blockReason)}</span></div>` : ''}
     </div>
-    ${delta !== 0 ? `<div class="activity-delta ${deltaClass}">
-      <span class="activity-delta-value">${delta > 0 ? `+${delta}` : `${delta}`}</span>
-      <span class="activity-delta-unit">gems</span>
-    </div>` : ''}
+    <div class="activity-delta-slot">
+      ${delta !== 0 ? `<div class="activity-delta ${deltaClass}">
+        <span class="activity-delta-value">${delta > 0 ? `+${delta}` : `${delta}`}</span>
+        <span class="activity-delta-unit">gems</span>
+      </div>` : ''}
+    </div>
+    ${canUndo ? `<button class="snapshot-routine-swipe-hint activity-swipe-hint" type="button" aria-label="Reveal undo action" onclick="event.stopPropagation();toggleSnapshotSwipe('activity_${h.id}')"><i class="ph-duotone ph-caret-double-left"></i></button>` : ''}
   </div>`;
+  if (!canUndo) return rowHtml;
+
+  return `
+    <div class="snapshot-routine-shell activity-swipe-shell" data-swipe-id="activity_${h.id}">
+      <div class="snapshot-routine-reveal activity-reveal">
+        <button class="snapshot-reveal-btn snapshot-reveal-btn-danger activity-reveal-btn" type="button" title="Undo action" onpointerdown="event.preventDefault();event.stopPropagation();undoActivityHistoryEntry('${h.id}');return false;" onclick="return false;">
+          <i class="ph-duotone ph-arrow-counter-clockwise"></i>
+        </button>
+      </div>
+      <div class="snapshot-routine-card activity-row-card" onpointerdown="startSnapshotSwipe(event,'activity_${h.id}')" onpointermove="moveSnapshotSwipe(event)" onpointerup="endSnapshotSwipe(event)" onpointercancel="cancelSnapshotSwipe()" onclick="return handleSnapshotCardTap(event,'activity_${h.id}')">
+        ${rowHtml}
+      </div>
+    </div>`;
 }
 
 const DEFAULT_LEVELS = [
@@ -4373,7 +5172,7 @@ function saveComboOverride(kidId) {
       showQuickActionModal(`
         <div class="modal-title"><i class="ph-duotone ph-lightning" style="color:#F59E0B;vertical-align:middle"></i> Combo Will Complete!</div>
         <p style="font-size:0.9rem;color:var(--muted);margin:0 0 16px">
-          Saving this rhythm for <b>${esc(member.name)}</b> will immediately award the Daily Combo bonus of <b>+${bonusPts} gems</b> since all 3 tasks are already complete.
+          Saving this combo for <b>${esc(member.name)}</b> will immediately award the Daily Combo bonus of <b>+${bonusPts} gems</b> since all 3 tasks are already complete.
         </p>
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary" onclick="closeModal()" style="flex:1">Cancel</button>
@@ -4493,7 +5292,7 @@ function _renderNL() {
         const t = today();
         normalizeMember(k);
         const todaySecs = (k.nlDate === t ? k.nlTodaySecs || 0 : 0) + (st.selectedKids.includes(k.id) ? Math.floor(st.accumulated / 1000) : 0);
-        const secsLabel = todaySecs > 0 ? ` ? ${Math.floor(todaySecs/60)}m${todaySecs%60}s today` : '';
+        const secsLabel = todaySecs > 0 ? `${Math.floor(todaySecs/60)}m${todaySecs%60}s today` : '';
         return `
         <div class="nl-kid-chip ${st.selectedKids.includes(k.id)?'selected':''}"
              onclick="_nlToggleKid('${k.id}')">
@@ -4606,6 +5405,7 @@ function _nlDone() {
     _nlState.selectedKids.forEach(kidId => {
       const m = getMember(kidId);
       if (!m) return;
+      const memberBefore = _captureMemberUndoSnapshot(m);
       normalizeMember(m);
       // Today's display counter (resets daily)
       if (m.nlDate !== t) { m.nlTodaySecs = 0; m.nlDate = t; }
@@ -4614,11 +5414,18 @@ function _nlDone() {
       m.nlPendingSecs = (m.nlPendingSecs || 0) + sessionSecs;
       const dmds = Math.floor(m.nlPendingSecs / secsPerPt);
       m.nlPendingSecs = m.nlPendingSecs % secsPerPt;
+      let appliedPenalty = 0;
       if (dmds > 0) {
         m.diamonds = Math.max(0, (m.diamonds || 0) - dmds);
-        addHistory('penalty', kidId, `Not listening penalty`, -dmds);
+        m.gems = m.diamonds;
+        appliedPenalty = dmds;
         totalDeducted += dmds;
       }
+      addHistory('penalty', kidId, `Not listening penalty`, -appliedPenalty, {
+        undoAction: 'not_listening_apply',
+        memberBefore,
+        sessionSecs,
+      });
     });
     saveData();
     if (totalDeducted > 0) {
@@ -4739,6 +5546,58 @@ function toast(msg, duration = 2900) {
   setTimeout(() => el.remove(), duration);
 }
 
+let _deleteUndoState = null;
+
+function _cloneForUndo(value) {
+  try { return JSON.parse(JSON.stringify(value)); }
+  catch { return value; }
+}
+
+function _clearDeleteUndoBar() {
+  if (_deleteUndoState?.timerId) clearTimeout(_deleteUndoState.timerId);
+  if (_deleteUndoState?.intervalId) clearInterval(_deleteUndoState.intervalId);
+  const bar = document.getElementById('delete-undo-bar');
+  if (bar) bar.remove();
+  _deleteUndoState = null;
+}
+
+function _showDeleteUndoBar(message, onUndo, duration = 6500) {
+  _clearDeleteUndoBar();
+  const totalMs = Math.max(1200, duration);
+  const endAt = Date.now() + totalMs;
+  const bar = document.createElement('div');
+  bar.id = 'delete-undo-bar';
+  bar.className = 'delete-undo-bar';
+  bar.innerHTML = `
+    <div class="delete-undo-copy">
+      <span class="delete-undo-msg">${esc(message)}</span>
+      <span class="delete-undo-count" aria-live="polite"></span>
+    </div>
+    <button class="delete-undo-btn" type="button"><i class="ph-duotone ph-arrow-counter-clockwise"></i>Undo</button>
+  `;
+  const countEl = bar.querySelector('.delete-undo-count');
+  const updateCountdown = () => {
+    if (!countEl) return;
+    const leftMs = Math.max(0, endAt - Date.now());
+    const leftSecs = Math.max(0, Math.ceil(leftMs / 1000));
+    countEl.textContent = `${leftSecs}s`;
+  };
+  updateCountdown();
+  const btn = bar.querySelector('.delete-undo-btn');
+  btn?.addEventListener('click', () => {
+    const cb = _deleteUndoState?.onUndo;
+    _clearDeleteUndoBar();
+    if (typeof cb === 'function') cb();
+  });
+  document.body.appendChild(bar);
+  const intervalId = setInterval(updateCountdown, 200);
+  _deleteUndoState = {
+    onUndo,
+    timerId: setTimeout(() => _clearDeleteUndoBar(), totalMs),
+    intervalId,
+  };
+}
+
 function diamondsBurst(x, y, diamonds) {
   const el = document.createElement('div');
   el.className = 'dmds-burst';
@@ -4814,10 +5673,20 @@ const _rapidTapState = {};
 function _setRapidTapPulse(el, scale = 1, opacity = null) {
   if (!el) return;
   const isEggGem = el.id === 'egg-gem';
-  el.style.transform = isEggGem
-    ? `translate(-50%, -50%) scale(${scale})`
-    : `scale(${scale})`;
-  if (opacity != null) el.style.opacity = String(opacity);
+  if (isEggGem) {
+    el.style.removeProperty('transform');
+    el.style.setProperty('--egg-scale', String(scale));
+  } else {
+    el.style.transform = `scale(${scale})`;
+  }
+  if (opacity != null) {
+    if (isEggGem) {
+      if (el.classList.contains('is-visible')) el.style.opacity = String(opacity);
+      else el.style.removeProperty('opacity');
+    } else {
+      el.style.opacity = String(opacity);
+    }
+  }
 }
 
 function handleRapidTap(key, opts = {}) {
@@ -4825,23 +5694,46 @@ function handleRapidTap(key, opts = {}) {
   const windowMs = opts.windowMs || 2500;
   const pulseEl = opts.pulseEl || null;
   const idleOpacity = opts.idleOpacity ?? null;
+  const opacityStep = Number(opts.opacityStep ?? 0.15);
+  const minOpacity = (opts.minOpacity == null) ? null : Number(opts.minOpacity);
+  const maxOpacity = (opts.maxOpacity == null) ? null : Number(opts.maxOpacity);
   const state = _rapidTapState[key] || { taps: 0, timer: null };
   state.taps += 1;
   if (pulseEl) {
-    _setRapidTapPulse(pulseEl, 1.4, idleOpacity != null ? Math.min(idleOpacity + state.taps * 0.15, 1) : null);
+    let tapOpacity = null;
+    if (idleOpacity != null) {
+      tapOpacity = idleOpacity + (state.taps * opacityStep);
+      if (minOpacity != null) tapOpacity = Math.max(minOpacity, tapOpacity);
+      if (maxOpacity != null) tapOpacity = Math.min(maxOpacity, tapOpacity);
+    }
+    _setRapidTapPulse(pulseEl, 1.4, tapOpacity);
     setTimeout(() => _setRapidTapPulse(pulseEl, 1), 120);
   }
   clearTimeout(state.timer);
   if (state.taps >= required) {
     state.taps = 0;
-    if (pulseEl && idleOpacity != null) pulseEl.style.opacity = '1';
+    if (pulseEl && idleOpacity != null) {
+      if (pulseEl.id === 'egg-gem') {
+        if (pulseEl.classList.contains('is-visible')) pulseEl.style.opacity = String(idleOpacity);
+        else pulseEl.style.removeProperty('opacity');
+      } else {
+        pulseEl.style.opacity = String(idleOpacity);
+      }
+    }
     _rapidTapState[key] = state;
     opts.onTrigger?.();
     return;
   }
   state.timer = setTimeout(() => {
     state.taps = 0;
-    if (pulseEl && idleOpacity != null) pulseEl.style.opacity = String(idleOpacity);
+    if (pulseEl && idleOpacity != null) {
+      if (pulseEl.id === 'egg-gem') {
+        if (pulseEl.classList.contains('is-visible')) pulseEl.style.opacity = String(idleOpacity);
+        else pulseEl.style.removeProperty('opacity');
+      } else {
+        pulseEl.style.opacity = String(idleOpacity);
+      }
+    }
   }, windowMs);
   _rapidTapState[key] = state;
 }
@@ -4866,6 +5758,9 @@ function easterEggTap() {
   handleRapidTap('egg-gem', {
     pulseEl: document.getElementById('egg-gem'),
     idleOpacity: 0.25,
+    opacityStep: 0.12,
+    minOpacity: 0.25,
+    maxOpacity: 1,
     onTrigger: () => launchAvatarRain('gemsprout.png', 80),
   });
 }
@@ -4936,6 +5831,7 @@ function launchDollarRain(count = 160, rootElement = null) {
 const _celebQueue = [];
 
 function showCelebration(opts) {
+  if (isParentSignedIn() && !opts?._devBypassParentBlock) return;
   _celebQueue.push(opts);
   // Defer so all synchronous calls batch before any rendering,
   // ensuring the first modal knows the full queue size.
@@ -5002,103 +5898,128 @@ function dismissAllCelebrations() {
   closeCelebration();
 }
 
-function testWhileAwayModal() {
+function testWhileAwayModal(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned gems!',
     diamonds: 5,
-    onClose:  () => {},
+    onClose,
   });
 }
 
-function testGemCelebration() {
+function testGemCelebration(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:     '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-sketch-logo" style="color:#1D6B57"></i> Gems Earned!',
     sub:      'You knocked out a task and earned some fresh gems.',
     diamonds: 12,
-    onClose:  () => {},
+    onClose,
   });
 }
 
-function testComboCelebration() {
+function testComboCelebration(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:     '<i class="ph-duotone ph-lightning" style="color:#F59E0B;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-lightning" style="color:#F59E0B"></i> Daily Combo Complete!',
     sub:      'Three tasks in one day. Bonus gems unlocked.',
     diamonds: 18,
     rainType: 'combo',
-    onClose:  () => {},
+    onClose,
   });
 }
 
-function testQueuedCelebrations() {
+function testQueuedCelebrations(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
+  const bypass = opts._devBypassParentBlock !== false;
+  let closed = false;
+  const onCloseOnce = () => {
+    if (closed) return;
+    closed = true;
+    onClose();
+  };
   showCelebration({
+    _devBypassParentBlock: bypass,
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Brush Your Teeth" and you earned gems!',
     diamonds: 5,
-    onClose:  () => {},
+    onClose:  onCloseOnce,
   });
   showCelebration({
+    _devBypassParentBlock: bypass,
     icon:     '<i class="ph-duotone ph-star" style="color:#F59E0B;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Great job on your homework!',
     diamonds: 10,
-    onClose:  () => {},
+    onClose:  onCloseOnce,
   });
   showCelebration({
+    _devBypassParentBlock: bypass,
     icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
     title:    '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
     sub:      'Your parent approved "Clean Your Room" and you earned gems!',
     diamonds: 8,
-    onClose:  () => {},
+    onClose: onCloseOnce,
   });
 }
 
-function testSavingsDeposit() {
+function testSavingsDeposit(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   const cur = D.settings.currency || '$';
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:    '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:3rem"></i>',
     title:   '<i class="ph-duotone ph-piggy-bank" style="color:#16A34A"></i> Savings Deposit!',
     sub:     'Birthday money from Grandma!',
     dollars: 20,
     cur,
-    onClose: () => {},
+    onClose,
   });
 }
 
-function testBadgeCelebration() {
+function testBadgeCelebration(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   const badgeIcon = '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>';
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:      '<i class="ph-duotone ph-medal" style="color:#7C3AED;font-size:3rem"></i>',
     title:     '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i> New Badge!',
     sub:       'You unlocked Shiny Helper.',
     badgeIcon,
-    onClose:   () => {},
+    onClose,
   });
 }
 
-function testSpendApproved() {
+function testSpendApproved(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   const cur = D.settings.currency || '$';
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:        '<i class="ph-duotone ph-shopping-bag" style="color:#16A34A;font-size:3rem"></i>',
     title:       '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Spend Approved!',
     sub:         '"Lego set" for $15.00 approved. Balance: $32.50',
     noAnimation: true,
-    onClose:     () => {},
+    onClose,
   });
 }
 
-function testSpendDenied() {
+function testSpendDenied(opts = {}) {
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : (() => {});
   showCelebration({
+    _devBypassParentBlock: opts._devBypassParentBlock !== false,
     icon:        '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>',
     title:       '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time',
     sub:         'Your spend request for "Video game" for $60.00 wasn\'t approved.',
     noAnimation: true,
     btnLabel:    'Okay',
-    onClose:     () => {},
+    onClose,
   });
 }
 
@@ -5259,15 +6180,26 @@ async function devShowPushDiagnostics() {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  const escapedCopy = JSON.stringify(info, null, 2).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  S._devPushDiagnosticsClipboard = JSON.stringify(info, null, 2);
 
   showQuickActionModal(`
     <div style="padding:8px">
       <div style="font-weight:700;margin-bottom:10px"><i class="ph-duotone ph-bug" style="vertical-align:middle;margin-right:6px"></i>Push Diagnostics</div>
       <div style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin-bottom:10px">${lines.map(x => esc(x)).join('<br>')}</div>
       <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.5;max-height:220px;overflow:auto">${escapedJson}</div>
-      <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedCopy}').then(()=>toast('Diagnostics copied')).catch(()=>toast('Copy failed'))">Copy Diagnostics JSON</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="devCopyPushDiagnostics()">Copy Diagnostics JSON</button>
     </div>`);
+}
+
+function devCopyPushDiagnostics() {
+  const txt = String(S._devPushDiagnosticsClipboard || '');
+  if (!txt) {
+    toast('No diagnostics available');
+    return;
+  }
+  navigator.clipboard?.writeText(txt)
+    .then(() => toast('Diagnostics copied'))
+    .catch(() => toast('Copy failed'));
 }
 
 function testCameraPermission() {
@@ -5780,6 +6712,7 @@ function _doLeaveDevice() {
   localStorage.removeItem(FAMILY_CODE_KEY);
   setCurrentUserId('');
   setParentAuthUid(null);
+  S._recentParentAuth = null;
   try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   D = defaultData();
   S.currentUser = null;
@@ -5808,17 +6741,24 @@ function closeSettings() {
 }
 
 function openFullHistory(memberId = null) {
+  S._historyMemberId = memberId || null;
   renderFullHistory(memberId);
   const sr = document.getElementById('settings-root');
   sr.classList.add('open');
   sr.scrollTop = 0;
 }
 
-function renderFullHistory(memberId = null) {
+let _activityHintBounceSuppressOnce = false;
+
+function _suppressActivityHintBounceOnce() {
+  _activityHintBounceSuppressOnce = true;
+}
+
+function renderFullHistory(memberId = null, opts = {}) {
   const history = memberId
     ? (D.history || []).filter(h => h.memberId === memberId)
     : (D.history || []);
-  const rows = history.map(renderActivityRow).join('');
+  const rows = history.map(h => renderActivityRow(h, { showUndoReasons: true })).join('');
   const member = memberId ? getMember(memberId) : null;
   const title = member ? `${member.name}'s Activity` : 'Full Activity History';
 
@@ -5833,6 +6773,24 @@ function renderFullHistory(memberId = null) {
         ${rows || '<div class="empty-state"><div class="empty-text">No activity yet</div></div>'}
       </div>
     </div>`;
+  _bindSnapshotSwipeAutoDismiss();
+  if (!opts?.suppressBounce) _maybeBounceFirstActivitySwipe('#settings-root');
+}
+
+function _maybeBounceFirstActivitySwipe(scopeSelector = '#parent-content') {
+  if (_activityHintBounceSuppressOnce) {
+    _activityHintBounceSuppressOnce = false;
+    return;
+  }
+  if (D.settings.tooltipBounceEnabled === false) return;
+  setTimeout(() => {
+    const scope = document.querySelector(scopeSelector) || document;
+    const first = scope.querySelector('.activity-swipe-shell');
+    if (!first) return;
+    first.classList.remove('hint-bounce');
+    first.classList.add('hint-bounce');
+    setTimeout(() => first.classList.remove('hint-bounce'), 2200);
+  }, 180);
 }
 
 // Swipe from left edge to close settings (iOS-style back gesture)
@@ -5946,6 +6904,21 @@ function renderSettings() {
   if (S.settingsPage === 'account') html += _renderSettingsAccount(_settingsPageEnterClass, true);
   if (S.settingsPage === 'notifications') html += _renderSettingsNotifications(_settingsPageEnterClass, true);
   root.innerHTML = html;
+  _bindSettingsDevAccordion();
+}
+
+function _bindSettingsDevAccordion() {
+  const root = document.getElementById('settings-root');
+  if (!root) return;
+  const sections = Array.from(root.querySelectorAll('.settings-dev-card details.settings-dev-section'));
+  sections.forEach(section => {
+    section.addEventListener('toggle', () => {
+      if (!section.open) return;
+      sections.forEach(other => {
+        if (other !== section) other.open = false;
+      });
+    });
+  });
 }
 
 function _settingsAuthProviders() {
@@ -5957,6 +6930,115 @@ function _settingsAuthProviders() {
     }));
   }
   return _authProviders;
+}
+
+function tapSettingsVersionForDevUnlock() {
+  if (S._devSettingsUnlocked) return;
+  const now = Date.now();
+  const windowMs = 3000;
+  const needed = 7;
+  if (!S._devUnlockWindowStart || (now - S._devUnlockWindowStart) > windowMs) {
+    S._devUnlockWindowStart = now;
+    S._devUnlockTapCount = 0;
+  }
+  S._devUnlockTapCount += 1;
+  const remaining = needed - S._devUnlockTapCount;
+  if (remaining <= 0) {
+    const pane = document.querySelector('#settings-root .settings-subpane');
+    const scrollTop = pane?.scrollTop || 0;
+    S._devSettingsUnlocked = true;
+    S._devUnlockTapCount = 0;
+    S._devUnlockWindowStart = 0;
+    toast('Developer options unlocked');
+    renderSettings();
+    requestAnimationFrame(() => {
+      const nextPane = document.querySelector('#settings-root .settings-subpane');
+      if (!nextPane) return;
+      // Restore scroll position first (no animation), then smoothly scroll to
+      // the newly revealed dev section at the bottom.
+      nextPane.scrollTop = scrollTop;
+      requestAnimationFrame(() => {
+        const start = nextPane.scrollTop;
+        const end = nextPane.scrollHeight - nextPane.clientHeight;
+        const duration = 900;
+        const startTime = performance.now();
+        function easeInOutCubic(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+        function step(now) {
+          const t = Math.min((now - startTime) / duration, 1);
+          nextPane.scrollTop = start + (end - start) * easeInOutCubic(t);
+          if (t < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      });
+    });
+    return;
+  }
+  if (S._devUnlockTapCount >= 3) {
+    toast(`${remaining} more taps to unlock developer options`);
+  }
+}
+
+function _restoreSettingsAfterDevCelebration(page = 'main', scrollTop = 0, devSectionKey = '') {
+  const sr = document.getElementById('settings-root');
+  if (!sr) return;
+  S.settingsPage = page;
+  _settingsPageEnterClass = 'settings-subpane-enter';
+  sr.classList.add('open');
+  renderSettings();
+  _settingsPageEnterClass = '';
+  if (devSectionKey) {
+    const all = Array.from(sr.querySelectorAll('.settings-dev-card details.settings-dev-section'));
+    const target = sr.querySelector(`.settings-dev-card details.settings-dev-section[data-dev-section="${devSectionKey}"]`);
+    if (target) {
+      all.forEach(d => { d.open = (d === target); });
+    }
+  }
+  requestAnimationFrame(() => {
+    const pane = sr.querySelector('.settings-subpane');
+    if (!pane) return;
+    pane.scrollTop = scrollTop;
+    requestAnimationFrame(() => { pane.scrollTop = scrollTop; });
+  });
+}
+
+function runDevSettingsCelebrationTest(testFn, devSectionKey = '') {
+  const fn = typeof testFn === 'function' ? testFn : null;
+  if (!fn) return;
+  const pane = document.querySelector('#settings-root .settings-subpane');
+  const scrollTop = pane?.scrollTop || 0;
+  const page = S.settingsPage || 'main';
+  closeSettings();
+  setTimeout(() => {
+    fn({
+      onClose: () => _restoreSettingsAfterDevCelebration(page, scrollTop, devSectionKey),
+      _devBypassParentBlock: true,
+    });
+  }, 0);
+}
+
+function _ensureMemberAuthProviders(member) {
+  if (!member) return [];
+  const target = getMember(member.id) || member;
+  if (!Array.isArray(target.authProviders)) target.authProviders = [];
+  if (!target.authProviders.length) {
+    const fallbackProviders = _settingsAuthProviders();
+    if (fallbackProviders.length) {
+      target.authProviders = fallbackProviders.map(p => ({
+        providerId: p.providerId,
+        uid: p.uid || '',
+        email: p.email || '',
+      }));
+      target.authUids = target.authProviders.map(p => p.uid).filter(Boolean);
+      target.authUid = target.authProviders[0]?.uid || '';
+      if (S.currentUser?.id === target.id) {
+        S.currentUser.authProviders = target.authProviders;
+        S.currentUser.authUids = target.authUids;
+        S.currentUser.authUid = target.authUid;
+      }
+      saveData();
+    }
+  }
+  return target.authProviders;
 }
 
 const _GOOGLE_ICON = `<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:22px;height:22px;flex-shrink:0">`;
@@ -6015,8 +7097,8 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           <label class="toggle"><input type="checkbox" ${s.showLockedRecurringPrizes===false?'checked':''} onchange="saveSetting('showLockedRecurringPrizes',!this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="toggle-row">
-          <div><div class="toggle-label">Show swipe hints</div>
-            <div class="toggle-sub">Auto-bounce hint cards the first time they appear</div></div>
+          <div><div class="toggle-label">Show UI hints</div>
+            <div class="toggle-sub">Auto-bounce hint cards and highlight the quick actions button when they first appear</div></div>
           <label class="toggle"><input type="checkbox" ${s.tooltipBounceEnabled!==false?'checked':''} onchange="saveSetting('tooltipBounceEnabled',this.checked)"><span class="toggle-track"></span></label>
         </div>
         <div class="form-group mb-0">
@@ -6102,11 +7184,11 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
               <input type="number" value="${iDom}" min="1" max="28" onchange="saveSetting('savingsInterestDayOfMonth',Math.min(28,Math.max(1,parseInt(this.value)||1)));renderSettings()">
             </div>`}
           </div>
-          <div style="font-size:0.8rem;color:#6B7280;margin-top:6px;padding:6px 10px;background:#F9FAFB;border-radius:8px">
+          <div style="font-size:0.8rem;color:#4f675d;margin-top:6px;padding:0">
             <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px;flex-shrink:0"></i>${ip === 'weekly'
-              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>.`
-              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>.`}
-            <div style="margin-left:20px">Unclaimed interest expires at midnight.</div>
+              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>`
+              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>`}
+            <div style="margin-left:20px">Unclaimed interest expires at midnight</div>
           </div>`;
         })() : ''}
         ` : ''}
@@ -6135,68 +7217,95 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         <label class="toggle"><input type="checkbox" ${s.notListeningEnabled!==false?'checked':''} onchange="saveSetting('notListeningEnabled',this.checked);renderSettings();renderParentHome()"><span class="toggle-track"></span></label>
       </div>
       <div class="card">
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:${s.notListeningEnabled!==false?'14px':'0'}">
-          Adds a hold-to-track button on the dashboard that deducts gems for not listening - seconds accumulate indefinitely, leftovers carry over until a full interval is reached
-        </p>
         ${s.notListeningEnabled!==false ? `
         <div class="form-group mb-0">
           <label class="form-label">Seconds per gem lost</label>
           <input type="number" value="${s.notListeningSecs||60}" min="1" onchange="saveSetting('notListeningSecs',parseInt(this.value)||60)">
-          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Hold the button to track time, then release to apply it. One gem is lost per interval, and leftover seconds carry forward indefinitely.</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">Adds a hold-to-track button on the dashboard that deducts gems for not listening - seconds accumulate indefinitely, leftovers carry over until a full interval is reached</div>
         </div>` : ''}
       </div>
 
-      ${RC.betaMode ? `<div style="height:14px"></div>
-      <div class="section-row"><span class="section-title" style="color:var(--muted)"><i class="ph-duotone ph-terminal" style="color:var(--muted);font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
-      <div class="card" style="border:2px solid #E5E7EB;background:#F9FAFB">
-        <div style="background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.82rem;color:#78350F;line-height:1.5">
-          <strong>For testers only.</strong> These settings exist to help us find and fix bugs before launch. They will not be present in the final App Store release.
+      <div style="height:4px"></div>
+      <button class="settings-link-row settings-whats-new-link" onclick="showChangelog()">
+        <div>
+          <div class="settings-link-title"><i class="ph-duotone ph-newspaper" style="color:#6C63FF;font-size:0.9rem;vertical-align:middle"></i> What's New</div>
+          <div class="settings-link-sub">See recent updates and release notes</div>
         </div>
-        <div class="card" style="background:#F0FDF4;border:1.5px solid var(--green);margin-bottom:10px">
-          <div class="card-title" style="font-size:0.9rem"><i class="ph-duotone ph-cloud" style="color:#10B981;font-size:1rem;vertical-align:middle"></i> Cloud Sync</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:0.85rem;color:var(--green);font-weight:600"><i class="ph-duotone ph-check-circle" style="color:var(--green);vertical-align:middle"></i> Automatic</span>
-            <button class="btn btn-secondary btn-sm" onclick="location.reload(true)"><i class="ph-duotone ph-arrow-clockwise" style="font-size:1rem;vertical-align:middle"></i> Reload App</button>
-          </div>
-          ${s.lastSync?`<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Last synced: ${new Date(s.lastSync).toLocaleString()}</div>`:''}
-        </div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testGemCelebration()"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem;vertical-align:middle"></i> Test Gem Celebration</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testComboCelebration()"><i class="ph-duotone ph-lightning" style="font-size:1rem;vertical-align:middle"></i> Test Combo Celebration</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testWhileAwayModal()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Test While You Were Away</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testQueuedCelebrations()"><i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Test Queued Notifications (3)</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSavingsDeposit()"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem;vertical-align:middle"></i> Test Savings Deposit</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testBadgeCelebration()"><i class="ph-duotone ph-medal" style="font-size:1rem;vertical-align:middle"></i> Test Badge Celebration</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testSpendApproved()"><i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Test Spend Approved</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:10px" onclick="testSpendDenied()"><i class="ph-duotone ph-x-circle" style="font-size:1rem;vertical-align:middle"></i> Test Spend Denied</button>
-        <div style="height:10px"></div>
-        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:4px"></i> Push Notifications</div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devTestPushPermission()"><i class="ph-duotone ph-lock-open" style="font-size:0.9rem;vertical-align:middle"></i> Request Permission</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="devShowPushToken()"><i class="ph-duotone ph-identification-card" style="font-size:0.9rem;vertical-align:middle"></i> Register &amp; Show FCM Token</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devSendTestPushNotification()"><i class="ph-duotone ph-paper-plane-tilt" style="font-size:0.9rem;vertical-align:middle"></i> Send Test Approval Notification</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="devShowPushDiagnostics()"><i class="ph-duotone ph-bug" style="font-size:0.9rem;vertical-align:middle"></i> Push Diagnostics</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="testCameraPermission()"><i class="ph-duotone ph-camera" style="font-size:1rem;vertical-align:middle"></i> Test Camera Permission</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="emailDebugLogs()"><i class="ph-duotone ph-envelope" style="font-size:1rem;vertical-align:middle"></i> Email Debug Logs</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="S.isPro=false;closeSettings();showPaywall()"><i class="ph-duotone ph-crown-simple" style="font-size:1rem;vertical-align:middle"></i> Test Paywall</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="startTestOnboarding()"><i class="ph-duotone ph-rocket-launch" style="font-size:1rem;vertical-align:middle"></i> Test Onboarding</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="closeSettings();showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle"></i> Test Week in Review</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewMaintenanceScreen()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Preview Maintenance Screen</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="_devPreviewParentSignInScreen()"><i class="ph-duotone ph-sign-in" style="font-size:1rem;vertical-align:middle"></i> Preview Parent Sign-In</button>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:8px" onclick="try{localStorage.removeItem(CHANGELOG_SEEN_KEY)}catch(_){};showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle"></i> Test What's New</button>
-        <div style="height:10px"></div>
-        <div style="font-size:0.82rem;font-weight:700;color:var(--muted);margin-bottom:8px"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Invite Tester</div>
-        <button class="btn btn-secondary btn-full" style="margin-bottom:6px" onclick="_devShowInviteTest()"><i class="ph-duotone ph-flask" style="font-size:0.9rem;vertical-align:middle"></i> Test Invite System</button>
-        <button class="btn btn-secondary btn-full" onclick="_devResetInviteTest()"><i class="ph-duotone ph-arrow-counter-clockwise" style="font-size:0.9rem;vertical-align:middle"></i> Reset Invite Test</button>
-        <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">Reset clears all invites for this family and the last test user doc automatically.</div>
-        <div style="height:10px"></div>
-        <button class="btn btn-sm btn-full" style="background:#1f2937;color:#fff" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
-      </div>` : ''}
+        <i class="ph-duotone ph-caret-right" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
+      </button>
+      <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px;cursor:pointer" onclick="tapSettingsVersionForDevUnlock()">GemSprout v${APP_VERSION}</div>
 
-      <div style="height:20px"></div>
-      <div class="settings-footer-stack">
-        <button class="btn btn-secondary btn-full" onclick="showWeekReview()"><i class="ph-duotone ph-calendar-star" style="font-size:1rem;vertical-align:middle;margin-right:6px"></i> Week in Review</button>
-        <button class="btn btn-secondary btn-full" onclick="showChangelog()"><i class="ph-duotone ph-newspaper" style="font-size:1rem;vertical-align:middle;margin-right:6px"></i> What's New</button>
-      </div>
-      <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px">GemSprout v${APP_VERSION}</div>
+      ${S._devSettingsUnlocked ? `<div style="height:14px"></div>
+      <div class="section-row"><span class="section-title"><i class="ph-duotone ph-terminal" style="font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
+      <div class="card settings-dev-card">
+        <details class="settings-dev-section" data-dev-section="animations">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-sparkle" style="vertical-align:middle;margin-right:4px"></i> Animations</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Test celebration animations</div>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testGemCelebration,'animations')">Gem Celebration</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testComboCelebration,'animations')">Combo Celebration</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testBadgeCelebration,'animations')">Badge Celebration</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="notification-modals">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-chat-circle-text" style="vertical-align:middle;margin-right:4px"></i> Notification Modals</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Test kid-view notification modals</div>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testWhileAwayModal,'notification-modals')">While You Were Away</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testQueuedCelebrations,'notification-modals')">While You Were Away (Stacked)</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testSavingsDeposit,'notification-modals')">Savings Deposit</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testSpendApproved,'notification-modals')">Spend Approved</button>
+            <button class="btn btn-secondary btn-full" onclick="runDevSettingsCelebrationTest(testSpendDenied,'notification-modals')">Spend Denied</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="push-notifications">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:4px"></i> Push Notifications</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Test push notification configuration</div>
+            <button class="btn btn-secondary btn-full" onclick="devTestPushPermission()">Request Permission</button>
+            <button class="btn btn-secondary btn-full" onclick="devShowPushToken()">Register and Show FCM Token</button>
+            <button class="btn btn-secondary btn-full" onclick="devSendTestPushNotification()">Send Test Approval Notification</button>
+            <button class="btn btn-secondary btn-full" onclick="devShowPushDiagnostics()">Push Diagnostics</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="screens">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-devices" style="vertical-align:middle;margin-right:4px"></i> Screens</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Open difficult to access pages to preview and test</div>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewPaywall()">Paywall</button>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewLoadingScreen()">Loading</button>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewMaintenanceScreen()">Maintenance</button>
+            <button class="btn btn-secondary btn-full" onclick="_devPreviewParentSignInScreen()">Sign-In</button>
+          </div>
+        </details>
+
+        <details class="settings-dev-section" data-dev-section="other">
+          <summary class="settings-dev-section-title">
+            <span class="settings-dev-summary-main"><i class="ph-duotone ph-dots-three-outline" style="vertical-align:middle;margin-right:4px"></i> Other</span>
+            <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+          </summary>
+          <div class="settings-dev-section-body">
+            <div class="settings-dev-tip">Additional functions for testing</div>
+            <button class="btn btn-secondary btn-full" onclick="testCameraPermission()">Test Camera Permission</button>
+            <button class="btn btn-secondary btn-full" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
+          </div>
+        </details>
+      </div>` : ''}
 
     </div>
     </div>`;
@@ -6209,6 +7318,7 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
   const _authProviders = _settingsAuthProviders();
   const _googleProv = _authProviders.find(p => p.providerId === 'google.com');
   const _appleProv  = _authProviders.find(p => p.providerId === 'apple.com');
+  const _linkedCount = (_googleProv ? 1 : 0) + (_appleProv ? 1 : 0);
   const _anyLinked  = !!(_googleProv || _appleProv);
   const pinLabel = s.parentPin ? 'Reset PIN' : 'Set PIN';
   const bioBtn = isBiometricSupported() ? (getBiometricCredentialId()
@@ -6236,7 +7346,9 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
             </div>
           </div>
           ${_googleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Sign Out</button>`
+            ? (_linkedCount === 1
+                ? `<button class="btn btn-secondary btn-sm" style="color:#A16207;border-color:#D6B06A" onclick="switchLinkedProviderAccount('google.com')">Switch Account</button>`
+                : `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('google.com')">Unlink</button>`)
             : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('google.com')">Sign In</button>`}
         </div>
         <div class="settings-provider-row">
@@ -6249,10 +7361,16 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
             </div>
           </div>
           ${_appleProv
-            ? `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Sign Out</button>`
+            ? (_linkedCount === 1
+                ? `<button class="btn btn-secondary btn-sm" style="color:#A16207;border-color:#D6B06A" onclick="switchLinkedProviderAccount('apple.com')">Switch Account</button>`
+                : `<button class="btn btn-secondary btn-sm" style="color:#EF4444;border-color:#EF4444" onclick="unlinkProvider('apple.com')">Unlink</button>`)
             : `<button class="btn btn-secondary btn-sm" onclick="linkAdditionalProvider('apple.com')">Sign In</button>`}
         </div>
+        ${_anyLinked && _linkedCount === 1 ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">At least one sign-in method must stay linked.</div>` : ''}
         ${!_anyLinked ? `<div style="font-size:0.82rem;color:var(--muted);margin-top:4px">Sign in with Google or Apple to enable push notifications and secure your profile</div>` : ''}
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:10px;text-align:center">
+          Last synced: ${s.lastSync ? fmtDateTime(s.lastSync) : 'Not yet'}
+        </div>
       </div>
 
       <div style="height:14px"></div>
@@ -6296,8 +7414,12 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
           <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
         </button>
         <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and connects you to a different family. Your family's cloud data is not affected.</div>
-        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
-        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes all family data including tasks, prizes, history, and member profiles. This cannot be undone.</div>
+        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%;margin-bottom:8px">Reset All Data</button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Permanently deletes all family data including tasks, prizes, history, and member profiles. This cannot be undone.</div>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccount()" style="width:100%">
+          <i class="ph-duotone ph-user-minus" style="vertical-align:middle;margin-right:6px"></i> Delete Account
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes your account and all associated data. This cannot be undone.</div>
       </div>
 
     </div>
@@ -6489,16 +7611,14 @@ function renderHome() {
   const pendingCount = familyInboxCount();
   const cards = members.map(m => {
     const bday = isBirthday(m);
-    const ptsLabel = m.role === 'parent'
-      ? '<i class="ph-duotone ph-gear-six" style="font-size:0.9rem;vertical-align:middle"></i> Parent tools'
-      : `<i class="ph-duotone ph-sketch-logo" style="font-size:0.9rem;vertical-align:middle"></i> ${m.gems || 0} gems`;
+    const roleLabel = m.role === 'parent' ? 'Parent' : 'Kid';
     return `
       <button class="profile-card${bday ? ' bday-card' : ''}" style="--member-color:${m.color || '#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
         ${bday ? `<span class="bday-badge"><i class="ph-duotone ph-cake" style="font-size:0.9rem"></i></span>` : ''}
         <span class="profile-avatar">${renderMemberAvatarHtml(m)}</span>
         <span class="profile-name">${esc(m.name)}</span>
-        <span class="profile-diamonds">${ptsLabel}</span>
+        <span class="profile-diamonds">${roleLabel}</span>
       </button>`;
   }).join('');
   const anyBday = members.some(m => m.role !== 'parent' && isBirthday(m));
@@ -6509,31 +7629,42 @@ function renderHome() {
   root.innerHTML = `
     ${bdayBanner}
     <div class="home-shell">
-      <div class="home-hero">
-        <div class="home-hero-copy">
-          <div class="home-kicker"><i class="ph-duotone ph-leaf" style="font-size:1rem"></i> Family Space</div>
-          <div class="home-family-stack">
-            <div class="home-family-line home-family-line-top">The</div>
-            <div class="home-family-line home-family-line-name">${esc(familyStem)}</div>
-            <div class="home-family-line home-family-line-bottom">Family</div>
-          </div>
-        </div>
-        <img class="home-logo" src="gemsprout.png" alt="GemSprout">
-        <div class="home-hero-meta">
-          <div class="home-subtitle">A quick look at how the family is doing right now.</div>
-          <div class="home-pill-row">
-            <div class="home-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
-            <div class="home-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSavings.toFixed(2)} saved</div>
-            <div class="home-pill"><i class="ph-duotone ph-clock-countdown" style="font-size:1rem"></i> ${pendingCount} pending</div>
+      <div class="home-top">
+        <div class="home-top-inner">
+          <div class="home-hero">
+            <div class="home-hero-copy">
+              <div class="home-kicker"><i class="ph-duotone ph-leaf" style="font-size:1rem"></i> Family Space</div>
+              <div class="home-family-stack">
+                <div class="home-family-line home-family-line-top">The</div>
+                <div class="home-family-line home-family-line-name">${esc(familyStem)}</div>
+                <div class="home-family-line home-family-line-bottom">Family</div>
+              </div>
+            </div>
+            <img class="home-logo" src="gemsprout.png" alt="GemSprout">
+            <div class="home-hero-meta">
+              <div class="home-subtitle">A quick look at how the family is doing right now.</div>
+              <div class="home-pill-row">
+                <div class="home-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> ${totalDiamonds} gems</div>
+                <div class="home-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> ${cur}${totalSavings.toFixed(2)} saved</div>
+                <div class="home-pill"><i class="ph-duotone ph-clock-countdown" style="font-size:1rem"></i> ${pendingCount} pending</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="home-lower">
-        <div class="home-section-head">
-          <div class="home-section-title">Choose your place in the family</div>
-        </div>
-        <div class="home-member-list">
-          <div class="profile-grid">${cards}</div>
+      <div class="home-bottom">
+        <div class="home-bottom-inner">
+          <div class="home-lower">
+            <div class="home-member-list">
+              <div class="profile-grid">${cards}</div>
+            </div>
+          </div>
+          <div class="home-footer">
+            <button class="home-footer-btn" onclick="goSetup()">
+              <i class="ph-duotone ph-gear-six" style="font-size:1rem"></i>
+              Edit Family
+            </button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -6594,11 +7725,20 @@ function routeToView(member) {
   S._activeViewUserId = member.id;
   S._activeViewRole = member.role;
   if (member.role === 'parent') {
+    const pendingRoute = S._pendingNotificationRoute;
+    if (pendingRoute?.parentTab) S.parentTab = pendingRoute.parentTab;
     if (!ensureParentAuth(member, (authedMember) => routeToView(authedMember))) return;
     if (!S.isPro && !RC.betaMode) { showPaywall(); return; }
     renderParentView();
+    if (pendingRoute) {
+      S._pendingNotificationRoute = null;
+      setTimeout(() => { _refreshFamilyFromServerAndRender(); }, 0);
+    }
   } else {
+    const pendingRoute = S._pendingNotificationRoute;
+    if (pendingRoute?.kidTab) S.kidTab = pendingRoute.kidTab;
     renderKidView(); // handles both 'tiny' and 'regular'
+    if (pendingRoute) S._pendingNotificationRoute = null;
   }
 }
 
@@ -6650,7 +7790,7 @@ function pinKey(k) {
           const rememberedUser = getMember(getCurrentUserId());
           if (rememberedUser) {
             S.currentUser = rememberedUser;
-            if (S._afterPinNav === 'overview') { S._afterPinNav = null; S.parentTab = 'home'; }
+            _applyDeferredPostPinNav();
             routeToView(rememberedUser);
           } else {
             renderHome();
@@ -6773,7 +7913,7 @@ async function registerBiometricWithCallback(onComplete) {
     toast(`${label} set up!`);
   } catch(e) {
     if (e.name !== 'NotAllowedError' && e.message !== 'Authentication cancelled.') {
-      alert(`Could not set up ${label}: ` + e.message);
+      toast(`Could not set up ${label}: ` + e.message);
     }
   } finally {
     if (onComplete) onComplete();
@@ -6833,7 +7973,7 @@ function tryBiometricUnlock() {
       const rememberedUser = getMember(getCurrentUserId());
       if (rememberedUser) {
         S.currentUser = rememberedUser;
-        if (S._afterPinNav === 'overview') { S._afterPinNav = null; S.parentTab = 'home'; }
+        _applyDeferredPostPinNav();
         routeToView(rememberedUser);
       } else {
         renderHome();
@@ -6856,24 +7996,18 @@ function renderSetupGate() {
   content.style.display = 'none';
   gate.innerHTML = `
     <div class="setup-gate-shell">
-      <div class="setup-gate-card">
-        <img src="gemsprout.png" class="setup-gate-mark" alt="GemSprout">
-        <div class="setup-gate-kicker"><i class="ph-duotone ph-plant" style="font-size:0.95rem"></i> Family rhythms, rewards, and growth</div>
-        <div class="setup-gate-title">Welcome to GemSprout</div>
-        <div class="setup-gate-sub">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'Build a calm, beautiful family system for chores, gems, savings, and shared goals across one home or two.'}</div>
-        <div class="setup-gate-pill-row">
-          <div class="setup-gate-pill"><i class="ph-duotone ph-sketch-logo" style="font-size:1rem"></i> Gems</div>
-          <div class="setup-gate-pill"><i class="ph-duotone ph-piggy-bank" style="font-size:1rem"></i> Savings</div>
-          <div class="setup-gate-pill"><i class="ph-duotone ph-users-three" style="font-size:1rem"></i> Family goals</div>
-        </div>
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome to GemSprout</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">${isPreview ? 'Preview the first-download experience. Nothing in this flow will be saved.' : 'An easy to use family system for rewards, savings, and shared goals'}</div>
         <div class="setup-gate-actions">
           <button class="setup-gate-btn setup-gate-btn-primary" onclick="${isPreview ? `goSetup({ testMode: true })` : `startNewFamily()`}">
             <i class="ph-duotone ph-sparkle" style="vertical-align:middle"></i> Get Started
           </button>
-          <button class="setup-gate-btn setup-gate-btn-secondary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Sign In is disabled during onboarding preview')` : `showSignInFlow()`}">
+          <button class="setup-gate-btn setup-gate-btn-primary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Sign In is disabled during onboarding preview')` : `showSignInFlow()`}">
             <i class="ph-duotone ph-sign-in" style="vertical-align:middle"></i> Sign In
           </button>
-          <button class="setup-gate-btn setup-gate-btn-muted ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Kid entry is disabled during onboarding preview')` : `showKidEntry()`}">
+          <button class="setup-gate-btn setup-gate-btn-primary ${isPreview ? 'setup-gate-btn-preview-disabled' : ''}" onclick="${isPreview ? `toast('Kid entry is disabled during onboarding preview')` : `showKidEntry()`}">
             <i class="ph-duotone ph-smiley" style="vertical-align:middle"></i> I'm a Kid
           </button>
         </div>
@@ -6884,30 +8018,23 @@ function renderSetupGate() {
 function startNewFamily() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutcream.png" style="width:90px;height:90px">
-      <div style="color:#fff;font-weight:800;font-size:1.5rem;text-align:center">Create Your Family</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:280px">Sign in to secure your account and sync your family across devices.</div>
-      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:8px">
-        <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('google')">
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
-          Continue with Google
-        </button>
-        <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
-          Continue with Apple&nbsp;
-        </button>
-      </div>
-      <button style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:0.9rem;cursor:pointer;margin-top:8px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-      ${RC.betaMode ? `
-      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
-        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
-        <div style="display:flex;gap:8px">
-          <input id="dev-getstarted-email" type="email" placeholder="test@email.com" autocomplete="off"
-            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
-          <button onclick="_devTestGetStarted()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test Sign In</button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Create Your Family</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center">Sign in to secure your account and sync your family across devices</div>
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+          <button class="btn" style="background:#fff;color:#333;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:1px solid rgba(39,66,57,0.14)" onclick="_newFamilyAuth('google')">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+            Continue with Google
+          </button>
+          <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_newFamilyAuth('apple')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+            Continue with Apple&nbsp;
+          </button>
         </div>
-      </div>` : ''}
+        <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -6922,14 +8049,42 @@ async function _newFamilyAuth(provider) {
   await _processNewFamilyUser(user);
 }
 
-async function _devTestGetStarted() {
-  const email = (document.getElementById('dev-getstarted-email')?.value || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
-  await _processNewFamilyUser({ uid: `dev-${email.replace(/[^a-z0-9]/g, '-')}`, email, displayName: '' });
+async function _lookupFamilyCodeForAuthUser(firebaseUser) {
+  if (!firebaseUser?.uid) return '';
+  try {
+    const uidDoc = await db.doc(`users/${firebaseUser.uid}`).get();
+    const uidFamily = uidDoc.exists ? String(uidDoc.data()?.familyCode || '') : '';
+    if (uidFamily) return uidFamily;
+  } catch (e) {}
+  const email = (firebaseUser.email || '').toLowerCase();
+  if (!email) return '';
+  try {
+    const emailSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (!emailSnap.empty) {
+      const familyCode = String(emailSnap.docs[0].data()?.familyCode || '');
+      if (familyCode) return familyCode;
+    }
+  } catch (e) {}
+  return '';
 }
 
 async function _processNewFamilyUser(user) {
   S._pendingNewFamilyUser = user;
+  const existingFamilyCode = await _lookupFamilyCodeForAuthUser(user);
+  if (existingFamilyCode) {
+    S._pendingNewFamilyUser = null;
+    setFamilyCode(existingFamilyCode);
+    setParentAuthUid(user.uid);
+    db.doc(`users/${user.uid}`).set({
+      familyCode: existingFamilyCode,
+      uid: user.uid,
+      email: (user.email || '').toLowerCase(),
+    }, { merge: true }).catch(() => {});
+    await ensureFirestoreAuth();
+    subscribeToFirestore(routeAfterLoad);
+    toast('This account is already linked to a family - signed you in');
+    return;
+  }
   const email = (user.email || '').toLowerCase();
   if (email) {
     try {
@@ -6975,21 +8130,24 @@ async function _acceptInviteFromGetStarted() {
 function showKidEntry() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:20px">
-      <div style="font-size:3.5rem"><i class="ph-duotone ph-smiley" style="color:#6C63FF"></i></div>
-      <div style="font-weight:800;font-size:1.4rem">I'm a Kid!</div>
-      <div style="color:#6B7280;text-align:center;max-width:280px">Enter the family code from your parent's Settings screen, or scan the QR code they show you.</div>
-      <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
-        style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:280px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
-        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
-      <button class="btn btn-primary" style="width:100%;max-width:280px;padding:14px" onclick="joinFamily()">
-        <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
-      </button>
-      ${isNative() ? `
-      <button class="btn btn-secondary" style="width:100%;max-width:280px;padding:12px" onclick="startQRScan()">
-        <i class="ph-duotone ph-qr-code" style="vertical-align:middle;margin-right:6px"></i> Scan QR Code
-      </button>` : ''}
-      <button class="btn-back" style="background:none;border:none;color:var(--muted);font-size:0.95rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin-bottom:16px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">I'm a Kid!</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">Enter the family code from your parent's Settings screen, or scan the QR code they show you</div>
+        <input id="join-code-input" type="text" maxlength="6" placeholder="XXXXXX" autocapitalize="characters" autocomplete="off"
+          style="font-size:2rem;font-weight:800;letter-spacing:0.2em;text-align:center;text-transform:uppercase;width:100%;max-width:320px;padding:16px;border:2px solid var(--border);border-radius:12px;background:#fff;outline:none"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" />
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin-top:12px">
+          <button class="btn btn-primary" style="width:100%;padding:14px" onclick="joinFamily()">
+            <i class="ph-duotone ph-sign-in" style="vertical-align:middle;margin-right:6px"></i> Join Family
+          </button>
+          <button class="btn btn-secondary" style="width:100%;padding:12px" onclick="startQRScan()">
+            <i class="ph-duotone ph-qr-code" style="vertical-align:middle;margin-right:6px"></i> Scan QR Code
+          </button>
+        </div>
+        <button class="btn-back" style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7012,10 +8170,11 @@ async function joinFamily() {
     setFamilyCode(code);
     setCurrentUserId('');   // don't inherit a remembered profile from a previous session
     setParentAuthUid(null); // don't inherit parent auth trust from a previous session
+    S._recentParentAuth = null;
     try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
     ensureFirestoreAuth()
       .then(() => {
-        if (auth.currentUser && !getParentAuthUid()) {
+        if (_shouldAutoMapCurrentAuthAsKid() && !getParentAuthUid()) {
           db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: code, role: 'kid' }, { merge: true }).catch(() => {});
         }
         subscribeToFirestore();
@@ -7031,30 +8190,23 @@ async function joinFamily() {
 function showSignInFlow() {
   const gate = document.getElementById('setup-gate');
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:0;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <img src="gemsproutcream.png" style="width:90px;height:90px;margin-bottom:16px">
-      <div style="color:#fff;font-size:1.6rem;font-weight:800;margin-bottom:6px">Welcome back!</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;margin-bottom:32px;text-align:center">Sign in to access your family on this device</div>
-      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
-        <button id="signin-google-btn" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('google')">
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
-          Continue with Google
-        </button>
-        <button id="signin-apple-btn" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('apple')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
-          Continue with Apple&nbsp;
-        </button>
-      </div>
-      <button style="margin-top:24px;background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-      ${RC.betaMode ? `
-      <div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);width:100%;max-width:320px">
-        <div style="color:rgba(255,255,255,0.4);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
-        <div style="display:flex;gap:8px">
-          <input id="dev-signin-email" type="email" placeholder="invited@email.com" autocomplete="off"
-            style="flex:1;padding:10px 12px;border:none;border-radius:10px;font-size:0.9rem;background:rgba(255,255,255,0.15);color:#fff;outline:none">
-          <button onclick="_devTestSignIn()" style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.2);color:#fff;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap">Test Sign In</button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin-bottom:16px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome back!</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center">Sign in to access your family on this device</div>
+        <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
+          <button id="signin-google-btn" class="btn" style="background:#fff;color:#3c4043;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:1px solid rgba(39,66,57,0.14)" onclick="_handleSignIn('google')">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:20px;height:20px">
+            Continue with Google
+          </button>
+          <button id="signin-apple-btn" class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" onclick="_handleSignIn('apple')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701z"/></svg>
+            Continue with Apple&nbsp;
+          </button>
         </div>
-      </div>` : ''}
+        <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7122,11 +8274,13 @@ function _showSignInNotFound() {
   gate.style.display = 'flex';
   document.getElementById('setup-content').style.display = 'none';
   gate.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:16px;background:linear-gradient(145deg,#667eea,#764ba2)">
-      <i class="ph-duotone ph-magnifying-glass" style="font-size:3rem;color:rgba(255,255,255,0.7)"></i>
-      <div style="color:#fff;font-size:1.4rem;font-weight:800;text-align:center">No family found</div>
-      <div style="color:rgba(255,255,255,0.8);font-size:0.95rem;text-align:center;max-width:300px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
-      <button class="btn" style="background:#fff;color:#6C63FF;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:8px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+    <div class="setup-gate-shell">
+      <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
+        <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin-bottom:16px">
+        <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">No family found</div>
+        <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
+        <button class="btn" style="background:#2a7560;color:#fff;font-weight:700;padding:14px 28px;border:none;border-radius:12px;margin-top:16px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+      </div>
     </div>`;
 }
 
@@ -7199,14 +8353,6 @@ const DEV_TEST_UID_KEY = 'gemsprout.devTestUid';
 
 function _devShowInviteTest() {
   showInviteParent(true);
-}
-
-async function _devTestSignIn() {
-  const email = (document.getElementById('dev-signin-email')?.value || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
-  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
-  try { localStorage.setItem(DEV_TEST_UID_KEY, fakeUid); } catch {}
-  await _resolveSignInUser({ uid: fakeUid, email });
 }
 
 async function _devResetInviteTest() {
@@ -7430,51 +8576,18 @@ async function _submitParentInvite(testMode = false) {
   }
 }
 
-function cancelSetup() {
-  S._setupBiometricDecisionRequired = false;
-  S._setupBiometricOfferAnswered = false;
-  if (_exitTestOnboarding('Onboarding preview closed - nothing was saved.')) return;
-  const user = S.currentUser;
-  if (user) routeToView(user);
-  else renderHome();
-}
-
-function _cloneOnboardingTestState(value) {
-  try { return JSON.parse(JSON.stringify(value)); }
-  catch { return null; }
-}
-
-function startTestOnboarding() {
-  if (S._testOnboarding?.active) return;
-  S._testOnboarding = {
-    active: true,
-    snapshotD: _cloneOnboardingTestState(D),
-    snapshotCurrentUserId: getCurrentUserId(),
-    snapshotKidTab: S.kidTab,
-    snapshotParentTab: S.parentTab,
-  };
-  closeSettings();
-  showScreen('screen-setup');
-  renderSetupGate();
-}
-
-function _exitTestOnboarding(message = '') {
-  const test = S._testOnboarding;
-  if (!test?.active) return false;
-  S._testOnboarding = null;
-  D = normalizeData(test.snapshotD || defaultData());
-  S.setupStep = 0;
-  S.setupMembers = [];
-  S.setupParents = [];
-  S.kidTab = test.snapshotKidTab || 'chores';
-  S.parentTab = test.snapshotParentTab || 'home';
-  const userId = test.snapshotCurrentUserId || '';
-  setCurrentUserId(userId);
-  S.currentUser = userId ? getMember(userId) : null;
-  if (S.currentUser) routeToView(S.currentUser);
-  else renderHome();
-  if (message) toast(message);
-  return true;
+function cancelSetup(btn = null) {
+  _setupRunWithTapFeedback(() => {
+    S._setupBiometricDecisionRequired = false;
+    S._setupBiometricOfferAnswered = false;
+    const currentUserId = S.currentUser?.id || getCurrentUserId();
+    const freshUser = currentUserId ? getMember(currentUserId) : null;
+    if (freshUser) {
+      S.currentUser = freshUser;
+      routeToView(freshUser);
+    }
+    else renderHome();
+  }, btn);
 }
 
 function goSetup(opts = {}) {
@@ -7508,13 +8621,37 @@ function goSetup(opts = {}) {
   renderSetupStep();
 }
 
+function _splitSetupStepContent(content = '') {
+  const html = String(content || '');
+  const match = html.match(/(<div class="flex gap-10[\s\S]*<\/div>)\s*$/);
+  if (!match) return { body: html, nav: '' };
+  return {
+    body: html.slice(0, match.index).trimEnd(),
+    nav: match[1],
+  };
+}
+
+function _setupRunWithTapFeedback(action, sourceBtn = null) {
+  const run = (typeof action === 'function') ? action : () => {};
+  run();
+}
+
+function _setupPulseTapFeedback(btn = null) {
+  _setupRunWithTapFeedback(() => {}, btn);
+}
+
+function setupBackToGate(btn = null) {
+  _setupRunWithTapFeedback(() => renderSetupGate(), btn);
+}
+
 function renderSetupStep(opts = {}) {
   const preserveScroll = !!opts.preserveScroll;
   const existingScreen = document.getElementById('screen-setup');
   const existingGate = document.getElementById('setup-gate');
   const existingContent = document.getElementById('setup-content');
+  const existingStepScroll = existingContent?.querySelector?.('.setup-step-scroll');
   const savedScreenScroll = preserveScroll ? (existingScreen?.scrollTop || 0) : 0;
-  const savedContentScroll = preserveScroll ? (existingContent?.scrollTop || 0) : 0;
+  const savedContentScroll = preserveScroll ? (existingStepScroll?.scrollTop || 0) : 0;
   const step  = S.setupStep;
   const total = SETUP_STEPS.length;
   const dots  = SETUP_STEPS.map((_,i) =>
@@ -7536,12 +8673,12 @@ function renderSetupStep(opts = {}) {
       </div>
       ${D.setup || S._testOnboarding?.active ? `
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup()">Cancel</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="cancelSetup(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>` : `
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="renderSetupGate()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Let's go</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBackToGate(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>`}`;
       break;
 
@@ -7556,8 +8693,8 @@ function renderSetupStep(opts = {}) {
         <i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:6px"></i> Invite a Parent
       </button>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>`;
       break;
 
@@ -7570,8 +8707,8 @@ function renderSetupStep(opts = {}) {
       <div id="members-list">${S.setupMembers.map((m,i)=>memberSetupCard(m,i)).join('')}</div>
       <button class="btn btn-secondary btn-full mt-8" onclick="addMemberCard()" style="margin-bottom:14px">+ Add a kid</button>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
       </div>`;
       break;
 
@@ -7591,8 +8728,8 @@ function renderSetupStep(opts = {}) {
           </label>`).join('')}
       </div>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">${SETUP_STEPS === SETUP_STEPS_EDIT ? 'Finish!' : 'Next'}</button>
       </div>`;
       break;
 
@@ -7612,8 +8749,8 @@ function renderSetupStep(opts = {}) {
           </label>`).join('')}
       </div>
       <div class="flex gap-10 mt-8">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Next</button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Next</button>
       </div>`;
       break;
 
@@ -7671,8 +8808,8 @@ function renderSetupStep(opts = {}) {
         </div>
       </div>
       <div class="flex gap-10" style="margin-top:16px">
-        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-        <button class="btn btn-primary" style="flex:1" onclick="setupNext()">Finish! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i></button>
+        <button class="btn btn-secondary" style="flex:0 0 80px" onclick="setupBack(this)"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
+        <button class="btn btn-primary" style="flex:1" onclick="setupNext(this)">Finish! <i class="ph-duotone ph-confetti" style="font-size:0.95rem;vertical-align:middle"></i></button>
       </div>`;
       break;
     }
@@ -7708,26 +8845,33 @@ function renderSetupStep(opts = {}) {
         <a href="${RC.appDownloadUrl}" target="_blank" style="font-size:0.84rem;font-weight:700;color:#6C63FF;text-decoration:none;word-break:break-all">${RC.appDownloadUrl}</a>
       </div>` : ''}
 
-      <button class="btn btn-primary btn-full" onclick="finishSetup()">${S._testOnboarding?.active ? 'Exit Preview' : "Let's go!"}</button>`;
+      <button class="btn btn-primary btn-full" onclick="finishSetup()">Let's go!</button>`;
       break;
     }
   }
 
   if (existingGate) existingGate.style.display = 'none';
   if (existingContent) existingContent.style.display = '';
+  const split = _splitSetupStepContent(content);
   document.getElementById('setup-content').innerHTML = `
-    <div class="step-indicator" style="padding-top:16px">${dots}</div>
-    <div class="setup-step active">${content}</div>`;
+    <div class="setup-flow" style="position:relative">
+      <div class="step-indicator" style="padding-top:16px">${dots}</div>
+      <div class="setup-step active">
+        <div class="setup-step-scroll">${split.body}</div>
+        ${split.nav ? `<div class="setup-step-nav">${split.nav}</div>` : ''}
+      </div>
+    </div>`;
   const nextScreen = document.getElementById('screen-setup');
   const nextContent = document.getElementById('setup-content');
+  const nextStepScroll = nextContent?.querySelector?.('.setup-step-scroll');
   const restore = () => {
     if (preserveScroll) {
       if (nextScreen) nextScreen.scrollTop = savedScreenScroll;
-      if (nextContent) nextContent.scrollTop = savedContentScroll;
+      if (nextStepScroll) nextStepScroll.scrollTop = savedContentScroll;
       return;
     }
     if (nextScreen) nextScreen.scrollTop = 0;
-    if (nextContent) nextContent.scrollTop = 0;
+    if (nextStepScroll) nextStepScroll.scrollTop = 0;
     window.scrollTo(0, 0);
   };
   restore();
@@ -7994,12 +9138,12 @@ function setParentBday(i) {
   if (S.setupParents[i]) S.setupParents[i].birthday = (mm && dd) ? `${mm}-${dd}` : '';
 }
 
-function setupNext() {
+function setupNext(btn = null) {
   const stepName = SETUP_STEPS[S.setupStep];
 
   if (stepName === 'welcome') {
     const name = document.getElementById('setup-family-name')?.value.trim();
-    if (!name) { toast('Please enter a family name'); return; }
+    if (!name) { _setupPulseTapFeedback(btn); toast('Please enter a family name'); return; }
     D.family.name = name;
   }
 
@@ -8009,7 +9153,7 @@ function setupNext() {
       if (ni) p.name = ni.value.trim();
       setParentBday(i);
     });
-    if (S.setupParents.some(p=>!p.name)) { toast('Please give yourself a name'); return; }
+    if (S.setupParents.some(p=>!p.name)) { _setupPulseTapFeedback(btn); toast('Please give yourself a name'); return; }
   }
 
   if (stepName === 'members') {
@@ -8019,8 +9163,8 @@ function setupNext() {
       if (ni) m.name = ni.value.trim();
       setMemberBday(i); // flush birthday selects
     });
-    if (S.setupMembers.length === 0) { toast('Add at least one family member'); return; }
-    if (S.setupMembers.some(m=>!m.name)) { toast('Each family member needs a name'); return; }
+    if (S.setupMembers.length === 0) { _setupPulseTapFeedback(btn); toast('Add at least one family member'); return; }
+    if (S.setupMembers.some(m=>!m.name)) { _setupPulseTapFeedback(btn); toast('Each family member needs a name'); return; }
   }
 
   if (stepName === 'chores') {
@@ -8057,6 +9201,7 @@ function setupNext() {
     const pinEl = document.getElementById('setup-pin');
     const pin   = pinEl?.value.trim() || '';
     if (!/^\d{4}$/.test(pin)) {
+      _setupPulseTapFeedback(btn);
       const err = document.getElementById('setup-pin-error');
       if (err) {
         err.textContent = 'Please enter a 4-digit pin. It must be all numbers.';
@@ -8090,19 +9235,28 @@ function setupNext() {
         if (FirebaseMessaging) FirebaseMessaging.requestPermissions().catch(() => {});
       } catch(e) {}
     }
-    S.setupStep++;
-    if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
-    renderSetupStep();
+    _setupRunWithTapFeedback(() => {
+      S.setupStep++;
+      if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
+      renderSetupStep();
+    }, btn);
     return;
   }
 
-  S.setupStep++;
-  if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
-  renderSetupStep();
+  _setupRunWithTapFeedback(() => {
+    S.setupStep++;
+    if (S.setupStep >= SETUP_STEPS.length) { finishSetup(); return; }
+    renderSetupStep();
+  }, btn);
 }
 
-function setupBack() {
-  if (S.setupStep > 0) { S.setupStep--; renderSetupStep(); }
+function setupBack(btn = null) {
+  if (S.setupStep > 0) {
+    _setupRunWithTapFeedback(() => {
+      S.setupStep--;
+      renderSetupStep();
+    }, btn);
+  }
 }
 
 function handleSetupPinInput(el) {
@@ -8127,7 +9281,6 @@ function finishSetup() {
   }
   S._setupBiometricDecisionRequired = false;
   S._setupBiometricOfferAnswered = false;
-  if (_exitTestOnboarding('Onboarding preview finished - nothing was saved.')) return;
   const wasSetup = !!D.setup;
   const mergedParents = S.setupParents.map(p => {
     const existing = D.family.members.find(x=>x.id===p.id) || {};
@@ -8160,7 +9313,7 @@ function finishSetup() {
   if (S._newFamilyFirebaseUser && mergedParents[0]) {
     const setupUser = S._newFamilyFirebaseUser;
     linkParentAuth(setupUser, mergedParents[0].id);
-    S._recentParentAuth = { uid: setupUser.uid, email: (setupUser.email || '').toLowerCase(), at: Date.now() };
+    S._recentParentAuth = { uid: setupUser.uid, email: (setupUser.email || '').toLowerCase(), familyCode: getFamilyCode() || '', at: Date.now() };
     S._newFamilyFirebaseUser = null;
   }
   saveData();
@@ -8306,6 +9459,7 @@ function switchKidTab(tab) {
 
 function renderKidTab() {
   try {
+  document.getElementById('kid-content')?._statsGemCleanup?.();
   document.getElementById('kid-content')?.classList.remove('stats-page-content');
   switch(S.kidTab) {
     case 'chores': renderKidChores(); break;
@@ -8329,7 +9483,7 @@ function renderKidChores() {
     document.getElementById('kid-content').innerHTML = `
       <div class="empty-state">
         <div class="empty-icon"><i class="ph-duotone ph-confetti" style="color:#F97316;font-size:3rem"></i></div>
-        <div class="empty-text">No rhythms assigned yet. Ask a parent to add some.</div>
+        <div class="empty-text">No tasks assigned yet. Ask a parent to add some.</div>
       </div>`;
     return;
   }
@@ -8721,11 +9875,11 @@ function normalChoreCardPhoto(chore, member, progress, photoPhase, comboIds = nu
   const comboClass = isCombo && statusClass !== 'done' ? ' combo-chore' : '';
   let ttsText;
   if (phase === 'needs_before') {
-    ttsText = `${chore.title}. Take a before photo to start this chore!`;
+    ttsText = `${chore.title}. Take a before photo to start this task!`;
   } else if (phase === 'before_pending') {
     ttsText = `${chore.title}. Waiting for your grown-up to say yes!`;
   } else if (phase === 'needs_after') {
-    ttsText = `${chore.title}. You were approved! Do the chore, then take a done photo.`;
+    ttsText = `${chore.title}. You were approved! Finish the task, then take a done photo.`;
   } else if (phase === 'after_pending') {
     ttsText = `${chore.title}. Waiting for your grown-up to check your done photo.`;
   } else {
@@ -9073,8 +10227,10 @@ function renderKidDiamonds() {
     const baseBadgeChips = D?.settings?.baseBadgesEnabled === false ? '' : BADGE_DEFS.map(b => {
       const def = getBaseBadgeDef(b.id);
       const have = earned.includes(b.id);
-      const badgeTts = tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")}')"` : '';
-      return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${badgeTts}>
+      const tap = have
+        ? ` onclick="openBadgeCard('${b.id}','base','','0','${m.id}')"`
+        : (tiny ? ` onclick="speak('${def.name.replace(/'/g,"\\'")} — not earned yet.')"` : '');
+      return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${tap}>
         <span class="badge-chip-icon">${def.icon}</span>${esc(def.name)}
       </div>`;
     }).join('');
@@ -9084,8 +10240,11 @@ function renderKidDiamonds() {
         const key = `cb_${b.id}`;
         const have = earned.includes(key);
         if (!have && b.secret) return '';
-        const badgeTts = tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")}')"` : '';
-        return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${badgeTts}>
+        const choreTitle = chore.title || '';
+        const tap = have
+          ? ` onclick="openBadgeCard('${b.id}','chore',${JSON.stringify(choreTitle).replace(/"/g,'&quot;')},${b.count||0},'${m.id}')"`
+          : (tiny ? ` onclick="speak('${(b.name||'').replace(/'/g,"\\'")} — not earned yet.')"` : '');
+        return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}"${tap}>
           <span class="badge-chip-icon">${b.icon||'<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>'}</span>${esc(b.name||'')}
         </div>`;
       })
@@ -9243,12 +10402,21 @@ function approveSavingsRequest(requestId, btn) {
   const cur = D.settings.currency || '$';
   if (!m) return;
   _fadeOutAdminCard(btn, () => {
+    const memberBefore = _captureMemberUndoSnapshot(m);
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
     const actual = Math.min(req.amount, m.savings || 0);
     reduceSavingsBuckets(m, actual);
     m.savings = parseFloat(Math.max(0, (m.savings || 0) - actual).toFixed(2));
     req.status = 'approved';
+    req.resolvedAt = Date.now();
     const label = req.reason ? `Spent: ${req.reason}` : 'Savings withdrawal approved';
-    addHistory('savings_withdraw', req.memberId, label, 0, { dollars: actual });
+    addHistory('savings_withdraw', req.memberId, label, 0, {
+      dollars: actual,
+      undoAction: 'approve_savings_request',
+      requestId: req.id,
+      requestBefore,
+      memberBefore,
+    });
     saveData();
     toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
@@ -9261,7 +10429,14 @@ function denySavingsRequest(requestId, btn) {
   if (!req) return;
   const m = getMember(req.memberId);
   _fadeOutAdminCard(btn, () => {
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
     req.status = 'denied';
+    req.resolvedAt = Date.now();
+    addHistory('decline', req.memberId, 'Savings request denied', 0, {
+      undoAction: 'deny_savings_request',
+      requestId: req.id,
+      requestBefore,
+    });
     saveData();
     toast(`Spend request denied for ${m?.name || 'kid'}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
@@ -9276,7 +10451,8 @@ function approvePrizeRequest(requestId, btn) {
   const prize = D.prizes.find(p => p.id === req.prizeId);
   if (!member || !prize) return;
   _fadeOutAdminCard(btn, () => {
-    const result = doRedeemPrize(prize.id, member.id);
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
+    const result = doRedeemPrize(prize.id, member.id, { requestId: req.id, requestBefore });
     req.status = result?.ok ? 'approved' : 'denied';
     req.resolvedAt = Date.now();
     saveData();
@@ -9294,8 +10470,14 @@ function denyPrizeRequest(requestId, btn) {
   if (!req || req.status !== 'pending') return;
   const member = getMember(req.memberId);
   _fadeOutAdminCard(btn, () => {
+    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
     req.status = 'denied';
     req.resolvedAt = Date.now();
+    addHistory('decline', req.memberId, 'Prize request denied', 0, {
+      undoAction: 'deny_prize_request',
+      requestId: req.id,
+      requestBefore,
+    });
     saveData();
     toast(`Prize request denied for ${member?.name || 'kid'}`);
     renderParentHome();
@@ -9305,10 +10487,11 @@ function denyPrizeRequest(requestId, btn) {
   });
 }
 
-function showSavingsHistory(memberId, triggerEl = null) {
+function showSavingsHistory(memberId, triggerEl = null, showSubheader = false) {
   const m = getMember(memberId);
   if (!m) return;
   const cur = D.settings.currency || '$';
+  const tiny = isTiny(m);
   const savTypes = new Set(['savings', 'savings_deposit', 'savings_withdraw']);
   const entries = (D.history || []).filter(h => h.memberId === memberId && savTypes.has(h.type));
 
@@ -9328,6 +10511,7 @@ function showSavingsHistory(memberId, triggerEl = null) {
         const isDeposit  = h.type === 'savings_deposit';
         const isWithdraw = h.type === 'savings_withdraw';
         const hasDollars = (h.dollars || 0) > 0;
+        const title = String(h.title || '').trim() || 'Savings update';
         const delta = hasDollars
           ? `${isWithdraw ? '-' : '+'}${cur}${h.dollars.toFixed(2)}`
           : h.diamonds !== 0
@@ -9335,7 +10519,33 @@ function showSavingsHistory(memberId, triggerEl = null) {
             : '';
         const deltaUnit = hasDollars ? '' : (h.diamonds !== 0 ? 'gems' : '');
         const deltaClass = hasDollars ? (isWithdraw ? 'negative' : 'positive') : (h.diamonds > 0 ? 'positive' : h.diamonds < 0 ? 'negative' : 'neutral');
-        return `<div class="activity-row">
+        let ttsText = `${title}.`;
+        if (h.type === 'savings_deposit') {
+          ttsText = hasDollars
+            ? `${title}. ${formatDollarsNaturally(h.dollars)} was added to your savings!`
+            : `${title}.`;
+        } else if (h.type === 'savings_withdraw') {
+          ttsText = hasDollars
+            ? `${title}. ${formatDollarsNaturally(h.dollars)} came out of your savings.`
+            : `${title}.`;
+        } else if (h.type === 'savings') {
+          ttsText = /converted/i.test(title)
+            ? `${title}.`
+            : h.diamonds !== 0
+            ? `${title}. You earned ${Math.abs(h.diamonds)} gems.`
+            : (() => {
+                const moneyMatch = String(h.title || '').match(/\+?\s*\$([0-9]+(?:\.[0-9]+)?)/);
+                if (!moneyMatch) return `${title}.`;
+                const naturalAmt = formatDollarsNaturally(parseFloat(moneyMatch[1]));
+                if (/match/i.test(title)) return `Parent match added ${naturalAmt} to your savings.`;
+                if (/interest/i.test(title)) return `Interest added ${naturalAmt} to your savings.`;
+                return `${naturalAmt} was added to your savings.`;
+              })();
+        }
+        const ttsAttr = tiny
+          ? ` onclick="speak('${ttsText.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"`
+          : '';
+        return `<div class="activity-row"${ttsAttr}>
           <span class="activity-badge" style="background:${isWithdraw ? '#ede9fe' : '#e8f5ee'};color:${isWithdraw ? '#6C63FF' : '#1f7a55'}">${savingsIcon(h)}</span>
           <div class="activity-body">
             <div class="activity-title">${esc(h.title||'')}</div>
@@ -9350,9 +10560,11 @@ function showSavingsHistory(memberId, triggerEl = null) {
 
   const rect = triggerEl?.getBoundingClientRect?.();
   if (rect) _modalLaunchOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  const subheaderHtml = showSubheader
+    ? `<p class="kid-savings-modal-copy">A quick look at ${esc(m.name)}'s savings activity.</p>`
+    : '';
   showQuickActionModal(`
-    <div class="modal-title kid-savings-modal-title"><i class="ph-duotone ph-piggy-bank" style="color:#16A34A;font-size:1.2rem;vertical-align:middle"></i> Savings History</div>
-    <p class="kid-savings-modal-copy">A quick look at ${esc(m.name)}'s savings activity.</p>
+    ${subheaderHtml}
     <div class="kid-savings-history-list">${rows}</div>
     <div class="modal-actions">
       <button class="btn btn-secondary btn-full" onclick="closeModal()">Close</button>
@@ -9525,7 +10737,15 @@ function renderKidShop() {
     const note = status.ok ? 'Ready!' : blockedReason;
     const requirementSummary = getPrizeRequirementSummary(p);
     const recurrenceSummary = formatPrizeRecurrence(p.recurrence);
-    const tts  = `${p.title}. Costs ${p.cost} gems.${status.ok ? ' You can get this now!' : ` ${blockedReason}.`}`;
+    const prizeCost = Math.max(0, Number(p.cost) || 0);
+    const extraCondition = status.ok ? '' : (blockedReason || '').trim().replace(/[.!?]+$/, '');
+    const costClause = prizeCost > 0 ? `Costs ${prizeCost} gems` : '';
+    const conditionClause = extraCondition || '';
+    let ttsDetail = '';
+    if (costClause && conditionClause) ttsDetail = `${costClause} and ${conditionClause}.`;
+    else if (costClause) ttsDetail = `${costClause}.`;
+    else if (conditionClause) ttsDetail = `${conditionClause}.`;
+    const tts = `${p.title}.${ttsDetail ? ` ${ttsDetail}` : ''}${status.ok ? ' You can get this now!' : ''}`;
     return `
       <div class="prize-card kid-shop-prize-card ${cls}" onclick="kidRedeemPrize('${p.id}',event)${tiny?`;speak('${tts.replace(/'/g,"\\'")}')`:''}"
            ${tiny?`title="${esc(tts)}"`:''}>
@@ -9560,8 +10780,7 @@ function kidRedeemPrize(prizeId, evt) {
   const status = getPrizeStatusForKidView(prize, m.id);
   if (!status.ok) {
     const msg = formatPrizeRedeemStatusMessage(status);
-    if (isTiny(m)) speak(msg);
-    else toast(msg);
+    toast(msg);
     return;
   }
   const dmds = m.gems||0;
@@ -9689,7 +10908,7 @@ function renderKidTeam() {
           </div>
         </div>
         <div class="goal-bar-bg kid-team-goal-bar-bg"><div class="goal-bar-fill kid-team-goal-bar-fill" style="width:${pct}%"></div></div>
-        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' â€¢ Goal reached!' : ''}</div>
+        <div class="goal-dmds kid-team-goal-status">${pct}% there${reached ? ' • Goal reached!' : ''}</div>
         ${kids.length>1?`<div class="kid-team-contrib-list">${contribs}</div>`:''}
         ${!reached?`
           <div class="kid-team-goal-action">
@@ -9818,6 +11037,7 @@ function _removeLastProviderAndSignOut() {
   if (member) {
     member.authProviders = [];
     member.authUids = [];
+    member.authUid = '';
     saveData();
   }
   closeSettings();
@@ -9826,23 +11046,66 @@ function _removeLastProviderAndSignOut() {
 
 function unlinkProvider(providerId) {
   const member = S.currentUser;
-  if (!member?.authProviders?.length) return;
-  const remaining = member.authProviders.filter(p => p.providerId !== providerId);
-  if (remaining.length === 0) {
-    showDangerConfirm({
-      title: 'Remove Account?',
-      message: 'This is your only linked account. Removing it will sign you out.',
-      confirmLabel: 'Remove &amp; Sign Out',
-      onConfirm: () => _removeLastProviderAndSignOut(),
-    });
+  const providers = _ensureMemberAuthProviders(member);
+  if (!providers.length) {
+    toast('No linked sign-in methods found');
     return;
   }
-  member.authProviders = remaining;
-  member.authUids = remaining.map(p => p.uid);
+  const remaining = providers.filter(p => p.providerId !== providerId);
+  if (remaining.length === providers.length) {
+    toast('That sign-in method is not linked');
+    return;
+  }
+  if (remaining.length === 0) {
+    toast('Keep at least one sign-in method linked. Use Switch Account instead.');
+    return;
+  }
+  const target = getMember(member.id) || member;
+  target.authProviders = remaining;
+  target.authUids = remaining.map(p => p.uid);
+  target.authUid = remaining[0]?.uid || '';
+  if (S.currentUser?.id === target.id) {
+    S.currentUser.authProviders = target.authProviders;
+    S.currentUser.authUids = target.authUids;
+    S.currentUser.authUid = target.authUid;
+  }
   const next = remaining[0];
   setParentAuthUid(next.uid);
   try { localStorage.setItem(PARENT_AUTH_PROVIDER_KEY, next.providerId); } catch {}
   saveData();
+  toast('Sign-in method unlinked');
+  renderSettings();
+}
+
+async function switchLinkedProviderAccount(providerId) {
+  const member = S.currentUser;
+  if (!member || member.role !== 'parent') return;
+  const providerName = providerId === 'google.com' ? 'Google' : 'Apple';
+  const linkedProviders = member.authProviders || [];
+  if (!linkedProviders.find(p => p.providerId === providerId)) return;
+
+  const firebaseUser = providerId === 'google.com'
+    ? await signInWithGoogle()
+    : await signInWithApple();
+  if (!firebaseUser) return;
+
+  const allowedFamily = await _isParentAuthUserAllowedForActiveFamily(firebaseUser);
+  if (!allowedFamily.ok) {
+    await signOutParent();
+    toast('This sign-in does not match the linked parent account');
+    return;
+  }
+
+  const email = String(firebaseUser.email || '').toLowerCase();
+  const otherParent = _findOtherParentLinkedToAuth(firebaseUser.uid, email, member.id);
+  if (otherParent) {
+    await signOutParent();
+    toast('This sign-in does not match the linked parent account');
+    return;
+  }
+
+  await linkParentAuth(firebaseUser, member.id, providerId);
+  toast(`${providerName} account updated`);
   renderSettings();
 }
 
@@ -9890,6 +11153,7 @@ function switchParentTab(tab) {
 
 function renderParentTab() {
   try {
+  document.getElementById('parent-content')?._statsGemCleanup?.();
   document.getElementById('parent-content')?.classList.remove('stats-page-content');
   switch(S.parentTab) {
     case 'home':     renderParentHome();     break;
@@ -10142,6 +11406,22 @@ function renderMemberStatsCard(member, collapse, histIdx) {
     _statTile('<i class="ph-duotone ph-shopping-bag" style="color:#6C63FF"></i>', 'Total Spent', `${cur}${(s.totalWithdrawn||0).toFixed(2)}`, '#4c1d95', 'from savings')
   ) : '';
 
+  const earnedAllBadgeSet = new Set(member.badges || []);
+  const defaultBadgeItems = (BADGE_DEFS || []).map(def => {
+    const resolved = getBaseBadgeDef(def.id);
+    return { ...resolved, have: earnedAllBadgeSet.has(def.id) };
+  });
+  const defaultBadgeGrid = defaultBadgeItems.length === 0 ? '' : `
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-seal-check" style="color:#6C63FF;vertical-align:middle"></i> Default Badges</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${defaultBadgeItems.map(({ id, name, icon, have }) =>
+          `<div class="badge-chip ${have ? 'earned' : 'badge-chip-locked'}" title="${esc(name)}"${have ? ` onclick="openBadgeCard('${id}','base','','0','${member.id}')"` : ''}>
+            <span class="badge-chip-icon">${icon || '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>'}</span>${esc(name || id || 'Badge')}</div>`
+        ).join('')}
+      </div>
+    </div>`;
+
   const earnedBadgeSet = new Set((member.badges||[]).filter(b => b.startsWith('cb_')));
   const choreBadgeItems = [];
   for (const chore of D.chores) {
@@ -10156,10 +11436,12 @@ function renderMemberStatsCard(member, collapse, histIdx) {
     <div style="margin-bottom:18px">
       <div style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#9ca3af;margin-bottom:8px"><i class="ph-duotone ph-medal" style="color:#7C3AED;vertical-align:middle"></i> Task Badges</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
-        ${choreBadgeItems.map(({b, chore, have}) =>
-          `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} - ${b.count}">
+        ${choreBadgeItems.map(({b, chore, have}) => {
+          const choreTitle = chore.title || '';
+          const choreTitleArg = JSON.stringify(choreTitle).replace(/"/g, '&quot;');
+          return `<div class="badge-chip ${have?'earned':'badge-chip-locked'}" title="${esc(chore.title)} - ${b.count}"${have ? ` onclick="openBadgeCard('${b.id}','chore',${choreTitleArg},${b.count || 0},'${member.id}')"` : ''}>
             <span class="badge-chip-icon">${b.icon||'<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>'}</span>${esc(b.name||'')}</div>`
-        ).join('')}
+        }).join('')}
       </div>
     </div>`;
 
@@ -10187,7 +11469,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   const favChoreSub = s.favChore ? `${s.favChore[1]}x completed` : 'No tasks yet';
   const extraSection = _statSection('Fun Facts',
     _statTile('<i class="ph-duotone ph-calendar-star" style="color:#D97706"></i>','Best Day', s.bestDate ? `${s.bestDate.dmds} gems` : 'None', '#d97706', bestDaySub, tts(s.bestDate ? `Your best day was ${s.bestDate.dmds} gems.` : `No best day yet.`)) +
-    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Chore', s.favChore ? `${s.favChore[0].split(' ')[0]}` : 'None', '#db2777', favChoreSub, tts(s.favChore ? `Your favorite chore is ${s.favChore[0]}.` : `No favorite chore yet.`)) +
+    _statTile('<i class="ph-duotone ph-heart" style="color:#DB2777"></i>','Fav Task', s.favChore ? `${s.favChore[0].split(' ')[0]}` : 'None', '#db2777', favChoreSub, tts(s.favChore ? `Your favorite task is ${s.favChore[0]}.` : `No favorite chore yet.`)) +
     _statTile('<i class="ph-duotone ph-arrow-u-down-left" style="color:#6B7280"></i>','Declined', s.declineCount, '#374151', 'tasks declined', '')
   );
 
@@ -10195,7 +11477,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
   const choreTableRows = s.choreBreakdown.map(([name,count]) => [name, count]);
   const choreTable = `
     <div class="stats-panel-section">
-      <div class="stats-panel-section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;vertical-align:middle"></i> Chore Breakdown</div>
+      <div class="stats-panel-section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;vertical-align:middle"></i> Task Breakdown</div>
       ${_statBreakdownTable(choreTableRows.slice(0,10), 'Chore', 'times')}
     </div>`;
 
@@ -10234,6 +11516,7 @@ function renderMemberStatsCard(member, collapse, histIdx) {
       ${rewardSection}
       ${savingsSection}
       ${badgeSection}
+      ${defaultBadgeGrid}
       ${choreBadgeGrid}
       ${penaltySection}
       ${extraSection}
@@ -10280,23 +11563,71 @@ function renderStatsPage(container) {
 
   html += `
     <div class="tab-end-cap tab-end-cap-gem" aria-hidden="true">
-      <img src="gemsprout.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;opacity:0.25;cursor:pointer;transition:transform 0.1s,opacity 0.2s">
+      <img src="gemsprout.png" id="egg-gem" onclick="easterEggTap()" style="width:36px;height:36px;cursor:pointer">
     </div>
   </div>`;
   container.innerHTML = html;
+  container._statsGemCleanup?.();
   setTimeout(() => {
     try {
-      const gem = document.getElementById('egg-gem');
-      const cap = gem?.closest?.('.tab-end-cap-gem');
-      const nav = document.querySelector('.nav-bar');
+      const gem = container.querySelector('#egg-gem');
+      const nav = container.id === 'parent-content'
+        ? document.getElementById('parent-nav')
+        : document.getElementById('kid-nav');
       const content = container;
-      if (!gem || !cap || !nav || !content) return;
-      const contentStyles = getComputedStyle(content);
-      const contentPaddingBottom = parseFloat(contentStyles.paddingBottom) || 0;
-      const navHeight = nav.offsetHeight || 0;
-      const capHeight = cap.offsetHeight || 0;
-      const visibleGap = Math.max(0, capHeight + contentPaddingBottom - navHeight);
-      cap.style.setProperty('--stats-visible-gap', `${visibleGap}px`);
+      if (!gem || !nav || !content) return;
+      const applyStatsGemMetrics = () => {
+        const navStyles = getComputedStyle(nav);
+        const navHeight = nav.offsetHeight || 0;
+        const navPaddingBottom = parseFloat(navStyles.paddingBottom) || 0;
+        // nav padding includes safe area + 6px base spacing
+        const safeBottom = navPaddingBottom > 0 ? Math.max(0, navPaddingBottom - 6) : 12;
+        content.style.setProperty('--nav-h', `${navHeight}px`);
+        content.style.setProperty('--safe-b', `${safeBottom}px`);
+        const gemBottomOffset = safeBottom + navHeight + 12;
+        const gemSize = 45;
+        const reserveGap = 16;
+        const reservedBottom = Math.ceil(gemBottomOffset + gemSize + reserveGap);
+        content.style.setProperty('--content-bottom-space', `${reservedBottom}px`);
+      };
+      let rafId = 0;
+      const threshold = 6;
+      let resizeObserver = null;
+      const updateGemVisibility = () => {
+        rafId = 0;
+        applyStatsGemMetrics();
+        const overflowPx = Math.max(0, content.scrollHeight - content.clientHeight);
+        const scrollable = overflowPx > 24;
+        const atBottom = !scrollable || ((content.scrollTop + content.clientHeight) >= (content.scrollHeight - threshold));
+        gem.classList.toggle('is-visible', atBottom);
+        if (!atBottom) gem.style.removeProperty('opacity');
+      };
+      const scheduleUpdate = () => {
+        if (rafId) return;
+        rafId = requestAnimationFrame(updateGemVisibility);
+      };
+      const viewport = window.visualViewport || null;
+      content.addEventListener('scroll', scheduleUpdate, { passive: true });
+      content.addEventListener('touchmove', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      if (viewport) viewport.addEventListener('resize', scheduleUpdate);
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => scheduleUpdate());
+        resizeObserver.observe(content);
+        resizeObserver.observe(nav);
+      }
+      requestAnimationFrame(() => requestAnimationFrame(scheduleUpdate));
+      setTimeout(scheduleUpdate, 120);
+      setTimeout(scheduleUpdate, 420);
+      container._statsGemCleanup = () => {
+        content.removeEventListener('scroll', scheduleUpdate);
+        content.removeEventListener('touchmove', scheduleUpdate);
+        window.removeEventListener('resize', scheduleUpdate);
+        if (viewport) viewport.removeEventListener('resize', scheduleUpdate);
+        if (resizeObserver) resizeObserver.disconnect();
+        if (rafId) cancelAnimationFrame(rafId);
+        container._statsGemCleanup = null;
+      };
     } catch {}
   }, 0);
 }
@@ -10422,6 +11753,7 @@ let _parentQuickFanOpen = false;
 let _parentQuickHover = null;
 let _parentQuickSuppressClick = false;
 let _parentQuickCloseTimer = null;
+let _parentQuickCoachTimer = null;
 let _modalLaunchOrigin = null;
 let _activeFamilySnapshot = null;
 let _snapshotTimePicker = null;
@@ -10481,7 +11813,7 @@ function renderFamilySnapshotPanel(kidId) {
   const pickerChore = _snapshotTimePicker?.memberId === kid.id ? myChores.find(c => c.id === _snapshotTimePicker.choreId) : null;
   const pickerHtml = pickerChore ? renderSnapshotTimePicker(pickerChore, kid) : '';
   const choreRows = myChores.length === 0
-    ? `<div class="empty-state" style="padding:22px 8px"><div class="empty-text">No rhythms assigned</div></div>`
+    ? `<div class="empty-state" style="padding:22px 8px"><div class="empty-text">No tasks assigned</div></div>`
     : `<div class="kid-overview-list snapshot-chore-stack">${myChores.map(chore => {
         const progress = getChoreProgress(chore, kid.id);
         const status = progress.status;
@@ -10537,7 +11869,7 @@ function renderFamilySnapshotPanel(kidId) {
         </div>
         <div class="snapshot-panel-stats">
           <span class="snapshot-panel-stat"><strong>${kid.diamonds||0}</strong><small>Gems</small></span>
-          ${D.settings.savingsEnabled!==false?`<span class="snapshot-panel-stat"><strong>${cur}${(kid.savings||0).toFixed(2)}</strong><small>Savings</small></span>`:''}
+          ${D.settings.savingsEnabled!==false?`<span class="snapshot-panel-stat" onclick="showSavingsHistory('${kid.id}', this, true)"><strong>${cur}${(kid.savings||0).toFixed(2)}</strong><small>Savings</small></span>`:''}
           <span class="snapshot-panel-stat"><strong>${pct}%</strong><small>On track</small></span>
         </div>
       </div>
@@ -10890,39 +12222,61 @@ function startSnapshotSummarySwipe(ev, id) {
     id,
     shell,
     card,
+    side: shell.dataset.side === 'right' ? 'right' : 'left',
     startX: ev.clientX,
     startY: ev.clientY,
+    lastX: ev.clientX,
+    lastT: Date.now(),
+    velocityX: 0,
     revealedAtStart: shell.classList.contains('revealed'),
     dragging: false,
-    dy: 0
+    dx: 0,
   };
 }
 function moveSnapshotSummarySwipe(ev) {
   if (!_snapshotSummarySwipeSession) return;
   const dx = ev.clientX - _snapshotSummarySwipeSession.startX;
   const dy = ev.clientY - _snapshotSummarySwipeSession.startY;
+  const now = Date.now();
+  const dt = Math.max(1, now - (_snapshotSummarySwipeSession.lastT || now));
+  const stepDx = ev.clientX - (_snapshotSummarySwipeSession.lastX ?? ev.clientX);
+  _snapshotSummarySwipeSession.velocityX = stepDx / dt;
+  _snapshotSummarySwipeSession.lastX = ev.clientX;
+  _snapshotSummarySwipeSession.lastT = now;
   if (!_snapshotSummarySwipeSession.dragging) {
-    if (dy < 8 || dy < Math.abs(dx)) return;
+    if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
     _snapshotSummarySwipeSession.dragging = true;
   }
+  const side = _snapshotSummarySwipeSession.side;
   const card = _snapshotSummarySwipeSession.card;
-  const shift = 85;
-  const base = _snapshotSummarySwipeSession.revealedAtStart ? shift : 0;
-  const clampedDy = _snapshotSummarySwipeSession.revealedAtStart
-    ? Math.max(-shift, Math.min(dy, 0))
-    : Math.max(0, Math.min(dy, shift));
-  _snapshotSummarySwipeSession.dy = clampedDy;
+  const shell = _snapshotSummarySwipeSession.shell;
+  const shift = parseFloat(getComputedStyle(shell).getPropertyValue('--snapshot-summary-reveal-shift')) || 92;
+  let base = 0;
+  let clampedDx = 0;
+  if (side === 'left') {
+    base = _snapshotSummarySwipeSession.revealedAtStart ? -shift : 0;
+    clampedDx = _snapshotSummarySwipeSession.revealedAtStart
+      ? Math.max(shift * -0.2, Math.min(dx, shift))
+      : Math.max(-shift, Math.min(dx, shift * 0.24));
+  } else {
+    base = _snapshotSummarySwipeSession.revealedAtStart ? shift : 0;
+    clampedDx = _snapshotSummarySwipeSession.revealedAtStart
+      ? Math.min(shift * 0.2, Math.max(dx, -shift))
+      : Math.min(shift, Math.max(dx, shift * -0.24));
+  }
+  _snapshotSummarySwipeSession.dx = clampedDx;
   if (card) {
     card.style.transition = 'none';
-    card.style.transform = `translateY(${base + clampedDy}px)`;
+    card.style.transform = `translateX(${base + clampedDx}px)`;
   }
   ev.preventDefault?.();
 }
 function endSnapshotSummarySwipe(ev) {
   if (!_snapshotSummarySwipeSession) return;
-  const dy = _snapshotSummarySwipeSession.dragging
-    ? _snapshotSummarySwipeSession.dy
-    : ev.clientY - _snapshotSummarySwipeSession.startY;
+  const side = _snapshotSummarySwipeSession.side;
+  const dx = _snapshotSummarySwipeSession.dragging
+    ? _snapshotSummarySwipeSession.dx
+    : ev.clientX - _snapshotSummarySwipeSession.startX;
   const shell = _snapshotSummarySwipeSession.shell;
   const card = _snapshotSummarySwipeSession.card;
   const resetCard = () => {
@@ -10931,11 +12285,13 @@ function endSnapshotSummarySwipe(ev) {
     card.style.removeProperty('transform');
   };
   if (_snapshotSummarySwipeSession.dragging) {
-    if (dy > 24) {
+    const opening = side === 'left' ? dx < 0 : dx > 0;
+    const closing = side === 'left' ? dx > 0 : dx < 0;
+    if (opening) {
       closeAllSnapshotSummaryReveals(shell.dataset.summaryId);
       shell.classList.add('revealed');
       _snapshotSummaryReveal.add(shell.dataset.summaryId);
-    } else if (dy < -18) {
+    } else if (closing) {
       shell.classList.remove('revealed');
       _snapshotSummaryReveal.delete(shell.dataset.summaryId);
     } else {
@@ -11109,6 +12465,31 @@ function _layoutParentQuickFan() {
     node.style.top = `${top}px`;
   });
 }
+function _maybeShowParentQuickCoachMark() {
+  if (D.settings.tooltipBounceEnabled === false) return;
+  const host = document.getElementById('parent-quick-launch');
+  const trigger = host?.querySelector?.('.hero-quick-trigger');
+  if (!host) return;
+  host.classList.remove('coach-mark');
+  void host.offsetWidth;
+  host.classList.add('coach-mark');
+  if (_parentQuickCoachTimer) clearTimeout(_parentQuickCoachTimer);
+  if (trigger) {
+    const handleEnd = () => {
+      host.classList.remove('coach-mark');
+      trigger.removeEventListener('animationend', handleEnd);
+      if (_parentQuickCoachTimer) {
+        clearTimeout(_parentQuickCoachTimer);
+        _parentQuickCoachTimer = null;
+      }
+    };
+    trigger.addEventListener('animationend', handleEnd);
+  }
+  _parentQuickCoachTimer = setTimeout(() => {
+    host.classList.remove('coach-mark');
+    _parentQuickCoachTimer = null;
+  }, 2800);
+}
 function toggleStatsKid(kidId) {
   if (_expandedStatsKids.has(kidId)) _expandedStatsKids.delete(kidId);
   else _expandedStatsKids.add(kidId);
@@ -11152,6 +12533,7 @@ function showBetaWelcomeIfNeeded() {
 }
 
 function renderParentHome() {
+  _cleanupUndoDemoEntries();
   const kids        = D.family.members.filter(m=>m.role==='kid'&&!m.deleted);
   const pending     = pendingApprovals();
   const pendingSpend = pendingSpendRequests();
@@ -11194,7 +12576,7 @@ function renderParentHome() {
             aria-expanded="false"
           >
             <button class="hero-quick-trigger" type="button" aria-label="Quick actions" onclick="toggleParentQuickLaunch()">
-              <i class="ph-duotone ph-lightning"></i>
+              <i class="ph-duotone ph-plus-circle"></i>
             </button>
             <div class="hero-quick-fan" onclick="closeParentQuickFanIfBackdrop(event)">${quickActionsHtml}</div>
           </div>` : ''}
@@ -11248,7 +12630,7 @@ function renderParentHome() {
           <div class="admin-card" style="flex-wrap:wrap;gap:10px">
             <span class="admin-icon">${renderIcon(chore.icon, chore.iconColor, 'font-size:1.6rem')}</span>
             <div class="admin-info" style="flex:1;min-width:0">
-              <div class="admin-name">${esc(chore.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+              <div class="admin-name">${esc(chore.title)} <span class="admin-status-pill admin-status-pill-progress">IN PROGRESS</span></div>
               <div class="admin-meta">${renderMemberAvatarHtml(mem)} ${esc(mem.name)} &middot; waiting for after photo &middot; ${chore.diamonds} gems</div>
             </div>
             <div class="admin-actions">
@@ -11348,7 +12730,7 @@ function renderParentHome() {
     const laterCount = myChores.filter(c=>choreStatus(c,kid.id)==='unavailable').length;
     const side      = idx % 2 === 0 ? 'left' : 'right';
     const summaryStatuses = myChores.length === 0
-      ? '<span class="snapshot-summary-status-empty">No rhythms assigned yet</span>'
+      ? '<span class="snapshot-summary-status-empty">No tasks assigned yet</span>'
       : [
           `<span class="snapshot-summary-status"><strong>${doneCount}/${myChores.length}</strong> Complete</span>`,
           ...(partialCount > 0 ? [`<span class="snapshot-summary-status"><strong>${partialCount}</strong> In Motion</span>`] : []),
@@ -11359,7 +12741,7 @@ function renderParentHome() {
     const summaryId = `summary_${kid.id}`;
     const savingsDisplay = fmtCurrencyVisual(kid.savings || 0, D.settings.currency || '$');
     kidsHtml += `
-      <div class="snapshot-summary-shell ${_snapshotSummaryReveal.has(summaryId) ? 'revealed' : ''}" data-summary-id="${summaryId}">
+      <div class="snapshot-summary-shell ${_snapshotSummaryReveal.has(summaryId) ? 'revealed' : ''}" data-summary-id="${summaryId}" data-side="${side}">
         <div class="snapshot-summary-reveal ${isHereToday ? 'here' : 'away'}">
           <div class="snapshot-summary-toggle-row">
             <button class="snapshot-summary-toggle-btn home ${isHereToday ? 'active' : ''}" type="button" onpointerdown="return handleOverviewTodayStatusAction(event,'${kid.id}', true)" onclick="return false;">
@@ -11380,7 +12762,7 @@ function renderParentHome() {
             <span class="snapshot-summary-chip"><strong>${kid.diamonds||0}</strong><small>Gems</small></span>
             ${D.settings.savingsEnabled!==false?`<span class="snapshot-summary-chip"><strong>${savingsDisplay}</strong><small>Savings</small></span>`:''}
           </div>
-          <div class="snapshot-summary-swipe-note"><i class="ph-duotone ph-caret-double-down"></i></div>
+          <div class="snapshot-summary-swipe-note"><i class="ph-duotone ph-caret-double-right"></i></div>
         </button>
       </div>`;
   });
@@ -11426,7 +12808,9 @@ function renderParentHome() {
   }
 
   document.getElementById('parent-content').innerHTML = html;
+  _maybeShowParentQuickCoachMark();
   _bindSnapshotSummaryAutoDismiss();
+  _bindSnapshotSwipeAutoDismiss();
   if (_snapshotSummarySuppressHintBounceOnce) {
     _snapshotSummarySuppressHintBounceOnce = false;
     showBetaWelcomeIfNeeded();
@@ -11442,6 +12826,7 @@ function renderParentHome() {
       firstSummary.classList.add('hint-bounce');
       setTimeout(() => firstSummary.classList.remove('hint-bounce'), 2200);
     }, 180);
+    _maybeBounceFirstActivitySwipe('#parent-content');
   }
   showBetaWelcomeIfNeeded();
   showChangelogIfNeeded();
@@ -11486,7 +12871,7 @@ function approveChore(choreId, memberId, entryId, btn) {
     const inProgressInner = `
       <span class="admin-icon">${renderIcon(c.icon, c.iconColor, 'font-size:1.6rem')}</span>
       <div class="admin-info" style="flex:1;min-width:0">
-        <div class="admin-name">${esc(c.title)} <span style="background:#DBEAFE;color:#1D4ED8;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;margin-left:6px">IN PROGRESS</span></div>
+        <div class="admin-name">${esc(c.title)} <span class="admin-status-pill admin-status-pill-progress">IN PROGRESS</span></div>
         <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
     _flipAdminCard(btn, inProgressInner, () => {
@@ -11574,6 +12959,7 @@ function parentMarkChoreDone(choreId, memberId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
+  const memberBefore = _captureMemberUndoSnapshot(member);
 
   const progress = getChoreProgress(chore, memberId);
   if (progress.status === 'done') {
@@ -11583,10 +12969,12 @@ function parentMarkChoreDone(choreId, memberId) {
 
   if (!chore.completions) chore.completions = {};
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+  const completionsBefore = normalizeCompletionEntries(chore.completions[memberId]);
 
   chore.completions[memberId] = chore.completions[memberId].filter(e => !(e.status === 'pending' && e.entryType !== 'before'));
 
   let totalPts = 0;
+  const completedEntryIds = [];
 
   if (progress.isSlotMode) {
     // Complete only the currently-available slot(s); if none are in-window, complete just the earliest waiting slot
@@ -11595,25 +12983,36 @@ function parentMarkChoreDone(choreId, memberId) {
     const toComplete = available.length > 0 ? available : waiting.slice(0, 1);
     if (toComplete.length === 0) { toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} All slots already submitted for ${esc(member.name)}`); return; }
     toComplete.forEach(({ slot }) => {
+      const completionId = genId();
       chore.completions[memberId].push({
-        id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+        id: completionId, status: 'done', date: today(), createdAt: Date.now(),
         slotId: slot.id, photoUrl: null, entryType: null,
       });
+      completedEntryIds.push(completionId);
       totalPts += chore.gems;
     });
   } else {
     const photoPhase = chore.photoMode === 'before_after' ? getChorePhotoPhase(chore, memberId) : null;
     const completionEntryType = photoPhase?.phase === 'needs_after' ? 'after' : null;
+    const completionId = genId();
     chore.completions[memberId].push({
-      id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+      id: completionId, status: 'done', date: today(), createdAt: Date.now(),
       slotId: null, photoUrl: null, entryType: completionEntryType,
     });
+    completedEntryIds.push(completionId);
     totalPts = chore.gems;
   }
 
   member.gems      = (member.gems      || 0) + totalPts;
   member.totalEarned = (member.totalEarned || 0) + totalPts;
-  addHistory('chore', memberId, chore.title, totalPts);
+  addHistory('chore', memberId, chore.title, totalPts, {
+    undoAction: 'parent_mark_done',
+    choreId: chore.id,
+    completionIds: completedEntryIds,
+    pointsAwarded: totalPts,
+    memberBefore,
+    completionsBefore,
+  });
   checkAfterDiamondsAwarded(member, totalPts);
   checkChoreBadges(chore, memberId);
   // Auto-here: parent marking a chore done means the kid is home
@@ -11663,6 +13062,7 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
+  const memberBefore = _captureMemberUndoSnapshot(member);
   const progress = getChoreProgress(chore, memberId);
   const slotStatus = progress.slotStatuses?.find(s => s.slot.id === slotId);
   if (!slotStatus) { toast('Slot not found'); return; }
@@ -11670,13 +13070,23 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   if (slotStatus.status === 'pending') { toast('Already submitted - waiting for approval'); return; }
   if (!chore.completions) chore.completions = {};
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
+  const completionsBefore = normalizeCompletionEntries(chore.completions[memberId]);
+  const completionId = genId();
   chore.completions[memberId].push({
-    id: genId(), status: 'done', date: today(), createdAt: Date.now(),
+    id: completionId, status: 'done', date: today(), createdAt: Date.now(),
     slotId, photoUrl: null, entryType: null,
   });
   member.gems      = (member.gems      || 0) + chore.gems;
   member.totalEarned = (member.totalEarned || 0) + chore.gems;
-  addHistory('chore', memberId, chore.title, chore.gems);
+  addHistory('chore', memberId, chore.title, chore.gems, {
+    undoAction: 'parent_mark_done',
+    choreId: chore.id,
+    completionIds: [completionId],
+    slotId,
+    pointsAwarded: chore.gems,
+    memberBefore,
+    completionsBefore,
+  });
   checkAfterDiamondsAwarded(member, chore.gems);
   checkChoreBadges(chore, memberId);
   saveData();
@@ -12179,6 +13589,13 @@ function deleteChore(choreId) {
 }
 
 function _doDeleteChore(choreId) {
+  const idx = D.chores.findIndex(c => c.id === choreId);
+  const removed = idx >= 0 ? D.chores[idx] : null;
+  if (!removed) return;
+  const choreCopy = _cloneForUndo(removed);
+  const wasExpanded = _expandedChores.has(choreId);
+  const slotKeys = [..._expandedSlots].filter(key => key.startsWith(choreId + '_'));
+
   D.chores = D.chores.filter(c=>c.id!==choreId);
   for (const key of _expandedSlots) {
     if (key.startsWith(choreId + '_')) _expandedSlots.delete(key);
@@ -12187,6 +13604,16 @@ function _doDeleteChore(choreId) {
   saveData();
   toast('Chore deleted');
   renderParentChores();
+  _showDeleteUndoBar('Task deleted', () => {
+    if (D.chores.some(c => c.id === choreCopy.id)) return;
+    const insertAt = Math.max(0, Math.min(idx, D.chores.length));
+    D.chores.splice(insertAt, 0, normalizeChore(choreCopy));
+    if (wasExpanded) _expandedChores.add(choreCopy.id);
+    slotKeys.forEach(key => _expandedSlots.add(key));
+    saveData();
+    renderParentChores();
+    toast('Task restored');
+  });
 }
 
 function renderParentPrizes() {
@@ -12455,7 +13882,7 @@ function renderParentLevels() {
       <label class="toggle"><input type="checkbox" ${s.streakEnabled!==false?'checked':''} onchange="saveSetting('streakEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
     </div>
     <div class="card">
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.streakEnabled!==false?'14px':'0'}">Bonus gems when a kid completes all the tasks in their rhythm every day in a row.</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.streakEnabled!==false?'14px':'0'}">Bonus gems when a kid completes at least one task in their rhythm every day in a row.</p>
       ${s.streakEnabled!==false ? `<div style="display:flex;flex-direction:column;gap:8px">
         ${[['3-day streak','streakBonus3',1],['7-day streak','streakBonus7',3],['14-day streak','streakBonus14',5],['30-day streak','streakBonus30',10]].map(([label,key,def]) => `
           <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#FAFAFA;border-radius:10px;border:1px solid #E5E7EB">
@@ -12528,7 +13955,7 @@ function renderParentLevels() {
       <label class="toggle"><input type="checkbox" ${s.choreBadgesEnabled!==false?'checked':''} onchange="saveSetting('choreBadgesEnabled',this.checked);renderParentLevels()"><span class="toggle-track"></span></label>
     </div>
     <div class="card">
-      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.choreBadgesEnabled!==false?'14px':'0'}">Per-chore milestone badges. Kids earn these by completing a chore a set number of times. Use <i class="ph-duotone ph-eye" style="color:#9ca3af;vertical-align:middle"></i> to make a badge secret so it won't appear at all until earned, making it a surprise to discover.</p>
+      <p style="font-size:0.83rem;color:var(--muted);margin-bottom:${s.choreBadgesEnabled!==false?'14px':'0'}">Per-task milestone badges. Kids earn these by completing a task a set number of times. Use <i class="ph-duotone ph-eye" style="color:#9ca3af;vertical-align:middle"></i> to make a badge secret so it won't appear at all until earned, making it a surprise to discover.</p>
       ${s.choreBadgesEnabled!==false ? choreBadgeCards : ''}
     </div>`;
 
@@ -13015,10 +14442,23 @@ function _doResetPrize(prizeId) {
 }
 
 function _doDeletePrize(prizeId) {
+  const idx = D.prizes.findIndex(p => p.id === prizeId);
+  const removed = idx >= 0 ? D.prizes[idx] : null;
+  if (!removed) return;
+  const prizeCopy = _cloneForUndo(removed);
+
   D.prizes = D.prizes.filter(p=>p.id!==prizeId);
   saveData();
   toast('Prize deleted');
   renderParentPrizes();
+  _showDeleteUndoBar('Prize deleted', () => {
+    if (D.prizes.some(p => p.id === prizeCopy.id)) return;
+    const insertAt = Math.max(0, Math.min(idx, D.prizes.length));
+    D.prizes.splice(insertAt, 0, normalizePrize(prizeCopy));
+    saveData();
+    renderParentPrizes();
+    toast('Prize restored');
+  });
 }
 
 function openAddPrizeModal(triggerEl) {
@@ -13196,9 +14636,25 @@ function clearGoal(goalId) {
 }
 
 function _doClearGoal(goalId) {
-  D.teamGoals = (D.teamGoals||[]).filter(g => g.id !== goalId);
+  const goals = D.teamGoals || [];
+  const idx = goals.findIndex(g => g.id === goalId);
+  const removed = idx >= 0 ? goals[idx] : null;
+  if (!removed) return;
+  const goalCopy = _cloneForUndo(removed);
+  D.teamGoals = goals.filter(g => g.id !== goalId);
   saveData();
   renderParentPrizes();
+  toast('Team prize deleted');
+  _showDeleteUndoBar('Team prize deleted', () => {
+    const list = D.teamGoals || [];
+    if (list.some(g => g.id === goalCopy.id)) return;
+    const insertAt = Math.max(0, Math.min(idx, list.length));
+    list.splice(insertAt, 0, { icon: 'trophy', iconColor: '#FFD93D', ...goalCopy });
+    D.teamGoals = list;
+    saveData();
+    renderParentPrizes();
+    toast('Team prize restored');
+  });
 }
 
 
@@ -13209,6 +14665,8 @@ function showAdvancedEditor() {
   const root = document.getElementById('adv-editor-root');
   root.classList.add('open');
   _advRender();
+  const body = root.querySelector('.adv-body');
+  if (body) body.scrollTop = 0;
   root.scrollTop = 0;
 }
 
@@ -13380,12 +14838,15 @@ function _doAdvDeleteHistory(entryId) {
 
 function _advRenderPreserving() {
   const root = document.getElementById('adv-editor-root');
-  const scroll = root ? root.scrollTop : 0;
+  const body = root?.querySelector('.adv-body');
+  const scroll = body ? body.scrollTop : (root ? root.scrollTop : 0);
   const openIds = new Set([...(root?.querySelectorAll('details.adv-member-card[open]') || [])]
     .map(d => d.dataset.memberId).filter(Boolean));
   _advRender();
   if (root) {
-    root.scrollTop = scroll;
+    const nextBody = root.querySelector('.adv-body');
+    if (nextBody) nextBody.scrollTop = scroll;
+    else root.scrollTop = scroll;
     openIds.forEach(id => {
       const el = root.querySelector(`details.adv-member-card[data-member-id="${id}"]`);
       if (el) el.open = true;
@@ -13644,9 +15105,9 @@ function _advRender() {
       }).join('');
 
   root.innerHTML = `
-    <div class="adv-header">
+    <div class="adv-header" style="background:linear-gradient(135deg,#6C63FF,#FF6584);border-bottom:1px solid rgba(255,255,255,0.2)">
       <i class="ph-duotone ph-database" style="font-size:1.3rem"></i>
-      <span class="adv-header-title">Data Editor</span>
+      <span class="adv-header-title">Advanced Data Editor</span>
       <div class="adv-header-actions">
         <span id="adv-save-status" class="adv-status"></span>
         <button class="adv-header-btn" style="padding:5px 12px" onclick="cancelAdvancedEditor()">Cancel</button>
@@ -13786,10 +15247,17 @@ function _doAdjDiamondsQuick() {
   if (amt <= 0) { toast('Enter an amount'); return; }
   const dmds = sign * amt;
   targets.forEach(m => {
+    const memberBefore = _captureMemberUndoSnapshot(m);
+    const beforeGems = Number(m.gems || 0);
     m.gems = Math.max(0, (m.gems || 0) + dmds);
     if (dmds > 0) m.totalEarned = (m.totalEarned || 0) + dmds;
+    m.diamonds = m.gems;
     const label = reason || (dmds > 0 ? 'A special bonus from your parent!' : 'Gem adjustment');
-    addHistory('bonus', m.id, label, dmds);
+    const appliedDelta = m.gems - beforeGems;
+    addHistory('bonus', m.id, label, appliedDelta, {
+      undoAction: 'manual_gems_adjust',
+      memberBefore,
+    });
   });
   saveData();
   closeModal();
@@ -13883,14 +15351,26 @@ function _doAdjSavingsQuick() {
   if (amt <= 0) { toast('Enter an amount'); return; }
   const dollars = parseFloat((sign * amt).toFixed(2));
   targets.forEach(m => {
+    const memberBefore = _captureMemberUndoSnapshot(m);
+    const beforeSavings = Number(m.savings || 0);
     normalizeMember(m);
     m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
     if (sign > 0) {
       m.savingsGifted = parseFloat(((m.savingsGifted || 0) + amt).toFixed(2));
-      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, { dollars: amt });
+      const applied = parseFloat((m.savings - beforeSavings).toFixed(2));
+      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, {
+        dollars: applied,
+        undoAction: 'manual_savings_adjust',
+        memberBefore,
+      });
     } else {
       reduceSavingsBuckets(m, amt);
-      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, { dollars: amt });
+      const applied = parseFloat((beforeSavings - m.savings).toFixed(2));
+      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, {
+        dollars: applied,
+        undoAction: 'manual_savings_adjust',
+        memberBefore,
+      });
     }
   });
   saveData();
@@ -13927,10 +15407,17 @@ function doAdjustPoints(memberId, sign) {
   const amt    = parseInt(document.getElementById('adj-dmds')?.value)||0;
   const reason = document.getElementById('adj-reason')?.value.trim() || 'A special bonus from your parent!';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const memberBefore = _captureMemberUndoSnapshot(m);
+  const beforeGems = Number(m.gems || 0);
   const dmds = sign * amt;
   m.gems    = Math.max(0, (m.gems||0) + dmds);
+  m.diamonds = m.gems;
   m.totalEarned = dmds>0 ? (m.totalEarned||0)+dmds : m.totalEarned;
-  addHistory('bonus', memberId, reason, dmds);
+  const appliedDelta = m.gems - beforeGems;
+  addHistory('bonus', memberId, reason, appliedDelta, {
+    undoAction: 'manual_gems_adjust',
+    memberBefore,
+  });
   saveData();
   closeModal();
   toast(`${dmds>0?'+':''}${dmds} gems for ${m.name}`);
@@ -13966,17 +15453,29 @@ function doAdjustSavings(memberId, sign) {
   const reason = document.getElementById('adj-sav-reason')?.value.trim();
   const cur    = D.settings.currency || '$';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
+  const memberBefore = _captureMemberUndoSnapshot(m);
+  const beforeSavings = Number(m.savings || 0);
   const dollars = parseFloat((sign * amt).toFixed(2));
   normalizeMember(m);
   m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
   if (sign > 0) {
     m.savingsGifted = parseFloat(((m.savingsGifted || 0) + amt).toFixed(2));
     const label = reason || 'A savings deposit from your parent!';
-    addHistory('savings_deposit', memberId, label, 0, { dollars: amt });
+    const applied = parseFloat((m.savings - beforeSavings).toFixed(2));
+    addHistory('savings_deposit', memberId, label, 0, {
+      dollars: applied,
+      undoAction: 'manual_savings_adjust',
+      memberBefore,
+    });
   } else {
     reduceSavingsBuckets(m, amt);
     const label = reason ? `Withdrawal: ${reason}` : 'Savings withdrawal';
-    addHistory('savings_withdraw', memberId, label, 0, { dollars: amt });
+    const applied = parseFloat((beforeSavings - m.savings).toFixed(2));
+    addHistory('savings_withdraw', memberId, label, 0, {
+      dollars: applied,
+      undoAction: 'manual_savings_adjust',
+      memberBefore,
+    });
   }
   saveData();
   closeModal();
@@ -13998,6 +15497,7 @@ function _confirmSwitchFamily() {
   S.currentUser = null;
   setCurrentUserId('');
   setParentAuthUid(null);
+  S._recentParentAuth = null;
   try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
   closeSettings();
   localStorage.removeItem(LS_KEY);
@@ -14029,20 +15529,51 @@ async function _doResetAllData() {
   location.reload();
 }
 
+function deleteAccount() {
+  showDangerConfirm({
+    title: '<i class="ph-duotone ph-user-minus" style="color:#DC2626;font-size:1.2rem;vertical-align:middle"></i> Delete Account?',
+    message: 'This will <strong>permanently delete your account</strong> and all associated family data. Your sign-in credentials will be removed and you will be signed out.<br><br><span style="display:block;background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#78350F;line-height:1.5"><strong>Active subscription?</strong> Deleting your account does not cancel your subscription. Cancel it first in your iPhone\'s subscription settings to avoid future charges.</span>',
+    confirmLabel: 'Continue',
+    onConfirm: () => _doDeleteAccount(),
+    doubleConfirm: true,
+    doubleConfirmTitle: 'Final Confirmation',
+    doubleConfirmMessage: 'Your account and all family data will be permanently deleted. This cannot be undone.',
+    confirmText: 'delete',
+  });
+}
+
+async function _doDeleteAccount() {
+  const firebaseUser = auth.currentUser;
+  const docPath = getFamilyDoc();
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  try { await db.doc(docPath).delete(); } catch(e) { console.warn('Firestore family delete error:', e); }
+  if (firebaseUser) {
+    try {
+      await db.doc(`users/${firebaseUser.uid}`).delete();
+    } catch(e) { console.warn('Firestore user doc delete error:', e); }
+    try {
+      await firebaseUser.delete();
+    } catch(e) {
+      // Firebase requires recent sign-in to delete. If it fails, still clear local data.
+      console.warn('Firebase user delete error:', e);
+    }
+  }
+  localStorage.removeItem(LS_KEY);
+  location.reload();
+}
+
 /* Maintenance screen */
 
 function showMaintenanceScreen(title, message, btnText, btnUrl) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:24px';
-  const btnAction = btnUrl ? `window.open(${JSON.stringify(btnUrl)},'_system')` : `window.location.reload()`;
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 24px);padding-right:24px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 24px);padding-left:24px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 45%,#f4efe4 45%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
-    <div style="width:min(360px,calc(100vw - 44px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:26px 20px 22px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
       <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.5rem;font-weight:900;letter-spacing:-0.01em">${title}</div>
       <div style="color:#4f675d;font-size:0.98rem;max-width:300px;line-height:1.5;margin:8px auto 0">${message}</div>
-      ${btnText ? `<button onclick="${btnAction}" style="margin-top:14px;padding:12px 28px;border-radius:12px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-weight:800;font-size:0.95rem;cursor:pointer">${btnText}</button>` : ''}
     </div>`;
 }
 
@@ -14053,8 +15584,8 @@ const RC = {
   maintenanceMessage:     'GemSprout is currently undergoing maintenance. Please check back soon.',
   maintenanceButtonText:  'Try Again',
   maintenanceButtonUrl:   '',
-  betaMode:               true,
-  appDownloadUrl:         'https://gemsprout.com/beta',
+  betaMode:               false,
+  appDownloadUrl:         'https://gemsprout.com',
 };
 
 async function checkMaintenanceMode() {
@@ -14085,11 +15616,11 @@ function showParentSignIn(memberId, onSuccess) {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
-  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 44%,#e9ddc8 44%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:0;padding:26px 22px';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 26px);padding-right:22px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 26px);padding-left:22px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 45%,#f4efe4 45%,#f4efe4 100%);align-items:center;justify-content:center;gap:0;';
   const member = getMember(memberId);
   el.innerHTML = `
-    <div style="width:min(420px,calc(100vw - 28px));background:rgba(255,252,246,0.92);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
-    <img src="gemsprout.png" style="width:88px;height:88px;margin:0 auto 14px;display:block">
+    <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+    <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;margin:0 auto 14px;display:block">
     <div style="color:#24453c;font-size:1.6rem;font-weight:900;margin-bottom:6px;text-align:center">Welcome back!</div>
     <div style="color:#4f675d;font-size:0.95rem;margin-bottom:20px;text-align:center">Sign in to access the parent dashboard${member ? ' as <strong>' + esc(member.name) + '</strong>' : ''}</div>
     <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;margin:0 auto">
@@ -14103,41 +15634,44 @@ function showParentSignIn(memberId, onSuccess) {
       </button>
     </div>
     <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.9rem;font-weight:700;cursor:pointer;display:block;margin-left:auto;margin-right:auto" onclick="renderHome()"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
-    ${RC.betaMode ? `
-    <div style="margin:20px auto 0;padding-top:16px;border-top:1px solid rgba(39,66,57,0.14);width:100%;max-width:320px">
-      <div style="color:#628073;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;text-align:center">Dev Only - skip real auth</div>
-      <div style="display:flex;gap:8px">
-        <input id="dev-parentsignin-email" type="email" placeholder="your setup email" autocomplete="off"
-          style="flex:1;padding:10px 12px;border:1px solid rgba(39,66,57,0.18);border-radius:10px;font-size:0.9rem;background:#fff;color:#1f3932;outline:none">
-        <button onclick="_devParentSignIn('${memberId}')" style="padding:10px 14px;border-radius:10px;background:#2a7560;color:#fff;border:none;font-size:0.85rem;font-weight:700;cursor:pointer;white-space:nowrap">Test Sign In</button>
-      </div>
-    </div>` : ''}
     </div>`;
   S._parentSignInCallback = onSuccess || null;
 }
 
-function _devParentSignIn(memberId) {
-  const email = (document.getElementById('dev-parentsignin-email')?.value || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) { toast('Enter a test email first'); return; }
-  const member = getMember(memberId);
-  const fakeUid = `dev-${email.replace(/[^a-z0-9]/g, '-')}`;
-  const linked = member?.authUid === fakeUid ||
-    (member?.authProviders || []).some(p => p.email?.toLowerCase() === email || p.uid === fakeUid);
-  if (!linked) {
-    toast("That email isn't linked to this profile; use the email you signed up with");
-    return;
-  }
-  setParentAuthUid(fakeUid);
-  const cb = S._parentSignInCallback;
-  S._parentSignInCallback = null;
-  proceedAsParent(memberId, cb);
-}
-
 async function handleParentSignIn(provider, memberId) {
   const btns = document.querySelectorAll('#btn-google-signin, #btn-apple-signin');
+  const mismatchMsg = 'This sign-in does not match the linked parent account';
   btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
   const firebaseUser = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
   if (!firebaseUser) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  const allowedFamily = await _isParentAuthUserAllowedForActiveFamily(firebaseUser);
+  if (!allowedFamily.ok) {
+    await signOutParent();
+    toast(mismatchMsg);
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  const member = getMember(memberId);
+  if (!member) {
+    await signOutParent();
+    toast('Parent profile not found');
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  const email = String(firebaseUser.email || '').toLowerCase();
+  const otherParent = _findOtherParentLinkedToAuth(firebaseUser.uid, email, member.id);
+  if (otherParent) {
+    await signOutParent();
+    toast(mismatchMsg);
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    return;
+  }
+  if (_isMemberAuthConfigured(member) && !_isAuthIdentityLinkedToMember(member, firebaseUser.uid, email)) {
+    await signOutParent();
+    toast(mismatchMsg);
     btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
     return;
   }
@@ -14162,19 +15696,19 @@ function showLoading() {
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active loading';
-  el.style.cssText = 'background:radial-gradient(circle at 16% 18%, rgba(232,199,106,0.2), transparent 34%),radial-gradient(circle at 86% 14%, rgba(95,143,99,0.16), transparent 30%),linear-gradient(180deg,#26443d 0%,#355d4f 42%,#e9ddc8 42%,#f4efe4 100%);align-items:center;justify-content:center;display:flex;flex-direction:column;gap:16px;text-align:center;padding:20px';
+  el.style.cssText = 'height:100dvh;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;padding-top:calc(env(safe-area-inset-top,0px) + 20px);padding-right:20px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 20px);padding-left:20px;background:linear-gradient(180deg,#365e4f 0%,#365e4f 45%,#f4efe4 45%,#f4efe4 100%);align-items:center;justify-content:center;gap:16px;text-align:center;';
   el.innerHTML = `
     <style>
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
-    <div style="width:min(320px,calc(100vw - 48px));background:rgba(255,252,246,0.88);border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24);backdrop-filter:blur(4px)">
-      <img src="gemsprout.png" class="loading-img" style="width:124px;height:124px;display:block;margin:0 auto 10px">
+    <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
+      <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px">
       <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
-      <div style="margin-top:5px;color:#5d7368;font-size:0.9rem;font-weight:700;letter-spacing:0.01em;text-transform:uppercase">Family rhythms and rewards</div>
+      <div class="loading-text" style="margin-top:6px;color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:2px">
+        Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
+      </div>
     </div>
-    <div class="loading-text" style="color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;gap:2px">
-      Loading<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>
-    </div>`;
+    `;
 }
 
 function routeAfterLoad() {
@@ -14252,7 +15786,7 @@ function init() {
             setFamilyCode(safeCode);
             await pushToFirestore();
           }
-          if (auth.currentUser && !getParentAuthUid() && getFamilyCode()) {
+          if (_shouldAutoMapCurrentAuthAsKid() && !getParentAuthUid() && getFamilyCode()) {
             db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
           }
           subscribeToFirestore();
@@ -14315,7 +15849,14 @@ document.addEventListener('visibilitychange', () => {
   if (kc) kc.scrollTop = 0;
   if (pc) pc.scrollTop = 0;
   if (S.currentUser?.role === 'parent') syncAppBadge();
-  if (S.currentUser?.role === 'kid') {
+  if (S.currentUser?.role === 'parent') {
+    const now = Date.now();
+    if (!S._lastParentForegroundRefreshAt || now - S._lastParentForegroundRefreshAt > 4000) {
+      S._lastParentForegroundRefreshAt = now;
+      _refreshFamilyFromServerAndRender();
+    }
+  }
+  if (S.currentUser?.role === 'kid' && !isParentSignedIn()) {
     const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
     checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
     clearPendingSnapshot(S.currentUser.id);
@@ -14338,6 +15879,418 @@ document.addEventListener('visibilitychange', () => {
 });
 
 console.log('GemSprout fully loaded!');
+
+// ─── Badge Trading Card Modal ─────────────────────────────────────────────────
+
+let _badgeCardGyroCleanup = null;
+
+function openBadgeCard(badgeId, type, choreTitle, choreCount, memberIdOverride = '') {
+  const targetMember = (memberIdOverride ? getMember(memberIdOverride) : null) || S.currentUser || null;
+  const targetMemberId = targetMember?.id || '';
+  const targetMemberName = targetMember?.name || '';
+  // Resolve badge definition
+  let icon, name, earnDesc;
+  if (type === 'chore') {
+    // Find the chore badge definition
+    let found = null;
+    for (const chore of (D.chores || [])) {
+      found = (chore.badges || []).find(b => b.id === badgeId);
+      if (found) break;
+    }
+    icon     = found?.icon || '<i class="ph-duotone ph-medal" style="color:#F59E0B"></i>';
+    name     = found?.name || 'Badge';
+    const ct = choreTitle || '';
+    const cc = choreCount || found?.count || 0;
+    earnDesc = ct && cc ? `${ct} ${cc} time${cc !== 1 ? 's' : ''}` : (ct ? ct : 'Chore milestone');
+  } else {
+    const def = getBaseBadgeDef(badgeId);
+    icon     = def?.icon || '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>';
+    name     = def?.name || 'Badge';
+    earnDesc = def?.desc || 'Special achievement';
+  }
+
+  // TTS for tiny mode
+  const tiny = !!targetMember && isTiny(targetMember);
+  if (tiny) speak(`${name}. ${earnDesc}.`);
+
+  // Extract hex color from icon string (e.g. color:#F97316) to tint the card
+  const accentMatch = icon.match(/color:(#[0-9a-fA-F]{3,6})/);
+  const accent = accentMatch ? accentMatch[1] : '#7C3AED';
+
+  // Look up when this badge was earned from history
+  const memberId = targetMemberId;
+  const memberName = targetMemberName;
+  const badgeKey = type === 'chore' ? `cb_${badgeId}` : badgeId;
+  const earnedEntry = (D.history || []).find(h => {
+    if (h.type !== 'badge' || h.memberId !== memberId) return false;
+    if (type === 'chore') {
+      // Chore badge entries store badge.name as title and chore.title as choreTitle
+      return h.title === name && (h.choreTitle === choreTitle || !h.choreTitle);
+    }
+    return h.title === name;
+  });
+  const earnedDateStr = (() => {
+    if (!earnedEntry?.date) return null;
+    const [y, m, d] = earnedEntry.date.split('-').map(Number);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const suffix = d === 1 || d === 21 || d === 31 ? 'st'
+                 : d === 2 || d === 22             ? 'nd'
+                 : d === 3 || d === 23             ? 'rd' : 'th';
+    return `${months[m - 1]} ${d}${suffix}, ${y}`;
+  })();
+
+  // Render into a dedicated root that has NO backdrop-filter ancestor.
+  // backdrop-filter on any ancestor flattens all 3D transforms in its subtree,
+  // which is why the card can't tilt inside the normal modal stack.
+  const cardId = 'badge-trading-card';
+  let root = document.getElementById('badge-card-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'badge-card-root';
+    document.body.appendChild(root);
+  }
+  root.innerHTML = `
+    <div class="badge-card-backdrop" id="badge-card-backdrop"></div>
+    <div class="badge-card-scene">
+      <div class="badge-card" id="${cardId}" style="--card-accent:${accent}">
+        <div class="badge-card-shine"></div>
+        <div class="badge-card-glare"></div>
+        <div class="badge-card-content">
+          <div class="badge-card-stars">
+            <i class="ph-duotone ph-star" style="color:#FDE68A;opacity:0.6"></i>
+            <i class="ph-duotone ph-star" style="color:#FDE68A;opacity:0.9"></i>
+            <i class="ph-duotone ph-star" style="color:#FDE68A;opacity:0.6"></i>
+          </div>
+          <div class="badge-card-header">
+            <div class="badge-card-name">${esc(name)}</div>
+            <div class="badge-card-earn">${esc(earnDesc)}</div>
+          </div>
+          <div class="badge-card-icon-wrap">
+            <div class="badge-card-icon">${icon}</div>
+          </div>
+          <div class="badge-card-earned-by">
+            ${earnedDateStr
+              ? `Earned by ${esc(memberName)} on ${earnedDateStr}`
+              : `Earned by ${esc(memberName)}`}
+          </div>
+          <div class="badge-card-footer">GemSprout</div>
+        </div>
+      </div>
+    </div>
+    <div class="badge-card-close-hint">Tap anywhere outside to close</div>`;
+  root.style.display = 'flex';
+
+  document.getElementById('badge-card-backdrop').addEventListener('click', closeBadgeCard);
+
+  // Start gyro / touch tilt after card is in DOM
+  requestAnimationFrame(() => {
+    _initBadgeCardTilt(cardId);
+    _injectBadgeIconTile(cardId, accent);
+  });
+}
+
+function closeBadgeCard() {
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+  const root = document.getElementById('badge-card-root');
+  if (root) root.style.display = 'none';
+}
+
+function _injectBadgeIconTile(cardId, accent) {
+  // Wait for fonts so the Phosphor glyph is available to canvas
+  (document.fonts?.ready || Promise.resolve()).then(() => _doInjectBadgeIconTile(cardId, accent));
+}
+
+function _doInjectBadgeIconTile(cardId, accent) {
+  const card  = document.getElementById(cardId);
+  const shine = card?.querySelector('.badge-card-shine');
+  const iEl   = card?.querySelector('.badge-card-icon i');
+  if (!shine || !iEl) return;
+
+  // Phosphor-Duotone uses two pseudo-elements:
+  //   ::before — secondary/light path, opacity 0.2
+  //   ::after  — primary/stroke path, full opacity
+  // Both use the same font-family. Drawing only ::before gives a silhouette.
+  // We draw both layers to get the full duotone detail.
+  const beforeStyle = getComputedStyle(iEl, '::before');
+  const afterStyle  = getComputedStyle(iEl, '::after');
+  const glyphBefore = beforeStyle.content.replace(/["']/g, '');
+  const glyphAfter  = afterStyle.content.replace(/["']/g, '');
+  const fontFamily  = '"Phosphor-Duotone"';
+  // Mix accent 65% toward white so the tile is always lighter than the dark
+  // card background regardless of hue — purple card gets a light lavender tile,
+  // orange gets a light peach, etc. Stays recognizably the same palette.
+  const _ah = (accent || '#7C3AED').replace('#','');
+  const _ar = parseInt(_ah.slice(0,2), 16);
+  const _ag = parseInt(_ah.slice(2,4), 16);
+  const _ab = parseInt(_ah.slice(4,6), 16);
+  const _mix = (c) => Math.round(c + (255 - c) * 0.40);
+  const color = `rgb(${_mix(_ar)},${_mix(_ag)},${_mix(_ab)})`;
+
+  // Tile layout: staggered brick pattern.
+  // Each cell is tileSize × tileSize. The canvas is 2×1 cells wide so
+  // we can offset every other row by half a tile, making a brick grid.
+  // background-size will be set to 2*tileSize × tileSize and
+  // background-position centers it on the card.
+  const tileSize  = 42;
+  const glyphSize = Math.round(tileSize * 0.54);
+
+  // Repeating brick unit: 2×2 tile canvas.
+  // Icons sit at the center of each quadrant, diagonally offset:
+  //   top-left  quadrant → (0.5, 0.5) × tileSize
+  //   bot-right quadrant → (1.5, 1.5) × tileSize
+  // When tiled, this produces a clean staggered grid with no clipped edges.
+  const canvas = document.createElement('canvas');
+  canvas.width  = tileSize * 2;
+  canvas.height = tileSize * 2;
+  const ctx = canvas.getContext('2d');
+
+  ctx.font         = `${glyphSize}px ${fontFamily}`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  const positions = [
+    { x: tileSize * 0.5, y: tileSize * 0.5 },
+    { x: tileSize * 1.5, y: tileSize * 1.5 },
+  ];
+
+  for (const { x, y } of positions) {
+    // ::before layer — secondary path at 20% opacity (matches Phosphor spec)
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle   = color;
+    ctx.fillText(glyphBefore, x, y);
+
+    // ::after layer — primary path at full opacity on top
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle   = color;
+    ctx.fillText(glyphAfter, x, y);
+  }
+
+  const dataUrl = canvas.toDataURL('image/png');
+
+  const tileDiv = document.createElement('div');
+  tileDiv.className = 'badge-card-icon-tile';
+  tileDiv.style.backgroundImage = `url("${dataUrl}")`;
+  // background-size matches the canvas dimensions for a 1:1 pixel render
+  tileDiv.style.backgroundSize = `${tileSize * 2}px ${tileSize * 2}px`;
+  card.insertBefore(tileDiv, shine);
+}
+
+function _initBadgeCardTilt(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+
+  // Clean up any previous listener
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+
+  const MAX_TILT = 25; // degrees — increased for more responsive gyro tilt
+
+  const shine = card.querySelector('.badge-card-shine');
+  const glare = card.querySelector('.badge-card-glare');
+  const tile  = card.querySelector('.badge-card-icon-tile');
+
+  function applyTilt(rx, ry, isResting) {
+    const scale = isResting ? 1 : 1.03;
+    card.style.transform = `rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) scale(${scale})`;
+
+    // Shadow shifts with tilt
+    const sx = (-ry * 1.2).toFixed(1);
+    const sy = (rx * 1.2 + 28).toFixed(1);
+    card.style.boxShadow = [
+      `0 0 0 1px color-mix(in srgb, var(--card-accent, #7C3AED) 35%, transparent)`,
+      `${sx}px ${sy}px 60px rgba(0,0,0,0.6)`,
+      `0 6px 24px color-mix(in srgb, var(--card-accent, #7C3AED) 30%, transparent)`
+    ].join(', ');
+
+    // Normalize tilt to 0-100% range.
+    // Reflection moves OPPOSITE to tilt: top-left tilts away → sheen moves to bottom-right.
+    // ry positive = right side toward viewer → pointer moves LEFT (lower %)
+    // rx positive = top toward viewer → pointer moves DOWN (higher %)
+    const px = 50 - (ry / MAX_TILT) * 40; // 10%–90%
+    const py = 50 + (rx / MAX_TILT) * 40;
+
+    // background-x/y: parallax-amplified version used for gradient panning
+    const bx = 50 - (ry / MAX_TILT) * 50;
+    const by = 50 + (rx / MAX_TILT) * 50;
+
+    // pointer-from-center: 0 at rest, ~1 at full tilt
+    const dist = Math.min(1, Math.sqrt((ry / MAX_TILT) ** 2 + (rx / MAX_TILT) ** 2));
+
+    const el = shine || card;
+    el.style.setProperty('--pointer-x',          `${px.toFixed(1)}%`);
+    el.style.setProperty('--pointer-y',          `${py.toFixed(1)}%`);
+    el.style.setProperty('--background-x',       `${bx.toFixed(1)}%`);
+    el.style.setProperty('--background-y',       `${by.toFixed(1)}%`);
+    el.style.setProperty('--pointer-from-center', dist.toFixed(3));
+
+    if (glare) {
+      glare.style.setProperty('--pointer-x', `${px.toFixed(1)}%`);
+      glare.style.setProperty('--pointer-y', `${py.toFixed(1)}%`);
+      glare.style.setProperty('--pointer-from-center', dist.toFixed(3));
+    }
+
+    // Tile parallax — slow drift so icons feel embedded in the card surface
+    if (tile) {
+      tile.style.setProperty('--background-x', `${bx.toFixed(1)}%`);
+      tile.style.setProperty('--background-y', `${by.toFixed(1)}%`);
+    }
+  }
+
+  // ── Gyroscope ──────────────────────────────────────────────────────────────
+  let baseGamma = null, baseBeta = null;
+  let currentRx = 0, currentRy = 0; // smoothed display values
+  let targetRx  = 0, targetRy  = 0; // raw gyro target
+  let gyroIdleTimer = null;
+  let gyroRafId = null;   // rAF loop for smooth lerp
+  let driftRafId = null;
+  let touchActive = false;
+
+  // Lerp factor: 0.12 = smooth but responsive. Higher = snappier, lower = laggier.
+  const GYRO_LERP = 0.12;
+
+  // rAF loop: each frame lerp current toward target, apply, reschedule if still moving
+  function gyroLerpLoop() {
+    currentRx += (targetRx - currentRx) * GYRO_LERP;
+    currentRy += (targetRy - currentRy) * GYRO_LERP;
+    applyTilt(currentRx, currentRy);
+    const dx = Math.abs(targetRx - currentRx);
+    const dy = Math.abs(targetRy - currentRy);
+    if (dx > 0.05 || dy > 0.05) {
+      gyroRafId = requestAnimationFrame(gyroLerpLoop);
+    } else {
+      gyroRafId = null;
+    }
+  }
+
+  // Gradually drift both target and current back to 0 when gyro goes idle
+  function startGyroDrift() {
+    if (driftRafId) return;
+    function drift() {
+      targetRx  *= 0.88; targetRy  *= 0.88;
+      currentRx *= 0.88; currentRy *= 0.88;
+      applyTilt(currentRx, currentRy, Math.abs(currentRx) < 0.3 && Math.abs(currentRy) < 0.3);
+      if (Math.abs(currentRx) > 0.1 || Math.abs(currentRy) > 0.1) {
+        driftRafId = requestAnimationFrame(drift);
+      } else {
+        targetRx = targetRy = currentRx = currentRy = 0;
+        driftRafId = null;
+      }
+    }
+    driftRafId = requestAnimationFrame(drift);
+  }
+
+  function onDeviceOrientation(e) {
+    if (e.gamma == null) return;
+    if (touchActive) return;
+    if (baseGamma === null) { baseGamma = e.gamma; baseBeta = e.beta; }
+    // Cancel drift — gyro is active again
+    if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
+    // Update target only — the lerp loop smooths movement to it
+    targetRy =  Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.gamma - baseGamma) * 1.5));
+    targetRx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.beta  - baseBeta)  * 1.5));
+    // Start lerp loop if not already running
+    if (!gyroRafId) gyroRafId = requestAnimationFrame(gyroLerpLoop);
+    // Idle timer: drift back to center if gyro goes quiet
+    clearTimeout(gyroIdleTimer);
+    gyroIdleTimer = setTimeout(startGyroDrift, 800);
+  }
+
+  // Remove any previously registered listener before adding a new one
+  // so that re-opening the card never stacks duplicate listeners on window.
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then(state => {
+        if (state === 'granted') window.addEventListener('deviceorientation', onDeviceOrientation);
+      })
+      .catch(() => {});
+  } else if (typeof DeviceOrientationEvent !== 'undefined') {
+    window.addEventListener('deviceorientation', onDeviceOrientation);
+  }
+
+  // ── Touch drag tilt (real device / Chrome device simulation) ─────────────
+  // Touch events gate the gyro: while a finger is on the card, gyro is paused.
+  let touchStartX = null, touchStartY = null;
+
+  function onTouchStart(e) {
+    touchActive = true;
+    clearTimeout(gyroIdleTimer);
+    if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    card.style.transition = 'none';
+  }
+
+  function onTouchMove(e) {
+    if (touchStartX === null) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    const ry =  Math.max(-MAX_TILT, Math.min(MAX_TILT, dx * 0.25));
+    const rx = -Math.max(-MAX_TILT, Math.min(MAX_TILT, dy * 0.25));
+    applyTilt(rx, ry);
+  }
+
+  function onTouchEnd() {
+    touchActive = false;
+    touchStartX = null; touchStartY = null;
+    card.style.transition = 'transform 0.6s cubic-bezier(.2,.8,.2,1)';
+    applyTilt(0, 0, true);
+    // Re-anchor gyro baseline and reset smooth state so gyro resumes from neutral
+    baseGamma = null; baseBeta = null;
+    targetRx = targetRy = currentRx = currentRy = 0;
+    if (gyroRafId) { cancelAnimationFrame(gyroRafId); gyroRafId = null; }
+  }
+
+  card.addEventListener('touchstart', onTouchStart, { passive: true });
+  card.addEventListener('touchmove',  onTouchMove,  { passive: false });
+  card.addEventListener('touchend',   onTouchEnd);
+  card.addEventListener('touchcancel', onTouchEnd);
+
+  // ── Mouse hover tilt (desktop / live-server testing — no click needed) ────
+  function onMouseMove(e) {
+    const rect = card.getBoundingClientRect();
+    const nx = (e.clientX - rect.left)  / rect.width  * 2 - 1;
+    const ny = (e.clientY - rect.top)   / rect.height * 2 - 1;
+    const ry =  nx * MAX_TILT;
+    const rx = -ny * MAX_TILT;
+    card.style.transition = 'none';
+    applyTilt(rx, ry);
+  }
+
+  function onMouseLeave() {
+    card.style.transition = 'transform 0.6s cubic-bezier(.2,.8,.2,1)';
+    applyTilt(0, 0, true);
+  }
+
+  card.addEventListener('mousemove',  onMouseMove);
+  card.addEventListener('mouseleave', onMouseLeave);
+
+  _badgeCardGyroCleanup = () => {
+    window.removeEventListener('deviceorientation', onDeviceOrientation);
+    clearTimeout(gyroIdleTimer);
+    if (gyroRafId)  { cancelAnimationFrame(gyroRafId);  gyroRafId  = null; }
+    if (driftRafId) { cancelAnimationFrame(driftRafId); driftRafId = null; }
+    card.removeEventListener('touchstart',  onTouchStart);
+    card.removeEventListener('touchmove',   onTouchMove);
+    card.removeEventListener('touchend',    onTouchEnd);
+    card.removeEventListener('touchcancel', onTouchEnd);
+    card.removeEventListener('mousemove',   onMouseMove);
+    card.removeEventListener('mouseleave',  onMouseLeave);
+  };
+}
+
+// Patch closeModal to clean up gyro listener
+const _origCloseModal = closeModal;
+closeModal = function() {
+  if (_badgeCardGyroCleanup) { _badgeCardGyroCleanup(); _badgeCardGyroCleanup = null; }
+  _origCloseModal.apply(this, arguments);
+};
+
+
+
 
 
 

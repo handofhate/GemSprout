@@ -16,7 +16,9 @@ test-results/
 blob-report/
 app.js.bak_*
 app.js.pre_*
+.codebase-index-cache.json
 APP_STORE_COPY.md
+APP_STORE_SUBMISSION.md
 PIVOT_NOTES.md
 RELEASE_CHECKLIST.local.md
 branding/
