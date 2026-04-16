@@ -343,6 +343,7 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
         <div class="paywall-footer">
           <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
           <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+          <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Terms</a>
         </div>
       </div>
     </div>
@@ -7413,8 +7414,12 @@ function _renderSettingsAccount(paneClass = _settingsPageEnterClass, returnHtml 
           <i class="ph-duotone ph-link-break" style="vertical-align:middle;margin-right:6px"></i> Join Different Family
         </button>
         <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Clears all local data on this device and connects you to a different family. Your family's cloud data is not affected.</div>
-        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%">Reset All Data</button>
-        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes all family data including tasks, prizes, history, and member profiles. This cannot be undone.</div>
+        <button class="btn btn-danger btn-sm" onclick="resetAllData()" style="width:100%;margin-bottom:8px">Reset All Data</button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:12px">Permanently deletes all family data including tasks, prizes, history, and member profiles. This cannot be undone.</div>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccount()" style="width:100%">
+          <i class="ph-duotone ph-user-minus" style="vertical-align:middle;margin-right:6px"></i> Delete Account
+        </button>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Permanently deletes your account and all associated data. This cannot be undone.</div>
       </div>
 
     </div>
@@ -15520,6 +15525,39 @@ async function _doResetAllData() {
   const docPath = getFamilyDoc();
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   try { await db.doc(docPath).delete(); } catch(e) { console.warn('Firestore delete error:', e); }
+  localStorage.removeItem(LS_KEY);
+  location.reload();
+}
+
+function deleteAccount() {
+  showDangerConfirm({
+    title: '<i class="ph-duotone ph-user-minus" style="color:#DC2626;font-size:1.2rem;vertical-align:middle"></i> Delete Account?',
+    message: 'This will <strong>permanently delete your account</strong> and all associated family data. Your sign-in credentials will be removed and you will be signed out.<br><br><span style="display:block;background:#FEF9C3;border:1.5px solid #F59E0B;border-radius:10px;padding:10px 12px;font-size:0.82rem;color:#78350F;line-height:1.5"><strong>Active subscription?</strong> Deleting your account does not cancel your subscription. Cancel it first in your iPhone\'s subscription settings to avoid future charges.</span>',
+    confirmLabel: 'Continue',
+    onConfirm: () => _doDeleteAccount(),
+    doubleConfirm: true,
+    doubleConfirmTitle: 'Final Confirmation',
+    doubleConfirmMessage: 'Your account and all family data will be permanently deleted. This cannot be undone.',
+    confirmText: 'delete',
+  });
+}
+
+async function _doDeleteAccount() {
+  const firebaseUser = auth.currentUser;
+  const docPath = getFamilyDoc();
+  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  try { await db.doc(docPath).delete(); } catch(e) { console.warn('Firestore family delete error:', e); }
+  if (firebaseUser) {
+    try {
+      await db.doc(`users/${firebaseUser.uid}`).delete();
+    } catch(e) { console.warn('Firestore user doc delete error:', e); }
+    try {
+      await firebaseUser.delete();
+    } catch(e) {
+      // Firebase requires recent sign-in to delete. If it fails, still clear local data.
+      console.warn('Firebase user delete error:', e);
+    }
+  }
   localStorage.removeItem(LS_KEY);
   location.reload();
 }
