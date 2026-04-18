@@ -49,6 +49,8 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
+let _currentFcmToken = null;
+
 async function initPushNotifications(firebaseUser) {
   if (!isNative()) return; // push notifications only on device, not in browser
   try {
@@ -59,6 +61,7 @@ async function initPushNotifications(firebaseUser) {
     const tokenResult = await FirebaseMessaging.getToken();
     const token = tokenResult?.token;
     if (!token || !firebaseUser?.uid) return;
+    _currentFcmToken = token;
     await db.doc(`users/${firebaseUser.uid}`).set(
       { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
       { merge: true }
@@ -237,11 +240,13 @@ let _rcPkgs         = { monthly: null, yearly: null };
 let _rcSelectedPlan = 'yearly';
 
 async function initRevenueCat() {
-  if (!isNative()) { S.isPro = RC.betaMode; return; }
+  if (!isNative()) { S.isPro = true; return; }
   try {
     const { Purchases } = Capacitor.Plugins;
     if (!Purchases) { S.isPro = false; return; }
-    await Purchases.configure({ apiKey: RC_API_KEY, appUserID: getFamilyCode() });
+    const familyCode = getFamilyCode();
+    if (!familyCode) { S.isPro = false; return; }
+    await Purchases.configure({ apiKey: RC_API_KEY, appUserID: familyCode });
     const { customerInfo } = await Purchases.getCustomerInfo();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
   } catch(e) {
@@ -344,6 +349,7 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
           <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
           <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
           <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Terms</a>
+          <button onclick="signOutParent().finally(()=>_doLeaveDevice())" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Sign Out</button>
         </div>
       </div>
     </div>
@@ -2211,6 +2217,13 @@ async function signInWithApple() {
 
 async function signOutParent() {
   try {
+    const uid = auth.currentUser?.uid;
+    if (uid && _currentFcmToken) {
+      await db.doc(`users/${uid}`).update({
+        fcmTokens: firebase.firestore.FieldValue.arrayRemove(_currentFcmToken),
+      }).catch(() => {});
+      _currentFcmToken = null;
+    }
     await auth.signOut();
   } catch(e) {
     console.warn('Sign out error:', e.message);
@@ -3943,6 +3956,7 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
   // Gems only awarded for completion (after/null) entries, not before-photo requests
   if (autoApprove) {
     member.gems      = (member.gems      || 0) + chore.gems;
+    member.diamonds  = member.gems;
     member.totalEarned = (member.totalEarned || 0) + chore.gems;
     addHistory('chore', memberId, chore.title, chore.gems);
     checkAfterDiamondsAwarded(member, chore.gems);
@@ -3984,6 +3998,7 @@ function doApproveChore(choreId, memberId, entryId) {
     const completionsBefore = normalizeCompletionEntries(chore.completions?.[memberId]);
     entry.status = 'done';
     member.gems      = (member.gems      || 0) + chore.gems;
+    member.diamonds  = member.gems;
     member.totalEarned = (member.totalEarned || 0) + chore.gems;
     addHistory('chore', memberId, chore.title, chore.gems, {
       undoAction: 'approve_completion',
@@ -5046,6 +5061,7 @@ function checkAfterDiamondsAwarded(member, dmds) {
     streakBonus = updateStreak(member);
     if (streakBonus > 0) {
       member.gems      = (member.gems      || 0) + streakBonus;
+      member.diamonds  = member.gems;
       member.totalEarned = (member.totalEarned || 0) + streakBonus;
       member.xp          = (member.xp          || 0) + streakBonus;
       addHistory('chore', member.id, `Streak bonus (${member.streak.current} days)`, streakBonus);
@@ -5223,6 +5239,7 @@ function checkComboBonus(memberId) {
   }, 0);
   const bonusPts = Math.max(1, (D.settings.comboMultiplier || 2) - 1) * baseSum;
   member.gems      = (member.gems      || 0) + bonusPts;
+  member.diamonds  = member.gems;
   member.totalEarned = (member.totalEarned || 0) + bonusPts;
   if (D.settings.levelingEnabled !== false) member.xp = (member.xp || 0) + bonusPts;
   addHistory('bonus', memberId, 'Daily Combo Bonus!', bonusPts);
@@ -6923,7 +6940,7 @@ function _bindSettingsDevAccordion() {
 
 function _settingsAuthProviders() {
   let _authProviders = S.currentUser?.authProviders || [];
-  if (!_authProviders.length && auth.currentUser && !auth.currentUser.isAnonymous) {
+  if (!_authProviders.length && S.currentUser && auth.currentUser && !auth.currentUser.isAnonymous) {
     _authProviders = auth.currentUser.providerData.map(p => ({
       providerId: p.providerId, uid: auth.currentUser.uid,
       email: p.email || auth.currentUser.email || ''
@@ -11028,6 +11045,15 @@ async function linkAdditionalProvider(providerId) {
   if (providerId === 'google.com')      user = await signInWithGoogle();
   else if (providerId === 'apple.com')  user = await signInWithApple();
   if (!user || !S.currentUser) return;
+  const userDoc = await db.doc(`users/${user.uid}`).get().catch(() => null);
+  if (userDoc?.exists) {
+    const existingFamily = userDoc.data()?.familyCode;
+    if (existingFamily && existingFamily !== getFamilyCode()) {
+      await signOutParent();
+      toast('This account is already linked to a different family');
+      return;
+    }
+  }
   await linkParentAuth(user, S.currentUser.id, providerId);
   renderSettings();
 }
@@ -11089,19 +11115,14 @@ async function switchLinkedProviderAccount(providerId) {
     : await signInWithApple();
   if (!firebaseUser) return;
 
-  const allowedFamily = await _isParentAuthUserAllowedForActiveFamily(firebaseUser);
-  if (!allowedFamily.ok) {
-    await signOutParent();
-    toast('This sign-in does not match the linked parent account');
-    return;
-  }
-
-  const email = String(firebaseUser.email || '').toLowerCase();
-  const otherParent = _findOtherParentLinkedToAuth(firebaseUser.uid, email, member.id);
-  if (otherParent) {
-    await signOutParent();
-    toast('This sign-in does not match the linked parent account');
-    return;
+  const userDoc = await db.doc(`users/${firebaseUser.uid}`).get().catch(() => null);
+  if (userDoc?.exists) {
+    const existingFamily = userDoc.data()?.familyCode;
+    if (existingFamily && existingFamily !== getFamilyCode()) {
+      await signOutParent();
+      toast('This account is already linked to a different family');
+      return;
+    }
   }
 
   await linkParentAuth(firebaseUser, member.id, providerId);
@@ -13004,6 +13025,7 @@ function parentMarkChoreDone(choreId, memberId) {
   }
 
   member.gems      = (member.gems      || 0) + totalPts;
+  member.diamonds  = member.gems;
   member.totalEarned = (member.totalEarned || 0) + totalPts;
   addHistory('chore', memberId, chore.title, totalPts, {
     undoAction: 'parent_mark_done',
@@ -13047,6 +13069,7 @@ function parentUnmarkChoreDone(choreId, memberId) {
   // Reverse the gems
   const deduct = Math.min(chore.gems, member.gems || 0);
   member.gems      = (member.gems      || 0) - deduct;
+  member.diamonds  = member.gems;
   member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.gems);
   if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.gems);
   addHistory('penalty', memberId, `Undo: ${chore.title}`, -deduct);
@@ -13077,6 +13100,7 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
     slotId, photoUrl: null, entryType: null,
   });
   member.gems      = (member.gems      || 0) + chore.gems;
+  member.diamonds  = member.gems;
   member.totalEarned = (member.totalEarned || 0) + chore.gems;
   addHistory('chore', memberId, chore.title, chore.gems, {
     undoAction: 'parent_mark_done',
@@ -13111,6 +13135,7 @@ function parentUnmarkSlotDone(choreId, memberId, slotId) {
   else chore.completions[memberId] = entries;
   const deduct = Math.min(chore.gems, member.gems || 0);
   member.gems      = (member.gems      || 0) - deduct;
+  member.diamonds  = member.gems;
   member.totalEarned = Math.max(0, (member.totalEarned || 0) - chore.gems);
   if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.gems);
   addHistory('penalty', memberId, `Undo: ${chore.title} (${slot?.label || 'slot'})`, -deduct);
@@ -15494,18 +15519,20 @@ function switchFamily() {
 
 function _confirmSwitchFamily() {
   closeModal();
-  S.currentUser = null;
-  setCurrentUserId('');
-  setParentAuthUid(null);
-  S._recentParentAuth = null;
-  try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
-  closeSettings();
-  localStorage.removeItem(LS_KEY);
-  localStorage.removeItem(FAMILY_CODE_KEY);
-  if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
-  D = defaultData();
-  showScreen('screen-setup');
-  renderSetupGate();
+  signOutParent().finally(() => {
+    S.currentUser = null;
+    setCurrentUserId('');
+    setParentAuthUid(null);
+    S._recentParentAuth = null;
+    try { localStorage.removeItem(PARENT_AUTH_PROVIDER_KEY); } catch {}
+    closeSettings();
+    localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(FAMILY_CODE_KEY);
+    if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+    D = defaultData();
+    showScreen('screen-setup');
+    renderSetupGate();
+  });
 }
 
 function resetAllData() {
