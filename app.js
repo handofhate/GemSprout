@@ -275,6 +275,26 @@ let _rcPkgs         = { monthly: null, yearly: null };
 let _rcSelectedPlan = 'yearly';
 let _rcOfferingsStatus = 'idle'; // idle | loading | ready | error
 
+async function _rcEnsureIdentityForFamilyCode(familyCode) {
+  if (!isNative() || !familyCode) return false;
+  try {
+    const { Purchases } = Capacitor.Plugins;
+    if (!Purchases) return false;
+    await Purchases.logIn({ appUserID: familyCode });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function _rcLogOutSilent() {
+  if (!isNative()) return;
+  try {
+    const { Purchases } = Capacitor.Plugins;
+    if (Purchases?.logOut) await Purchases.logOut();
+  } catch (_) {}
+}
+
 async function initRevenueCat() {
   if (!isNative()) { S.isPro = true; return; }
   try {
@@ -283,6 +303,7 @@ async function initRevenueCat() {
     const familyCode = getFamilyCode();
     if (!familyCode) { S.isPro = false; return; }
     await Purchases.configure({ apiKey: RC_API_KEY, appUserID: familyCode });
+    await _rcEnsureIdentityForFamilyCode(familyCode);
     const { customerInfo } = await Purchases.getCustomerInfo();
     S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
   } catch(e) {
@@ -414,13 +435,32 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
           <button onclick="showPaywall()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Retry</button>
           <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
           <button onclick="showPaywallAccountOptions()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Account &amp; Data</button>
-          <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
+          <button onclick="openPrivacyPolicy()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Privacy</button>
           <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Terms</a>
-          <button onclick="signOutParent().finally(()=>_doLeaveDevice())" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Sign Out</button>
+          <button onclick="paywallSignOutAndLeave()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Sign Out</button>
         </div>
       </div>
     </div>
   </div>`;
+}
+
+function openPrivacyPolicy() {
+  const url = 'https://gemsprout.com/privacy.html';
+  try {
+    if (isNative()) window.open(url, '_system');
+    else window.open(url, '_blank');
+  } catch(_) {
+    location.href = url;
+  }
+}
+
+async function paywallSignOutAndLeave() {
+  showLoading();
+  try {
+    await signOutParent();
+  } finally {
+    _doLeaveDevice();
+  }
 }
 
 function _rcSelectPlan(type) {
@@ -439,8 +479,10 @@ async function rcStartTrial() {
   if (!pkg) { toast('Could not load subscription options - tap Retry'); return; }
   try {
     const { Purchases } = Capacitor.Plugins;
-    await Purchases.purchasePackage({ aPackage: pkg });
-    await rcRefreshEntitlement();
+    const purchaseResult = await Purchases.purchasePackage({ aPackage: pkg });
+    const purchaseEntitled = !!purchaseResult?.customerInfo?.entitlements?.active?.[RC_ENTITLEMENT];
+    const refreshedEntitled = await rcRefreshEntitlement();
+    S.isPro = purchaseEntitled || refreshedEntitled;
     if (S.isPro) {
       const member = getMember(getCurrentUserId());
       if (member) routeToView(member); else renderHome();
@@ -448,6 +490,12 @@ async function rcStartTrial() {
       toast('Purchase is processing. Please tap Restore Purchases.');
     }
   } catch(e) {
+    const entitledAfterError = await rcRefreshEntitlement();
+    if (entitledAfterError) {
+      const member = getMember(getCurrentUserId());
+      if (member) routeToView(member); else renderHome();
+      return;
+    }
     if (!e.userCancelled) toast('Purchase failed - please try again');
   }
 }
@@ -2746,7 +2794,7 @@ function showPaywallAccountOptions() {
     <div class="modal-title"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Account &amp; Data</div>
     <p style="font-size:0.9rem;color:var(--muted);margin-bottom:14px">You can manage account and data options without subscribing.</p>
     <div class="modal-actions" style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn btn-secondary btn-full" onclick="closeModal();signOutParent().finally(()=>_doLeaveDevice())">Sign Out</button>
+      <button class="btn btn-secondary btn-full" onclick="closeModal();paywallSignOutAndLeave()">Sign Out</button>
       <button class="btn btn-danger btn-full" ${canDelete ? `onclick="closeModal();deleteAccount()"` : 'disabled'}>Delete Account</button>
     </div>
     ${canDelete ? '' : '<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Sign in to a parent account first to delete it.</div>'}
@@ -6903,9 +6951,11 @@ function showLeaveDevicePin() {
 }
 
 function _doLeaveDevice() {
+  _rcLogOutSilent();
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
+  setAppUnlocked(false);
   setCurrentUserId('');
   setParentAuthUid(null);
   S._recentParentAuth = null;
@@ -7359,7 +7409,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           return `
           <div class="form-group mb-0" style="margin-top:8px">
             <label class="form-label">Interest claim mode</label>
-            <select onchange="saveSetting('savingsInterestMode',this.value);renderSettings()">
+            <select onchange="saveSettingAndRerenderPreserveScroll('savingsInterestMode',this.value)">
               <option value="kid_claim" ${interestMode==='kid_claim'?'selected':''}>Kid claim</option>
               <option value="auto_claim" ${interestMode==='auto_claim'?'selected':''}>Auto-claim</option>
             </select>
@@ -12273,9 +12323,11 @@ function renderSnapshotTimePicker(chore, kid) {
       : status === 'waiting'
         ? 'ph-clock'
         : 'ph-check-circle';
-    const disabled = status === 'pending' || status === 'done' || status === 'waiting'
-      ? (isTinyKidSelf ? '' : 'disabled')
-      : '';
+    const disabled = (
+      status === 'pending'
+      || (status === 'done' && isKidSelf)
+      || (status === 'waiting' && isKidSelf)
+    ) ? (isTinyKidSelf ? '' : 'disabled') : '';
     const action = status === 'done'
       ? (isTinyKidSelf
           ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Already done.'); return false;`
@@ -12284,11 +12336,13 @@ function renderSnapshotTimePicker(chore, kid) {
             : `return handleSnapshotTimeAction('undo','${chore.id}','${kid.id}','${slot.id}')`)
       : status === 'pending'
         ? (isTinyKidSelf ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Waiting for your grown-up.'); return false;` : '')
-        : status === 'waiting'
-          ? (isTinyKidSelf ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Not available right now.'); return false;` : '')
-        : (isTinyKidSelf
-            ? `return handleTinySnapshotTimeConfirm('${chore.id}','${kid.id}','${slot.id}','${esc(slotLabel).replace(/'/g,"\\'")}')`
-            : `return handleSnapshotTimeAction('done','${chore.id}','${kid.id}','${slot.id}')`);
+      : status === 'waiting'
+          ? (isKidSelf
+              ? (isTinyKidSelf ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Not available right now.'); return false;` : '')
+              : `return handleSnapshotTimeAction('done','${chore.id}','${kid.id}','${slot.id}')`)
+          : (isTinyKidSelf
+              ? `return handleTinySnapshotTimeConfirm('${chore.id}','${kid.id}','${slot.id}','${esc(slotLabel).replace(/'/g,"\\'")}')`
+              : `return handleSnapshotTimeAction('done','${chore.id}','${kid.id}','${slot.id}')`);
     const clickAttr = action ? `onclick="${action}"` : '';
     return `<button class="snapshot-time-orb ${stateClass}" style="--slot-index:${idx}" type="button" ${clickAttr} ${disabled}><i class="ph-duotone ${iconClass}" aria-hidden="true"></i><span class="snapshot-time-orb-label">${esc(slotLabel)}</span></button>`;
   }).join('');
@@ -15449,6 +15503,17 @@ function saveSetting(key, value) {
   if (key === 'savingsInterestMode') applyInterestForAllKids();
 }
 
+function saveSettingAndRerenderPreserveScroll(key, value) {
+  const pane = document.querySelector('#settings-root .settings-subpane');
+  const preserved = pane ? pane.scrollTop : 0;
+  saveSetting(key, value);
+  renderSettings();
+  requestAnimationFrame(() => {
+    const nextPane = document.querySelector('#settings-root .settings-subpane');
+    if (nextPane) nextPane.scrollTop = preserved;
+  });
+}
+
 
 function showAdjustDiamondsQuick() {
   const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
@@ -15846,6 +15911,7 @@ async function _doDeleteAccount() {
       console.warn('Firebase user delete error:', e);
     }
   }
+  await _rcLogOutSilent();
   localStorage.removeItem(LS_KEY);
   location.reload();
 }
