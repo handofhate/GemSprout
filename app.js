@@ -271,28 +271,17 @@ async function _enableInterestDayReminder() {
 
 const RC_API_KEY     = 'appl_RquVpMOZtfpBzJLJButBHBFuolp';
 const RC_ENTITLEMENT = 'pro';
+const RC_ENTITLEMENT_FALLBACK = 'GemSprout Pro';
+const RC_PRODUCT_IDS = ['com.gemsprout.ios.pro.monthly', 'com.gemsprout.ios.pro.yearly'];
 let _rcPkgs         = { monthly: null, yearly: null };
 let _rcSelectedPlan = 'yearly';
 let _rcOfferingsStatus = 'idle'; // idle | loading | ready | error
 
-async function _rcEnsureIdentityForFamilyCode(familyCode) {
-  if (!isNative() || !familyCode) return false;
-  try {
-    const { Purchases } = Capacitor.Plugins;
-    if (!Purchases) return false;
-    await Purchases.logIn({ appUserID: familyCode });
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-async function _rcLogOutSilent() {
-  if (!isNative()) return;
-  try {
-    const { Purchases } = Capacitor.Plugins;
-    if (Purchases?.logOut) await Purchases.logOut();
-  } catch (_) {}
+function _rcHasProAccess(customerInfo) {
+  const activeEntitlements = customerInfo?.entitlements?.active || {};
+  if (activeEntitlements[RC_ENTITLEMENT] || activeEntitlements[RC_ENTITLEMENT_FALLBACK]) return true;
+  const activeSubscriptions = customerInfo?.activeSubscriptions || [];
+  return RC_PRODUCT_IDS.some(productId => activeSubscriptions.includes(productId));
 }
 
 async function initRevenueCat() {
@@ -303,9 +292,8 @@ async function initRevenueCat() {
     const familyCode = getFamilyCode();
     if (!familyCode) { S.isPro = false; return; }
     await Purchases.configure({ apiKey: RC_API_KEY, appUserID: familyCode });
-    await _rcEnsureIdentityForFamilyCode(familyCode);
     const { customerInfo } = await Purchases.getCustomerInfo();
-    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+    S.isPro = _rcHasProAccess(customerInfo);
   } catch(e) {
     console.warn('RevenueCat init error:', e);
     S.isPro = false;
@@ -318,7 +306,7 @@ async function rcRefreshEntitlement() {
     const { Purchases } = Capacitor.Plugins;
     if (!Purchases) { S.isPro = false; return false; }
     const { customerInfo } = await Purchases.getCustomerInfo();
-    S.isPro = !!customerInfo?.entitlements?.active?.[RC_ENTITLEMENT];
+    S.isPro = _rcHasProAccess(customerInfo);
     return S.isPro;
   } catch (_) {
     return !!S.isPro;
@@ -344,15 +332,16 @@ async function _rcLoadOfferings() {
   }
 }
 
-async function showPaywall() {
+async function showPaywall(opts = {}) {
+  const forcePreview = !!opts.forcePreview;
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
   el.style.cssText = '';
   el.innerHTML = _paywallHTML('...', '...', 7);
   await _rcLoadOfferings();
-  await rcRefreshEntitlement();
-  if (S.isPro) {
+  if (!forcePreview) await rcRefreshEntitlement();
+  if (!forcePreview && S.isPro) {
     const member = getMember(getCurrentUserId());
     if (member) routeToView(member); else renderHome();
     return;
@@ -436,7 +425,7 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
           <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
           <button onclick="showPaywallAccountOptions()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Account &amp; Data</button>
           <button onclick="openPrivacyPolicy()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Privacy</button>
-          <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Terms</a>
+          <button onclick="openTermsOfUse()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Terms</button>
           <button onclick="paywallSignOutAndLeave()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Sign Out</button>
         </div>
       </div>
@@ -446,6 +435,16 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
 
 function openPrivacyPolicy() {
   const url = 'https://gemsprout.com/privacy.html';
+  try {
+    if (isNative()) window.open(url, '_system');
+    else window.open(url, '_blank');
+  } catch(_) {
+    location.href = url;
+  }
+}
+
+function openTermsOfUse() {
+  const url = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
   try {
     if (isNative()) window.open(url, '_system');
     else window.open(url, '_blank');
@@ -480,7 +479,7 @@ async function rcStartTrial() {
   try {
     const { Purchases } = Capacitor.Plugins;
     const purchaseResult = await Purchases.purchasePackage({ aPackage: pkg });
-    const purchaseEntitled = !!purchaseResult?.customerInfo?.entitlements?.active?.[RC_ENTITLEMENT];
+    const purchaseEntitled = _rcHasProAccess(purchaseResult?.customerInfo);
     const refreshedEntitled = await rcRefreshEntitlement();
     S.isPro = purchaseEntitled || refreshedEntitled;
     if (S.isPro) {
@@ -1316,8 +1315,7 @@ function _runDevScreenPreview(renderFn, opts = {}) {
 
 async function _devPreviewPaywall() {
   await _runDevScreenPreview(async () => {
-    S.isPro = false;
-    await showPaywall();
+    await showPaywall({ forcePreview: true });
   }, {
     devSectionKey: 'screens',
     backButtonSelector: '.paywall-top button[onclick*="renderHome()"]',
@@ -6951,7 +6949,6 @@ function showLeaveDevicePin() {
 }
 
 function _doLeaveDevice() {
-  _rcLogOutSilent();
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
@@ -15911,7 +15908,6 @@ async function _doDeleteAccount() {
       console.warn('Firebase user delete error:', e);
     }
   }
-  await _rcLogOutSilent();
   localStorage.removeItem(LS_KEY);
   location.reload();
 }
