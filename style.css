@@ -111,6 +111,7 @@
       flex: 0 0 auto;
       padding: 12px 24px 12px;
       display: flex;
+      align-items: center;
       justify-content: center;
       gap: 20px;
       background: rgba(244,239,228,0.96);
@@ -5592,6 +5593,17 @@
       font-size: 0.7rem;
       line-height: 1.15;
       white-space: nowrap;
+    }
+    .snapshot-summary-reveal.has-claim .snapshot-summary-toggle-row {
+      gap: 6px;
+    }
+    .snapshot-summary-reveal.has-claim .snapshot-summary-toggle-btn {
+      min-height: 62px;
+      padding: 6px 5px;
+      border-radius: 14px;
+    }
+    .snapshot-summary-reveal.has-claim .snapshot-summary-toggle-btn span {
+      font-size: 0.66rem;
     }
     .snapshot-summary-toggle-btn.home.active {
       background: linear-gradient(180deg, #d8f0e2, #c5e4d4);

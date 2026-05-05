@@ -36,7 +36,17 @@ function getFamilyCode() {
 }
 
 function setFamilyCode(code) {
+  const prev = getFamilyCode();
   try { localStorage.setItem(FAMILY_CODE_KEY, code); } catch (_) {}
+  if (code && code !== prev) {
+    // Family switched/created: reset cached subscription state and refresh native entitlement.
+    S.isPro = false;
+    _rcPkgs = { monthly: null, yearly: null };
+    _rcOfferingsStatus = 'idle';
+    if (isNative()) {
+      initRevenueCat().catch(() => {});
+    }
+  }
 }
 
 function getFamilyDoc() {
@@ -50,6 +60,21 @@ const auth    = firebase.auth();
 const db      = firebase.firestore();
 const storage = firebase.storage();
 let _currentFcmToken = null;
+let _pushListenerUid = '';
+let _pushListenerHandles = [];
+
+async function _resetPushListeners(FirebaseMessaging) {
+  try {
+    const handles = _pushListenerHandles || [];
+    for (const h of handles) {
+      try {
+        if (h && typeof h.remove === 'function') await h.remove();
+      } catch(_) {}
+    }
+    _pushListenerHandles = [];
+    if (FirebaseMessaging?.removeAllListeners) await FirebaseMessaging.removeAllListeners();
+  } catch(_) {}
+}
 
 async function initPushNotifications(firebaseUser) {
   if (!isNative()) return; // push notifications only on device, not in browser
@@ -66,22 +91,26 @@ async function initPushNotifications(firebaseUser) {
       { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
       { merge: true }
     );
-    // Refresh token if it changes
-    FirebaseMessaging.addListener('tokenReceived', async (event) => {
-      if (!event?.token || !firebaseUser?.uid) return;
-      await db.doc(`users/${firebaseUser.uid}`).set(
-        { fcmTokens: firebase.firestore.FieldValue.arrayUnion(event.token) },
-        { merge: true }
-      ).catch(() => {});
-    });
-    // Foreground message: re-render immediately so the pending row appears without a tab switch
-    FirebaseMessaging.addListener('notificationReceived', (event) => {
-      _handleNotificationReceived(event);
-    });
-    // Notification tap: route to the right tab and refresh so pending rows are visible immediately.
-    FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
-      _handleNotificationAction(event);
-    });
+    if (_pushListenerUid !== firebaseUser.uid) {
+      await _resetPushListeners(FirebaseMessaging);
+      _pushListenerUid = firebaseUser.uid;
+      // Refresh token if it changes
+      _pushListenerHandles.push(await FirebaseMessaging.addListener('tokenReceived', async (event) => {
+        if (!event?.token || !firebaseUser?.uid) return;
+        await db.doc(`users/${firebaseUser.uid}`).set(
+          { fcmTokens: firebase.firestore.FieldValue.arrayUnion(event.token) },
+          { merge: true }
+        ).catch(() => {});
+      }));
+      // Foreground message: keep views fresh when a new push arrives.
+      _pushListenerHandles.push(await FirebaseMessaging.addListener('notificationReceived', (event) => {
+        _handleNotificationReceived(event);
+      }));
+      // Notification tap: route to the right tab and refresh so pending rows are visible immediately.
+      _pushListenerHandles.push(await FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
+        _handleNotificationAction(event);
+      }));
+    }
     // Schedule interest day local notification now that permissions are confirmed
     scheduleInterestDayNotification();
   } catch(e) {
@@ -140,6 +169,8 @@ async function _refreshFamilyFromServerAndRender() {
       const isOlderThanLocal = !!incomingSync && !!localSync && incomingSync < localSync;
       if (!isOlderThanLocal) {
         D = incoming;
+        S.baseSyncRevision = Number(D.settings?.syncRevision || 0);
+        _setBaseDocSnapshot(D);
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
         if (S.currentUser?.id) {
           const fresh = getMember(S.currentUser.id);
@@ -167,8 +198,12 @@ function _applyDeferredPostPinNav() {
 function _handleNotificationReceived(event) {
   const route = _routeFromNotification(event);
   if (!route) return;
-  // If parent is actively using the app, keep inbox/overview current immediately.
-  if (S.currentUser?.role === 'parent' && route.parentTab === 'home') {
+  const now = Date.now();
+  const last = Number(S._lastNotificationForegroundRefreshAt || 0);
+  if (now - last < 1500) return;
+  S._lastNotificationForegroundRefreshAt = now;
+  // Keep active views fresh for both parent and kid sessions.
+  if (S.currentUser?.role === 'parent' || S.currentUser?.role === 'kid') {
     _refreshFamilyFromServerAndRender();
   }
 }
@@ -236,8 +271,18 @@ async function _enableInterestDayReminder() {
 
 const RC_API_KEY     = 'appl_RquVpMOZtfpBzJLJButBHBFuolp';
 const RC_ENTITLEMENT = 'pro';
+const RC_ENTITLEMENT_FALLBACK = 'GemSprout Pro';
+const RC_PRODUCT_IDS = ['com.gemsprout.ios.pro.monthly', 'com.gemsprout.ios.pro.yearly'];
 let _rcPkgs         = { monthly: null, yearly: null };
 let _rcSelectedPlan = 'yearly';
+let _rcOfferingsStatus = 'idle'; // idle | loading | ready | error
+
+function _rcHasProAccess(customerInfo) {
+  const activeEntitlements = customerInfo?.entitlements?.active || {};
+  if (activeEntitlements[RC_ENTITLEMENT] || activeEntitlements[RC_ENTITLEMENT_FALLBACK]) return true;
+  const activeSubscriptions = customerInfo?.activeSubscriptions || [];
+  return RC_PRODUCT_IDS.some(productId => activeSubscriptions.includes(productId));
+}
 
 async function initRevenueCat() {
   if (!isNative()) { S.isPro = true; return; }
@@ -248,32 +293,58 @@ async function initRevenueCat() {
     if (!familyCode) { S.isPro = false; return; }
     await Purchases.configure({ apiKey: RC_API_KEY, appUserID: familyCode });
     const { customerInfo } = await Purchases.getCustomerInfo();
-    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+    S.isPro = _rcHasProAccess(customerInfo);
   } catch(e) {
     console.warn('RevenueCat init error:', e);
     S.isPro = false;
   }
 }
 
-async function showPaywall() {
+async function rcRefreshEntitlement() {
+  if (!isNative()) { S.isPro = true; return true; }
+  try {
+    const { Purchases } = Capacitor.Plugins;
+    if (!Purchases) { S.isPro = false; return false; }
+    const { customerInfo } = await Purchases.getCustomerInfo();
+    S.isPro = _rcHasProAccess(customerInfo);
+    return S.isPro;
+  } catch (_) {
+    return !!S.isPro;
+  }
+}
+
+async function _rcLoadOfferings() {
+  _rcOfferingsStatus = 'loading';
+  _rcPkgs = { monthly: null, yearly: null };
+  if (!isNative()) { _rcOfferingsStatus = 'ready'; return; }
+  try {
+    const { Purchases } = Capacitor.Plugins;
+    if (!Purchases) { _rcOfferingsStatus = 'error'; return; }
+    const offerings = await Purchases.getOfferings();
+    const pkgs = offerings?.current?.availablePackages || [];
+    for (const pkg of pkgs) {
+      if (pkg.packageType === 'MONTHLY') _rcPkgs.monthly = pkg;
+      if (pkg.packageType === 'ANNUAL')  _rcPkgs.yearly  = pkg;
+    }
+    _rcOfferingsStatus = (_rcPkgs.monthly || _rcPkgs.yearly) ? 'ready' : 'error';
+  } catch(_) {
+    _rcOfferingsStatus = 'error';
+  }
+}
+
+async function showPaywall(opts = {}) {
+  const forcePreview = !!opts.forcePreview;
   showScreen('screen-auth');
   const el = document.getElementById('screen-auth');
   el.className = 'screen active';
   el.style.cssText = '';
-  el.innerHTML = _paywallHTML();
-
-  if (isNative()) {
-    try {
-      const { Purchases } = Capacitor.Plugins;
-      if (Purchases) {
-        const offerings = await Purchases.getOfferings();
-        const pkgs = offerings?.current?.availablePackages || [];
-        for (const pkg of pkgs) {
-          if (pkg.packageType === 'MONTHLY') _rcPkgs.monthly = pkg;
-          if (pkg.packageType === 'ANNUAL')  _rcPkgs.yearly  = pkg;
-        }
-      }
-    } catch(e) {}
+  el.innerHTML = _paywallHTML('...', '...', 7);
+  await _rcLoadOfferings();
+  if (!forcePreview) await rcRefreshEntitlement();
+  if (!forcePreview && S.isPro) {
+    const member = getMember(getCurrentUserId());
+    if (member) routeToView(member); else renderHome();
+    return;
   }
 
   const mPrice = _rcPkgs.monthly?.product?.priceString || '$2.99';
@@ -339,6 +410,10 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
           <button onclick="rcStartTrial()" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
             Start ${trialDays}-Day Free Trial
           </button>
+          ${_rcOfferingsStatus === 'error' ? `
+          <div style="margin-top:8px;color:#9A3412;background:#FFF7ED;border:1px solid #FDBA74;border-radius:10px;padding:8px 10px;font-size:0.78rem;line-height:1.4">
+            Could not load subscription products. Tap Retry or Restore Purchases.
+          </div>` : ''}
           <div style="color:#5b7168;font-size:0.75rem;text-align:center;margin-top:8px;line-height:1.5">
             Free for ${trialDays} days, then auto-renews. Cancel any time in your iPhone settings.
           </div>
@@ -346,14 +421,45 @@ function _paywallHTML(mPrice = '...', yPrice = '...', trialDays = 7) {
         </div>
 
         <div class="paywall-footer">
+          <button onclick="showPaywall()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Retry</button>
           <button onclick="rcRestorePurchases()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Restore Purchases</button>
-          <a href="privacy.html" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Privacy</a>
-          <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" style="color:#35554a;font-size:0.82rem;text-decoration:none;padding:4px;font-weight:700">Terms</a>
-          <button onclick="signOutParent().finally(()=>_doLeaveDevice())" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Sign Out</button>
+          <button onclick="showPaywallAccountOptions()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Account &amp; Data</button>
+          <button onclick="openPrivacyPolicy()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Privacy</button>
+          <button onclick="openTermsOfUse()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Terms</button>
+          <button onclick="paywallSignOutAndLeave()" style="background:none;border:none;color:#35554a;font-size:0.82rem;cursor:pointer;padding:4px;font-weight:700">Sign Out</button>
         </div>
       </div>
     </div>
   </div>`;
+}
+
+function openPrivacyPolicy() {
+  const url = 'https://gemsprout.com/privacy.html';
+  try {
+    if (isNative()) window.open(url, '_system');
+    else window.open(url, '_blank');
+  } catch(_) {
+    location.href = url;
+  }
+}
+
+function openTermsOfUse() {
+  const url = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+  try {
+    if (isNative()) window.open(url, '_system');
+    else window.open(url, '_blank');
+  } catch(_) {
+    location.href = url;
+  }
+}
+
+async function paywallSignOutAndLeave() {
+  showLoading();
+  try {
+    await signOutParent();
+  } finally {
+    _doLeaveDevice();
+  }
 }
 
 function _rcSelectPlan(type) {
@@ -367,17 +473,28 @@ function _rcSelectPlan(type) {
 
 async function rcStartTrial() {
   if (!isNative()) return;
+  if (_rcOfferingsStatus === 'loading') { toast('Loading subscription options...'); return; }
   const pkg = _rcSelectedPlan === 'monthly' ? _rcPkgs.monthly : _rcPkgs.yearly;
-  if (!pkg) { toast('Could not load subscription options - try again'); return; }
+  if (!pkg) { toast('Could not load subscription options - tap Retry'); return; }
   try {
     const { Purchases } = Capacitor.Plugins;
-    const { customerInfo } = await Purchases.purchasePackage({ aPackage: pkg });
-    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+    const purchaseResult = await Purchases.purchasePackage({ aPackage: pkg });
+    const purchaseEntitled = _rcHasProAccess(purchaseResult?.customerInfo);
+    const refreshedEntitled = await rcRefreshEntitlement();
+    S.isPro = purchaseEntitled || refreshedEntitled;
     if (S.isPro) {
       const member = getMember(getCurrentUserId());
       if (member) routeToView(member); else renderHome();
+    } else {
+      toast('Purchase is processing. Please tap Restore Purchases.');
     }
   } catch(e) {
+    const entitledAfterError = await rcRefreshEntitlement();
+    if (entitledAfterError) {
+      const member = getMember(getCurrentUserId());
+      if (member) routeToView(member); else renderHome();
+      return;
+    }
     if (!e.userCancelled) toast('Purchase failed - please try again');
   }
 }
@@ -387,8 +504,8 @@ async function rcRestorePurchases() {
   try {
     showLoading();
     const { Purchases } = Capacitor.Plugins;
-    const { customerInfo } = await Purchases.restorePurchases();
-    S.isPro = !!customerInfo.entitlements.active[RC_ENTITLEMENT];
+    await Purchases.restorePurchases();
+    await rcRefreshEntitlement();
     if (S.isPro) {
       if (document.getElementById('settings-root')?.classList.contains('open')) {
         showScreen('screen-parent');
@@ -1198,8 +1315,7 @@ function _runDevScreenPreview(renderFn, opts = {}) {
 
 async function _devPreviewPaywall() {
   await _runDevScreenPreview(async () => {
-    S.isPro = false;
-    await showPaywall();
+    await showPaywall({ forcePreview: true });
   }, {
     devSectionKey: 'screens',
     backButtonSelector: '.paywall-top button[onclick*="renderHome()"]',
@@ -2646,6 +2762,7 @@ function defaultData() {
       savingsMatchingEnabled:  false,
       savingsMatchPercent:     50,
       savingsInterestEnabled:  false,
+      savingsInterestMode:     'kid_claim',
       savingsInterestRate:     5,
       savingsInterestPeriod:   'monthly',
     },
@@ -2663,20 +2780,66 @@ function defaultData() {
 
 const LS_KEY = 'gemsprout_v2';
 let firestoreUnsub = null;
+let _pushInFlight = null;
+
+function cloneData(data) {
+  try { return JSON.parse(JSON.stringify(data)); } catch(_) { return data; }
+}
+
+function showPaywallAccountOptions() {
+  const canDelete = !!auth.currentUser && S.currentUser?.role === 'parent';
+  showQuickActionModal(`
+    <div class="modal-title"><i class="ph-duotone ph-shield-check" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Account &amp; Data</div>
+    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:14px">You can manage account and data options without subscribing.</p>
+    <div class="modal-actions" style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-secondary btn-full" onclick="closeModal();paywallSignOutAndLeave()">Sign Out</button>
+      <button class="btn btn-danger btn-full" ${canDelete ? `onclick="closeModal();deleteAccount()"` : 'disabled'}>Delete Account</button>
+    </div>
+    ${canDelete ? '' : '<div style="font-size:0.78rem;color:var(--muted);margin-top:8px">Sign in to a parent account first to delete it.</div>'}
+  `, 'quick-action-modal-wide');
+}
+
+function _setBaseDocSnapshot(data) {
+  S.baseDocSnapshot = cloneData(data);
+}
+
+function _buildConflictRebasedDoc(serverData, localDraft, baseDraft) {
+  const rebased = cloneData(serverData || {});
+  const keys = new Set([
+    ...Object.keys(localDraft || {}),
+    ...Object.keys(baseDraft || {}),
+  ]);
+  keys.forEach(key => {
+    const localVal = localDraft?.[key];
+    const baseVal = baseDraft?.[key];
+    if (JSON.stringify(localVal) !== JSON.stringify(baseVal)) {
+      rebased[key] = cloneData(localVal);
+    }
+  });
+  return normalizeData(rebased);
+}
 
 function loadData() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     D = normalizeData(raw ? JSON.parse(raw) : defaultData());
+    S.baseSyncRevision = Number(D?.settings?.syncRevision || 0);
+    _setBaseDocSnapshot(D);
   } catch(e) {
     D = normalizeData(defaultData());
+    S.baseSyncRevision = Number(D?.settings?.syncRevision || 0);
+    _setBaseDocSnapshot(D);
   }
 }
 
 function saveData() {
   if (S._testOnboarding?.active) return;
   S.lastLocalSave = Date.now();
-  if (D.settings) D.settings.lastSync = Date.now();
+  if (!D.settings) D.settings = {};
+  D.settings.lastSync = Date.now();
+  const baseRev = Number(S.baseSyncRevision || 0);
+  const currentRev = Number(D.settings.syncRevision || 0);
+  D.settings.syncRevision = Math.max(baseRev, currentRev) + 1;
   if (D.declineNotifications?.length > 20) D.declineNotifications = D.declineNotifications.slice(-20);
   syncGemAliases();
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
@@ -2686,17 +2849,56 @@ function saveData() {
     if (fresh) S.currentUser = fresh;
   }
   renderCurrentView();
-  if (!isE2EMode()) pushToFirestore();
+  if (!isE2EMode()) pushToFirestore(cloneData(D));
 }
 
-async function pushToFirestore() {
+async function pushToFirestore(localDraft = null, isRetry = false) {
   if (S._testOnboarding?.active) return;
   if (isE2EMode()) return;
-  try {
-    await db.doc(getFamilyDoc()).set(D);
-  } catch(e) {
-    console.warn('Firestore write error:', e);
-  }
+  if (_pushInFlight) return _pushInFlight;
+  const draft = normalizeData(localDraft || cloneData(D));
+  _pushInFlight = (async () => {
+    try {
+      const ref = db.doc(getFamilyDoc());
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const remote = snap.exists ? normalizeData(snap.data()) : null;
+        const remoteRev = Number(remote?.settings?.syncRevision || 0);
+        const baseRev = Number(S.baseSyncRevision || 0);
+        if (snap.exists && remoteRev > baseRev) throw new Error('SYNC_CONFLICT');
+        tx.set(ref, draft);
+      });
+      D = draft;
+      S.baseSyncRevision = Number(D.settings?.syncRevision || S.baseSyncRevision || 0);
+      _setBaseDocSnapshot(D);
+    } catch(e) {
+      if (e?.message === 'SYNC_CONFLICT' && !isRetry) {
+        try {
+          const ref = db.doc(getFamilyDoc());
+          const snap = await ref.get({ source: 'server' });
+          const serverData = snap.exists ? normalizeData(snap.data()) : defaultData();
+          const serverRev = Number(serverData?.settings?.syncRevision || 0);
+          const rebased = _buildConflictRebasedDoc(serverData, draft, S.baseDocSnapshot || defaultData());
+          if (!rebased.settings) rebased.settings = {};
+          rebased.settings.lastSync = Date.now();
+          rebased.settings.syncRevision = serverRev + 1;
+          S.baseSyncRevision = serverRev;
+          D = rebased;
+          await pushToFirestore(rebased, true);
+          toast('Another device changed data. We synced and retried your action.');
+        } catch(retryErr) {
+          console.warn('Firestore conflict retry failed:', retryErr);
+          toast('Another device changed data. Please try that action again.');
+          _refreshFamilyFromServerAndRender();
+        }
+      } else {
+        console.warn('Firestore write error:', e);
+      }
+    } finally {
+      _pushInFlight = null;
+    }
+  })();
+  return _pushInFlight;
 }
 
 function getPendingEntryKeys(data, memberId) {
@@ -3043,6 +3245,8 @@ function subscribeToFirestore(onFirstLoad) {
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
         D = normalizedIncoming;
+        S.baseSyncRevision = Number(D.settings?.syncRevision || 0);
+        _setBaseDocSnapshot(D);
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
         // Refresh S.currentUser so renderKidHeader (and all renders) reflect latest gems/data
         if (S.currentUser) {
@@ -4809,14 +5013,29 @@ function streakHasGap(member, fromDate, toDate) {
 
 // Schedules (or immediately runs) the 6 pm "are they actually here?" check.
 function scheduleHereCheck() {
+  if (S._hereCheckTimer) {
+    clearTimeout(S._hereCheckTimer);
+    S._hereCheckTimer = null;
+  }
   const now   = new Date();
   const sixPm = new Date(now);
   sixPm.setHours(18, 0, 0, 0);
   const ms = sixPm - now;
   if (ms <= 0) {
     if (S.hereCheckDate !== today()) runHereCheck();
+    // Already past today's 6pm; schedule tomorrow's check.
+    const tomorrowSixPm = new Date(now);
+    tomorrowSixPm.setDate(tomorrowSixPm.getDate() + 1);
+    tomorrowSixPm.setHours(18, 0, 0, 0);
+    S._hereCheckTimer = setTimeout(() => {
+      if (S.hereCheckDate !== today()) runHereCheck();
+      scheduleHereCheck();
+    }, Math.max(1000, tomorrowSixPm - new Date()));
   } else {
-    setTimeout(() => { if (S.hereCheckDate !== today()) runHereCheck(); }, ms);
+    S._hereCheckTimer = setTimeout(() => {
+      if (S.hereCheckDate !== today()) runHereCheck();
+      scheduleHereCheck();
+    }, ms);
   }
 }
 
@@ -5026,12 +5245,18 @@ function setTodayStatus(memberId, isHere) {
 }
 
 function toggleFamilySplitHousehold(enabled) {
+  const currentPane = document.querySelector('#settings-root .settings-subpane');
+  const preservedScrollTop = currentPane ? currentPane.scrollTop : 0;
   D.family.members.filter(m => m.role === 'kid' && !m.deleted).forEach(m => {
     normalizeMember(m);
     m.splitHousehold.enabled = enabled;
   });
   saveData();
   renderSettings();
+  requestAnimationFrame(() => {
+    const nextPane = document.querySelector('#settings-root .settings-subpane');
+    if (nextPane) nextPane.scrollTop = preservedScrollTop;
+  });
 }
 
 function getStreakBonus(streakCount) {
@@ -6727,6 +6952,7 @@ function _doLeaveDevice() {
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
+  setAppUnlocked(false);
   setCurrentUserId('');
   setParentAuthUid(null);
   S._recentParentAuth = null;
@@ -7172,11 +7398,24 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
         </div>
         ${s.savingsInterestEnabled ? (() => {
           const ip = s.savingsInterestPeriod || 'monthly';
+          const interestMode = getSavingsInterestMode();
           const iDay = s.savingsInterestDay ?? 1;
           const iDom = s.savingsInterestDayOfMonth || 1;
           const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
           const domSuffix = iDom === 1 ? 'st' : iDom === 2 ? 'nd' : iDom === 3 ? 'rd' : 'th';
           return `
+          <div class="form-group mb-0" style="margin-top:8px">
+            <label class="form-label">Interest claim mode</label>
+            <select onchange="saveSettingAndRerenderPreserveScroll('savingsInterestMode',this.value)">
+              <option value="kid_claim" ${interestMode==='kid_claim'?'selected':''}>Kid claim</option>
+              <option value="auto_claim" ${interestMode==='auto_claim'?'selected':''}>Auto-claim</option>
+            </select>
+            <div style="font-size:0.78rem;color:#4f675d;margin-top:4px">
+              ${interestMode === 'auto_claim'
+                ? 'Interest is automatically applied on interest day.'
+                : 'Kids claim interest on interest day. Parents can claim on a kid\'s behalf.'}
+            </div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
             <div class="form-group mb-0">
               <label class="form-label">Interest rate %</label>
@@ -7203,9 +7442,9 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
           </div>
           <div style="font-size:0.8rem;color:#4f675d;margin-top:6px;padding:0">
             <i class="ph-duotone ph-calendar-blank" style="vertical-align:middle;margin-right:4px;flex-shrink:0"></i>${ip === 'weekly'
-              ? `Interest is available to claim every <strong>${dayNames[iDay]}</strong>`
-              : `Interest is available to claim on the <strong>${iDom}${domSuffix} of each month</strong>`}
-            <div style="margin-left:20px">Unclaimed interest expires at midnight</div>
+              ? `Interest is processed every <strong>${dayNames[iDay]}</strong>`
+              : `Interest is processed on the <strong>${iDom}${domSuffix} of each month</strong>`}
+            <div style="margin-left:20px">${interestMode === 'auto_claim' ? 'Applied automatically when available.' : 'Unclaimed interest expires at midnight.'}</div>
           </div>`;
         })() : ''}
         ` : ''}
@@ -7221,7 +7460,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
             <div class="toggle-sub">Streaks skip days kids are at the other household</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
-            ${shEnabled && firstKid ? `<button class="btn btn-secondary btn-sm" onclick="showSplitHouseholdModal('${firstKid.id}', this)">Configure</button>` : ''}
+            <button class="btn btn-secondary btn-sm" style="${firstKid ? (shEnabled ? '' : 'visibility:hidden;pointer-events:none;') : 'visibility:hidden;pointer-events:none;'}" onclick="${firstKid ? `showSplitHouseholdModal('${firstKid.id}', this)` : 'return false;'}">Configure</button>
             <label class="toggle"><input type="checkbox" ${shEnabled?'checked':''} onchange="toggleFamilySplitHousehold(this.checked)"><span class="toggle-track"></span></label>
           </div>
         </div>
@@ -9376,8 +9615,9 @@ function renderKidView() {
   restoreCurrentScrollPosition(0);
 
   // Show interest claim modal once per session per kid
+  const interestMode = getSavingsInterestMode();
   if (!S._interestShown) S._interestShown = new Set();
-  if (isInterestDay() && (m.savings || 0) > 0 && m.savingsInterestLastDate !== today() && !S._interestShown.has(m.id)) {
+  if (interestMode === 'kid_claim' && isInterestDay() && (m.savings || 0) > 0 && m.savingsInterestLastDate !== today() && !S._interestShown.has(m.id)) {
     S._interestShown.add(m.id);
     const s = D.settings;
     const rate = parseFloat(s.savingsInterestRate) || 5;
@@ -9390,7 +9630,7 @@ function renderKidView() {
       dollars:  interest,
       cur,
       btnLabel: 'Claim Interest',
-      onClose:  () => { claimInterest(m.id); renderKidView(); },
+      onClose:  () => { claimInterest(m.id, { source: 'kid' }); renderKidView(); },
     }), 600);
   }
 }
@@ -10694,25 +10934,82 @@ function isInterestDay() {
     : d.getDate() === (s.savingsInterestDayOfMonth || 1);
 }
 
-function claimInterest(memberId) {
+function getSavingsInterestMode() {
+  return D.settings?.savingsInterestMode === 'auto_claim' ? 'auto_claim' : 'kid_claim';
+}
+
+function _calcClaimableInterest(member) {
+  if (!member) return 0;
+  if (!isInterestDay()) return 0;
+  if ((member.savings || 0) <= 0) return 0;
+  if (member.savingsInterestLastDate === today()) return 0;
+  const rate = parseFloat(D.settings?.savingsInterestRate) || 5;
+  const interest = parseFloat((member.savings * rate / 100).toFixed(2));
+  return interest > 0 ? interest : 0;
+}
+
+function claimInterest(memberId, opts = {}) {
   const s = D.settings;
-  if (!isInterestDay()) return;
+  const source = opts.source || 'kid';
+  const mode = getSavingsInterestMode();
+  if (!isInterestDay()) return false;
+  if (source === 'parent') {
+    if (S.currentUser?.role !== 'parent') return false;
+    if (mode !== 'kid_claim') return false;
+  }
+  if (source === 'kid' && mode === 'auto_claim') return false;
   const m = getMember(memberId);
-  if (!m || (m.savings || 0) <= 0 || m.savingsInterestLastDate === today()) return;
+  if (!m || (m.savings || 0) <= 0 || m.savingsInterestLastDate === today()) return false;
   const rate   = parseFloat(s.savingsInterestRate) || 5;
   const period = s.savingsInterestPeriod || 'monthly';
   const cur    = s.currency || '$';
   const interest = parseFloat((m.savings * rate / 100).toFixed(2));
-  if (interest <= 0) return;
+  if (interest <= 0) return false;
   m.savings                 = (m.savings || 0) + interest;
   m.savingsInterest         = (m.savingsInterest || 0) + interest;
   m.savingsInterestLastDate = today();
-  addHistory('savings', m.id, `Claimed interest (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
+  const titlePrefix = source === 'parent' ? 'Parent claimed interest' : 'Claimed interest';
+  addHistory('savings', m.id, `${titlePrefix} (${rate}% ${period}) +${cur}${interest.toFixed(2)}`, 0);
   saveData();
+  return true;
 }
 
-// Kept for any legacy calls; now a no-op since kids claim interactively
-function applyInterestForAllKids() {}
+function claimInterestForKidFromParent(memberId) {
+  const kid = getMember(memberId);
+  if (!kid || kid.role !== 'kid') return;
+  if (getSavingsInterestMode() !== 'kid_claim') {
+    toast('Interest is in Auto-claim mode.');
+    return;
+  }
+  if (!isInterestDay()) {
+    toast('Interest can only be claimed on interest day.');
+    return;
+  }
+  const amount = _calcClaimableInterest(kid);
+  if (amount <= 0) {
+    toast(`${kid.name} has no claimable interest right now.`);
+    return;
+  }
+  if (claimInterest(memberId, { source: 'parent' })) {
+    toast(`Claimed ${fmtCurrencyVisual(amount, D.settings.currency || '$')} for ${kid.name}.`);
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
+  }
+}
+
+function applyInterestForAllKids() {
+  if (getSavingsInterestMode() !== 'auto_claim') return;
+  if (!isInterestDay()) return;
+  const kids = (D.family?.members || []).filter(m => m.role === 'kid' && !m.deleted);
+  let claimed = 0;
+  kids.forEach(k => {
+    if (_calcClaimableInterest(k) > 0 && claimInterest(k.id, { source: 'auto' })) claimed += 1;
+  });
+  if (claimed > 0 && S.currentUser?.role === 'parent') {
+    toast(`Auto-claimed interest for ${claimed} kid${claimed === 1 ? '' : 's'}.`);
+  }
+}
 
 function formatPrizeRedeemStatusMessage(status) {
   if (!status || status.ok) return '';
@@ -12023,9 +12320,11 @@ function renderSnapshotTimePicker(chore, kid) {
       : status === 'waiting'
         ? 'ph-clock'
         : 'ph-check-circle';
-    const disabled = status === 'pending' || status === 'done' || status === 'waiting'
-      ? (isTinyKidSelf ? '' : 'disabled')
-      : '';
+    const disabled = (
+      status === 'pending'
+      || (status === 'done' && isKidSelf)
+      || (status === 'waiting' && isKidSelf)
+    ) ? (isTinyKidSelf ? '' : 'disabled') : '';
     const action = status === 'done'
       ? (isTinyKidSelf
           ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Already done.'); return false;`
@@ -12034,11 +12333,13 @@ function renderSnapshotTimePicker(chore, kid) {
             : `return handleSnapshotTimeAction('undo','${chore.id}','${kid.id}','${slot.id}')`)
       : status === 'pending'
         ? (isTinyKidSelf ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Waiting for your grown-up.'); return false;` : '')
-        : status === 'waiting'
-          ? (isTinyKidSelf ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Not available right now.'); return false;` : '')
-        : (isTinyKidSelf
-            ? `return handleTinySnapshotTimeConfirm('${chore.id}','${kid.id}','${slot.id}','${esc(slotLabel).replace(/'/g,"\\'")}')`
-            : `return handleSnapshotTimeAction('done','${chore.id}','${kid.id}','${slot.id}')`);
+      : status === 'waiting'
+          ? (isKidSelf
+              ? (isTinyKidSelf ? `speak('${esc(slotLabel).replace(/'/g,"\\'")}. Not available right now.'); return false;` : '')
+              : `return handleSnapshotTimeAction('done','${chore.id}','${kid.id}','${slot.id}')`)
+          : (isTinyKidSelf
+              ? `return handleTinySnapshotTimeConfirm('${chore.id}','${kid.id}','${slot.id}','${esc(slotLabel).replace(/'/g,"\\'")}')`
+              : `return handleSnapshotTimeAction('done','${chore.id}','${kid.id}','${slot.id}')`);
     const clickAttr = action ? `onclick="${action}"` : '';
     return `<button class="snapshot-time-orb ${stateClass}" style="--slot-index:${idx}" type="button" ${clickAttr} ${disabled}><i class="ph-duotone ${iconClass}" aria-hidden="true"></i><span class="snapshot-time-orb-label">${esc(slotLabel)}</span></button>`;
   }).join('');
@@ -12574,11 +12875,15 @@ function renderParentHome() {
       </button>`).join('');
 
   if (D.settings.interestDayNotify !== false && isInterestDay()) {
+    const interestMode = getSavingsInterestMode();
     const unclaimedKids = kids.filter(k => (k.savings || 0) > 0 && k.savingsInterestLastDate !== t);
     if (unclaimedKids.length > 0 && !S._interestParentToastShown) {
       S._interestParentToastShown = true;
       const names = unclaimedKids.map(k => k.name).join(', ');
-      setTimeout(() => toast(`Interest day! Have ${names} open the app to claim.`, 5000), 800);
+      const msg = interestMode === 'auto_claim'
+        ? `Interest day! Auto-claim will apply for ${names}.`
+        : `Interest day! Have ${names} open the app to claim.`;
+      setTimeout(() => toast(msg, 5000), 800);
     }
   }
 
@@ -12759,11 +13064,13 @@ function renderParentHome() {
           ...(laterCount > 0 ? [`<span class="snapshot-summary-status"><strong>${laterCount}</strong> Later</span>`] : [])
         ].join('');
     const isHereToday = isMemberHereOnDate(kid, today());
+    const canParentClaimInterest = getSavingsInterestMode() === 'kid_claim' && _calcClaimableInterest(kid) > 0;
+    const claimAmount = canParentClaimInterest ? fmtCurrencyVisual(_calcClaimableInterest(kid), D.settings.currency || '$') : '';
     const summaryId = `summary_${kid.id}`;
     const savingsDisplay = fmtCurrencyVisual(kid.savings || 0, D.settings.currency || '$');
     kidsHtml += `
       <div class="snapshot-summary-shell ${_snapshotSummaryReveal.has(summaryId) ? 'revealed' : ''}" data-summary-id="${summaryId}" data-side="${side}">
-        <div class="snapshot-summary-reveal ${isHereToday ? 'here' : 'away'}">
+        <div class="snapshot-summary-reveal ${isHereToday ? 'here' : 'away'} ${canParentClaimInterest ? 'has-claim' : ''}">
           <div class="snapshot-summary-toggle-row">
             <button class="snapshot-summary-toggle-btn home ${isHereToday ? 'active' : ''}" type="button" onpointerdown="return handleOverviewTodayStatusAction(event,'${kid.id}', true)" onclick="return false;">
               <i class="ph-duotone ph-house-line"></i><span>Home</span>
@@ -12771,6 +13078,10 @@ function renderParentHome() {
             <button class="snapshot-summary-toggle-btn away ${!isHereToday ? 'active' : ''}" type="button" onpointerdown="return handleOverviewTodayStatusAction(event,'${kid.id}', false)" onclick="return false;">
               <i class="ph-duotone ph-house-line"></i><span>Away</span>
             </button>
+            ${canParentClaimInterest ? `
+            <button class="snapshot-summary-toggle-btn home" type="button" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();claimInterestForKidFromParent('${kid.id}')">
+              <i class="ph-duotone ph-trend-up"></i><span>Claim ${claimAmount}</span>
+            </button>` : ''}
           </div>
         </div>
         <button class="snapshot-summary-card" style="--snapshot-accent:${kid.color||'#6C63FF'}" type="button" onclick="handleSnapshotSummaryOpen('${kid.id}','${side}')" onpointerdown="startSnapshotSummarySwipe(event,'${summaryId}')" onpointermove="moveSnapshotSummarySwipe(event)" onpointerup="endSnapshotSummarySwipe(event)" onpointercancel="cancelSnapshotSummarySwipe()">
@@ -15186,6 +15497,18 @@ function advSetSetting(key, val) {
 function saveSetting(key, value) {
   D.settings[key] = value;
   saveData();
+  if (key === 'savingsInterestMode') applyInterestForAllKids();
+}
+
+function saveSettingAndRerenderPreserveScroll(key, value) {
+  const pane = document.querySelector('#settings-root .settings-subpane');
+  const preserved = pane ? pane.scrollTop : 0;
+  saveSetting(key, value);
+  renderSettings();
+  requestAnimationFrame(() => {
+    const nextPane = document.querySelector('#settings-root .settings-subpane');
+    if (nextPane) nextPane.scrollTop = preserved;
+  });
 }
 
 
@@ -15871,6 +16194,7 @@ if (document.readyState === 'loading') {
 // Scroll to top when app is foregrounded (tab/app switch back)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  scheduleHereCheck();
   const kc = document.getElementById('kid-content');
   const pc = document.getElementById('parent-content');
   if (kc) kc.scrollTop = 0;
@@ -15936,9 +16260,11 @@ function openBadgeCard(badgeId, type, choreTitle, choreCount, memberIdOverride =
     earnDesc = def?.desc || 'Special achievement';
   }
 
-  // TTS for tiny mode
+  // TTS only in actual kid tiny-view context (not parent inspecting a tiny kid's badge)
   const tiny = !!targetMember && isTiny(targetMember);
-  if (tiny) speak(`${name}. ${earnDesc}.`);
+  const isKidViewer = S.currentUser?.role === 'kid';
+  const isViewingOwnCard = !!S.currentUser?.id && !!targetMemberId && S.currentUser.id === targetMemberId;
+  if (tiny && isKidViewer && isViewingOwnCard) speak(`${name}. ${earnDesc}.`);
 
   // Extract hex color from icon string (e.g. color:#F97316) to tint the card
   const accentMatch = icon.match(/color:(#[0-9a-fA-F]{3,6})/);
