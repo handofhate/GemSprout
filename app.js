@@ -2682,6 +2682,17 @@ let S = {            // UI state (not persisted)
   _devSettingsUnlocked:  false,
   _devUnlockTapCount:    0,
   _devUnlockWindowStart: 0,
+  _syncDiag: {
+    acceptedSnapshots: 0,
+    droppedOlderRev: 0,
+    droppedStaleEcho: 0,
+    conflictCount: 0,
+    lastIncomingRev: 0,
+    lastLocalRev: 0,
+    lastAcceptedAt: 0,
+    lastDropReason: '',
+    lastConflictAt: 0,
+  },
 };
 
 function getMainScrollerForCurrentView() {
@@ -2695,6 +2706,42 @@ function getScrollMemoryKey() {
   if (S.currentUser?.role === 'kid') return `kid:${S.currentUser.id}:${S.kidTab}`;
   const activeScreenId = document.querySelector('.screen.active')?.id || '';
   return activeScreenId ? `screen:${activeScreenId}` : '';
+}
+
+function resetSyncDiagnostics() {
+  S._syncDiag = {
+    acceptedSnapshots: 0,
+    droppedOlderRev: 0,
+    droppedStaleEcho: 0,
+    conflictCount: 0,
+    lastIncomingRev: Number(D?.settings?.syncRevision || 0),
+    lastLocalRev: Number(D?.settings?.syncRevision || 0),
+    lastAcceptedAt: 0,
+    lastDropReason: '',
+    lastConflictAt: 0,
+  };
+  if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
+  toast('Sync diagnostics reset');
+}
+
+function _renderSyncDiagnosticsCard() {
+  const diag = S._syncDiag || {};
+  const localRev = Number(D?.settings?.syncRevision || 0);
+  const baseRev = Number(S?.baseSyncRevision || 0);
+  const lastAccepted = diag.lastAcceptedAt ? fmtDateTime(diag.lastAcceptedAt) : 'Never';
+  return `
+    <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(39,66,57,0.14);border-radius:10px;background:#F8FBF9">
+      <div style="font-size:0.78rem;color:#35554a;font-weight:700;letter-spacing:0.01em;margin-bottom:6px">Sync Diagnostics</div>
+      <div style="font-size:0.76rem;color:#35554a;line-height:1.45">
+        Accepted snapshots: <b>${diag.acceptedSnapshots || 0}</b><br>
+        Dropped (older revision): <b>${diag.droppedOlderRev || 0}</b><br>
+        Dropped (stale echo): <b>${diag.droppedStaleEcho || 0}</b><br>
+        Conflicts detected: <b>${diag.conflictCount || 0}</b><br>
+        Local rev: <b>${localRev}</b> | Base rev: <b>${baseRev}</b> | Last incoming rev: <b>${diag.lastIncomingRev || 0}</b><br>
+        Last accepted: <b>${lastAccepted}</b>${diag.lastDropReason ? `<br>Last drop reason: <b>${esc(diag.lastDropReason)}</b>` : ''}
+      </div>
+      <button class="btn btn-secondary btn-sm btn-full" style="margin-top:8px" onclick="resetSyncDiagnostics()">Reset Sync Diagnostics</button>
+    </div>`;
 }
 
 function rememberCurrentScrollPosition() {
@@ -2803,22 +2850,6 @@ function _setBaseDocSnapshot(data) {
   S.baseDocSnapshot = cloneData(data);
 }
 
-function _buildConflictRebasedDoc(serverData, localDraft, baseDraft) {
-  const rebased = cloneData(serverData || {});
-  const keys = new Set([
-    ...Object.keys(localDraft || {}),
-    ...Object.keys(baseDraft || {}),
-  ]);
-  keys.forEach(key => {
-    const localVal = localDraft?.[key];
-    const baseVal = baseDraft?.[key];
-    if (JSON.stringify(localVal) !== JSON.stringify(baseVal)) {
-      rebased[key] = cloneData(localVal);
-    }
-  });
-  return normalizeData(rebased);
-}
-
 function loadData() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -2873,24 +2904,13 @@ async function pushToFirestore(localDraft = null, isRetry = false) {
       _setBaseDocSnapshot(D);
     } catch(e) {
       if (e?.message === 'SYNC_CONFLICT' && !isRetry) {
-        try {
-          const ref = db.doc(getFamilyDoc());
-          const snap = await ref.get({ source: 'server' });
-          const serverData = snap.exists ? normalizeData(snap.data()) : defaultData();
-          const serverRev = Number(serverData?.settings?.syncRevision || 0);
-          const rebased = _buildConflictRebasedDoc(serverData, draft, S.baseDocSnapshot || defaultData());
-          if (!rebased.settings) rebased.settings = {};
-          rebased.settings.lastSync = Date.now();
-          rebased.settings.syncRevision = serverRev + 1;
-          S.baseSyncRevision = serverRev;
-          D = rebased;
-          await pushToFirestore(rebased, true);
-          toast('Another device changed data. We synced and retried your action.');
-        } catch(retryErr) {
-          console.warn('Firestore conflict retry failed:', retryErr);
-          toast('Another device changed data. Please try that action again.');
-          _refreshFamilyFromServerAndRender();
-        }
+        if (!S._syncDiag) S._syncDiag = {};
+        S._syncDiag.conflictCount = Number(S._syncDiag.conflictCount || 0) + 1;
+        S._syncDiag.lastConflictAt = Date.now();
+        S._syncDiag.lastDropReason = 'SYNC_CONFLICT';
+        console.warn('Firestore conflict detected. Skipping auto-rebase to avoid clobbering concurrent device updates.');
+        toast('Another device changed data. Please try that action again.');
+        _refreshFamilyFromServerAndRender();
       } else {
         console.warn('Firestore write error:', e);
       }
@@ -3235,17 +3255,23 @@ function subscribeToFirestore(onFirstLoad) {
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
-      const incomingSync = Number(normalizedIncoming.settings?.lastSync || 0);
-      const localSync = Number(D.settings?.lastSync || 0);
-      const incomingMissingSync = !incomingSync && !!localSync;
-      const isOlderThanLocal = !!localSync && (!incomingSync || incomingSync < localSync);
-      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
+      const incomingRev = Number(normalizedIncoming.settings?.syncRevision || 0);
+      const localRev = Number(D.settings?.syncRevision || 0);
+      if (!S._syncDiag) S._syncDiag = {};
+      S._syncDiag.lastIncomingRev = incomingRev;
+      S._syncDiag.lastLocalRev = localRev;
+      const incomingMissingSync = !incomingRev && !!localRev;
+      const isOlderThanLocal = !!localRev && incomingRev < localRev;
+      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500) && incomingRev <= localRev;
       if (!incomingMissingSync && !isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
         _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
         D = normalizedIncoming;
         S.baseSyncRevision = Number(D.settings?.syncRevision || 0);
+        S._syncDiag.acceptedSnapshots = Number(S._syncDiag.acceptedSnapshots || 0) + 1;
+        S._syncDiag.lastAcceptedAt = Date.now();
+        S._syncDiag.lastDropReason = '';
         _setBaseDocSnapshot(D);
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
         // Refresh S.currentUser so renderKidHeader (and all renders) reflect latest gems/data
@@ -3264,6 +3290,12 @@ function subscribeToFirestore(onFirstLoad) {
           checkForSavingsRequestOutcomes(S.currentUser, false);
           checkForDeclineNotifications(S.currentUser, false);
         }
+      } else if (isOlderThanLocal) {
+        S._syncDiag.droppedOlderRev = Number(S._syncDiag.droppedOlderRev || 0) + 1;
+        S._syncDiag.lastDropReason = `OLDER_REV (${incomingRev} < ${localRev})`;
+      } else if (isStaleEcho) {
+        S._syncDiag.droppedStaleEcho = Number(S._syncDiag.droppedStaleEcho || 0) + 1;
+        S._syncDiag.lastDropReason = `STALE_ECHO (${incomingRev} <= ${localRev})`;
       }
     }
     if (firstSnapshot) {
@@ -7559,6 +7591,7 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
             <div class="settings-dev-tip">Additional functions for testing</div>
             <button class="btn btn-secondary btn-full" onclick="testCameraPermission()">Test Camera Permission</button>
             <button class="btn btn-secondary btn-full" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
+            ${_renderSyncDiagnosticsCard()}
           </div>
         </details>
       </div>` : ''}
