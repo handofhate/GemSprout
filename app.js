@@ -4009,7 +4009,8 @@ function getChorePhotoPhase(chore, memberId, dateStr = today()) {
   if (!mode || mode === 'none') return null;
 
   const entries = normalizeCompletionEntries(chore.completions?.[memberId])
-    .filter(e => e.date === dateStr);
+    .filter(e => e.date === dateStr)
+    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
 
   if (mode === 'after') {
     const afterEntry = entries.find(e => e.entryType === 'after' || e.entryType === null);
@@ -4020,8 +4021,10 @@ function getChorePhotoPhase(chore, memberId, dateStr = today()) {
   }
 
   // before_after mode
-  const beforeEntry = entries.find(e => e.entryType === 'before');
-  const afterEntry  = entries.find(e => e.entryType === 'after');
+  const beforeEntries = entries.filter(e => e.entryType === 'before');
+  const afterEntries  = entries.filter(e => e.entryType === 'after');
+  const beforeEntry = beforeEntries.length ? beforeEntries[beforeEntries.length - 1] : null;
+  const afterEntry  = afterEntries.length  ? afterEntries[afterEntries.length - 1]  : null;
 
   if (!beforeEntry)
     return { phase: 'needs_before',   entryType: 'before', canRequest: true,  canComplete: false };
@@ -13127,7 +13130,16 @@ function _flipAdminCard(btn, newInnerHTML, then) {
 function approveChore(choreId, memberId, entryId, btn) {
   const c = D.chores.find(x=>x.id===choreId);
   const m = getMember(memberId);
-  const entry = c?.completions?.[memberId]?.find(e => e.id === entryId);
+  const entries = normalizeCompletionEntries(c?.completions?.[memberId]);
+  const entry = entries.find(e => e.id === entryId);
+  if (!entry) {
+    toast('Could not find that approval item. Refreshing...');
+    renderParentHome();
+    renderParentHeader();
+    renderParentNav();
+    syncAppBadge();
+    return;
+  }
   const isBefore = entry?.entryType === 'before';
 
   if (isBefore) {
@@ -13139,6 +13151,7 @@ function approveChore(choreId, memberId, entryId, btn) {
       </div>`;
     _flipAdminCard(btn, inProgressInner, () => {
       doApproveChore(choreId, memberId, entryId);
+      renderParentHome();
       renderParentHeader();
       renderParentNav();
       syncAppBadge();
@@ -16139,10 +16152,8 @@ document.addEventListener('visibilitychange', () => {
     }
   }
   if (S.currentUser?.role === 'kid') {
-    const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
-    checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
-    clearPendingSnapshot(S.currentUser.id);
-    savePendingSnapshot(S.currentUser.id);
+    // Do not consume pending snapshots here. Foreground can happen before fresh sync lands,
+    // which would clear evidence and suppress the approval celebration modal.
     checkForNewBonuses(S.currentUser, true);
     checkForNewSavingsDeposits(S.currentUser, true);
     checkForSavingsRequestOutcomes(S.currentUser, true);
