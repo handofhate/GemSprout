@@ -169,8 +169,6 @@ async function _refreshFamilyFromServerAndRender() {
       const isOlderThanLocal = !!incomingSync && !!localSync && incomingSync < localSync;
       if (!isOlderThanLocal) {
         D = incoming;
-        S.baseSyncRevision = Number(D.settings?.syncRevision || 0);
-        _setBaseDocSnapshot(D);
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
         if (S.currentUser?.id) {
           const fresh = getMember(S.currentUser.id);
@@ -2682,17 +2680,6 @@ let S = {            // UI state (not persisted)
   _devSettingsUnlocked:  false,
   _devUnlockTapCount:    0,
   _devUnlockWindowStart: 0,
-  _syncDiag: {
-    acceptedSnapshots: 0,
-    droppedOlderRev: 0,
-    droppedStaleEcho: 0,
-    conflictCount: 0,
-    lastIncomingRev: 0,
-    lastLocalRev: 0,
-    lastAcceptedAt: 0,
-    lastDropReason: '',
-    lastConflictAt: 0,
-  },
 };
 
 function getMainScrollerForCurrentView() {
@@ -2706,42 +2693,6 @@ function getScrollMemoryKey() {
   if (S.currentUser?.role === 'kid') return `kid:${S.currentUser.id}:${S.kidTab}`;
   const activeScreenId = document.querySelector('.screen.active')?.id || '';
   return activeScreenId ? `screen:${activeScreenId}` : '';
-}
-
-function resetSyncDiagnostics() {
-  S._syncDiag = {
-    acceptedSnapshots: 0,
-    droppedOlderRev: 0,
-    droppedStaleEcho: 0,
-    conflictCount: 0,
-    lastIncomingRev: Number(D?.settings?.syncRevision || 0),
-    lastLocalRev: Number(D?.settings?.syncRevision || 0),
-    lastAcceptedAt: 0,
-    lastDropReason: '',
-    lastConflictAt: 0,
-  };
-  if (document.getElementById('settings-root')?.classList.contains('open')) renderSettings();
-  toast('Sync diagnostics reset');
-}
-
-function _renderSyncDiagnosticsCard() {
-  const diag = S._syncDiag || {};
-  const localRev = Number(D?.settings?.syncRevision || 0);
-  const baseRev = Number(S?.baseSyncRevision || 0);
-  const lastAccepted = diag.lastAcceptedAt ? fmtDateTime(diag.lastAcceptedAt) : 'Never';
-  return `
-    <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(39,66,57,0.14);border-radius:10px;background:#F8FBF9">
-      <div style="font-size:0.78rem;color:#35554a;font-weight:700;letter-spacing:0.01em;margin-bottom:6px">Sync Diagnostics</div>
-      <div style="font-size:0.76rem;color:#35554a;line-height:1.45">
-        Accepted snapshots: <b>${diag.acceptedSnapshots || 0}</b><br>
-        Dropped (older revision): <b>${diag.droppedOlderRev || 0}</b><br>
-        Dropped (stale echo): <b>${diag.droppedStaleEcho || 0}</b><br>
-        Conflicts detected: <b>${diag.conflictCount || 0}</b><br>
-        Local rev: <b>${localRev}</b> | Base rev: <b>${baseRev}</b> | Last incoming rev: <b>${diag.lastIncomingRev || 0}</b><br>
-        Last accepted: <b>${lastAccepted}</b>${diag.lastDropReason ? `<br>Last drop reason: <b>${esc(diag.lastDropReason)}</b>` : ''}
-      </div>
-      <button class="btn btn-secondary btn-sm btn-full" style="margin-top:8px" onclick="resetSyncDiagnostics()">Reset Sync Diagnostics</button>
-    </div>`;
 }
 
 function rememberCurrentScrollPosition() {
@@ -2846,31 +2797,19 @@ function showPaywallAccountOptions() {
   `, 'quick-action-modal-wide');
 }
 
-function _setBaseDocSnapshot(data) {
-  S.baseDocSnapshot = cloneData(data);
-}
-
 function loadData() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     D = normalizeData(raw ? JSON.parse(raw) : defaultData());
-    S.baseSyncRevision = Number(D?.settings?.syncRevision || 0);
-    _setBaseDocSnapshot(D);
   } catch(e) {
     D = normalizeData(defaultData());
-    S.baseSyncRevision = Number(D?.settings?.syncRevision || 0);
-    _setBaseDocSnapshot(D);
   }
 }
 
 function saveData() {
   if (S._testOnboarding?.active) return;
   S.lastLocalSave = Date.now();
-  if (!D.settings) D.settings = {};
-  D.settings.lastSync = Date.now();
-  const baseRev = Number(S.baseSyncRevision || 0);
-  const currentRev = Number(D.settings.syncRevision || 0);
-  D.settings.syncRevision = Math.max(baseRev, currentRev) + 1;
+  if (D.settings) D.settings.lastSync = Date.now();
   if (D.declineNotifications?.length > 20) D.declineNotifications = D.declineNotifications.slice(-20);
   syncGemAliases();
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
@@ -2880,45 +2819,19 @@ function saveData() {
     if (fresh) S.currentUser = fresh;
   }
   renderCurrentView();
-  if (!isE2EMode()) pushToFirestore(cloneData(D));
+  if (!isE2EMode()) pushToFirestore();
 }
 
-async function pushToFirestore(localDraft = null, isRetry = false) {
+async function pushToFirestore() {
   if (S._testOnboarding?.active) return;
   if (isE2EMode()) return;
-  if (_pushInFlight) return _pushInFlight;
-  const draft = normalizeData(localDraft || cloneData(D));
-  _pushInFlight = (async () => {
-    try {
-      const ref = db.doc(getFamilyDoc());
-      await db.runTransaction(async tx => {
-        const snap = await tx.get(ref);
-        const remote = snap.exists ? normalizeData(snap.data()) : null;
-        const remoteRev = Number(remote?.settings?.syncRevision || 0);
-        const baseRev = Number(S.baseSyncRevision || 0);
-        if (snap.exists && remoteRev > baseRev) throw new Error('SYNC_CONFLICT');
-        tx.set(ref, draft);
-      });
-      D = draft;
-      S.baseSyncRevision = Number(D.settings?.syncRevision || S.baseSyncRevision || 0);
-      _setBaseDocSnapshot(D);
-    } catch(e) {
-      if (e?.message === 'SYNC_CONFLICT' && !isRetry) {
-        if (!S._syncDiag) S._syncDiag = {};
-        S._syncDiag.conflictCount = Number(S._syncDiag.conflictCount || 0) + 1;
-        S._syncDiag.lastConflictAt = Date.now();
-        S._syncDiag.lastDropReason = 'SYNC_CONFLICT';
-        console.warn('Firestore conflict detected. Skipping auto-rebase to avoid clobbering concurrent device updates.');
-        toast('Another device changed data. Please try that action again.');
-        _refreshFamilyFromServerAndRender();
-      } else {
-        console.warn('Firestore write error:', e);
-      }
-    } finally {
-      _pushInFlight = null;
-    }
-  })();
-  return _pushInFlight;
+  try {
+    await db.doc(getFamilyDoc()).set(cloneData(D));
+    S.syncStatus = 'ok';
+  } catch(e) {
+    S.syncStatus = 'error';
+    console.warn('Firestore write error:', e);
+  }
 }
 
 function getPendingEntryKeys(data, memberId) {
@@ -3255,24 +3168,16 @@ function subscribeToFirestore(onFirstLoad) {
     if (snap.exists) {
       const incoming = snap.data();
       const normalizedIncoming = normalizeData(incoming);
-      const incomingRev = Number(normalizedIncoming.settings?.syncRevision || 0);
-      const localRev = Number(D.settings?.syncRevision || 0);
-      if (!S._syncDiag) S._syncDiag = {};
-      S._syncDiag.lastIncomingRev = incomingRev;
-      S._syncDiag.lastLocalRev = localRev;
-      const incomingMissingSync = !incomingRev && !!localRev;
-      const isOlderThanLocal = !!localRev && incomingRev < localRev;
-      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500) && incomingRev <= localRev;
+      const incomingSync = Number(normalizedIncoming.settings?.lastSync || 0);
+      const localSync = Number(D.settings?.lastSync || 0);
+      const incomingMissingSync = !incomingSync && !!localSync;
+      const isOlderThanLocal = !!localSync && (!incomingSync || incomingSync < localSync);
+      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
       if (!incomingMissingSync && !isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
         _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
         const prevPending = S.currentUser ? getPendingEntryKeys(D, S.currentUser.id) : new Set();
         D = normalizedIncoming;
-        S.baseSyncRevision = Number(D.settings?.syncRevision || 0);
-        S._syncDiag.acceptedSnapshots = Number(S._syncDiag.acceptedSnapshots || 0) + 1;
-        S._syncDiag.lastAcceptedAt = Date.now();
-        S._syncDiag.lastDropReason = '';
-        _setBaseDocSnapshot(D);
         try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
         // Refresh S.currentUser so renderKidHeader (and all renders) reflect latest gems/data
         if (S.currentUser) {
@@ -3290,12 +3195,6 @@ function subscribeToFirestore(onFirstLoad) {
           checkForSavingsRequestOutcomes(S.currentUser, false);
           checkForDeclineNotifications(S.currentUser, false);
         }
-      } else if (isOlderThanLocal) {
-        S._syncDiag.droppedOlderRev = Number(S._syncDiag.droppedOlderRev || 0) + 1;
-        S._syncDiag.lastDropReason = `OLDER_REV (${incomingRev} < ${localRev})`;
-      } else if (isStaleEcho) {
-        S._syncDiag.droppedStaleEcho = Number(S._syncDiag.droppedStaleEcho || 0) + 1;
-        S._syncDiag.lastDropReason = `STALE_ECHO (${incomingRev} <= ${localRev})`;
       }
     }
     if (firstSnapshot) {
@@ -7591,7 +7490,6 @@ function _renderSettingsMain(paneClass = _settingsPageEnterClass, returnHtml = f
             <div class="settings-dev-tip">Additional functions for testing</div>
             <button class="btn btn-secondary btn-full" onclick="testCameraPermission()">Test Camera Permission</button>
             <button class="btn btn-secondary btn-full" onclick="showAdvancedEditor()"><i class="ph-duotone ph-wrench" style="font-size:1rem;vertical-align:middle"></i> Advanced Data Editor</button>
-            ${_renderSyncDiagnosticsCard()}
           </div>
         </details>
       </div>` : ''}
@@ -7904,19 +7802,17 @@ function renderHome() {
     return `
       <button class="profile-card${bday ? ' bday-card' : ''}" style="--member-color:${m.color || '#6C63FF'};position:relative"
               onclick="selectProfile('${m.id}')">
-        ${bday ? `<span class="bday-badge"><i class="ph-duotone ph-cake" style="font-size:0.9rem"></i></span>` : ''}
         <span class="profile-avatar">${renderMemberAvatarHtml(m)}</span>
         <span class="profile-name">${esc(m.name)}</span>
         <span class="profile-diamonds">${roleLabel}</span>
       </button>`;
   }).join('');
-  const anyBday = members.some(m => m.role !== 'parent' && isBirthday(m));
-  const bdayBanner = anyBday
-    ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> It's a birthday today! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
+  const birthdayMember = members.find(m => m.role !== 'parent' && isBirthday(m));
+  const bdayBanner = birthdayMember
+    ? `<div class="bday-banner"><i class="ph-duotone ph-cake" style="font-size:1rem;vertical-align:middle"></i> Happy birthday, ${esc(birthdayMember.name)}! <i class="ph-duotone ph-confetti" style="font-size:1rem;vertical-align:middle"></i></div>` : '';
 
   const root = document.getElementById('screen-home');
   root.innerHTML = `
-    ${bdayBanner}
     <div class="home-shell">
       <div class="home-top">
         <div class="home-top-inner">
@@ -7956,6 +7852,7 @@ function renderHome() {
           </div>
         </div>
       </div>
+      ${bdayBanner ? `<div class="bday-banner-floating bday-banner-floating-bottom">${bdayBanner}</div>` : ''}
     </div>`;
   if (WEEK_REVIEW_PREVIEW_MODE && !_weekReviewPreviewShown) {
     _weekReviewPreviewShown = true;
@@ -7974,11 +7871,12 @@ function selectProfile(id) {
     showParentSignIn(id, (authedMember) => {
       if (isBirthday(authedMember)) {
         S.currentUser = authedMember;
+        routeToView(authedMember);
         launchConfetti(80);
         showCelebration({
           icon: '<i class="ph-duotone ph-cake" style="color:#F97316;font-size:3rem"></i>', title: `Happy Birthday, ${authedMember.name}!`,
           sub: '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Have an amazing day! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
-          tts: null, onClose: () => routeToView(authedMember),
+          tts: null,
         });
       } else {
         routeToView(authedMember);
@@ -7989,13 +7887,13 @@ function selectProfile(id) {
 
   if (isBirthday(member)) {
     S.currentUser = member;
+    routeToView(member);
     launchConfetti(80);
     showCelebration({
       icon:  '<i class="ph-duotone ph-cake" style="color:#F97316;font-size:3rem"></i>',
       title: `Happy Birthday, ${member.name}!`,
       sub:   '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Have an amazing day! <i class="ph-duotone ph-confetti" style="color:#F97316"></i>',
       tts:   isTiny(member) ? `Happy Birthday ${member.name}! Wishing you the most wonderful day!` : null,
-      onClose: () => routeToView(member),
     });
     return;
   }
