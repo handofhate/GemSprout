@@ -3185,11 +3185,11 @@ function subscribeToFirestore(onFirstLoad) {
           if (_freshUser) S.currentUser = _freshUser;
         }
         // Trigger celebration if kid is viewing and chores got approved
-        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid' && !isParentSignedIn()) {
+        if (!firstSnapshot && prevPending.size > 0 && S.currentUser?.role === 'kid') {
           checkForApprovalCelebration(prevPending, S.currentUser);
         }
         // Trigger celebration for new manual bonus gems, savings deposits, spend outcomes, or declines
-        if (!firstSnapshot && S.currentUser?.role === 'kid' && !isParentSignedIn()) {
+        if (!firstSnapshot && S.currentUser?.role === 'kid') {
           checkForNewBonuses(S.currentUser, false);
           checkForNewSavingsDeposits(S.currentUser, false);
           checkForSavingsRequestOutcomes(S.currentUser, false);
@@ -3200,7 +3200,7 @@ function subscribeToFirestore(onFirstLoad) {
     if (firstSnapshot) {
       firstSnapshot = false;
       // Check for approvals that happened while the app was closed
-      if (S.currentUser?.role === 'kid' && !isParentSignedIn()) {
+      if (S.currentUser?.role === 'kid') {
         const savedKeys = loadPendingSnapshot(S.currentUser.id);
         if (savedKeys.size > 0) checkForApprovalCelebration(savedKeys, S.currentUser, true);
         clearPendingSnapshot(S.currentUser.id);
@@ -3215,7 +3215,7 @@ function subscribeToFirestore(onFirstLoad) {
       else if (_didUpdate) renderCurrentView();
     } else if (_didUpdate) {
       renderCurrentView();
-      if (S.currentUser?.role === 'kid' && !isParentSignedIn()) checkForNewBadges(S.currentUser, false);
+      if (S.currentUser?.role === 'kid') checkForNewBadges(S.currentUser, false);
     }
   }, err => {
     console.warn('Firestore listener error:', err);
@@ -7837,6 +7837,7 @@ function renderHome() {
           </div>
         </div>
       </div>
+      ${bdayBanner ? `<div class="home-seam-anchor"><div class="bday-banner-floating bday-banner-floating-seam">${bdayBanner}</div></div>` : ''}
       <div class="home-bottom">
         <div class="home-bottom-inner">
           <div class="home-lower">
@@ -7852,7 +7853,6 @@ function renderHome() {
           </div>
         </div>
       </div>
-      ${bdayBanner ? `<div class="bday-banner-floating bday-banner-floating-bottom">${bdayBanner}</div>` : ''}
     </div>`;
   if (WEEK_REVIEW_PREVIEW_MODE && !_weekReviewPreviewShown) {
     _weekReviewPreviewShown = true;
@@ -16138,7 +16138,7 @@ document.addEventListener('visibilitychange', () => {
       _refreshFamilyFromServerAndRender();
     }
   }
-  if (S.currentUser?.role === 'kid' && !isParentSignedIn()) {
+  if (S.currentUser?.role === 'kid') {
     const pendingSnapshot = loadPendingSnapshot(S.currentUser.id);
     checkForApprovalCelebration(pendingSnapshot, S.currentUser, true);
     clearPendingSnapshot(S.currentUser.id);

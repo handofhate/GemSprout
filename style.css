@@ -4455,6 +4455,15 @@
       overflow: hidden;
       box-shadow: 0 10px 20px rgba(0,0,0,0.16);
     }
+    .home-seam-anchor {
+      position: relative;
+      height: 0;
+      z-index: 5;
+    }
+    .bday-banner-floating-seam {
+      top: 0;
+      transform: translate(-50%, -50%);
+    }
     .bday-banner-floating-bottom {
       bottom: calc(env(safe-area-inset-bottom, 0px) + 78px);
     }
