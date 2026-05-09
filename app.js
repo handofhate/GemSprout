@@ -62,6 +62,7 @@ const storage = firebase.storage();
 let _currentFcmToken = null;
 let _pushListenerUid = '';
 let _pushListenerHandles = [];
+const LAST_PUSH_UID_KEY = 'gemsprout.lastPushUid';
 
 async function _resetPushListeners(FirebaseMessaging) {
   try {
@@ -87,10 +88,19 @@ async function initPushNotifications(firebaseUser) {
     const token = tokenResult?.token;
     if (!token || !firebaseUser?.uid) return;
     _currentFcmToken = token;
+    let previousUid = '';
+    try { previousUid = localStorage.getItem(LAST_PUSH_UID_KEY) || ''; } catch(_) {}
+    if (previousUid && previousUid !== firebaseUser.uid) {
+      await db.doc(`users/${previousUid}`).set(
+        { fcmTokens: firebase.firestore.FieldValue.arrayRemove(token) },
+        { merge: true }
+      ).catch(() => {});
+    }
     await db.doc(`users/${firebaseUser.uid}`).set(
       { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
       { merge: true }
     );
+    try { localStorage.setItem(LAST_PUSH_UID_KEY, firebaseUser.uid); } catch(_) {}
     if (_pushListenerUid !== firebaseUser.uid) {
       await _resetPushListeners(FirebaseMessaging);
       _pushListenerUid = firebaseUser.uid;
@@ -2845,24 +2855,37 @@ function getPendingEntryKeys(data, memberId) {
   return keys;
 }
 
+function _pendingSnapshotKey(memberId) {
+  const familyCode = getFamilyCode() || 'nofam';
+  return `_pend_${familyCode}_${memberId}`;
+}
+
 function savePendingSnapshot(memberId) {
   if (!memberId) return;
   const keys = getPendingEntryKeys(D, memberId);
+  const scopedKey = _pendingSnapshotKey(memberId);
+  const legacyKey = `_pend_${memberId}`;
   try {
-    if (keys.size > 0) localStorage.setItem(`_pend_${memberId}`, JSON.stringify([...keys]));
-    else localStorage.removeItem(`_pend_${memberId}`);
+    localStorage.removeItem(legacyKey);
+    if (keys.size > 0) localStorage.setItem(scopedKey, JSON.stringify([...keys]));
+    else localStorage.removeItem(scopedKey);
   } catch(e) {}
 }
 
 function loadPendingSnapshot(memberId) {
   try {
-    const raw = localStorage.getItem(`_pend_${memberId}`);
+    const scopedKey = _pendingSnapshotKey(memberId);
+    const legacyKey = `_pend_${memberId}`;
+    const raw = localStorage.getItem(scopedKey) || localStorage.getItem(legacyKey);
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch { return new Set(); }
 }
 
 function clearPendingSnapshot(memberId) {
-  try { localStorage.removeItem(`_pend_${memberId}`); } catch(e) {}
+  try {
+    localStorage.removeItem(_pendingSnapshotKey(memberId));
+    localStorage.removeItem(`_pend_${memberId}`);
+  } catch(e) {}
 }
 
 function markBonusesSeen(memberId) {
@@ -6007,7 +6030,7 @@ function launchDollarRain(count = 160, rootElement = null) {
 const _celebQueue = [];
 
 function showCelebration(opts) {
-  if (isParentSignedIn() && !opts?._devBypassParentBlock) return;
+  if (S.currentUser?.role === 'parent' && !opts?._devBypassParentBlock) return;
   _celebQueue.push(opts);
   // Defer so all synchronous calls batch before any rendering,
   // ensuring the first modal knows the full queue size.
