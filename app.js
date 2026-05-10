@@ -11461,6 +11461,11 @@ function buildMemberStats(member, histIdx) {
   choreHist.filter(h => !(h.title||'').startsWith('Streak bonus (')).forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
   const choreBreakdown = Object.entries(choreCount).sort((a,b) => b[1]-a[1]);
 
+  const totalWithdrawn = savWithHist.reduce((s, h) => s + (h.dollars || 0), 0);
+  // All-time savings inflow should mirror "lifetime" style totals:
+  // whatever is currently in savings plus whatever has been spent from savings.
+  const totalDepositedAllTime = (member.savings || 0) + totalWithdrawn;
+
   // Per-prize counts (from prize.redemptions)
   const prizeCount = {};
   (D.prizes || []).forEach(p => {
@@ -11504,8 +11509,8 @@ function buildMemberStats(member, histIdx) {
     bestComboStreak:  member.comboStreak?.best || 0,
     currentComboStreak: member.comboStreak?.current || 0,
     savings:          member.savings || 0,
-    totalDeposited:   savDepHist.reduce((s, h) => s + (h.dollars || 0), 0),
-    totalWithdrawn:   savWithHist.reduce((s, h) => s + (h.dollars || 0), 0),
+    totalDeposited:   parseFloat(totalDepositedAllTime.toFixed(2)),
+    totalWithdrawn:   parseFloat(totalWithdrawn.toFixed(2)),
     declineCount:     hist.filter(h => h.type === 'decline').length,
     comboCount:       bonusHist.length,
     comboDiamonds:       bonusHist.reduce((s,h) => s + Math.abs(h.gems||0), 0),
@@ -11595,8 +11600,8 @@ function renderFamilyStatsCard(kids, histIdx, expandedOverride = null) {
   const cur = D.settings.currency || '$';
   const savOn = D.settings.savingsEnabled !== false;
   const familyBalance   = kids.reduce((s, k) => s + (k.savings || 0), 0);
-  const familyDeposited = (D.history || []).filter(h => kids.some(k=>k.id===h.memberId) && h.type==='savings_deposit').reduce((s,h)=>s+(h.dollars||0),0);
   const familyWithdrawn = (D.history || []).filter(h => kids.some(k=>k.id===h.memberId) && h.type==='savings_withdraw').reduce((s,h)=>s+(h.dollars||0),0);
+  const familyDeposited = familyBalance + familyWithdrawn;
 
   const overviewSection = _statSection('Family Overview',
     _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', 'Tasks Done', totalChores, '#166534', 'all time, all kids') +
