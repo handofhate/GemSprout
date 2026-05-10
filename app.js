@@ -62,6 +62,7 @@ const storage = firebase.storage();
 let _currentFcmToken = null;
 let _pushListenerUid = '';
 let _pushListenerHandles = [];
+const LAST_PUSH_UID_KEY = 'gemsprout.lastPushUid';
 
 async function _resetPushListeners(FirebaseMessaging) {
   try {
@@ -87,10 +88,19 @@ async function initPushNotifications(firebaseUser) {
     const token = tokenResult?.token;
     if (!token || !firebaseUser?.uid) return;
     _currentFcmToken = token;
+    let previousUid = '';
+    try { previousUid = localStorage.getItem(LAST_PUSH_UID_KEY) || ''; } catch(_) {}
+    if (previousUid && previousUid !== firebaseUser.uid) {
+      await db.doc(`users/${previousUid}`).set(
+        { fcmTokens: firebase.firestore.FieldValue.arrayRemove(token) },
+        { merge: true }
+      ).catch(() => {});
+    }
     await db.doc(`users/${firebaseUser.uid}`).set(
       { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
       { merge: true }
     );
+    try { localStorage.setItem(LAST_PUSH_UID_KEY, firebaseUser.uid); } catch(_) {}
     if (_pushListenerUid !== firebaseUser.uid) {
       await _resetPushListeners(FirebaseMessaging);
       _pushListenerUid = firebaseUser.uid;
@@ -2845,24 +2855,37 @@ function getPendingEntryKeys(data, memberId) {
   return keys;
 }
 
+function _pendingSnapshotKey(memberId) {
+  const familyCode = getFamilyCode() || 'nofam';
+  return `_pend_${familyCode}_${memberId}`;
+}
+
 function savePendingSnapshot(memberId) {
   if (!memberId) return;
   const keys = getPendingEntryKeys(D, memberId);
+  const scopedKey = _pendingSnapshotKey(memberId);
+  const legacyKey = `_pend_${memberId}`;
   try {
-    if (keys.size > 0) localStorage.setItem(`_pend_${memberId}`, JSON.stringify([...keys]));
-    else localStorage.removeItem(`_pend_${memberId}`);
+    localStorage.removeItem(legacyKey);
+    if (keys.size > 0) localStorage.setItem(scopedKey, JSON.stringify([...keys]));
+    else localStorage.removeItem(scopedKey);
   } catch(e) {}
 }
 
 function loadPendingSnapshot(memberId) {
   try {
-    const raw = localStorage.getItem(`_pend_${memberId}`);
+    const scopedKey = _pendingSnapshotKey(memberId);
+    const legacyKey = `_pend_${memberId}`;
+    const raw = localStorage.getItem(scopedKey) || localStorage.getItem(legacyKey);
     return raw ? new Set(JSON.parse(raw)) : new Set();
   } catch { return new Set(); }
 }
 
 function clearPendingSnapshot(memberId) {
-  try { localStorage.removeItem(`_pend_${memberId}`); } catch(e) {}
+  try {
+    localStorage.removeItem(_pendingSnapshotKey(memberId));
+    localStorage.removeItem(`_pend_${memberId}`);
+  } catch(e) {}
 }
 
 function markBonusesSeen(memberId) {
@@ -6007,7 +6030,7 @@ function launchDollarRain(count = 160, rootElement = null) {
 const _celebQueue = [];
 
 function showCelebration(opts) {
-  if (isParentSignedIn() && !opts?._devBypassParentBlock) return;
+  if (S.currentUser?.role === 'parent' && !opts?._devBypassParentBlock) return;
   _celebQueue.push(opts);
   // Defer so all synchronous calls batch before any rendering,
   // ensuring the first modal knows the full queue size.
@@ -11438,6 +11461,11 @@ function buildMemberStats(member, histIdx) {
   choreHist.filter(h => !(h.title||'').startsWith('Streak bonus (')).forEach(h => { choreCount[h.title] = (choreCount[h.title] || 0) + 1; });
   const choreBreakdown = Object.entries(choreCount).sort((a,b) => b[1]-a[1]);
 
+  const totalWithdrawn = savWithHist.reduce((s, h) => s + (h.dollars || 0), 0);
+  // All-time savings inflow should mirror "lifetime" style totals:
+  // whatever is currently in savings plus whatever has been spent from savings.
+  const totalDepositedAllTime = (member.savings || 0) + totalWithdrawn;
+
   // Per-prize counts (from prize.redemptions)
   const prizeCount = {};
   (D.prizes || []).forEach(p => {
@@ -11481,8 +11509,8 @@ function buildMemberStats(member, histIdx) {
     bestComboStreak:  member.comboStreak?.best || 0,
     currentComboStreak: member.comboStreak?.current || 0,
     savings:          member.savings || 0,
-    totalDeposited:   savDepHist.reduce((s, h) => s + (h.dollars || 0), 0),
-    totalWithdrawn:   savWithHist.reduce((s, h) => s + (h.dollars || 0), 0),
+    totalDeposited:   parseFloat(totalDepositedAllTime.toFixed(2)),
+    totalWithdrawn:   parseFloat(totalWithdrawn.toFixed(2)),
     declineCount:     hist.filter(h => h.type === 'decline').length,
     comboCount:       bonusHist.length,
     comboDiamonds:       bonusHist.reduce((s,h) => s + Math.abs(h.gems||0), 0),
@@ -11572,8 +11600,8 @@ function renderFamilyStatsCard(kids, histIdx, expandedOverride = null) {
   const cur = D.settings.currency || '$';
   const savOn = D.settings.savingsEnabled !== false;
   const familyBalance   = kids.reduce((s, k) => s + (k.savings || 0), 0);
-  const familyDeposited = (D.history || []).filter(h => kids.some(k=>k.id===h.memberId) && h.type==='savings_deposit').reduce((s,h)=>s+(h.dollars||0),0);
   const familyWithdrawn = (D.history || []).filter(h => kids.some(k=>k.id===h.memberId) && h.type==='savings_withdraw').reduce((s,h)=>s+(h.dollars||0),0);
+  const familyDeposited = familyBalance + familyWithdrawn;
 
   const overviewSection = _statSection('Family Overview',
     _statTile('<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i>', 'Tasks Done', totalChores, '#166534', 'all time, all kids') +
