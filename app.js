@@ -2789,9 +2789,195 @@ function defaultData() {
 const LS_KEY = 'gemsprout_v2';
 let firestoreUnsub = null;
 let _pushInFlight = null;
+let _pendingPushData = null;
+let _syncBaseData = null;
 
 function cloneData(data) {
   try { return JSON.parse(JSON.stringify(data)); } catch(_) { return data; }
+}
+
+function _sameData(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function _isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function _arrayUsesStableIds(...arrays) {
+  const items = arrays.flat().filter(item => item !== undefined && item !== null);
+  return items.length > 0 && items.every(item => _isPlainObject(item) && typeof item.id === 'string' && item.id);
+}
+
+function _isAdditiveNumberPath(path) {
+  const key = path.split('.').at(-1);
+  return ['gems', 'diamonds', 'totalEarned', 'xp', 'savings', 'nlPendingSecs', 'nlTodaySecs'].includes(key)
+    || path.includes('.contributions.');
+}
+
+function _mergeIdArray(base, local, remote, path) {
+  const baseById = new Map(base.map(item => [item.id, item]));
+  const localById = new Map(local.map(item => [item.id, item]));
+  const remoteById = new Map(remote.map(item => [item.id, item]));
+  const result = remote.map(item => cloneData(item));
+  const resultIndex = new Map(result.map((item, index) => [item.id, index]));
+
+  baseById.forEach((baseItem, id) => {
+    if (!localById.has(id)) {
+      const index = resultIndex.get(id);
+      if (index !== undefined) result[index] = null;
+      return;
+    }
+    if (!remoteById.has(id)) return;
+    const index = resultIndex.get(id);
+    result[index] = _mergeConcurrentValue(baseItem, localById.get(id), remoteById.get(id), `${path}[${id}]`);
+  });
+
+  const additions = local.filter(item => !baseById.has(item.id) && !remoteById.has(item.id)).map(cloneData);
+  const compact = result.filter(Boolean);
+  return path === 'history' ? [...additions, ...compact] : [...compact, ...additions];
+}
+
+function _mergeSetArray(base, local, remote) {
+  const baseSet = new Set(base);
+  const localSet = new Set(local);
+  const result = new Set(remote);
+  baseSet.forEach(value => { if (!localSet.has(value)) result.delete(value); });
+  localSet.forEach(value => { if (!baseSet.has(value)) result.add(value); });
+  return [...result];
+}
+
+function _mergeConcurrentValue(base, local, remote, path = '') {
+  if (_sameData(local, base)) return cloneData(remote);
+  if (path === 'settings.lastSync') return cloneData(remote);
+  if (_isAdditiveNumberPath(path) && [base, local, remote].every(Number.isFinite)) {
+    return remote + (local - base);
+  }
+  if (Array.isArray(local)) {
+    const baseArray = Array.isArray(base) ? base : [];
+    const remoteArray = Array.isArray(remote) ? remote : [];
+    if (_arrayUsesStableIds(baseArray, local, remoteArray)) return _mergeIdArray(baseArray, local, remoteArray, path);
+    if (path.endsWith('.badges') || path === 'teamGoalInboxDismissed') return _mergeSetArray(baseArray, local, remoteArray);
+    return cloneData(local);
+  }
+  if (_isPlainObject(local)) {
+    const baseObject = _isPlainObject(base) ? base : {};
+    const remoteObject = _isPlainObject(remote) ? remote : {};
+    const result = cloneData(remoteObject);
+    const keys = new Set([...Object.keys(baseObject), ...Object.keys(local)]);
+    keys.forEach(key => {
+      const localHasKey = Object.prototype.hasOwnProperty.call(local, key);
+      const baseHasKey = Object.prototype.hasOwnProperty.call(baseObject, key);
+      if (!localHasKey && baseHasKey) {
+        delete result[key];
+        return;
+      }
+      if (!localHasKey) return;
+      const nextPath = path ? `${path}.${key}` : key;
+      result[key] = _mergeConcurrentValue(baseObject[key], local[key], remoteObject[key], nextPath);
+    });
+    return result;
+  }
+  return cloneData(local);
+}
+
+function mergeConcurrentData(base, local, remote) {
+  return _mergeConcurrentValue(base || {}, local || {}, remote || {});
+}
+
+function _setSyncBase(data) {
+  _syncBaseData = cloneData(data);
+}
+
+function _normalizeDataCopy(data) {
+  const liveData = D;
+  const normalized = normalizeData(cloneData(data));
+  D = liveData;
+  return normalized;
+}
+
+function _ensureSyncMeta(data) {
+  if (!data.syncMeta || typeof data.syncMeta !== 'object') data.syncMeta = {};
+  if (!Array.isArray(data.syncMeta.processedActions)) data.syncMeta.processedActions = [];
+  return data.syncMeta;
+}
+
+function _rememberProcessedAction(data, actionId) {
+  if (!actionId) return;
+  const meta = _ensureSyncMeta(data);
+  meta.processedActions = [...meta.processedActions.filter(id => id !== actionId), actionId].slice(-250);
+}
+
+function _applyFamilyActionToData(data, actionId, mutate) {
+  const working = _normalizeDataCopy(data);
+  const meta = _ensureSyncMeta(working);
+  if (actionId && meta.processedActions.includes(actionId)) {
+    return { data: working, duplicate: true, result: { duplicate: true } };
+  }
+
+  const liveData = D;
+  const liveCurrentUser = S.currentUser;
+  const liveDryRun = S._transactionDryRun;
+  D = working;
+  S._transactionDryRun = true;
+  if (liveCurrentUser?.id) S.currentUser = getMember(liveCurrentUser.id) || liveCurrentUser;
+  let result;
+  try {
+    result = mutate();
+    syncGemAliases();
+    _rememberProcessedAction(D, actionId);
+    return { data: cloneData(D), duplicate: false, result };
+  } finally {
+    D = liveData;
+    S.currentUser = liveCurrentUser;
+    S._transactionDryRun = liveDryRun;
+  }
+}
+
+function _applyCommittedFamilyData(data) {
+  let nextData = cloneData(data);
+  if (_pendingPushData) {
+    nextData = mergeConcurrentData(_syncBaseData || D, D, nextData);
+    _pendingPushData = cloneData(nextData);
+  }
+  D = normalizeData(nextData);
+  try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+  if (S.currentUser?.id) {
+    const fresh = getMember(S.currentUser.id);
+    if (fresh) S.currentUser = fresh;
+  }
+  _setSyncBase(data);
+  renderCurrentView();
+}
+
+async function runFamilyAction(actionId, mutate) {
+  if (S._testOnboarding?.active || isE2EMode()) {
+    const applied = _applyFamilyActionToData(D, actionId, mutate);
+    _applyCommittedFamilyData(applied.data);
+    return applied;
+  }
+
+  const docRef = db.doc(getFamilyDoc());
+  S.syncStatus = 'syncing';
+  try {
+    const applied = await db.runTransaction(async transaction => {
+      const snap = await transaction.get(docRef);
+      const remote = snap.exists ? snap.data() : cloneData(D);
+      const next = _applyFamilyActionToData(remote, actionId, mutate);
+      if (!next.duplicate) {
+        if (next.data.settings) next.data.settings.lastSync = Date.now();
+        transaction.set(docRef, cloneData(next.data));
+      }
+      return next;
+    });
+    _applyCommittedFamilyData(applied.data);
+    S.syncStatus = 'ok';
+    return applied;
+  } catch(e) {
+    S.syncStatus = 'error';
+    console.warn('Firestore action error:', e);
+    return { data: cloneData(D), duplicate: false, result: { error: 'Could not save. Please try again.' }, error: e };
+  }
 }
 
 function showPaywallAccountOptions() {
@@ -2814,10 +3000,15 @@ function loadData() {
   } catch(e) {
     D = normalizeData(defaultData());
   }
+  _setSyncBase(D);
 }
 
 function saveData() {
   if (S._testOnboarding?.active) return;
+  if (S._transactionDryRun) {
+    syncGemAliases();
+    return;
+  }
   S.lastLocalSave = Date.now();
   if (D.settings) D.settings.lastSync = Date.now();
   if (D.declineNotifications?.length > 20) D.declineNotifications = D.declineNotifications.slice(-20);
@@ -2829,19 +3020,59 @@ function saveData() {
     if (fresh) S.currentUser = fresh;
   }
   renderCurrentView();
-  if (!isE2EMode()) pushToFirestore();
+  if (!isE2EMode()) pushToFirestore(cloneData(D));
 }
 
-async function pushToFirestore() {
+function pushToFirestore(localData = cloneData(D)) {
   if (S._testOnboarding?.active) return;
   if (isE2EMode()) return;
-  try {
-    await db.doc(getFamilyDoc()).set(cloneData(D));
-    S.syncStatus = 'ok';
-  } catch(e) {
-    S.syncStatus = 'error';
-    console.warn('Firestore write error:', e);
-  }
+  _pendingPushData = cloneData(localData);
+  if (_pushInFlight) return _pushInFlight;
+
+  _pushInFlight = (async () => {
+    while (_pendingPushData) {
+      const localSnapshot = _pendingPushData;
+      _pendingPushData = null;
+      const baseSnapshot = cloneData(_syncBaseData || localSnapshot);
+      const docRef = db.doc(getFamilyDoc());
+      S.syncStatus = 'syncing';
+
+      let committed;
+      try {
+        committed = await db.runTransaction(async transaction => {
+          const snap = await transaction.get(docRef);
+          const remote = snap.exists ? normalizeData(snap.data()) : null;
+          const merged = remote ? mergeConcurrentData(baseSnapshot, localSnapshot, remote) : cloneData(localSnapshot);
+          if (merged.settings) merged.settings.lastSync = Date.now();
+          transaction.set(docRef, cloneData(merged));
+          return merged;
+        });
+      } catch(e) {
+        _pendingPushData = cloneData(D);
+        S.syncStatus = 'error';
+        console.warn('Firestore write error:', e);
+        break;
+      }
+
+      const newerLocal = cloneData(_pendingPushData || D);
+      const rebased = normalizeData(mergeConcurrentData(localSnapshot, newerLocal, committed));
+      const changedByRemote = !_sameData(rebased, newerLocal);
+      D = rebased;
+      try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+      if (S.currentUser?.id) {
+        const fresh = getMember(S.currentUser.id);
+        if (fresh) S.currentUser = fresh;
+      }
+      _setSyncBase(committed);
+      if (_pendingPushData) _pendingPushData = cloneData(D);
+      if (changedByRemote) renderCurrentView();
+      S.syncStatus = 'ok';
+    }
+  })().finally(() => {
+    _pushInFlight = null;
+  });
+
+  return _pushInFlight;
 }
 
 function getPendingEntryKeys(data, memberId) {
@@ -3219,6 +3450,7 @@ function subscribeToFirestore(onFirstLoad) {
           checkForDeclineNotifications(S.currentUser, false);
         }
       }
+      if (!_pushInFlight && !_pendingPushData) _setSyncBase(normalizedIncoming);
     }
     if (firstSnapshot) {
       firstSnapshot = false;
@@ -4127,7 +4359,7 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
   } else {
     saveData();
     // Notify parents when a kid submits a chore needing approval (fire-and-forget)
-    if (S.currentUser?.role === 'kid' && D.settings.notifyChoreApproval !== false) {
+    if (!S._transactionDryRun && S.currentUser?.role === 'kid' && D.settings.notifyChoreApproval !== false) {
       try {
         firebase.functions().httpsCallable('sendApprovalNotification')({
           familyCode: getFamilyCode(),
@@ -4142,6 +4374,26 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
   }
 }
 
+async function commitCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entryType = null) {
+  const actionId = `chore-submit:${memberId}:${choreId}:${genId()}`;
+  const applied = await runFamilyAction(actionId, () => doCompleteChore(choreId, memberId, slotId, photoUrl, entryType));
+  const result = applied.result;
+  if (!applied.duplicate && !result?.error && !result?.approved && D.settings.notifyChoreApproval !== false) {
+    const member = getMember(memberId);
+    const chore = D.chores.find(c => c.id === choreId);
+    try {
+      firebase.functions().httpsCallable('sendApprovalNotification')({
+        familyCode: getFamilyCode(),
+        kidName: member?.name || 'A kid',
+        choreTitle: chore?.title || 'a chore',
+        isBefore: entryType === 'before',
+        pendingCount: familyInboxCount(),
+      }).catch(() => {});
+    } catch(e) {}
+  }
+  return result;
+}
+
 function doApproveChore(choreId, memberId, entryId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
@@ -4149,6 +4401,7 @@ function doApproveChore(choreId, memberId, entryId) {
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]);
   const entry = chore.completions[memberId].find(item => item.id === entryId);
   if (!entry) return;
+  if (entry.status !== 'pending') return { duplicate: true };
 
   entry.photoUrl = null;
 
@@ -4183,6 +4436,10 @@ function doApproveChore(choreId, memberId, entryId) {
   saveData();
 }
 
+async function commitApproveChore(choreId, memberId, entryId) {
+  return runFamilyAction(`chore-approve:${entryId}`, () => doApproveChore(choreId, memberId, entryId));
+}
+
 function doRejectChore(choreId, memberId, entryId, reason = '') {
   const chore = D.chores.find(c => c.id === choreId);
   if (!chore) return;
@@ -4201,6 +4458,10 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
     seen: false,
   });
   saveData();
+}
+
+async function commitRejectChore(choreId, memberId, entryId, reason = '') {
+  return runFamilyAction(`chore-reject:${entryId}`, () => doRejectChore(choreId, memberId, entryId, reason));
 }
 
 function doRedeemPrize(prizeId, memberId, opts = {}) {
@@ -4251,6 +4512,12 @@ function doRedeemPrize(prizeId, memberId, opts = {}) {
   return { ok: true };
 }
 
+async function commitRedeemPrize(prizeId, memberId, opts = {}) {
+  const periodKey = getPrizePeriodKey(D.prizes.find(p => p.id === prizeId)?.recurrence || 'anytime', today());
+  const actionId = opts.actionId || `prize-redeem:${memberId}:${prizeId}:${periodKey}:${genId()}`;
+  return runFamilyAction(actionId, () => doRedeemPrize(prizeId, memberId, opts));
+}
+
 function goalTotal(goal) {
   if (!goal) return 0;
   return Object.values(goal.contributions||{}).reduce((a,b)=>a+b,0);
@@ -4290,6 +4557,10 @@ function doContributeToGoal(memberId, goalId, gems) {
     remaining,
     reason: requested > remaining ? 'goal_cap' : requested > owned ? 'owned_cap' : null,
   };
+}
+
+async function commitContributeToGoal(memberId, goalId, gems) {
+  return runFamilyAction(`goal-contribute:${memberId}:${goalId}:${genId()}`, () => doContributeToGoal(memberId, goalId, gems));
 }
 
 function addHistory(type, memberId, title, gems, extra = {}) {
@@ -4532,7 +4803,7 @@ function _deductAwardedGems(member, gems) {
   return actual;
 }
 
-function undoActivityHistoryEntry(historyId) {
+function _undoActivityHistoryEntry(historyId) {
   const h = (D.history || []).find(x => x.id === historyId);
   if (!h) { toast('Activity entry not found'); return; }
   const blockReason = _getUndoBlockReason(h);
@@ -4640,6 +4911,7 @@ function undoActivityHistoryEntry(historyId) {
     addHistory(reversal >= 0 ? 'bonus' : 'penalty', h.memberId, `Undo: ${cleanActivityTitle(h.title)}`, reversal, { undoSourceHistoryId: h.id });
   }
   saveData();
+  if (S._transactionDryRun) return { ok: true, title: cleanActivityTitle(h.title), memberName: member.name, choreId: chore?.id || null };
   toast(`Undid "${cleanActivityTitle(h.title)}" for ${member.name}`);
   _suppressActivityHintBounceOnce();
   if (chore?.id) refreshOpenFamilySnapshot({ memberId: h.memberId, choreId: chore.id });
@@ -4650,6 +4922,17 @@ function undoActivityHistoryEntry(historyId) {
   renderParentHeader();
   renderParentNav();
   syncAppBadge();
+}
+
+async function undoActivityHistoryEntry(historyId) {
+  const applied = await runFamilyAction(`history-undo:${historyId}`, () => _undoActivityHistoryEntry(historyId));
+  const result = applied.result;
+  if (!result?.ok) return;
+  toast(`Undid "${result.title}" for ${result.memberName}`);
+  _suppressActivityHintBounceOnce();
+  if (result.choreId) refreshOpenFamilySnapshot({ memberId: (D.history || []).find(h => h.undoSourceHistoryId === historyId)?.memberId, choreId: result.choreId });
+  if (document.getElementById('settings-root')?.classList.contains('open')) renderFullHistory(S._historyMemberId, { suppressBounce: true });
+  renderParentHome(); renderParentHeader(); renderParentNav(); syncAppBadge();
 }
 
 function renderActivityRow(h, opts = {}) {
@@ -5738,6 +6021,7 @@ function selPrizeColor(el, color) {
 }
 
 function toast(msg, duration = 2900) {
+  if (S._transactionDryRun) return;
   const el = document.createElement('div');
   el.className = 'toast';
   el.innerHTML = msg;
@@ -9587,7 +9871,7 @@ function renderKidView() {
       dollars:  interest,
       cur,
       btnLabel: 'Claim Interest',
-      onClose:  () => { claimInterest(m.id, { source: 'kid' }); renderKidView(); },
+      onClose:  async () => { await commitClaimInterest(m.id, { source: 'kid' }); renderKidView(); },
     }), 600);
   }
 }
@@ -10113,7 +10397,7 @@ function tinyChoreCard(chore, member, progress) {
 
 // entryTypeOverride: 'before' | 'after' | null
 // slotId: slot id for slot-mode chores
-function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride = null) {
+async function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride = null) {
   evt && evt.stopPropagation();
   const m = S.currentUser;
   if (!m) return;
@@ -10127,7 +10411,7 @@ function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride = null)
     return;
   }
 
-  const result = doCompleteChore(choreId, m.id, slotId);
+  const result = await commitCompleteChore(choreId, m.id, slotId);
   if (!result) return;
   if (result.error) {
     toast(result.error);
@@ -10282,7 +10566,7 @@ async function submitChorePhoto(choreId, slotId, entryType) {
     closePhotoCaptureModal();
     const m = S.currentUser;
     const resolvedEntryType = entryType || null;
-    const result = doCompleteChore(choreId, m.id, slotId || null, photoUrl, resolvedEntryType);
+    const result = await commitCompleteChore(choreId, m.id, slotId || null, photoUrl, resolvedEntryType);
     if (!result) return;
     if (result.error) { toast(result.error); return; }
     if (result.isBefore) {
@@ -10579,7 +10863,7 @@ function showSpendRequestModal(memberId, triggerEl = null) {
     </div>`, 'quick-action-modal-wide kid-savings-modal kid-savings-spend-modal');
 }
 
-function submitSpendRequest(memberId) {
+async function submitSpendRequest(memberId) {
   const m      = getMember(memberId);
   const amt    = parseFloat(document.getElementById('spend-amt')?.value) || 0;
   const reason = document.getElementById('spend-reason')?.value.trim() || '';
@@ -10589,9 +10873,17 @@ function submitSpendRequest(memberId) {
   if ((D.savingsRequests || []).some(r => r.memberId === memberId && r.status === 'pending')) {
     toast('Request already pending.'); return;
   }
-  D.savingsRequests = D.savingsRequests || [];
-  D.savingsRequests.push({ id: genId(), memberId, amount: amt, reason, status: 'pending', date: today(), createdAt: Date.now() });
-  saveData();
+  const requestId = genId();
+  const applied = await runFamilyAction(`savings-request:${requestId}`, () => {
+    const freshMember = getMember(memberId);
+    if (!freshMember || amt > (freshMember.savings || 0)) return { error: 'Savings balance changed. Please try again.' };
+    D.savingsRequests = D.savingsRequests || [];
+    if (D.savingsRequests.some(r => r.memberId === memberId && r.status === 'pending')) return { error: 'Request already pending.' };
+    D.savingsRequests.push({ id: requestId, memberId, amount: amt, reason, status: 'pending', date: today(), createdAt: Date.now() });
+    saveData();
+    return { ok: true };
+  });
+  if (applied.result?.error) { toast(applied.result.error); return; }
   closeModal();
   toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent! Waiting for parent approval');
   if (D.settings.notifySavingsSpend !== false) {
@@ -10615,24 +10907,27 @@ function approveSavingsRequest(requestId, btn) {
   const m   = getMember(req.memberId);
   const cur = D.settings.currency || '$';
   if (!m) return;
-  _fadeOutAdminCard(btn, () => {
-    const memberBefore = _captureMemberUndoSnapshot(m);
-    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
-    const actual = Math.min(req.amount, m.savings || 0);
-    reduceSavingsBuckets(m, actual);
-    m.savings = parseFloat(Math.max(0, (m.savings || 0) - actual).toFixed(2));
-    req.status = 'approved';
-    req.resolvedAt = Date.now();
-    const label = req.reason ? `Spent: ${req.reason}` : 'Savings withdrawal approved';
-    addHistory('savings_withdraw', req.memberId, label, 0, {
-      dollars: actual,
-      undoAction: 'approve_savings_request',
-      requestId: req.id,
-      requestBefore,
-      memberBefore,
+  return _fadeOutAdminCard(btn, async () => {
+    const applied = await runFamilyAction(`savings-approve:${requestId}`, () => {
+      const freshReq = (D.savingsRequests || []).find(r => r.id === requestId);
+      if (!freshReq || freshReq.status !== 'pending') return { duplicate: true };
+      const freshMember = getMember(freshReq.memberId);
+      if (!freshMember) return { error: 'Member no longer exists.' };
+      const memberBefore = _captureMemberUndoSnapshot(freshMember);
+      const requestBefore = _cloneForUndo({ status: freshReq.status, resolvedAt: freshReq.resolvedAt || null });
+      const actual = Math.min(freshReq.amount, freshMember.savings || 0);
+      reduceSavingsBuckets(freshMember, actual);
+      freshMember.savings = parseFloat(Math.max(0, (freshMember.savings || 0) - actual).toFixed(2));
+      freshReq.status = 'approved';
+      freshReq.resolvedAt = Date.now();
+      const label = freshReq.reason ? `Spent: ${freshReq.reason}` : 'Savings withdrawal approved';
+      addHistory('savings_withdraw', freshReq.memberId, label, 0, {
+        dollars: actual, undoAction: 'approve_savings_request', requestId: freshReq.id, requestBefore, memberBefore,
+      });
+      saveData();
+      return { ok: true, actual, memberName: freshMember.name };
     });
-    saveData();
-    toast(`Approved ${cur}${actual.toFixed(2)} spend for ${m.name}`);
+    if (applied.result?.ok) toast(`Approved ${cur}${applied.result.actual.toFixed(2)} spend for ${applied.result.memberName}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
     syncAppBadge();
   });
@@ -10642,17 +10937,20 @@ function denySavingsRequest(requestId, btn) {
   const req = (D.savingsRequests || []).find(r => r.id === requestId);
   if (!req) return;
   const m = getMember(req.memberId);
-  _fadeOutAdminCard(btn, () => {
-    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
-    req.status = 'denied';
-    req.resolvedAt = Date.now();
-    addHistory('decline', req.memberId, 'Savings request denied', 0, {
-      undoAction: 'deny_savings_request',
-      requestId: req.id,
-      requestBefore,
+  return _fadeOutAdminCard(btn, async () => {
+    const applied = await runFamilyAction(`savings-deny:${requestId}`, () => {
+      const freshReq = (D.savingsRequests || []).find(r => r.id === requestId);
+      if (!freshReq || freshReq.status !== 'pending') return { duplicate: true };
+      const requestBefore = _cloneForUndo({ status: freshReq.status, resolvedAt: freshReq.resolvedAt || null });
+      freshReq.status = 'denied';
+      freshReq.resolvedAt = Date.now();
+      addHistory('decline', freshReq.memberId, 'Savings request denied', 0, {
+        undoAction: 'deny_savings_request', requestId: freshReq.id, requestBefore,
+      });
+      saveData();
+      return { ok: true };
     });
-    saveData();
-    toast(`Spend request denied for ${m?.name || 'kid'}`);
+    if (applied.result?.ok) toast(`Spend request denied for ${m?.name || 'kid'}`);
     renderParentHome(); renderParentHeader(); renderParentNav();
     syncAppBadge();
   });
@@ -10664,14 +10962,19 @@ function approvePrizeRequest(requestId, btn) {
   const member = getMember(req.memberId);
   const prize = D.prizes.find(p => p.id === req.prizeId);
   if (!member || !prize) return;
-  _fadeOutAdminCard(btn, () => {
-    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
-    const result = doRedeemPrize(prize.id, member.id, { requestId: req.id, requestBefore });
-    req.status = result?.ok ? 'approved' : 'denied';
-    req.resolvedAt = Date.now();
-    saveData();
-    if (result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
-    else toast(`Could not approve: ${formatPrizeRedeemStatusMessage(result)}`);
+  return _fadeOutAdminCard(btn, async () => {
+    const applied = await runFamilyAction(`prize-approve:${requestId}`, () => {
+      const freshReq = (D.prizeRequests || []).find(r => r.id === requestId);
+      if (!freshReq || freshReq.status !== 'pending') return { duplicate: true };
+      const requestBefore = _cloneForUndo({ status: freshReq.status, resolvedAt: freshReq.resolvedAt || null });
+      const result = doRedeemPrize(freshReq.prizeId, freshReq.memberId, { requestId: freshReq.id, requestBefore });
+      freshReq.status = result?.ok ? 'approved' : 'denied';
+      freshReq.resolvedAt = Date.now();
+      saveData();
+      return result;
+    });
+    if (applied.result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
+    else if (!applied.result?.duplicate) toast(`Could not approve: ${formatPrizeRedeemStatusMessage(applied.result)}`);
     renderParentHome();
     renderParentHeader();
     renderParentNav();
@@ -10683,17 +10986,20 @@ function denyPrizeRequest(requestId, btn) {
   const req = (D.prizeRequests || []).find(r => r.id === requestId);
   if (!req || req.status !== 'pending') return;
   const member = getMember(req.memberId);
-  _fadeOutAdminCard(btn, () => {
-    const requestBefore = _cloneForUndo({ status: req.status, resolvedAt: req.resolvedAt || null });
-    req.status = 'denied';
-    req.resolvedAt = Date.now();
-    addHistory('decline', req.memberId, 'Prize request denied', 0, {
-      undoAction: 'deny_prize_request',
-      requestId: req.id,
-      requestBefore,
+  return _fadeOutAdminCard(btn, async () => {
+    const applied = await runFamilyAction(`prize-deny:${requestId}`, () => {
+      const freshReq = (D.prizeRequests || []).find(r => r.id === requestId);
+      if (!freshReq || freshReq.status !== 'pending') return { duplicate: true };
+      const requestBefore = _cloneForUndo({ status: freshReq.status, resolvedAt: freshReq.resolvedAt || null });
+      freshReq.status = 'denied';
+      freshReq.resolvedAt = Date.now();
+      addHistory('decline', freshReq.memberId, 'Prize request denied', 0, {
+        undoAction: 'deny_prize_request', requestId: freshReq.id, requestBefore,
+      });
+      saveData();
+      return { ok: true };
     });
-    saveData();
-    toast(`Prize request denied for ${member?.name || 'kid'}`);
+    if (applied.result?.ok) toast(`Prize request denied for ${member?.name || 'kid'}`);
     renderParentHome();
     renderParentHeader();
     renderParentNav();
@@ -10848,7 +11154,7 @@ function updateSavingsPreview(memberId, rawVal) {
     : `You'll save ${cur}${dollars.toFixed(2)}`;
 }
 
-function doSaveDiamonds(memberId) {
+async function doSaveDiamonds(memberId) {
   const m    = getMember(memberId);
   const dmds = parseInt(document.getElementById('save-dmds')?.value) || 0;
   const rate = D.settings.diamondsPerDollar || 10;
@@ -10856,27 +11162,34 @@ function doSaveDiamonds(memberId) {
   if (!m || dmds <= 0 || dmds > (m.diamonds||0)) {
     toast(`Enter a valid gem amount`); return;
   }
-  const dollars = parseFloat((dmds / rate).toFixed(2));
-  m.diamonds -= dmds;
-  m.savings   = parseFloat(((m.savings||0) + dollars).toFixed(2));
-  addHistory('savings', memberId, `Converted ${dmds} gems to savings`, -dmds);
-
   const matchOn  = D.settings.savingsMatchingEnabled && D.settings.savingsEnabled !== false;
-  let toastMsg   = `+${cur}${dollars.toFixed(2)} saved!`;
-  if (matchOn) {
-    const matchPct    = D.settings.savingsMatchPercent || 50;
-    const matchDollars = parseFloat((dollars * matchPct / 100).toFixed(2));
-    if (matchDollars > 0) {
-      m.savings        = parseFloat(((m.savings||0) + matchDollars).toFixed(2));
-      m.savingsMatched = parseFloat(((m.savingsMatched||0) + matchDollars).toFixed(2));
-      addHistory('savings', memberId, `Parent match (${matchPct}%) +${cur}${matchDollars.toFixed(2)}`, 0);
-      toastMsg = `+${cur}${dollars.toFixed(2)} saved + ${cur}${matchDollars.toFixed(2)} parent match!`;
+  const matchPct = D.settings.savingsMatchPercent || 50;
+  const applied = await runFamilyAction(`savings-convert:${memberId}:${genId()}`, () => {
+    const freshMember = getMember(memberId);
+    if (!freshMember || dmds <= 0 || dmds > (freshMember.diamonds || 0)) return { error: 'Gem balance changed. Please try again.' };
+    const dollars = parseFloat((dmds / rate).toFixed(2));
+    freshMember.diamonds -= dmds;
+    freshMember.gems = freshMember.diamonds;
+    freshMember.savings = parseFloat(((freshMember.savings || 0) + dollars).toFixed(2));
+    addHistory('savings', memberId, `Converted ${dmds} gems to savings`, -dmds);
+    let matchDollars = 0;
+    if (matchOn) {
+      matchDollars = parseFloat((dollars * matchPct / 100).toFixed(2));
+      if (matchDollars > 0) {
+        freshMember.savings = parseFloat(((freshMember.savings || 0) + matchDollars).toFixed(2));
+        freshMember.savingsMatched = parseFloat(((freshMember.savingsMatched || 0) + matchDollars).toFixed(2));
+        addHistory('savings', memberId, `Parent match (${matchPct}%) +${cur}${matchDollars.toFixed(2)}`, 0);
+      }
     }
-  }
-
-  saveData();
+    saveData();
+    return { ok: true, dollars, matchDollars };
+  });
+  if (applied.result?.error) { toast(applied.result.error); return; }
   closeModal();
-  toast(toastMsg);
+  const { dollars, matchDollars } = applied.result;
+  toast(matchDollars > 0
+    ? `+${cur}${dollars.toFixed(2)} saved + ${cur}${matchDollars.toFixed(2)} parent match!`
+    : `+${cur}${dollars.toFixed(2)} saved!`);
   renderKidDiamonds();
   renderKidHeader();
 }
@@ -10931,7 +11244,11 @@ function claimInterest(memberId, opts = {}) {
   return true;
 }
 
-function claimInterestForKidFromParent(memberId) {
+async function commitClaimInterest(memberId, opts = {}) {
+  return runFamilyAction(`savings-interest:${memberId}:${today()}`, () => claimInterest(memberId, opts));
+}
+
+async function claimInterestForKidFromParent(memberId) {
   const kid = getMember(memberId);
   if (!kid || kid.role !== 'kid') return;
   if (getSavingsInterestMode() !== 'kid_claim') {
@@ -10947,7 +11264,8 @@ function claimInterestForKidFromParent(memberId) {
     toast(`${kid.name} has no claimable interest right now.`);
     return;
   }
-  if (claimInterest(memberId, { source: 'parent' })) {
+  const applied = await commitClaimInterest(memberId, { source: 'parent' });
+  if (applied.result) {
     toast(`Claimed ${fmtCurrencyVisual(amount, D.settings.currency || '$')} for ${kid.name}.`);
     renderParentHome();
     renderParentHeader();
@@ -10955,14 +11273,16 @@ function claimInterestForKidFromParent(memberId) {
   }
 }
 
-function applyInterestForAllKids() {
+async function applyInterestForAllKids() {
   if (getSavingsInterestMode() !== 'auto_claim') return;
   if (!isInterestDay()) return;
   const kids = (D.family?.members || []).filter(m => m.role === 'kid' && !m.deleted);
   let claimed = 0;
-  kids.forEach(k => {
-    if (_calcClaimableInterest(k) > 0 && claimInterest(k.id, { source: 'auto' })) claimed += 1;
-  });
+  for (const kid of kids) {
+    if (_calcClaimableInterest(kid) <= 0) continue;
+    const applied = await commitClaimInterest(kid.id, { source: 'auto' });
+    if (applied.result) claimed += 1;
+  }
   if (claimed > 0 && S.currentUser?.role === 'parent') {
     toast(`Auto-claimed interest for ${claimed} kid${claimed === 1 ? '' : 's'}.`);
   }
@@ -11068,34 +11388,40 @@ function kidRedeemPrize(prizeId, evt) {
     </div>`);
 }
 
-function submitPrizeRequest(prizeId) {
+async function submitPrizeRequest(prizeId) {
   const m = S.currentUser;
   const prize = D.prizes.find(p => p.id === prizeId);
   closeModal();
   if (!m || !prize) return;
-  D.prizeRequests = D.prizeRequests || [];
-  const hasPending = D.prizeRequests.some(r => r.status === 'pending' && r.memberId === m.id && r.prizeId === prizeId);
+  const hasPending = (D.prizeRequests || []).some(r => r.status === 'pending' && r.memberId === m.id && r.prizeId === prizeId);
   if (hasPending) {
     toast('Request already pending for this prize');
     return;
   }
-  D.prizeRequests.push({
-    id: genId(),
-    prizeId,
-    memberId: m.id,
-    cost: Math.max(0, Number(prize.cost) || 0),
-    status: 'pending',
-    date: today(),
-    createdAt: Date.now(),
+  const requestId = genId();
+  const applied = await runFamilyAction(`prize-request:${requestId}`, () => {
+    const freshPrize = D.prizes.find(p => p.id === prizeId);
+    const freshMember = getMember(m.id);
+    if (!freshPrize || !freshMember) return { error: 'Prize is no longer available.' };
+    D.prizeRequests = D.prizeRequests || [];
+    if (D.prizeRequests.some(r => r.status === 'pending' && r.memberId === freshMember.id && r.prizeId === prizeId)) {
+      return { error: 'Request already pending for this prize' };
+    }
+    D.prizeRequests.push({
+      id: requestId, prizeId, memberId: freshMember.id,
+      cost: Math.max(0, Number(freshPrize.cost) || 0), status: 'pending', date: today(), createdAt: Date.now(),
+    });
+    saveData();
+    return { ok: true };
   });
-  saveData();
+  if (applied.result?.error) { toast(applied.result.error); return; }
   toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent for parent approval');
   if (isTiny(m)) speak(`Request sent for ${prize.title}. Waiting for your grown-up.`);
   renderKidShop();
   renderKidHeader();
 }
 
-function confirmRedeem(prizeId) {
+async function confirmRedeem(prizeId) {
   if (!S._redeemLocks) S._redeemLocks = {};
   if (S._redeemLocks[prizeId]) return;
   S._redeemLocks[prizeId] = true;
@@ -11107,7 +11433,8 @@ function confirmRedeem(prizeId) {
     delete S._redeemLocks[prizeId];
     return;
   }
-  const result = doRedeemPrize(prizeId, m?.id);
+  const applied = await commitRedeemPrize(prizeId, m?.id);
+  const result = applied.result;
   if (!result?.ok) {
     toast(formatPrizeRedeemStatusMessage(result));
     delete S._redeemLocks[prizeId];
@@ -11253,11 +11580,12 @@ function showContribAdjustmentModal(memberId, goalId, details) {
   if (isTiny(m)) speak(reasonText);
 }
 
-function doContrib(memberId, goalId) {
+async function doContrib(memberId, goalId) {
   const dmds  = parseInt(document.getElementById('contrib-dmds')?.value)||0;
   const goal = D.teamGoals?.find(g => g.id === goalId);
   if (dmds <= 0) { toast('Enter gems to contribute'); return; }
-  const result = doContributeToGoal(memberId, goalId, dmds);
+  const applied = await commitContributeToGoal(memberId, goalId, dmds);
+  const result = applied.result;
   closeModal();
   if (!result?.ok) {
     if (result?.reason === 'complete') toast('This prize is already fully funded!');
@@ -13129,11 +13457,14 @@ function renderParentHome() {
 
 function _fadeOutAdminCard(btn, then) {
   const card = btn?.closest?.('.admin-card');
-  if (!card) { then(); return; }
+  if (!card) return then();
   card.style.transition = 'opacity 0.2s, transform 0.2s';
   card.style.opacity = '0';
   card.style.transform = 'scale(0.97)';
-  setTimeout(then, 210);
+  return new Promise(resolve => setTimeout(async () => {
+    await then();
+    resolve();
+  }, 210));
 }
 
 function _flipAdminCard(btn, newInnerHTML, then) {
@@ -13178,20 +13509,22 @@ function approveChore(choreId, memberId, entryId, btn) {
         <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
     _flipAdminCard(btn, inProgressInner, () => {
-      doApproveChore(choreId, memberId, entryId);
+      commitApproveChore(choreId, memberId, entryId).then(() => {
       renderParentHome();
       renderParentHeader();
       renderParentNav();
       syncAppBadge();
+      });
     });
   } else {
     _fadeOutAdminCard(btn, () => {
-      doApproveChore(choreId, memberId, entryId);
-      toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
-      renderParentHome();
-      renderParentHeader();
-      renderParentNav();
-      syncAppBadge();
+      commitApproveChore(choreId, memberId, entryId).then(applied => {
+        if (!applied.duplicate) toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
+        renderParentHome();
+        renderParentHeader();
+        renderParentNav();
+        syncAppBadge();
+      });
     });
   }
 }
@@ -13213,12 +13546,12 @@ function rejectChore(choreId, memberId, entryId) {
   setTimeout(() => document.getElementById('decline-reason-input')?.focus(), 100);
 }
 
-function confirmRejectChore(choreId, memberId, entryId) {
+async function confirmRejectChore(choreId, memberId, entryId) {
   const reason = document.getElementById('decline-reason-input')?.value?.trim() || '';
   closeModal();
-  doRejectChore(choreId, memberId, entryId, reason);
+  const applied = await commitRejectChore(choreId, memberId, entryId, reason);
   const m = getMember(memberId);
-  toast(`Chore declined for ${m?.name}`);
+  if (!applied.duplicate) toast(`Chore declined for ${m?.name}`);
   renderParentHome();
   renderParentHeader();
   renderParentNav();
@@ -13230,7 +13563,7 @@ function completeInProgressChoreFromInbox(choreId, memberId) {
   syncAppBadge();
 }
 
-function revokeInProgressChore(choreId, memberId) {
+function _revokeInProgressChore(choreId, memberId) {
   const chore = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
@@ -13250,6 +13583,7 @@ function revokeInProgressChore(choreId, memberId) {
   if (filtered.length === 0) delete chore.completions[memberId];
   else chore.completions[memberId] = filtered;
   saveData();
+  if (S._transactionDryRun) return { ok: true, memberName: member.name };
   toast(`Removed start approval for ${member.name}`);
   renderParentHome();
   renderParentHeader();
@@ -13257,9 +13591,17 @@ function revokeInProgressChore(choreId, memberId) {
   syncAppBadge();
 }
 
+async function revokeInProgressChore(choreId, memberId) {
+  const applied = await runFamilyAction(`chore-revoke-start:${memberId}:${choreId}:${today()}`, () => _revokeInProgressChore(choreId, memberId));
+  if (applied.result?.ok) {
+    toast(`Removed start approval for ${applied.result.memberName}`);
+    renderParentHome(); renderParentHeader(); renderParentNav(); syncAppBadge();
+  }
+}
+
 
 // Parent directly marks a chore done for a kid (no kid submission required)
-function parentMarkChoreDone(choreId, memberId) {
+function _parentMarkChoreDone(choreId, memberId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
@@ -13327,6 +13669,7 @@ function parentMarkChoreDone(choreId, memberId) {
     member.splitHousehold.overrides[_t] = true;
   }
   saveData();
+  if (S._transactionDryRun) return { ok: true, totalPts, choreTitle: chore.title, memberName: member.name };
   toast(`Marked "${chore.title}" done for ${member.name} (+${totalPts} gems)`);
   refreshOpenFamilySnapshot({ memberId, choreId, mode: 'mark-done' });
   renderParentHome();
@@ -13334,7 +13677,16 @@ function parentMarkChoreDone(choreId, memberId) {
   renderParentNav();
 }
 
-function parentUnmarkChoreDone(choreId, memberId) {
+async function parentMarkChoreDone(choreId, memberId) {
+  const applied = await runFamilyAction(`chore-parent-done:${memberId}:${choreId}:${today()}:${genId()}`, () => _parentMarkChoreDone(choreId, memberId));
+  const result = applied.result;
+  if (!result?.ok) return;
+  toast(`Marked "${result.choreTitle}" done for ${result.memberName} (+${result.totalPts} gems)`);
+  refreshOpenFamilySnapshot({ memberId, choreId, mode: 'mark-done' });
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function _parentUnmarkChoreDone(choreId, memberId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
@@ -13357,6 +13709,7 @@ function parentUnmarkChoreDone(choreId, memberId) {
   if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.gems);
   addHistory('penalty', memberId, `Undo: ${chore.title}`, -deduct);
   saveData();
+  if (S._transactionDryRun) return { ok: true, deduct, choreTitle: chore.title, memberName: member.name };
   toast(`Undo: "${chore.title}" for ${member.name} (-${deduct} gems)`);
   refreshOpenFamilySnapshot({ memberId, choreId });
   renderParentHome();
@@ -13364,7 +13717,16 @@ function parentUnmarkChoreDone(choreId, memberId) {
   renderParentNav();
 }
 
-function parentMarkSlotDone(choreId, memberId, slotId) {
+async function parentUnmarkChoreDone(choreId, memberId) {
+  const applied = await runFamilyAction(`chore-parent-undo:${memberId}:${choreId}:${today()}:${genId()}`, () => _parentUnmarkChoreDone(choreId, memberId));
+  const result = applied.result;
+  if (!result?.ok) return;
+  toast(`Undo: "${result.choreTitle}" for ${result.memberName} (-${result.deduct} gems)`);
+  refreshOpenFamilySnapshot({ memberId, choreId });
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function _parentMarkSlotDone(choreId, memberId, slotId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
@@ -13397,6 +13759,7 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   checkAfterDiamondsAwarded(member, chore.gems);
   checkChoreBadges(chore, memberId);
   saveData();
+  if (S._transactionDryRun) return { ok: true, slotLabel: formatSlotLabel(slotStatus.slot) || 'Slot', memberName: member.name, gems: chore.diamonds };
   toast(`${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} ${esc(formatSlotLabel(slotStatus.slot) || 'Slot')} done for ${esc(member.name)} (+${chore.diamonds} gems)`);
   refreshOpenFamilySnapshot({ memberId, choreId });
   renderParentHome();
@@ -13404,7 +13767,16 @@ function parentMarkSlotDone(choreId, memberId, slotId) {
   renderParentNav();
 }
 
-function parentUnmarkSlotDone(choreId, memberId, slotId) {
+async function parentMarkSlotDone(choreId, memberId, slotId) {
+  const applied = await runFamilyAction(`chore-parent-slot:${memberId}:${choreId}:${slotId}:${today()}`, () => _parentMarkSlotDone(choreId, memberId, slotId));
+  const result = applied.result;
+  if (!result?.ok) return;
+  toast(`${esc(result.slotLabel)} done for ${esc(result.memberName)} (+${result.gems} gems)`);
+  refreshOpenFamilySnapshot({ memberId, choreId });
+  renderParentHome(); renderParentHeader(); renderParentNav();
+}
+
+function _parentUnmarkSlotDone(choreId, memberId, slotId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
   if (!chore || !member) return;
@@ -13423,11 +13795,21 @@ function parentUnmarkSlotDone(choreId, memberId, slotId) {
   if (D.settings.levelingEnabled !== false) member.xp = Math.max(0, (member.xp || 0) - chore.gems);
   addHistory('penalty', memberId, `Undo: ${chore.title} (${slot?.label || 'slot'})`, -deduct);
   saveData();
+  if (S._transactionDryRun) return { ok: true, slotLabel: slot?.label || 'slot', memberName: member.name, deduct };
   toast(`Undo: ${renderIcon(chore.icon,chore.iconColor,'font-size:1rem;vertical-align:middle')} ${esc(slot?.label || 'slot')} for ${esc(member.name)} (-${deduct} gems)`);
   refreshOpenFamilySnapshot({ memberId, choreId });
   renderParentHome();
   renderParentHeader();
   renderParentNav();
+}
+
+async function parentUnmarkSlotDone(choreId, memberId, slotId) {
+  const applied = await runFamilyAction(`chore-parent-slot-undo:${memberId}:${choreId}:${slotId}:${today()}:${genId()}`, () => _parentUnmarkSlotDone(choreId, memberId, slotId));
+  const result = applied.result;
+  if (!result?.ok) return;
+  toast(`Undo: ${esc(result.slotLabel)} for ${esc(result.memberName)} (-${result.deduct} gems)`);
+  refreshOpenFamilySnapshot({ memberId, choreId });
+  renderParentHome(); renderParentHeader(); renderParentNav();
 }
 
 function applyChoreReorder(newOrderIds) {
@@ -15557,7 +15939,7 @@ function _adjDmdsToggleKid(kidId) {
   _updateAdjDiamondsBody();
 }
 
-function _doAdjDiamondsQuick() {
+async function _doAdjDiamondsQuick() {
   const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const targets = kids.filter(k => (S.adjDmdsKids || new Set()).has(k.id));
   const amt = parseInt(document.getElementById('adj-dmds-q')?.value) || 0;
@@ -15566,20 +15948,24 @@ function _doAdjDiamondsQuick() {
   if (!targets.length) { toast('Select at least one kid'); return; }
   if (amt <= 0) { toast('Enter an amount'); return; }
   const dmds = sign * amt;
-  targets.forEach(m => {
-    const memberBefore = _captureMemberUndoSnapshot(m);
-    const beforeGems = Number(m.gems || 0);
-    m.gems = Math.max(0, (m.gems || 0) + dmds);
-    if (dmds > 0) m.totalEarned = (m.totalEarned || 0) + dmds;
-    m.diamonds = m.gems;
-    const label = reason || (dmds > 0 ? 'A special bonus from your parent!' : 'Gem adjustment');
-    const appliedDelta = m.gems - beforeGems;
-    addHistory('bonus', m.id, label, appliedDelta, {
-      undoAction: 'manual_gems_adjust',
-      memberBefore,
+  const targetIds = targets.map(member => member.id);
+  const applied = await runFamilyAction(`manual-gems:${genId()}`, () => {
+    targetIds.forEach(memberId => {
+      const member = getMember(memberId);
+      if (!member) return;
+      const memberBefore = _captureMemberUndoSnapshot(member);
+      const beforeGems = Number(member.gems || 0);
+      member.gems = Math.max(0, (member.gems || 0) + dmds);
+      if (dmds > 0) member.totalEarned = (member.totalEarned || 0) + dmds;
+      member.diamonds = member.gems;
+      const label = reason || (dmds > 0 ? 'A special bonus from your parent!' : 'Gem adjustment');
+      const appliedDelta = member.gems - beforeGems;
+      addHistory('bonus', member.id, label, appliedDelta, { undoAction: 'manual_gems_adjust', memberBefore });
     });
+    saveData();
+    return { ok: true };
   });
-  saveData();
+  if (!applied.result?.ok) return;
   closeModal();
   const names = targets.map(m => m.name).join(' & ');
   toast(`${dmds > 0 ? '+' : ''}${dmds} gems for ${names}`);
@@ -15660,7 +16046,7 @@ function _adjSavToggleKid(kidId) {
   _updateAdjSavingsBody();
 }
 
-function _doAdjSavingsQuick() {
+async function _doAdjSavingsQuick() {
   const kids = D.family.members.filter(m => m.role === 'kid' && !m.deleted);
   const targets = kids.filter(k => (S.adjSavKids || new Set()).has(k.id));
   const amt = parseFloat(document.getElementById('adj-sav-q')?.value) || 0;
@@ -15670,30 +16056,29 @@ function _doAdjSavingsQuick() {
   if (!targets.length) { toast('Select at least one kid'); return; }
   if (amt <= 0) { toast('Enter an amount'); return; }
   const dollars = parseFloat((sign * amt).toFixed(2));
-  targets.forEach(m => {
-    const memberBefore = _captureMemberUndoSnapshot(m);
-    const beforeSavings = Number(m.savings || 0);
-    normalizeMember(m);
-    m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
-    if (sign > 0) {
-      m.savingsGifted = parseFloat(((m.savingsGifted || 0) + amt).toFixed(2));
-      const applied = parseFloat((m.savings - beforeSavings).toFixed(2));
-      addHistory('savings_deposit', m.id, reason || 'A savings deposit from your parent!', 0, {
-        dollars: applied,
-        undoAction: 'manual_savings_adjust',
-        memberBefore,
-      });
-    } else {
-      reduceSavingsBuckets(m, amt);
-      const applied = parseFloat((beforeSavings - m.savings).toFixed(2));
-      addHistory('savings_withdraw', m.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, {
-        dollars: applied,
-        undoAction: 'manual_savings_adjust',
-        memberBefore,
-      });
-    }
+  const targetIds = targets.map(member => member.id);
+  const applied = await runFamilyAction(`manual-savings:${genId()}`, () => {
+    targetIds.forEach(memberId => {
+      const member = getMember(memberId);
+      if (!member) return;
+      const memberBefore = _captureMemberUndoSnapshot(member);
+      const beforeSavings = Number(member.savings || 0);
+      normalizeMember(member);
+      member.savings = parseFloat(Math.max(0, (member.savings || 0) + dollars).toFixed(2));
+      if (sign > 0) {
+        member.savingsGifted = parseFloat(((member.savingsGifted || 0) + amt).toFixed(2));
+        const changed = parseFloat((member.savings - beforeSavings).toFixed(2));
+        addHistory('savings_deposit', member.id, reason || 'A savings deposit from your parent!', 0, { dollars: changed, undoAction: 'manual_savings_adjust', memberBefore });
+      } else {
+        reduceSavingsBuckets(member, amt);
+        const changed = parseFloat((beforeSavings - member.savings).toFixed(2));
+        addHistory('savings_withdraw', member.id, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, { dollars: changed, undoAction: 'manual_savings_adjust', memberBefore });
+      }
+    });
+    saveData();
+    return { ok: true };
   });
-  saveData();
+  if (!applied.result?.ok) return;
   closeModal();
   const names = targets.map(m => m.name).join(' & ');
   toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${names}`);
@@ -15722,25 +16107,27 @@ function showAddPointsModal(memberId, triggerEl = null) {
     </div>`, 'quick-action-modal-wide');
 }
 
-function doAdjustPoints(memberId, sign) {
+async function doAdjustPoints(memberId, sign) {
   const m      = getMember(memberId);
   const amt    = parseInt(document.getElementById('adj-dmds')?.value)||0;
   const reason = document.getElementById('adj-reason')?.value.trim() || 'A special bonus from your parent!';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
-  const memberBefore = _captureMemberUndoSnapshot(m);
-  const beforeGems = Number(m.gems || 0);
   const dmds = sign * amt;
-  m.gems    = Math.max(0, (m.gems||0) + dmds);
-  m.diamonds = m.gems;
-  m.totalEarned = dmds>0 ? (m.totalEarned||0)+dmds : m.totalEarned;
-  const appliedDelta = m.gems - beforeGems;
-  addHistory('bonus', memberId, reason, appliedDelta, {
-    undoAction: 'manual_gems_adjust',
-    memberBefore,
+  const applied = await runFamilyAction(`manual-gems:${memberId}:${genId()}`, () => {
+    const member = getMember(memberId);
+    if (!member) return { error: 'Member no longer exists.' };
+    const memberBefore = _captureMemberUndoSnapshot(member);
+    const beforeGems = Number(member.gems || 0);
+    member.gems = Math.max(0, (member.gems || 0) + dmds);
+    member.diamonds = member.gems;
+    member.totalEarned = dmds > 0 ? (member.totalEarned || 0) + dmds : member.totalEarned;
+    addHistory('bonus', memberId, reason, member.gems - beforeGems, { undoAction: 'manual_gems_adjust', memberBefore });
+    saveData();
+    return { ok: true, memberName: member.name };
   });
-  saveData();
+  if (applied.result?.error) { toast(applied.result.error); return; }
   closeModal();
-  toast(`${dmds>0?'+':''}${dmds} gems for ${m.name}`);
+  toast(`${dmds>0?'+':''}${dmds} gems for ${applied.result.memberName}`);
   renderSettings();
 }
 
@@ -15767,39 +16154,33 @@ function showAdjustSavingsModal(memberId, triggerEl = null) {
     </div>`, 'quick-action-modal-wide');
 }
 
-function doAdjustSavings(memberId, sign) {
+async function doAdjustSavings(memberId, sign) {
   const m      = getMember(memberId);
   const amt    = parseFloat(document.getElementById('adj-sav')?.value) || 0;
   const reason = document.getElementById('adj-sav-reason')?.value.trim();
   const cur    = D.settings.currency || '$';
   if (!m || amt <= 0) { toast('Enter an amount'); return; }
-  const memberBefore = _captureMemberUndoSnapshot(m);
-  const beforeSavings = Number(m.savings || 0);
   const dollars = parseFloat((sign * amt).toFixed(2));
-  normalizeMember(m);
-  m.savings = parseFloat(Math.max(0, (m.savings || 0) + dollars).toFixed(2));
-  if (sign > 0) {
-    m.savingsGifted = parseFloat(((m.savingsGifted || 0) + amt).toFixed(2));
-    const label = reason || 'A savings deposit from your parent!';
-    const applied = parseFloat((m.savings - beforeSavings).toFixed(2));
-    addHistory('savings_deposit', memberId, label, 0, {
-      dollars: applied,
-      undoAction: 'manual_savings_adjust',
-      memberBefore,
-    });
-  } else {
-    reduceSavingsBuckets(m, amt);
-    const label = reason ? `Withdrawal: ${reason}` : 'Savings withdrawal';
-    const applied = parseFloat((beforeSavings - m.savings).toFixed(2));
-    addHistory('savings_withdraw', memberId, label, 0, {
-      dollars: applied,
-      undoAction: 'manual_savings_adjust',
-      memberBefore,
-    });
-  }
-  saveData();
+  const applied = await runFamilyAction(`manual-savings:${memberId}:${genId()}`, () => {
+    const member = getMember(memberId);
+    if (!member) return { error: 'Member no longer exists.' };
+    const memberBefore = _captureMemberUndoSnapshot(member);
+    const beforeSavings = Number(member.savings || 0);
+    normalizeMember(member);
+    member.savings = parseFloat(Math.max(0, (member.savings || 0) + dollars).toFixed(2));
+    if (sign > 0) {
+      member.savingsGifted = parseFloat(((member.savingsGifted || 0) + amt).toFixed(2));
+      addHistory('savings_deposit', memberId, reason || 'A savings deposit from your parent!', 0, { dollars: parseFloat((member.savings - beforeSavings).toFixed(2)), undoAction: 'manual_savings_adjust', memberBefore });
+    } else {
+      reduceSavingsBuckets(member, amt);
+      addHistory('savings_withdraw', memberId, reason ? `Withdrawal: ${reason}` : 'Savings withdrawal', 0, { dollars: parseFloat((beforeSavings - member.savings).toFixed(2)), undoAction: 'manual_savings_adjust', memberBefore });
+    }
+    saveData();
+    return { ok: true, memberName: member.name };
+  });
+  if (applied.result?.error) { toast(applied.result.error); return; }
   closeModal();
-  toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${m.name}`);
+  toast(`${dollars > 0 ? '+' : ''}${cur}${Math.abs(dollars).toFixed(2)} savings for ${applied.result.memberName}`);
   renderSettings();
 }
 
