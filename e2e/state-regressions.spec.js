@@ -218,7 +218,7 @@ test.describe('State regressions', () => {
 
   test('doRedeemPrize blocks duplicate daily redemptions even under rapid repeat calls', async ({ page }) => {
     const { kidId } = await bootstrapState(page);
-    const result = await page.evaluate(({ kidId }) => {
+    const result = await page.evaluate(async ({ kidId }) => {
       const kid = getMember(kidId);
       kid.gems = 0;
       kid.diamonds = 0;
@@ -405,6 +405,19 @@ test.describe('State regressions', () => {
     expect(result.label).toBe('Refresh family inbox');
   });
 
+  test('pull to refresh covers the header before it can trigger', async ({ page }) => {
+    await bootstrapState(page);
+    const metrics = await page.evaluate(() => {
+      const headerHeight = Math.ceil(document.querySelector('.screen.active .app-header')?.getBoundingClientRect().height || 0);
+      return { headerHeight, ..._getPullRefreshMetrics() };
+    });
+
+    expect(metrics.coverHeight).toBeGreaterThanOrEqual(metrics.headerHeight);
+    expect(metrics.coverHeight).toBeGreaterThanOrEqual(96);
+    expect(metrics.triggerDistance).toBeGreaterThan(metrics.coverHeight);
+    expect(metrics.triggerDistance).toBeGreaterThanOrEqual(160);
+  });
+
   test('approving the final item removes the empty family inbox section', async ({ page }) => {
     await bootstrapState(page);
     const result = await page.evaluate(async () => {
@@ -434,7 +447,7 @@ test.describe('State regressions', () => {
 
   test('foreground server refresh shows kid approval celebration', async ({ page }) => {
     const { kidId } = await bootstrapState(page);
-    const result = await page.evaluate(({ kidId }) => {
+    const result = await page.evaluate(async ({ kidId }) => {
       const pendingData = cloneData(D);
       pendingData.chores.push(normalizeChore({
         id: 'foreground_approval_chore',
@@ -458,21 +471,47 @@ test.describe('State regressions', () => {
       serverData.family.members.find(member => member.id === kidId).gems = 7;
       serverData.family.members.find(member => member.id === kidId).diamonds = 7;
 
-      const celebrations = [];
-      window.showCelebration = options => celebrations.push(options);
       _applyServerRefreshData(serverData, kidId, prevPending);
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       return {
-        count: celebrations.length,
-        title: celebrations[0]?.title || '',
-        gems: celebrations[0]?.gems || 0,
+        count: document.querySelectorAll('#celebration-root .celebration-overlay').length,
+        title: document.querySelector('#celebration-root .cel-title')?.textContent || '',
+        gems: document.querySelector('#celebration-root .cel-gems')?.textContent || '',
         pendingAfter: getPendingEntryKeys(D, kidId).size,
       };
     }, { kidId });
 
     expect(result.count).toBe(1);
     expect(result.title).toContain('Task Approved');
-    expect(result.gems).toBe(7);
+    expect(result.gems).toContain('+7 gems');
     expect(result.pendingAfter).toBe(0);
+  });
+
+  test('normalizing a remote snapshot does not replace live state early', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      D.chores.push(normalizeChore({
+        id: 'live_pending_chore',
+        title: 'Live Pending',
+        assignedTo: ['kid_1'],
+        completions: {
+          kid_1: [{ id: 'live_pending_entry', status: 'pending', date: today(), createdAt: 1 }],
+        },
+      }));
+      const remote = cloneData(D);
+      remote.chores[0].completions.kid_1[0].status = 'done';
+
+      const normalizedRemote = _normalizeDataCopy(remote);
+      return {
+        liveStatus: D.chores[0].completions.kid_1[0].status,
+        remoteStatus: normalizedRemote.chores[0].completions.kid_1[0].status,
+        pendingKeys: [...getPendingEntryKeys(D, 'kid_1')],
+      };
+    });
+
+    expect(result.liveStatus).toBe('pending');
+    expect(result.remoteStatus).toBe('done');
+    expect(result.pendingKeys).toContain('live_pending_chore:live_pending_entry');
   });
 });

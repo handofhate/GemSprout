@@ -3350,7 +3350,7 @@
       transition: height 0.15s ease;
     }
     #ptr-indicator.ptr-refreshing {
-      height: 52px;
+      min-height: 96px;
     }
     .ptr-spinner {
       width: 18px; height: 18px;
