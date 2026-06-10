@@ -380,4 +380,99 @@ test.describe('State regressions', () => {
     expect(result.gems).toBe(5);
     expect(result.historyCount).toBe(1);
   });
+
+  test('family inbox exposes a manual refresh control', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      D.chores.push(normalizeChore({
+        id: 'refresh_chore',
+        title: 'Refresh Me',
+        gems: 5,
+        assignedTo: ['kid_1'],
+        completions: {
+          kid_1: [{ id: 'refresh_entry', status: 'pending', date: today(), createdAt: 1 }],
+        },
+      }));
+      renderParentHome();
+      const button = document.querySelector('#family-inbox-section .inbox-refresh-btn');
+      return {
+        hasButton: !!button,
+        label: button?.getAttribute('aria-label'),
+      };
+    });
+
+    expect(result.hasButton).toBe(true);
+    expect(result.label).toBe('Refresh family inbox');
+  });
+
+  test('approving the final item removes the empty family inbox section', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(async () => {
+      D.chores.push(normalizeChore({
+        id: 'last_inbox_chore',
+        title: 'Last Inbox Item',
+        gems: 5,
+        assignedTo: ['kid_1'],
+        completions: {
+          kid_1: [{ id: 'last_inbox_entry', status: 'pending', date: today(), createdAt: 1 }],
+        },
+      }));
+      renderParentHome();
+      const existedBefore = !!document.getElementById('family-inbox-section');
+      await approveChore('last_inbox_chore', 'kid_1', 'last_inbox_entry', null);
+      return {
+        existedBefore,
+        existsAfter: !!document.getElementById('family-inbox-section'),
+        inboxCount: familyInboxCount(),
+      };
+    });
+
+    expect(result.existedBefore).toBe(true);
+    expect(result.existsAfter).toBe(false);
+    expect(result.inboxCount).toBe(0);
+  });
+
+  test('foreground server refresh shows kid approval celebration', async ({ page }) => {
+    const { kidId } = await bootstrapState(page);
+    const result = await page.evaluate(({ kidId }) => {
+      const pendingData = cloneData(D);
+      pendingData.chores.push(normalizeChore({
+        id: 'foreground_approval_chore',
+        title: 'Foreground Approval',
+        icon: 'star',
+        iconColor: '#6C63FF',
+        gems: 7,
+        assignedTo: [kidId],
+        completions: {
+          [kidId]: [{ id: 'foreground_entry', status: 'pending', date: today(), createdAt: 1 }],
+        },
+      }));
+      D = normalizeData(pendingData);
+      S.currentUser = getMember(kidId);
+      S.kidTab = 'chores';
+      renderKidView();
+
+      const prevPending = getPendingEntryKeys(D, kidId);
+      const serverData = cloneData(D);
+      serverData.chores[0].completions[kidId][0].status = 'done';
+      serverData.family.members.find(member => member.id === kidId).gems = 7;
+      serverData.family.members.find(member => member.id === kidId).diamonds = 7;
+
+      const celebrations = [];
+      window.showCelebration = options => celebrations.push(options);
+      _applyServerRefreshData(serverData, kidId, prevPending);
+
+      return {
+        count: celebrations.length,
+        title: celebrations[0]?.title || '',
+        gems: celebrations[0]?.gems || 0,
+        pendingAfter: getPendingEntryKeys(D, kidId).size,
+      };
+    }, { kidId });
+
+    expect(result.count).toBe(1);
+    expect(result.title).toContain('Task Approved');
+    expect(result.gems).toBe(7);
+    expect(result.pendingAfter).toBe(0);
+  });
 });

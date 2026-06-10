@@ -168,26 +168,70 @@ function _routeFromNotification(event) {
   return null;
 }
 
-async function _refreshFamilyFromServerAndRender() {
+function _applyServerRefreshData(rawData, activeKidId = '', prevPending = new Set()) {
+  const incoming = normalizeData(rawData);
+  D = incoming;
+  _setSyncBase(incoming);
+  try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+  if (S.currentUser?.id) {
+    const fresh = getMember(S.currentUser.id);
+    if (fresh) S.currentUser = fresh;
+  }
+  renderCurrentView();
+  if (activeKidId && prevPending.size > 0) {
+    const freshKid = getMember(activeKidId);
+    if (freshKid) checkForApprovalCelebration(prevPending, freshKid, false);
+  }
+  return incoming;
+}
+
+async function _refreshFamilyFromServerAndRender(opts = {}) {
   if (isE2EMode()) { renderCurrentView(); return; }
+  const indicator = document.getElementById('ptr-indicator');
+  const showIndicator = opts.showIndicator === true;
+  const activeKidId = S.currentUser?.role === 'kid' ? S.currentUser.id : '';
+  const prevPending = activeKidId ? getPendingEntryKeys(D, activeKidId) : new Set();
+  if (showIndicator && indicator) {
+    indicator.classList.add('ptr-refreshing');
+    indicator.innerHTML = '<div class="ptr-spinner"></div><span>Refreshing...</span>';
+  }
   try {
+    await ensureFirestoreAuth();
+    if (_pushInFlight) await _pushInFlight;
     const snap = await db.doc(getFamilyDoc()).get({ source: 'server' });
     if (snap.exists) {
-      const incoming = normalizeData(snap.data());
-      const incomingSync = Number(incoming.settings?.lastSync || 0);
-      const localSync = Number(D.settings?.lastSync || 0);
-      const isOlderThanLocal = !!incomingSync && !!localSync && incomingSync < localSync;
-      if (!isOlderThanLocal) {
-        D = incoming;
-        try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
-        if (S.currentUser?.id) {
-          const fresh = getMember(S.currentUser.id);
-          if (fresh) S.currentUser = fresh;
-        }
-      }
+      _applyServerRefreshData(snap.data(), activeKidId, prevPending);
+    } else {
+      renderCurrentView();
     }
-  } catch(e) {}
-  renderCurrentView();
+    if (opts.toastOnSuccess) toast('Family data refreshed');
+    return true;
+  } catch(e) {
+    console.warn('Family refresh failed:', e);
+    renderCurrentView();
+    if (opts.toastOnError !== false) toast('Could not refresh. Check your connection and try again.');
+    return false;
+  } finally {
+    if (showIndicator && indicator) {
+      indicator.classList.remove('ptr-refreshing');
+      indicator.style.height = '0';
+      setTimeout(() => { indicator.innerHTML = ''; }, 180);
+    }
+  }
+}
+
+function refreshFamilyNow() {
+  return _refreshFamilyFromServerAndRender({ showIndicator: true, toastOnSuccess: true });
+}
+
+function _scheduleNotificationRefresh() {
+  [0, 700, 1800].forEach(delay => {
+    setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        _refreshFamilyFromServerAndRender({ toastOnError: false });
+      }
+    }, delay);
+  });
 }
 
 function _applyDeferredPostPinNav() {
@@ -220,12 +264,12 @@ function _handleNotificationAction(event) {
   const route = _routeFromNotification(event) || { type: '', parentTab: 'home', kidTab: '' };
   if (S.currentUser?.role === 'parent') {
     switchParentTab(route.parentTab || 'home');
-    _refreshFamilyFromServerAndRender();
+    _scheduleNotificationRefresh();
     return;
   }
   if (S.currentUser?.role === 'kid' && route.kidTab) {
     switchKidTab(route.kidTab);
-    _refreshFamilyFromServerAndRender();
+    _scheduleNotificationRefresh();
     return;
   }
   if (document.getElementById('screen-pin')?.classList.contains('active')) {
@@ -8001,24 +8045,13 @@ function renderCurrentView() {
 }
 
 (function setupPullToRefresh() {
-  return;
   const indicator = document.getElementById('ptr-indicator');
-  let startY = 0, pulling = false, triggered = false, activeScroller = null;
-  let lastScrollTime = 0;
-  const THRESHOLD = 72; // px to pull before release triggers refresh
-  const SCROLL_COOLDOWN = 350; // ms to wait after any scroll before arming PTR
-
-  const markScroll = () => { lastScrollTime = Date.now(); };
-  document.addEventListener('scroll', markScroll, { passive: true, capture: true });
-  window.addEventListener('scroll', markScroll, { passive: true });
-
-  // Returns true if the page is definitely NOT at the very top
-  function pageIsScrolled() {
-    if (window.scrollY > 2) return true;
-    if (document.documentElement.scrollTop > 2) return true;
-    if (activeScroller && activeScroller.scrollTop > 2) return true;
-    return false;
-  }
+  if (!indicator) return;
+  let startY = 0;
+  let activeScroller = null;
+  let pulling = false;
+  let pullDistance = 0;
+  const THRESHOLD = 68;
 
   function setIndicator(pullPx) {
     if (pullPx <= 0) {
@@ -8026,8 +8059,7 @@ function renderCurrentView() {
       indicator.innerHTML = '';
       return;
     }
-    const pct  = Math.min(pullPx / THRESHOLD, 1);
-    const h    = Math.round(pct * 52);
+    const h = Math.round(Math.min(pullPx, THRESHOLD + 20) * 0.72);
     indicator.style.height = h + 'px';
     indicator.style.transition = 'none';
     indicator.innerHTML = pullPx >= THRESHOLD
@@ -8035,60 +8067,36 @@ function renderCurrentView() {
       : '<span>Pull to refresh</span>';
   }
 
-  function doRefresh() {
-    indicator.style.transition = 'height 0.15s ease';
-    indicator.style.height = '52px';
-    indicator.innerHTML = '<div class="ptr-spinner"></div><span>Refreshing...</span>';
-    // Force a fresh Firestore fetch, fall back to local re-render
-    const done = () => {
-      indicator.style.height = '0';
-      setTimeout(() => { indicator.innerHTML = ''; }, 160);
-    };
-    try {
-      db.doc(getFamilyDoc()).get({ source: 'server' }).then(snap => {
-        if (snap.exists) {
-          D = normalizeData(snap.data());
-          try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
-        }
-        renderCurrentView();
-        done();
-      }).catch(() => { renderCurrentView(); done(); });
-    } catch(e) { renderCurrentView(); done(); }
-  }
-
   document.addEventListener('touchstart', e => {
     const scroller = e.target.closest('.main-content');
-    if (!scroller) return;
+    if (!scroller || scroller.scrollTop > 0 || e.touches.length !== 1) return;
     activeScroller = scroller;
-    if (pageIsScrolled()) return;
-    if (Date.now() - lastScrollTime < SCROLL_COOLDOWN) return;
-    startY    = e.touches[0].clientY;
-    pulling   = true;
-    triggered = false;
+    startY = e.touches[0].clientY;
+    pullDistance = 0;
+    pulling = true;
   }, { passive: true });
 
   document.addEventListener('touchmove', e => {
-    if (!pulling) return;
-    // Abort if the page has scrolled since touchstart
-    if (pageIsScrolled()) { pulling = false; setIndicator(0); return; }
+    if (!pulling || !activeScroller || activeScroller.scrollTop > 0) return;
     const dy = e.touches[0].clientY - startY;
-    if (dy <= 0) { pulling = false; setIndicator(0); return; }
-    setIndicator(dy);
-    if (dy >= THRESHOLD) triggered = true;
-  }, { passive: true });
+    if (dy <= 0) { setIndicator(0); return; }
+    pullDistance = dy;
+    setIndicator(pullDistance);
+    if (pullDistance > 8) e.preventDefault();
+  }, { passive: false });
 
   document.addEventListener('touchend', () => {
     if (!pulling) return;
     pulling = false;
     activeScroller = null;
-    if (triggered) {
-      doRefresh();
+    if (pullDistance >= THRESHOLD) {
+      refreshFamilyNow();
     } else {
       indicator.style.transition = 'height 0.2s ease';
       indicator.style.height = '0';
       setTimeout(() => { indicator.innerHTML = ''; }, 200);
     }
-    triggered = false;
+    pullDistance = 0;
   }, { passive: true });
 })();
 
@@ -10928,8 +10936,7 @@ function approveSavingsRequest(requestId, btn) {
       return { ok: true, actual, memberName: freshMember.name };
     });
     if (applied.result?.ok) toast(`Approved ${cur}${applied.result.actual.toFixed(2)} spend for ${applied.result.memberName}`);
-    renderParentHome(); renderParentHeader(); renderParentNav();
-    syncAppBadge();
+    refreshParentInboxUI();
   });
 }
 
@@ -10951,8 +10958,7 @@ function denySavingsRequest(requestId, btn) {
       return { ok: true };
     });
     if (applied.result?.ok) toast(`Spend request denied for ${m?.name || 'kid'}`);
-    renderParentHome(); renderParentHeader(); renderParentNav();
-    syncAppBadge();
+    refreshParentInboxUI();
   });
 }
 
@@ -10975,10 +10981,7 @@ function approvePrizeRequest(requestId, btn) {
     });
     if (applied.result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
     else if (!applied.result?.duplicate) toast(`Could not approve: ${formatPrizeRedeemStatusMessage(applied.result)}`);
-    renderParentHome();
-    renderParentHeader();
-    renderParentNav();
-    syncAppBadge();
+    refreshParentInboxUI();
   });
 }
 
@@ -11000,10 +11003,7 @@ function denyPrizeRequest(requestId, btn) {
       return { ok: true };
     });
     if (applied.result?.ok) toast(`Prize request denied for ${member?.name || 'kid'}`);
-    renderParentHome();
-    renderParentHeader();
-    renderParentNav();
-    syncAppBadge();
+    refreshParentInboxUI();
   });
 }
 
@@ -13223,9 +13223,12 @@ function renderParentHome() {
 
   if (inProgress.length > 0 || pending.length > 0 || pendingSpend.length > 0 || pendingPrize.length > 0 || readyGoals.length > 0) {
     const inboxCount = pending.length + pendingSpend.length + pendingPrize.length + inProgress.length + readyGoals.length;
-    html += `<div class="inbox-head">
+    html += `<section id="family-inbox-section"><div class="inbox-head">
       <div class="inbox-title"><i class="ph-duotone ph-tray" style="color:#1D6B57;font-size:1rem"></i> Family Inbox</div>
-      <div class="inbox-count">${inboxCount} Item${inboxCount === 1 ? '' : 's'}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="inbox-refresh-btn" type="button" onclick="refreshFamilyNow()" aria-label="Refresh family inbox"><i class="ph-duotone ph-arrow-clockwise"></i></button>
+        <div class="inbox-count">${inboxCount} Item${inboxCount === 1 ? '' : 's'}</div>
+      </div>
     </div>
     <div class="inbox-list">`;
 
@@ -13331,7 +13334,7 @@ function renderParentHome() {
           </div>
         </div>`;
     });
-    html += `</div>`;
+    html += `</div></section>`;
   }
 
   let kidsHtml = '';
@@ -13469,21 +13472,34 @@ function _fadeOutAdminCard(btn, then) {
 
 function _flipAdminCard(btn, newInnerHTML, then) {
   const card = btn?.closest?.('.admin-card');
-  if (!card) { then(); return; }
-  card.style.transition = 'transform 0.18s ease-in, opacity 0.18s ease-in';
-  card.style.transformOrigin = 'center';
-  card.style.transform = 'rotateY(90deg)';
-  card.style.opacity = '0.2';
-  setTimeout(() => {
-    card.innerHTML = newInnerHTML;
-    card.style.transition = 'none';
-    card.style.transform = 'rotateY(-90deg)';
-    card.offsetHeight; // force reflow
-    card.style.transition = 'transform 0.18s ease-out, opacity 0.18s ease-out';
-    card.style.transform = 'rotateY(0deg)';
-    card.style.opacity = '1';
-    setTimeout(then, 200);
-  }, 190);
+  if (!card) return Promise.resolve().then(then);
+  return new Promise(resolve => {
+    card.style.transition = 'transform 0.18s ease-in, opacity 0.18s ease-in';
+    card.style.transformOrigin = 'center';
+    card.style.transform = 'rotateY(90deg)';
+    card.style.opacity = '0.2';
+    setTimeout(() => {
+      card.innerHTML = newInnerHTML;
+      card.style.transition = 'none';
+      card.style.transform = 'rotateY(-90deg)';
+      card.offsetHeight; // force reflow
+      card.style.transition = 'transform 0.18s ease-out, opacity 0.18s ease-out';
+      card.style.transform = 'rotateY(0deg)';
+      card.style.opacity = '1';
+      setTimeout(async () => {
+        await then();
+        resolve();
+      }, 200);
+    }, 190);
+  });
+}
+
+function refreshParentInboxUI() {
+  renderParentHome();
+  renderParentHeader();
+  renderParentNav();
+  syncAppBadge();
+  if (familyInboxCount() === 0) document.getElementById('family-inbox-section')?.remove();
 }
 
 function approveChore(choreId, memberId, entryId, btn) {
@@ -13493,10 +13509,7 @@ function approveChore(choreId, memberId, entryId, btn) {
   const entry = entries.find(e => e.id === entryId);
   if (!entry) {
     toast('Could not find that approval item. Refreshing...');
-    renderParentHome();
-    renderParentHeader();
-    renderParentNav();
-    syncAppBadge();
+    refreshParentInboxUI();
     return;
   }
   const isBefore = entry?.entryType === 'before';
@@ -13508,23 +13521,15 @@ function approveChore(choreId, memberId, entryId, btn) {
         <div class="admin-name">${esc(c.title)} <span class="admin-status-pill admin-status-pill-progress">IN PROGRESS</span></div>
         <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
-    _flipAdminCard(btn, inProgressInner, () => {
-      commitApproveChore(choreId, memberId, entryId).then(() => {
-      renderParentHome();
-      renderParentHeader();
-      renderParentNav();
-      syncAppBadge();
-      });
+    return _flipAdminCard(btn, inProgressInner, async () => {
+      await commitApproveChore(choreId, memberId, entryId);
+      refreshParentInboxUI();
     });
   } else {
-    _fadeOutAdminCard(btn, () => {
-      commitApproveChore(choreId, memberId, entryId).then(applied => {
-        if (!applied.duplicate) toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
-        renderParentHome();
-        renderParentHeader();
-        renderParentNav();
-        syncAppBadge();
-      });
+    return _fadeOutAdminCard(btn, async () => {
+      const applied = await commitApproveChore(choreId, memberId, entryId);
+      if (!applied.duplicate) toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
+      refreshParentInboxUI();
     });
   }
 }
@@ -13552,15 +13557,12 @@ async function confirmRejectChore(choreId, memberId, entryId) {
   const applied = await commitRejectChore(choreId, memberId, entryId, reason);
   const m = getMember(memberId);
   if (!applied.duplicate) toast(`Chore declined for ${m?.name}`);
-  renderParentHome();
-  renderParentHeader();
-  renderParentNav();
-  syncAppBadge();
+  refreshParentInboxUI();
 }
 
-function completeInProgressChoreFromInbox(choreId, memberId) {
-  parentMarkChoreDone(choreId, memberId);
-  syncAppBadge();
+async function completeInProgressChoreFromInbox(choreId, memberId) {
+  await parentMarkChoreDone(choreId, memberId);
+  refreshParentInboxUI();
 }
 
 function _revokeInProgressChore(choreId, memberId) {
@@ -13595,7 +13597,7 @@ async function revokeInProgressChore(choreId, memberId) {
   const applied = await runFamilyAction(`chore-revoke-start:${memberId}:${choreId}:${today()}`, () => _revokeInProgressChore(choreId, memberId));
   if (applied.result?.ok) {
     toast(`Removed start approval for ${applied.result.memberName}`);
-    renderParentHome(); renderParentHeader(); renderParentNav(); syncAppBadge();
+    refreshParentInboxUI();
   }
 }
 
