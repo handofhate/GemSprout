@@ -168,8 +168,18 @@ function _routeFromNotification(event) {
   return null;
 }
 
+function _getPullRefreshMetrics() {
+  const activeHeader = document.querySelector('.screen.active .app-header');
+  const measuredHeader = Math.ceil(activeHeader?.getBoundingClientRect?.().height || 0);
+  const coverHeight = Math.max(96, measuredHeader);
+  return {
+    coverHeight,
+    triggerDistance: Math.max(160, Math.ceil((coverHeight / 0.72) + 36)),
+  };
+}
+
 function _applyServerRefreshData(rawData, activeKidId = '', prevPending = new Set()) {
-  const incoming = normalizeData(rawData);
+  const incoming = _normalizeDataCopy(rawData);
   D = incoming;
   _setSyncBase(incoming);
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
@@ -192,7 +202,9 @@ async function _refreshFamilyFromServerAndRender(opts = {}) {
   const activeKidId = S.currentUser?.role === 'kid' ? S.currentUser.id : '';
   const prevPending = activeKidId ? getPendingEntryKeys(D, activeKidId) : new Set();
   if (showIndicator && indicator) {
+    const { coverHeight } = _getPullRefreshMetrics();
     indicator.classList.add('ptr-refreshing');
+    indicator.style.height = `${coverHeight}px`;
     indicator.innerHTML = '<div class="ptr-spinner"></div><span>Refreshing...</span>';
   }
   try {
@@ -225,7 +237,7 @@ function refreshFamilyNow() {
 }
 
 function _scheduleNotificationRefresh() {
-  [0, 700, 1800].forEach(delay => {
+  [0, 500, 1500, 3500, 6500].forEach(delay => {
     setTimeout(() => {
       if (document.visibilityState === 'visible') {
         _refreshFamilyFromServerAndRender({ toastOnError: false });
@@ -2994,19 +3006,33 @@ function _applyCommittedFamilyData(data) {
   renderCurrentView();
 }
 
-async function runFamilyAction(actionId, mutate) {
+function _applyOptimisticFamilyData(data) {
+  D = _normalizeDataCopy(data);
+  try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+  if (S.currentUser?.id) {
+    const fresh = getMember(S.currentUser.id);
+    if (fresh) S.currentUser = fresh;
+  }
+  renderCurrentView();
+}
+
+async function runFamilyAction(actionId, mutate, opts = {}) {
   if (S._testOnboarding?.active || isE2EMode()) {
     const applied = _applyFamilyActionToData(D, actionId, mutate);
     _applyCommittedFamilyData(applied.data);
+    if (typeof opts.onOptimistic === 'function') opts.onOptimistic(applied);
     return applied;
   }
 
+  const optimistic = _applyFamilyActionToData(D, actionId, mutate);
+  _applyOptimisticFamilyData(optimistic.data);
+  if (typeof opts.onOptimistic === 'function') opts.onOptimistic(optimistic);
   const docRef = db.doc(getFamilyDoc());
   S.syncStatus = 'syncing';
   try {
     const applied = await db.runTransaction(async transaction => {
       const snap = await transaction.get(docRef);
-      const remote = snap.exists ? snap.data() : cloneData(D);
+      const remote = snap.exists ? snap.data() : cloneData(optimistic.data);
       const next = _applyFamilyActionToData(remote, actionId, mutate);
       if (!next.duplicate) {
         if (next.data.settings) next.data.settings.lastSync = Date.now();
@@ -3020,6 +3046,7 @@ async function runFamilyAction(actionId, mutate) {
   } catch(e) {
     S.syncStatus = 'error';
     console.warn('Firestore action error:', e);
+    _refreshFamilyFromServerAndRender({ toastOnError: false });
     return { data: cloneData(D), duplicate: false, result: { error: 'Could not save. Please try again.' }, error: e };
   }
 }
@@ -3085,7 +3112,7 @@ function pushToFirestore(localData = cloneData(D)) {
       try {
         committed = await db.runTransaction(async transaction => {
           const snap = await transaction.get(docRef);
-          const remote = snap.exists ? normalizeData(snap.data()) : null;
+          const remote = snap.exists ? _normalizeDataCopy(snap.data()) : null;
           const merged = remote ? mergeConcurrentData(baseSnapshot, localSnapshot, remote) : cloneData(localSnapshot);
           if (merged.settings) merged.settings.lastSync = Date.now();
           transaction.set(docRef, cloneData(merged));
@@ -3430,7 +3457,7 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
       icon:     '<i class="ph-duotone ph-envelope" style="color:#7C3AED;font-size:3rem"></i>',
       title:    tiny ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...' : '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...',
       sub:      `Your parent approved ${subLine.replace(' approved!','')} and you earned gems!`,
-      gems: totalNewDiamonds,
+      diamonds: totalNewDiamonds,
       tts:      tiny ? `Welcome back! While you were away, your grown-up approved your task and you earned ${totalNewDiamonds} gems!` : null,
       onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
     });
@@ -3439,7 +3466,7 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
       icon:     renderIcon(approvedChores[0]?.icon, approvedChores[0]?.iconColor, 'font-size:3rem') || '<i class="ph-duotone ph-confetti" style="color:#F97316;font-size:3rem"></i>',
       title:    tiny ? '<i class="ph-duotone ph-confetti" style="color:#F97316"></i> Your parent said YES!' : '<i class="ph-duotone ph-check-circle" style="color:#16A34A"></i> Task Approved!',
       sub:      subLine,
-      gems: totalNewDiamonds,
+      diamonds: totalNewDiamonds,
       tts:      tiny ? `Amazing! Your grown-up approved your task! You earned ${totalNewDiamonds} gems!` : null,
       onClose:  () => { renderKidChores(); renderKidHeader(); renderKidNav(); },
     });
@@ -3465,7 +3492,7 @@ function subscribeToFirestore(onFirstLoad) {
     let _didUpdate = false;
     if (snap.exists) {
       const incoming = snap.data();
-      const normalizedIncoming = normalizeData(incoming);
+      const normalizedIncoming = _normalizeDataCopy(incoming);
       const incomingSync = Number(normalizedIncoming.settings?.lastSync || 0);
       const localSync = Number(D.settings?.lastSync || 0);
       const incomingMissingSync = !incomingSync && !!localSync;
@@ -4418,9 +4445,9 @@ function doCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entr
   }
 }
 
-async function commitCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entryType = null) {
+async function commitCompleteChore(choreId, memberId, slotId = null, photoUrl = null, entryType = null, opts = {}) {
   const actionId = `chore-submit:${memberId}:${choreId}:${genId()}`;
-  const applied = await runFamilyAction(actionId, () => doCompleteChore(choreId, memberId, slotId, photoUrl, entryType));
+  const applied = await runFamilyAction(actionId, () => doCompleteChore(choreId, memberId, slotId, photoUrl, entryType), opts);
   const result = applied.result;
   if (!applied.duplicate && !result?.error && !result?.approved && D.settings.notifyChoreApproval !== false) {
     const member = getMember(memberId);
@@ -4480,8 +4507,8 @@ function doApproveChore(choreId, memberId, entryId) {
   saveData();
 }
 
-async function commitApproveChore(choreId, memberId, entryId) {
-  return runFamilyAction(`chore-approve:${entryId}`, () => doApproveChore(choreId, memberId, entryId));
+async function commitApproveChore(choreId, memberId, entryId, opts = {}) {
+  return runFamilyAction(`chore-approve:${entryId}`, () => doApproveChore(choreId, memberId, entryId), opts);
 }
 
 function doRejectChore(choreId, memberId, entryId, reason = '') {
@@ -8051,7 +8078,6 @@ function renderCurrentView() {
   let activeScroller = null;
   let pulling = false;
   let pullDistance = 0;
-  const THRESHOLD = 68;
 
   function setIndicator(pullPx) {
     if (pullPx <= 0) {
@@ -8059,10 +8085,11 @@ function renderCurrentView() {
       indicator.innerHTML = '';
       return;
     }
-    const h = Math.round(Math.min(pullPx, THRESHOLD + 20) * 0.72);
+    const { coverHeight, triggerDistance } = _getPullRefreshMetrics();
+    const h = Math.round(Math.min(pullPx * 0.72, coverHeight));
     indicator.style.height = h + 'px';
     indicator.style.transition = 'none';
-    indicator.innerHTML = pullPx >= THRESHOLD
+    indicator.innerHTML = pullPx >= triggerDistance
       ? '<span>Release to refresh</span>'
       : '<span>Pull to refresh</span>';
   }
@@ -8089,7 +8116,7 @@ function renderCurrentView() {
     if (!pulling) return;
     pulling = false;
     activeScroller = null;
-    if (pullDistance >= THRESHOLD) {
+    if (pullDistance >= _getPullRefreshMetrics().triggerDistance) {
       refreshFamilyNow();
     } else {
       indicator.style.transition = 'height 0.2s ease';
@@ -8237,7 +8264,7 @@ function routeToView(member) {
     renderParentView();
     if (pendingRoute) {
       S._pendingNotificationRoute = null;
-      setTimeout(() => { _refreshFamilyFromServerAndRender(); }, 0);
+      _scheduleNotificationRefresh();
     }
   } else {
     const pendingRoute = S._pendingNotificationRoute;
@@ -10419,14 +10446,21 @@ async function kidCompleteChore(choreId, evt, slotId = null, entryTypeOverride =
     return;
   }
 
-  const result = await commitCompleteChore(choreId, m.id, slotId);
+  let reactedOptimistically = false;
+  const result = await commitCompleteChore(choreId, m.id, slotId, null, null, {
+    onOptimistic: applied => {
+      if (!applied.result || applied.result.error) return;
+      reactedOptimistically = true;
+      choreCompleteReact(chore, m, applied.result, evt);
+    },
+  });
   if (!result) return;
   if (result.error) {
     toast(result.error);
     if (isTiny(m)) speak(result.error);
     return;
   }
-  choreCompleteReact(chore, m, result, evt);
+  if (!reactedOptimistically) choreCompleteReact(chore, m, result, evt);
 }
 
 function choreCompleteReact(chore, m, result, evt) {
@@ -13522,12 +13556,12 @@ function approveChore(choreId, memberId, entryId, btn) {
         <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
     return _flipAdminCard(btn, inProgressInner, async () => {
-      await commitApproveChore(choreId, memberId, entryId);
+      await commitApproveChore(choreId, memberId, entryId, { onOptimistic: refreshParentInboxUI });
       refreshParentInboxUI();
     });
   } else {
     return _fadeOutAdminCard(btn, async () => {
-      const applied = await commitApproveChore(choreId, memberId, entryId);
+      const applied = await commitApproveChore(choreId, memberId, entryId, { onOptimistic: refreshParentInboxUI });
       if (!applied.duplicate) toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
       refreshParentInboxUI();
     });
