@@ -3345,7 +3345,7 @@
       justify-content: center;
       gap: 8px;
       box-sizing: border-box;
-      padding: 0 16px 12px;
+      padding: 0 16px;
       font-weight: 700;
       font-size: 0.95rem;
       z-index: 600;
@@ -3353,6 +3353,10 @@
     }
     #ptr-indicator.ptr-refreshing {
       min-height: 96px;
+    }
+    #ptr-indicator > span,
+    #ptr-indicator > .ptr-spinner {
+      margin-bottom: 12px;
     }
     .ptr-spinner {
       width: 18px; height: 18px;
