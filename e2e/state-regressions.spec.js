@@ -422,12 +422,21 @@ test.describe('State regressions', () => {
     await bootstrapState(page);
     const styles = await page.evaluate(() => {
       const indicator = document.getElementById('ptr-indicator');
+      indicator.innerHTML = '<span>Pull to refresh</span>';
       const computed = getComputedStyle(indicator);
-      return { alignItems: computed.alignItems, paddingBottom: computed.paddingBottom };
+      const label = indicator.querySelector('span');
+      return {
+        alignItems: computed.alignItems,
+        paddingBottom: computed.paddingBottom,
+        labelMarginBottom: getComputedStyle(label).marginBottom,
+        collapsedHeight: indicator.getBoundingClientRect().height,
+      };
     });
 
     expect(styles.alignItems).toBe('flex-end');
-    expect(styles.paddingBottom).toBe('12px');
+    expect(styles.paddingBottom).toBe('0px');
+    expect(styles.labelMarginBottom).toBe('12px');
+    expect(styles.collapsedHeight).toBe(0);
   });
 
   test('notification refresh retries sequentially through the final server result', async ({ page }) => {
