@@ -3341,9 +3341,11 @@
       background: var(--purple);
       color: #fff;
       display: flex;
-      align-items: center;
+      align-items: flex-end;
       justify-content: center;
       gap: 8px;
+      box-sizing: border-box;
+      padding: 0 16px 12px;
       font-weight: 700;
       font-size: 0.95rem;
       z-index: 600;
