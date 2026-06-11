@@ -236,14 +236,20 @@ function refreshFamilyNow() {
   return _refreshFamilyFromServerAndRender({ showIndicator: true, toastOnSuccess: true });
 }
 
-function _scheduleNotificationRefresh() {
-  [0, 500, 1500, 3500, 6500].forEach(delay => {
-    setTimeout(() => {
-      if (document.visibilityState === 'visible') {
-        _refreshFamilyFromServerAndRender({ toastOnError: false });
-      }
-    }, delay);
-  });
+let _notificationRefreshRun = 0;
+
+async function _scheduleNotificationRefresh(route = {}, opts = {}) {
+  const runId = ++_notificationRefreshRun;
+  const delays = opts.delays || [0, 600, 1200, 2400, 4800];
+  const refresh = opts.refresh || (() => _refreshFamilyFromServerAndRender({ toastOnError: false }));
+  for (const delay of delays) {
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+    if (runId !== _notificationRefreshRun) return false;
+    if (S.currentUser?.role === 'parent') S.parentTab = route.parentTab || 'home';
+    if (S.currentUser?.role === 'kid' && route.kidTab) S.kidTab = route.kidTab;
+    await refresh();
+  }
+  return true;
 }
 
 function _applyDeferredPostPinNav() {
@@ -256,7 +262,7 @@ function _applyDeferredPostPinNav() {
   }
   if (nav.parentTab) S.parentTab = nav.parentTab;
   if (nav.kidTab) S.kidTab = nav.kidTab;
-  if (nav.refresh) setTimeout(() => { _refreshFamilyFromServerAndRender(); }, 0);
+  if (nav.refresh) setTimeout(() => { _scheduleNotificationRefresh(nav); }, 0);
 }
 
 function _handleNotificationReceived(event) {
@@ -276,12 +282,12 @@ function _handleNotificationAction(event) {
   const route = _routeFromNotification(event) || { type: '', parentTab: 'home', kidTab: '' };
   if (S.currentUser?.role === 'parent') {
     switchParentTab(route.parentTab || 'home');
-    _scheduleNotificationRefresh();
+    _scheduleNotificationRefresh(route);
     return;
   }
   if (S.currentUser?.role === 'kid' && route.kidTab) {
     switchKidTab(route.kidTab);
-    _scheduleNotificationRefresh();
+    _scheduleNotificationRefresh(route);
     return;
   }
   if (document.getElementById('screen-pin')?.classList.contains('active')) {
@@ -8264,7 +8270,7 @@ function routeToView(member) {
     renderParentView();
     if (pendingRoute) {
       S._pendingNotificationRoute = null;
-      _scheduleNotificationRefresh();
+      _scheduleNotificationRefresh(pendingRoute);
     }
   } else {
     const pendingRoute = S._pendingNotificationRoute;

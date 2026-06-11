@@ -418,6 +418,42 @@ test.describe('State regressions', () => {
     expect(metrics.triggerDistance).toBeGreaterThanOrEqual(160);
   });
 
+  test('pull to refresh label sits at the bottom of the panel', async ({ page }) => {
+    await bootstrapState(page);
+    const styles = await page.evaluate(() => {
+      const indicator = document.getElementById('ptr-indicator');
+      const computed = getComputedStyle(indicator);
+      return { alignItems: computed.alignItems, paddingBottom: computed.paddingBottom };
+    });
+
+    expect(styles.alignItems).toBe('flex-end');
+    expect(styles.paddingBottom).toBe('12px');
+  });
+
+  test('notification refresh retries sequentially through the final server result', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(async () => {
+      let refreshCount = 0;
+      const completed = await _scheduleNotificationRefresh(
+        { parentTab: 'home' },
+        {
+          delays: [0, 0, 0],
+          refresh: async () => {
+            refreshCount += 1;
+            await new Promise(resolve => setTimeout(resolve, refreshCount === 1 ? 20 : 1));
+            D.settings.notificationRefreshMarker = refreshCount;
+          },
+        },
+      );
+      return { completed, refreshCount, marker: D.settings.notificationRefreshMarker, parentTab: S.parentTab };
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.refreshCount).toBe(3);
+    expect(result.marker).toBe(3);
+    expect(result.parentTab).toBe('home');
+  });
+
   test('approving the final item removes the empty family inbox section', async ({ page }) => {
     await bootstrapState(page);
     const result = await page.evaluate(async () => {
