@@ -39,6 +39,7 @@ function setFamilyCode(code) {
   const prev = getFamilyCode();
   try { localStorage.setItem(FAMILY_CODE_KEY, code); } catch (_) {}
   if (code && code !== prev) {
+    _resetHistoryStorageState();
     // Family switched/created: reset cached subscription state and refresh native entitlement.
     S.isPro = false;
     _rcPkgs = { monthly: null, yearly: null };
@@ -53,6 +54,10 @@ function getFamilyDoc() {
   let code = getFamilyCode();
   if (!code) { code = genFamilyCode(); setFamilyCode(code); }
   return `families/${code}`;
+}
+
+function getFamilyHistoryCollection() {
+  return `${getFamilyDoc()}/history`;
 }
 
 firebase.initializeApp(FIREBASE_CONFIG);
@@ -209,10 +214,11 @@ async function _refreshFamilyFromServerAndRender(opts = {}) {
   }
   try {
     await ensureFirestoreAuth();
+    await _waitForFamilyActions();
     if (_pushInFlight) await _pushInFlight;
     const snap = await db.doc(getFamilyDoc()).get({ source: 'server' });
     if (snap.exists) {
-      _applyServerRefreshData(snap.data(), activeKidId, prevPending);
+      _applyServerRefreshData(_hydrateFamilyDataWithHistory(snap.data()), activeKidId, prevPending);
     } else {
       renderCurrentView();
     }
@@ -2853,9 +2859,186 @@ let firestoreUnsub = null;
 let _pushInFlight = null;
 let _pendingPushData = null;
 let _syncBaseData = null;
+const _familyActionsInFlight = new Set();
+const HISTORY_STORAGE_VERSION = 1;
+const HISTORY_INLINE_LIMIT = 100;
+const FAMILY_DOC_TARGET_BYTES = 700 * 1024;
+const FIRESTORE_DOC_HARD_LIMIT_BYTES = 1024 * 1024;
+let _historyCache = [];
+let _historyArchiveReady = false;
+let _historyArchiveKnownIds = new Set();
+
+function _resetHistoryStorageState() {
+  _historyArchiveReady = false;
+  _historyArchiveKnownIds = new Set();
+  _historyCache = [];
+}
+
+function _hasFamilyActionsInFlight() {
+  return _familyActionsInFlight.size > 0;
+}
+
+function _isFirestoreSnapshotStale(firstSnapshot, isOlderThanLocal) {
+  return !firstSnapshot && (
+    _hasFamilyActionsInFlight()
+    || (Date.now() - S.lastLocalSave) < 1500
+    || isOlderThanLocal
+  );
+}
+
+async function _waitForFamilyActions() {
+  while (_familyActionsInFlight.size > 0) {
+    await Promise.allSettled([..._familyActionsInFlight]);
+  }
+}
 
 function cloneData(data) {
   try { return JSON.parse(JSON.stringify(data)); } catch(_) { return data; }
+}
+
+function _utf8ByteLength(value) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text || '').length;
+  return unescape(encodeURIComponent(text || '')).length;
+}
+
+function _stripExpiredUndoPayload(entry, now = Date.now()) {
+  const next = cloneData(entry || {});
+  const createdAt = Number(next.createdAt || 0);
+  if (createdAt && (now - createdAt) <= HISTORY_UNDO_WINDOW_MS) return next;
+  delete next.memberBefore;
+  delete next.completionsBefore;
+  delete next.redemptionsBefore;
+  delete next.contributionsBefore;
+  delete next.requestBefore;
+  return next;
+}
+
+function _mergeHistoryEntries(...lists) {
+  const byId = new Map();
+  lists.flat().forEach(entry => {
+    if (!entry?.id) return;
+    const existing = byId.get(entry.id);
+    if (!existing || Number(entry.createdAt || 0) >= Number(existing.createdAt || 0)) {
+      byId.set(entry.id, cloneData(entry));
+    }
+  });
+  return [...byId.values()].sort((a, b) =>
+    Number(b.createdAt || 0) - Number(a.createdAt || 0)
+    || String(b.id).localeCompare(String(a.id))
+  );
+}
+
+function _hydrateFamilyDataWithHistory(rawData) {
+  const hydrated = cloneData(rawData || {});
+  hydrated.history = _mergeHistoryEntries(hydrated.history || [], _historyCache);
+  return hydrated;
+}
+
+function _familyDataForFirestore(data) {
+  const payload = cloneData(data || {});
+  const now = Date.now();
+  const history = _mergeHistoryEntries(payload.history || [])
+    .map(entry => _stripExpiredUndoPayload(entry, now));
+  payload.syncMeta = _isPlainObject(payload.syncMeta) ? payload.syncMeta : {};
+  payload.syncMeta.historyStorageVersion = HISTORY_STORAGE_VERSION;
+  payload.history = history.slice(0, HISTORY_INLINE_LIMIT);
+
+  while (payload.history.length && _utf8ByteLength(payload) > FAMILY_DOC_TARGET_BYTES) {
+    payload.history.pop();
+  }
+  const bytes = _utf8ByteLength(payload);
+  if (bytes >= FIRESTORE_DOC_HARD_LIMIT_BYTES) {
+    const error = new Error(`Family data is too large to save (${bytes} bytes).`);
+    error.code = 'gemsprout/family-document-too-large';
+    throw error;
+  }
+  return payload;
+}
+
+function _friendlyFirestoreError(error) {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  if (code.includes('family-document-too-large') || message.includes('too large') || message.includes('maximum size')) {
+    return 'Family data is too large to save. GemSprout could not safely apply that change.';
+  }
+  if (code.includes('permission-denied')) return 'GemSprout does not have permission to save this change.';
+  if (code.includes('unavailable') || code.includes('network')) return 'Could not save while offline. Please reconnect and try again.';
+  return 'Could not save. Please try again.';
+}
+
+async function _commitHistoryArchiveChanges(entries, opts = {}) {
+  if (isE2EMode() || S._testOnboarding?.active) return;
+  const history = _mergeHistoryEntries(entries || []).map(entry => _stripExpiredUndoPayload(entry));
+  const currentIds = new Set(history.map(entry => entry.id));
+  const writes = history
+    .filter(entry => !_historyArchiveKnownIds.has(entry.id))
+    .map(entry => ({ type: 'set', id: entry.id, data: entry }));
+  if (opts.deleteMissing && _historyArchiveReady) {
+    _historyArchiveKnownIds.forEach(id => {
+      if (!currentIds.has(id)) writes.push({ type: 'delete', id });
+    });
+  }
+
+  for (let offset = 0; offset < writes.length; offset += 400) {
+    const batch = db.batch();
+    writes.slice(offset, offset + 400).forEach(write => {
+      const ref = db.doc(`${getFamilyHistoryCollection()}/${write.id}`);
+      if (write.type === 'delete') batch.delete(ref);
+      else batch.set(ref, cloneData(write.data));
+    });
+    await batch.commit();
+  }
+
+  writes.forEach(write => {
+    if (write.type === 'delete') _historyArchiveKnownIds.delete(write.id);
+    else _historyArchiveKnownIds.add(write.id);
+  });
+  _historyCache = history;
+}
+
+async function _initializeHistoryStorage() {
+  if (isE2EMode() || _historyArchiveReady) return;
+  const familyRef = db.doc(getFamilyDoc());
+  const [familySnap, archiveSnap] = await Promise.all([
+    familyRef.get({ source: 'server' }).catch(() => null),
+    db.collection(getFamilyHistoryCollection()).get().catch(() => null),
+  ]);
+  const serverData = familySnap?.exists ? familySnap.data() : null;
+  const archived = archiveSnap?.docs?.map(doc => ({ id: doc.id, ...doc.data() })) || [];
+  _historyArchiveKnownIds = new Set(archived.map(entry => entry.id));
+  const mergedHistory = _mergeHistoryEntries(D.history || [], serverData?.history || [], archived);
+  _historyCache = mergedHistory;
+
+  if (mergedHistory.length) await _commitHistoryArchiveChanges(mergedHistory);
+  _historyArchiveReady = true;
+
+  if (serverData) {
+    await db.runTransaction(async transaction => {
+      const latestSnap = await transaction.get(familyRef);
+      if (!latestSnap.exists) return;
+      const latest = _hydrateFamilyDataWithHistory(latestSnap.data());
+      const compact = _familyDataForFirestore(latest);
+      if (!_sameData(compact, latestSnap.data())) transaction.set(familyRef, compact);
+    });
+  }
+
+  D.history = mergedHistory;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
+}
+
+async function _deleteFamilyHistoryArchive(docPath = getFamilyDoc()) {
+  if (isE2EMode()) return;
+  const snap = await db.collection(`${docPath}/history`).get();
+  const docs = snap?.docs || [];
+  for (let offset = 0; offset < docs.length; offset += 400) {
+    const batch = db.batch();
+    docs.slice(offset, offset + 400).forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }
+  _historyArchiveKnownIds = new Set();
+  _historyCache = [];
+  _historyArchiveReady = false;
 }
 
 function _sameData(left, right) {
@@ -2996,13 +3179,16 @@ function _applyFamilyActionToData(data, actionId, mutate) {
   }
 }
 
-function _applyCommittedFamilyData(data) {
-  let nextData = cloneData(data);
+function _applyCommittedFamilyData(data, optimisticBase = null) {
+  let nextData = optimisticBase
+    ? mergeConcurrentData(optimisticBase, D, data)
+    : cloneData(data);
   if (_pendingPushData) {
     nextData = mergeConcurrentData(_syncBaseData || D, D, nextData);
     _pendingPushData = cloneData(nextData);
   }
   D = normalizeData(nextData);
+  _historyCache = _mergeHistoryEntries(D.history || []);
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
   if (S.currentUser?.id) {
     const fresh = getMember(S.currentUser.id);
@@ -3014,6 +3200,7 @@ function _applyCommittedFamilyData(data) {
 
 function _applyOptimisticFamilyData(data) {
   D = _normalizeDataCopy(data);
+  _historyCache = _mergeHistoryEntries(D.history || []);
   try { localStorage.setItem(LS_KEY, JSON.stringify(D)); } catch(e) {}
   if (S.currentUser?.id) {
     const fresh = getMember(S.currentUser.id);
@@ -3034,27 +3221,50 @@ async function runFamilyAction(actionId, mutate, opts = {}) {
   _applyOptimisticFamilyData(optimistic.data);
   if (typeof opts.onOptimistic === 'function') opts.onOptimistic(optimistic);
   const docRef = db.doc(getFamilyDoc());
-  S.syncStatus = 'syncing';
-  try {
-    const applied = await db.runTransaction(async transaction => {
-      const snap = await transaction.get(docRef);
-      const remote = snap.exists ? snap.data() : cloneData(optimistic.data);
-      const next = _applyFamilyActionToData(remote, actionId, mutate);
-      if (!next.duplicate) {
-        if (next.data.settings) next.data.settings.lastSync = Date.now();
-        transaction.set(docRef, cloneData(next.data));
-      }
-      return next;
-    });
-    _applyCommittedFamilyData(applied.data);
-    S.syncStatus = 'ok';
-    return applied;
-  } catch(e) {
-    S.syncStatus = 'error';
-    console.warn('Firestore action error:', e);
-    _refreshFamilyFromServerAndRender({ toastOnError: false });
-    return { data: cloneData(D), duplicate: false, result: { error: 'Could not save. Please try again.' }, error: e };
-  }
+  const operation = (async () => {
+    S.syncStatus = 'syncing';
+    try {
+      const applied = await db.runTransaction(async transaction => {
+        const snap = await transaction.get(docRef);
+        const remote = snap.exists ? _hydrateFamilyDataWithHistory(snap.data()) : cloneData(optimistic.data);
+        const next = _applyFamilyActionToData(remote, actionId, mutate);
+        if (!next.duplicate) {
+          if (next.data.settings) next.data.settings.lastSync = Date.now();
+          const remoteHistoryIds = new Set((remote.history || []).map(entry => entry.id));
+          const nextHistoryIds = new Set((next.data.history || []).map(entry => entry.id));
+          (next.data.history || []).forEach(entry => {
+            if (!entry?.id || remoteHistoryIds.has(entry.id)) return;
+            transaction.set(db.doc(`${getFamilyHistoryCollection()}/${entry.id}`), _stripExpiredUndoPayload(entry));
+          });
+          (remote.history || []).forEach(entry => {
+            if (entry?.id && !nextHistoryIds.has(entry.id)) {
+              transaction.delete(db.doc(`${getFamilyHistoryCollection()}/${entry.id}`));
+            }
+          });
+          transaction.set(docRef, _familyDataForFirestore(next.data));
+        }
+        return next;
+      });
+      // Preserve actions made after this optimistic state while applying the
+      // authoritative transaction result.
+      _applyCommittedFamilyData(applied.data, optimistic.data);
+      _historyCache.forEach(entry => _historyArchiveKnownIds.add(entry.id));
+      S.syncStatus = 'ok';
+      return applied;
+    } catch(e) {
+      S.syncStatus = 'error';
+      console.warn('Firestore action error:', e);
+      // Remove only this failed optimistic change; keep later actions intact.
+      _applyCommittedFamilyData(_syncBaseData || D, optimistic.data);
+      return { data: cloneData(D), duplicate: false, result: { error: _friendlyFirestoreError(e) }, error: e };
+    }
+  })();
+  _familyActionsInFlight.add(operation);
+  operation.then(
+    () => _familyActionsInFlight.delete(operation),
+    () => _familyActionsInFlight.delete(operation),
+  );
+  return operation;
 }
 
 function showPaywallAccountOptions() {
@@ -3077,6 +3287,7 @@ function loadData() {
   } catch(e) {
     D = normalizeData(defaultData());
   }
+  _historyCache = _mergeHistoryEntries(D.history || []);
   _setSyncBase(D);
 }
 
@@ -3116,18 +3327,20 @@ function pushToFirestore(localData = cloneData(D)) {
 
       let committed;
       try {
+        await _commitHistoryArchiveChanges(localSnapshot.history || [], { deleteMissing: true });
         committed = await db.runTransaction(async transaction => {
           const snap = await transaction.get(docRef);
-          const remote = snap.exists ? _normalizeDataCopy(snap.data()) : null;
+          const remote = snap.exists ? _normalizeDataCopy(_hydrateFamilyDataWithHistory(snap.data())) : null;
           const merged = remote ? mergeConcurrentData(baseSnapshot, localSnapshot, remote) : cloneData(localSnapshot);
           if (merged.settings) merged.settings.lastSync = Date.now();
-          transaction.set(docRef, cloneData(merged));
+          transaction.set(docRef, _familyDataForFirestore(merged));
           return merged;
         });
       } catch(e) {
         _pendingPushData = cloneData(D);
         S.syncStatus = 'error';
         console.warn('Firestore write error:', e);
+        toast(_friendlyFirestoreError(e));
         break;
       }
 
@@ -3479,10 +3692,16 @@ function checkForApprovalCelebration(prevPendingKeys, member, isWhileAway = fals
   }
 }
 
-function subscribeToFirestore(onFirstLoad) {
+async function subscribeToFirestore(onFirstLoad) {
   if (isE2EMode()) {
     if (typeof onFirstLoad === 'function') onFirstLoad();
     return;
+  }
+  try {
+    await _initializeHistoryStorage();
+  } catch (e) {
+    console.warn('History storage initialization failed:', e);
+    toast(_friendlyFirestoreError(e));
   }
   if (firestoreUnsub) firestoreUnsub();
   const _subDoc = getFamilyDoc();
@@ -3497,13 +3716,13 @@ function subscribeToFirestore(onFirstLoad) {
     }
     let _didUpdate = false;
     if (snap.exists) {
-      const incoming = snap.data();
+      const incoming = _hydrateFamilyDataWithHistory(snap.data());
       const normalizedIncoming = _normalizeDataCopy(incoming);
       const incomingSync = Number(normalizedIncoming.settings?.lastSync || 0);
       const localSync = Number(D.settings?.lastSync || 0);
       const incomingMissingSync = !incomingSync && !!localSync;
       const isOlderThanLocal = !!localSync && (!incomingSync || incomingSync < localSync);
-      const isStaleEcho = !firstSnapshot && ((Date.now() - S.lastLocalSave) < 1500 || isOlderThanLocal);
+      const isStaleEcho = _isFirestoreSnapshotStale(firstSnapshot, isOlderThanLocal);
       if (!incomingMissingSync && !isOlderThanLocal && !isStaleEcho && JSON.stringify(normalizedIncoming) !== JSON.stringify(D)) {
         _didUpdate = true;
         // Capture what was pending before the update (for approval celebration)
@@ -3527,7 +3746,7 @@ function subscribeToFirestore(onFirstLoad) {
           checkForDeclineNotifications(S.currentUser, false);
         }
       }
-      if (!_pushInFlight && !_pendingPushData) _setSyncBase(normalizedIncoming);
+      if (!_hasFamilyActionsInFlight() && !_pushInFlight && !_pendingPushData) _setSyncBase(normalizedIncoming);
     }
     if (firstSnapshot) {
       firstSnapshot = false;
@@ -4537,8 +4756,8 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
   saveData();
 }
 
-async function commitRejectChore(choreId, memberId, entryId, reason = '') {
-  return runFamilyAction(`chore-reject:${entryId}`, () => doRejectChore(choreId, memberId, entryId, reason));
+async function commitRejectChore(choreId, memberId, entryId, reason = '', opts = {}) {
+  return runFamilyAction(`chore-reject:${entryId}`, () => doRejectChore(choreId, memberId, entryId, reason), opts);
 }
 
 function doRedeemPrize(prizeId, memberId, opts = {}) {
@@ -6586,6 +6805,8 @@ function testSpendDenied(opts = {}) {
 function emailDebugLogs() {
   const html = document.documentElement;
   const body = document.body;
+  let familyPayloadBytes = '(unavailable)';
+  try { familyPayloadBytes = _utf8ByteLength(_familyDataForFirestore(D)); } catch(e) { familyPayloadBytes = `error: ${e?.message || 'unknown'}`; }
   const logs = [
     `UA: ${navigator.userAgent}`,
     `window.inner: ${window.innerWidth}x${window.innerHeight}`,
@@ -6599,6 +6820,10 @@ function emailDebugLogs() {
     `visualViewport: ${window.visualViewport?.width}x${window.visualViewport?.height} offset:${window.visualViewport?.offsetTop}`,
     `safeAreaTop: ${getComputedStyle(html).getPropertyValue('--sat') || 'check env()'}`,
     `screens visible: ${[...document.querySelectorAll('.screen')].filter(s => s.style.display !== 'none').map(s => s.id).join(', ')}`,
+    `syncStatus: ${S.syncStatus}`,
+    `familyPayloadBytes: ${familyPayloadBytes}`,
+    `historyTotal/Inline/Archived: ${(D.history || []).length}/${Math.min((D.history || []).length, HISTORY_INLINE_LIMIT)}/${_historyArchiveKnownIds.size}`,
+    `historyArchiveReady: ${_historyArchiveReady}`,
   ].join('\n');
   window.location.href = `mailto:beta@gemsprout.com?subject=GemSprout Debug Log&body=${encodeURIComponent(logs)}`;
 }
@@ -6680,6 +6905,11 @@ async function devShowPushDiagnostics() {
     pushPermission: '(unknown)',
     authUserTokenCount: '(unknown)',
     parentAuthTokenCount: '(unknown)',
+    syncStatus: S.syncStatus,
+    familyPayloadBytes: (() => { try { return _utf8ByteLength(_familyDataForFirestore(D)); } catch(e) { return `error: ${e?.message || 'unknown'}`; } })(),
+    historyTotal: (D.history || []).length,
+    historyArchived: _historyArchiveKnownIds.size,
+    historyArchiveReady: _historyArchiveReady,
   };
 
   try {
@@ -6734,6 +6964,10 @@ async function devShowPushDiagnostics() {
     `users/<parentAuthUid> token count: ${info.parentAuthTokenCount}`,
     `Notify chore approval: ${info.notifyChoreApproval}`,
     `Notify savings spend: ${info.notifySavingsSpend}`,
+    `Sync status: ${info.syncStatus}`,
+    `Family payload bytes: ${info.familyPayloadBytes}`,
+    `History total / archived: ${info.historyTotal} / ${info.historyArchived}`,
+    `History archive ready: ${info.historyArchiveReady}`,
   ];
 
   const escapedJson = JSON.stringify(info, null, 2)
@@ -7270,6 +7504,7 @@ function _doLeaveDevice() {
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(FAMILY_CODE_KEY);
+  _resetHistoryStorageState();
   setAppUnlocked(false);
   setCurrentUserId('');
   setParentAuthUid(null);
@@ -10974,8 +11209,11 @@ function approveSavingsRequest(requestId, btn) {
       });
       saveData();
       return { ok: true, actual, memberName: freshMember.name };
-    });
-    if (applied.result?.ok) toast(`Approved ${cur}${applied.result.actual.toFixed(2)} spend for ${applied.result.memberName}`);
+    }, { onOptimistic: optimistic => {
+      if (optimistic.result?.ok) toast(`Approved ${cur}${optimistic.result.actual.toFixed(2)} spend for ${optimistic.result.memberName}`);
+      refreshParentInboxUI();
+    } });
+    if (applied.result?.error) toast(applied.result.error);
     refreshParentInboxUI();
   });
 }
@@ -10996,8 +11234,11 @@ function denySavingsRequest(requestId, btn) {
       });
       saveData();
       return { ok: true };
-    });
-    if (applied.result?.ok) toast(`Spend request denied for ${m?.name || 'kid'}`);
+    }, { onOptimistic: optimistic => {
+      if (optimistic.result?.ok) toast(`Spend request denied for ${m?.name || 'kid'}`);
+      refreshParentInboxUI();
+    } });
+    if (applied.result?.error) toast(applied.result.error);
     refreshParentInboxUI();
   });
 }
@@ -11018,9 +11259,12 @@ function approvePrizeRequest(requestId, btn) {
       freshReq.resolvedAt = Date.now();
       saveData();
       return result;
-    });
-    if (applied.result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
-    else if (!applied.result?.duplicate) toast(`Could not approve: ${formatPrizeRedeemStatusMessage(applied.result)}`);
+    }, { onOptimistic: optimistic => {
+      if (optimistic.result?.ok) toast(`Approved ${prize.title} for ${member.name}`);
+      refreshParentInboxUI();
+    } });
+    if (applied.result?.error) toast(applied.result.error);
+    else if (!applied.result?.ok && !applied.result?.duplicate) toast(`Could not approve: ${formatPrizeRedeemStatusMessage(applied.result)}`);
     refreshParentInboxUI();
   });
 }
@@ -11041,8 +11285,11 @@ function denyPrizeRequest(requestId, btn) {
       });
       saveData();
       return { ok: true };
-    });
-    if (applied.result?.ok) toast(`Prize request denied for ${member?.name || 'kid'}`);
+    }, { onOptimistic: optimistic => {
+      if (optimistic.result?.ok) toast(`Prize request denied for ${member?.name || 'kid'}`);
+      refreshParentInboxUI();
+    } });
+    if (applied.result?.error) toast(applied.result.error);
     refreshParentInboxUI();
   });
 }
@@ -13562,13 +13809,24 @@ function approveChore(choreId, memberId, entryId, btn) {
         <div class="admin-meta">${renderMemberAvatarHtml(m)} ${esc(m.name)} &middot; waiting for after photo &middot; ${c.diamonds} gems</div>
       </div>`;
     return _flipAdminCard(btn, inProgressInner, async () => {
-      await commitApproveChore(choreId, memberId, entryId, { onOptimistic: refreshParentInboxUI });
+      const applied = await commitApproveChore(choreId, memberId, entryId, {
+        onOptimistic: optimistic => {
+          if (!optimistic.duplicate) toast(`Approved start of "${c?.title}" for ${m?.name}`);
+          refreshParentInboxUI();
+        },
+      });
+      if (applied.result?.error) toast(applied.result.error);
       refreshParentInboxUI();
     });
   } else {
     return _fadeOutAdminCard(btn, async () => {
-      const applied = await commitApproveChore(choreId, memberId, entryId, { onOptimistic: refreshParentInboxUI });
-      if (!applied.duplicate) toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
+      const applied = await commitApproveChore(choreId, memberId, entryId, {
+        onOptimistic: optimistic => {
+          if (!optimistic.duplicate) toast(`<i class="ph-duotone ph-check-circle" style="color:#16A34A;font-size:1rem;vertical-align:middle"></i> Approved "${c?.title}" for ${m?.name} (+${c?.diamonds} gems)`);
+          refreshParentInboxUI();
+        },
+      });
+      if (applied.result?.error) toast(applied.result.error);
       refreshParentInboxUI();
     });
   }
@@ -13594,9 +13852,14 @@ function rejectChore(choreId, memberId, entryId) {
 async function confirmRejectChore(choreId, memberId, entryId) {
   const reason = document.getElementById('decline-reason-input')?.value?.trim() || '';
   closeModal();
-  const applied = await commitRejectChore(choreId, memberId, entryId, reason);
   const m = getMember(memberId);
-  if (!applied.duplicate) toast(`Chore declined for ${m?.name}`);
+  const applied = await commitRejectChore(choreId, memberId, entryId, reason, {
+    onOptimistic: optimistic => {
+      if (!optimistic.duplicate) toast(`Chore declined for ${m?.name}`);
+      refreshParentInboxUI();
+    },
+  });
+  if (applied.result?.error) toast(applied.result.error);
   refreshParentInboxUI();
 }
 
@@ -16246,6 +16509,7 @@ function _confirmSwitchFamily() {
     closeSettings();
     localStorage.removeItem(LS_KEY);
     localStorage.removeItem(FAMILY_CODE_KEY);
+    _resetHistoryStorageState();
     if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
     D = defaultData();
     showScreen('screen-setup');
@@ -16269,6 +16533,7 @@ function resetAllData() {
 async function _doResetAllData() {
   const docPath = getFamilyDoc();
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  try { await _deleteFamilyHistoryArchive(docPath); } catch(e) { console.warn('Firestore history delete error:', e); }
   try { await db.doc(docPath).delete(); } catch(e) { console.warn('Firestore delete error:', e); }
   localStorage.removeItem(LS_KEY);
   location.reload();
@@ -16291,6 +16556,7 @@ async function _doDeleteAccount() {
   const firebaseUser = auth.currentUser;
   const docPath = getFamilyDoc();
   if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+  try { await _deleteFamilyHistoryArchive(docPath); } catch(e) { console.warn('Firestore history delete error:', e); }
   try { await db.doc(docPath).delete(); } catch(e) { console.warn('Firestore family delete error:', e); }
   if (firebaseUser) {
     try {
@@ -16529,7 +16795,10 @@ function init() {
             // Replace the temp sync code with a collision-checked unique code before pushing
             const safeCode = await genUniqueFamilyCode();
             setFamilyCode(safeCode);
+            await _initializeHistoryStorage();
             await pushToFirestore();
+          } else {
+            await _initializeHistoryStorage();
           }
           if (_shouldAutoMapCurrentAuthAsKid() && !getParentAuthUid() && getFamilyCode()) {
             db.doc(`users/${auth.currentUser.uid}`).set({ familyCode: getFamilyCode(), role: 'kid' }, { merge: true }).catch(() => {});
@@ -16546,7 +16815,10 @@ function init() {
     } else {
       showLoading();
       ensureFirestoreAuth()
-        .then(() => subscribeToFirestore(routeAfterLoad))
+        .then(async () => {
+          await _initializeHistoryStorage();
+          subscribeToFirestore(routeAfterLoad);
+        })
         .catch(err => {
           console.warn('Firestore unavailable, falling back to local data:', err);
           routeAfterLoad();

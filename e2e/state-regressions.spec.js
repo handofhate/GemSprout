@@ -176,6 +176,126 @@ test.describe('State regressions', () => {
     expect(result.historyIds).toEqual(expect.arrayContaining(['history_1', 'history_2']));
   });
 
+  test('completed approval keeps a newer optimistic approval visible', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      const base = normalizeData(defaultData());
+      base.setup = true;
+      base.history = [];
+      base.family.members = [normalizeMember({
+        id: 'kid_1', name: 'Kid', role: 'kid', gems: 0, diamonds: 0, totalEarned: 0,
+      })];
+      base.chores = [
+        normalizeChore({
+          id: 'chore_1', title: 'One', gems: 5, assignedTo: ['kid_1'],
+          completions: { kid_1: [{ id: 'entry_1', status: 'pending', date: today(), createdAt: 1 }] },
+        }),
+        normalizeChore({
+          id: 'chore_2', title: 'Two', gems: 7, assignedTo: ['kid_1'],
+          completions: { kid_1: [{ id: 'entry_2', status: 'pending', date: today(), createdAt: 2 }] },
+        }),
+      ];
+
+      const first = _applyFamilyActionToData(base, 'approve-1', () => doApproveChore('chore_1', 'kid_1', 'entry_1'));
+      const second = _applyFamilyActionToData(first.data, 'approve-2', () => doApproveChore('chore_2', 'kid_1', 'entry_2'));
+      D = normalizeData(second.data);
+      _applyCommittedFamilyData(first.data, first.data);
+
+      return {
+        statuses: D.chores.map(chore => chore.completions.kid_1[0].status),
+        gems: getMember('kid_1').gems,
+        historyCount: D.history.filter(entry => entry.type === 'chore').length,
+      };
+    });
+
+    expect(result.statuses).toEqual(['done', 'done']);
+    expect(result.gems).toBe(12);
+    expect(result.historyCount).toBe(2);
+  });
+
+  test('live listener snapshots are stale while an approval is in flight', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      S.lastLocalSave = 0;
+      const pending = new Promise(() => {});
+      _familyActionsInFlight.add(pending);
+      const staleDuringAction = _isFirestoreSnapshotStale(false, false);
+      _familyActionsInFlight.delete(pending);
+      const staleAfterAction = _isFirestoreSnapshotStale(false, false);
+      return { staleDuringAction, staleAfterAction };
+    });
+
+    expect(result.staleDuringAction).toBe(true);
+    expect(result.staleAfterAction).toBe(false);
+  });
+
+  test('large family history is compacted below the Firestore document limit', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      const data = normalizeData(defaultData());
+      data.setup = true;
+      const now = Date.now();
+      data.history = Array.from({ length: 600 }, (_, index) => ({
+        id: `history_${index}`,
+        type: 'chore',
+        memberId: 'kid_1',
+        title: `History ${index}`,
+        gems: 5,
+        date: today(),
+        createdAt: now - (index * 60 * 60 * 1000),
+        undoAction: 'approve_completion',
+        memberBefore: { badges: Array.from({ length: 50 }, (__, badge) => `badge_${badge}`) },
+        completionsBefore: Array.from({ length: 25 }, (__, completion) => ({
+          id: `completion_${index}_${completion}`,
+          status: 'done',
+          photoUrl: `https://example.com/${'x'.repeat(200)}`,
+        })),
+      }));
+
+      const originalCount = data.history.length;
+      const payload = _familyDataForFirestore(data);
+      const oldEntry = payload.history.find(entry => entry.id === 'history_48');
+      const recentEntry = payload.history.find(entry => entry.id === 'history_1');
+      return {
+        originalCount,
+        sourceCountAfter: data.history.length,
+        inlineCount: payload.history.length,
+        bytes: _utf8ByteLength(payload),
+        storageVersion: payload.syncMeta.historyStorageVersion,
+        oldUndoRemoved: oldEntry ? !oldEntry.memberBefore && !oldEntry.completionsBefore : true,
+        recentUndoRetained: !!recentEntry?.memberBefore && !!recentEntry?.completionsBefore,
+      };
+    });
+
+    expect(result.originalCount).toBe(600);
+    expect(result.sourceCountAfter).toBe(600);
+    expect(result.inlineCount).toBeLessThanOrEqual(100);
+    expect(result.bytes).toBeLessThan(700 * 1024);
+    expect(result.storageVersion).toBe(1);
+    expect(result.oldUndoRemoved).toBe(true);
+    expect(result.recentUndoRetained).toBe(true);
+  });
+
+  test('archived history hydrates without duplicating inline entries', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      _historyCache = [
+        { id: 'older', title: 'Older', createdAt: 1 },
+        { id: 'shared', title: 'Archived copy', createdAt: 2 },
+      ];
+      const hydrated = _hydrateFamilyDataWithHistory({
+        history: [
+          { id: 'newer', title: 'Newer', createdAt: 3 },
+          { id: 'shared', title: 'Inline copy', createdAt: 2 },
+        ],
+      });
+      return hydrated.history.map(entry => ({ id: entry.id, title: entry.title }));
+    });
+
+    expect(result.map(entry => entry.id)).toEqual(['newer', 'shared', 'older']);
+    expect(result.filter(entry => entry.id === 'shared')).toHaveLength(1);
+  });
+
   test('parent mark-done clears before/after in-progress phase', async ({ page }) => {
     const { kidId } = await bootstrapState(page);
     const result = await page.evaluate(async ({ kidId }) => {
