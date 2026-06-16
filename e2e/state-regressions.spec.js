@@ -408,6 +408,15 @@ test.describe('State regressions', () => {
     const result = await page.evaluate(async ({ kidId, parentId }) => {
       const kid = getMember(kidId);
       const parent = getMember(parentId);
+      const notificationPayloads = [];
+      window.firebase = {
+        functions: () => ({
+          httpsCallable: () => payload => {
+            notificationPayloads.push(payload);
+            return Promise.resolve({ data: { ok: true } });
+          },
+        }),
+      };
       kid.gems = 100;
       kid.diamonds = 100;
       D.prizes.push(normalizePrize({
@@ -424,7 +433,7 @@ test.describe('State regressions', () => {
       }));
 
       S.currentUser = kid;
-      submitPrizeRequest('p_parent_gate');
+      await submitPrizeRequest('p_parent_gate');
       const pendingCountAfterRequest = pendingPrizeRequests().length;
       const kidGemsAfterRequest = kid.gems;
       const req = pendingPrizeRequests()[0];
@@ -438,6 +447,9 @@ test.describe('State regressions', () => {
         kidGemsAfterApproval: getMember(kidId).gems,
         requestStatus: (D.prizeRequests || []).find(r => r.id === req.id)?.status,
         redemptionCount: (D.prizes.find(p => p.id === 'p_parent_gate')?.redemptions || []).length,
+        notificationPayload: notificationPayloads[0] || null,
+        historyIds: D.history.map(entry => entry.id),
+        requestId: req.id,
       };
     }, { kidId, parentId });
 
@@ -446,6 +458,63 @@ test.describe('State regressions', () => {
     expect(result.kidGemsAfterApproval).toBe(60);
     expect(result.requestStatus).toBe('approved');
     expect(result.redemptionCount).toBe(1);
+    expect(result.notificationPayload).toEqual(expect.objectContaining({
+      kidName: 'Kid',
+      choreTitle: 'Parent-Gated Prize',
+      prizeTitle: 'Parent-Gated Prize',
+      requestType: 'prize',
+      type: 'prize_request',
+    }));
+    expect(result.historyIds).toEqual([`history:prize-approve:${result.requestId}`]);
+  });
+
+  test('prize approval history id is stable across optimistic and committed runs', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      const base = normalizeData(defaultData());
+      base.setup = true;
+      base.history = [];
+      base.family.members = [normalizeMember({ id: 'kid_1', name: 'Kid', role: 'kid', gems: 100, diamonds: 100, totalEarned: 0 })];
+      base.prizes = [normalizePrize({
+        id: 'prize_1',
+        title: 'Stable Prize',
+        icon: 'gift',
+        iconColor: '#FF6584',
+        cost: 40,
+        type: 'individual',
+        recurrence: 'anytime',
+        requireParentApproval: true,
+        redemptions: [],
+      })];
+      base.prizeRequests = [{ id: 'request_1', prizeId: 'prize_1', memberId: 'kid_1', cost: 40, status: 'pending', date: today(), createdAt: 1 }];
+
+      const approve = () => {
+        const freshReq = (D.prizeRequests || []).find(r => r.id === 'request_1');
+        const requestBefore = _cloneForUndo({ status: freshReq.status, resolvedAt: freshReq.resolvedAt || null });
+        const redeem = doRedeemPrize(freshReq.prizeId, freshReq.memberId, {
+          requestId: freshReq.id,
+          requestBefore,
+          historyId: `history:prize-approve:${freshReq.id}`,
+        });
+        freshReq.status = redeem?.ok ? 'approved' : 'denied';
+        freshReq.resolvedAt = Date.now();
+        saveData();
+        return redeem;
+      };
+
+      const optimistic = _applyFamilyActionToData(base, 'prize-approve:request_1', approve);
+      const committed = _applyFamilyActionToData(base, 'prize-approve:request_1', approve);
+      const merged = mergeConcurrentData(optimistic.data, optimistic.data, committed.data);
+      return {
+        optimisticHistoryIds: optimistic.data.history.map(entry => entry.id),
+        committedHistoryIds: committed.data.history.map(entry => entry.id),
+        mergedPrizeHistoryCount: merged.history.filter(entry => entry.type === 'prize').length,
+      };
+    });
+
+    expect(result.optimisticHistoryIds).toEqual(['history:prize-approve:request_1']);
+    expect(result.committedHistoryIds).toEqual(['history:prize-approve:request_1']);
+    expect(result.mergedPrizeHistoryCount).toBe(1);
   });
 
   test('processed action ledger makes retried task approval idempotent', async ({ page }) => {

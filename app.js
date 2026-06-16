@@ -158,7 +158,7 @@ function _routeFromNotification(event) {
   }
 
   // Known payloads today.
-  if (type === 'approval_request' || type === 'spend_request') {
+  if (type === 'approval_request' || type === 'spend_request' || type === 'prize_request') {
     return { type, parentTab: 'home', kidTab: 'diamonds' };
   }
 
@@ -4690,6 +4690,22 @@ async function commitCompleteChore(choreId, memberId, slotId = null, photoUrl = 
   return result;
 }
 
+function sendPrizeApprovalNotification(member, prize) {
+  if (!member || !prize || D.settings.notifyChoreApproval === false) return;
+  try {
+    firebase.functions().httpsCallable('sendApprovalNotification')({
+      familyCode: getFamilyCode(),
+      kidName: member.name || 'A kid',
+      choreTitle: prize.title || 'a prize',
+      prizeTitle: prize.title || 'a prize',
+      requestType: 'prize',
+      notificationType: 'prize_request',
+      type: 'prize_request',
+      pendingCount: familyInboxCount(),
+    }).catch(() => {});
+  } catch(e) {}
+}
+
 function doApproveChore(choreId, memberId, entryId) {
   const chore  = D.chores.find(c => c.id === choreId);
   const member = getMember(memberId);
@@ -4711,6 +4727,7 @@ function doApproveChore(choreId, memberId, entryId) {
     member.diamonds  = member.gems;
     member.totalEarned = (member.totalEarned || 0) + chore.gems;
     addHistory('chore', memberId, chore.title, chore.gems, {
+      id: `history:chore-approve:${entry.id}`,
       undoAction: 'approve_completion',
       choreId: chore.id,
       completionId: entry.id,
@@ -4741,7 +4758,7 @@ function doRejectChore(choreId, memberId, entryId, reason = '') {
   if (!chore) return;
   chore.completions[memberId] = normalizeCompletionEntries(chore.completions[memberId]).filter(entry => entry.id !== entryId);
   if (!chore.completions[memberId].length) delete chore.completions[memberId];
-  addHistory('decline', memberId, chore.title, 0);
+  addHistory('decline', memberId, chore.title, 0, { id: `history:chore-reject:${entryId}` });
   if (!D.declineNotifications) D.declineNotifications = [];
   D.declineNotifications.push({
     id: genId(),
@@ -4784,6 +4801,7 @@ function doRedeemPrize(prizeId, memberId, opts = {}) {
   member.gems = newBalance;
   member.diamonds = newBalance;
   addHistory('prize', memberId, normalizedPrize.title, -cost, {
+    id: opts.historyId || (opts.requestId ? `history:prize-approve:${opts.requestId}` : undefined),
     undoAction: 'prize_redeem',
     prizeId: prize.id,
     memberBefore,
@@ -4811,7 +4829,7 @@ function doRedeemPrize(prizeId, memberId, opts = {}) {
 async function commitRedeemPrize(prizeId, memberId, opts = {}) {
   const periodKey = getPrizePeriodKey(D.prizes.find(p => p.id === prizeId)?.recurrence || 'anytime', today());
   const actionId = opts.actionId || `prize-redeem:${memberId}:${prizeId}:${periodKey}:${genId()}`;
-  return runFamilyAction(actionId, () => doRedeemPrize(prizeId, memberId, opts));
+  return runFamilyAction(actionId, () => doRedeemPrize(prizeId, memberId, { ...opts, historyId: opts.historyId || `history:${actionId}` }));
 }
 
 function goalTotal(goal) {
@@ -11254,7 +11272,11 @@ function approvePrizeRequest(requestId, btn) {
       const freshReq = (D.prizeRequests || []).find(r => r.id === requestId);
       if (!freshReq || freshReq.status !== 'pending') return { duplicate: true };
       const requestBefore = _cloneForUndo({ status: freshReq.status, resolvedAt: freshReq.resolvedAt || null });
-      const result = doRedeemPrize(freshReq.prizeId, freshReq.memberId, { requestId: freshReq.id, requestBefore });
+      const result = doRedeemPrize(freshReq.prizeId, freshReq.memberId, {
+        requestId: freshReq.id,
+        requestBefore,
+        historyId: `history:prize-approve:${freshReq.id}`,
+      });
       freshReq.status = result?.ok ? 'approved' : 'denied';
       freshReq.resolvedAt = Date.now();
       saveData();
@@ -11281,6 +11303,7 @@ function denyPrizeRequest(requestId, btn) {
       freshReq.status = 'denied';
       freshReq.resolvedAt = Date.now();
       addHistory('decline', freshReq.memberId, 'Prize request denied', 0, {
+        id: `history:prize-deny:${freshReq.id}`,
         undoAction: 'deny_prize_request', requestId: freshReq.id, requestBefore,
       });
       saveData();
@@ -11703,6 +11726,9 @@ async function submitPrizeRequest(prizeId) {
   });
   if (applied.result?.error) { toast(applied.result.error); return; }
   toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent for parent approval');
+  if (!applied.duplicate && applied.result?.ok) {
+    sendPrizeApprovalNotification(getMember(m.id) || m, D.prizes.find(p => p.id === prizeId) || prize);
+  }
   if (isTiny(m)) speak(`Request sent for ${prize.title}. Waiting for your grown-up.`);
   renderKidShop();
   renderKidHeader();
