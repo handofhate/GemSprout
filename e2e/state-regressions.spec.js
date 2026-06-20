@@ -468,6 +468,38 @@ test.describe('State regressions', () => {
     expect(result.historyIds).toEqual([`history:prize-approve:${result.requestId}`]);
   });
 
+  test('parent push registration retries until token registration succeeds', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(async () => {
+      const originalInitPushNotifications = initPushNotifications;
+      const originalCurrentUser = Object.getOwnPropertyDescriptor(auth, 'currentUser');
+      let attempts = 0;
+      try {
+        Object.defineProperty(auth, 'currentUser', {
+          configurable: true,
+          value: { uid: 'test-parent-auth', email: 'parent@example.com' },
+        });
+        initPushNotifications = async () => {
+          attempts += 1;
+          return attempts >= 2;
+        };
+
+        const first = await _ensureParentPushRegistration();
+        const second = await _ensureParentPushRegistration();
+        const third = await _ensureParentPushRegistration();
+        return { first, second, third, attempts };
+      } finally {
+        initPushNotifications = originalInitPushNotifications;
+        if (originalCurrentUser) Object.defineProperty(auth, 'currentUser', originalCurrentUser);
+      }
+    });
+
+    expect(result.first).toBe(false);
+    expect(result.second).toBe(true);
+    expect(result.third).toBe(true);
+    expect(result.attempts).toBe(2);
+  });
+
   test('prize approval history id is stable across optimistic and committed runs', async ({ page }) => {
     await bootstrapState(page);
     const result = await page.evaluate(() => {

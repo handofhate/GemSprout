@@ -83,15 +83,15 @@ async function _resetPushListeners(FirebaseMessaging) {
 }
 
 async function initPushNotifications(firebaseUser) {
-  if (!isNative()) return; // push notifications only on device, not in browser
+  if (!isNative()) return false; // push notifications only on device, not in browser
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
-    if (!FirebaseMessaging) return;
+    if (!FirebaseMessaging) return false;
     const permResult = await FirebaseMessaging.requestPermissions();
-    if (permResult.receive !== 'granted') return;
+    if (permResult.receive !== 'granted') return false;
     const tokenResult = await FirebaseMessaging.getToken();
     const token = tokenResult?.token;
-    if (!token || !firebaseUser?.uid) return;
+    if (!token || !firebaseUser?.uid) return false;
     _currentFcmToken = token;
     let previousUid = '';
     try { previousUid = localStorage.getItem(LAST_PUSH_UID_KEY) || ''; } catch(_) {}
@@ -128,8 +128,10 @@ async function initPushNotifications(firebaseUser) {
     }
     // Schedule interest day local notification now that permissions are confirmed
     scheduleInterestDayNotification();
+    return true;
   } catch(e) {
     console.warn('initPushNotifications error:', e);
+    return false;
   }
 }
 
@@ -2306,13 +2308,29 @@ function _shouldAutoMapCurrentAuthAsKid() {
 }
 
 let _pushInitUid = '';
+let _pushInitPromise = null;
 function _ensureParentPushRegistration() {
   const trustedUid = getParentAuthUid();
   const firebaseUid = auth.currentUser?.uid || '';
   if (!trustedUid || !firebaseUid || trustedUid !== firebaseUid) return;
-  if (_pushInitUid === trustedUid) return;
-  _pushInitUid = trustedUid;
-  initPushNotifications(auth.currentUser);
+  if (_pushInitUid === trustedUid) return _pushInitPromise || Promise.resolve(true);
+  if (_pushInitPromise) return _pushInitPromise;
+  const user = auth.currentUser;
+  _pushInitPromise = initPushNotifications(user)
+    .then(ok => {
+      if (ok && getParentAuthUid() === trustedUid && auth.currentUser?.uid === trustedUid) {
+        _pushInitUid = trustedUid;
+      }
+      return ok;
+    })
+    .catch(e => {
+      console.warn('Parent push registration failed:', e);
+      return false;
+    })
+    .finally(() => {
+      _pushInitPromise = null;
+    });
+  return _pushInitPromise;
 }
 
 async function _isParentAuthUserAllowedForActiveFamily(firebaseUser) {
