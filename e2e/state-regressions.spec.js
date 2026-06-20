@@ -500,6 +500,30 @@ test.describe('State regressions', () => {
     expect(result.attempts).toBe(2);
   });
 
+  test('parent session is invalid when Firebase auth UID differs from trusted parent UID', async ({ page }) => {
+    await bootstrapState(page);
+    const result = await page.evaluate(() => {
+      const originalCurrentUser = Object.getOwnPropertyDescriptor(auth, 'currentUser');
+      try {
+        setParentAuthUid('trusted-parent-auth');
+        Object.defineProperty(auth, 'currentUser', {
+          configurable: true,
+          value: { uid: 'different-firebase-auth', email: '' },
+        });
+        const signedIn = isParentSignedIn();
+        return {
+          signedIn,
+          storedParentUid: getParentAuthUid(),
+        };
+      } finally {
+        if (originalCurrentUser) Object.defineProperty(auth, 'currentUser', originalCurrentUser);
+      }
+    });
+
+    expect(result.signedIn).toBe(false);
+    expect(result.storedParentUid).toBe(null);
+  });
+
   test('prize approval history id is stable across optimistic and committed runs', async ({ page }) => {
     await bootstrapState(page);
     const result = await page.evaluate(() => {

@@ -82,6 +82,25 @@ async function _resetPushListeners(FirebaseMessaging) {
   } catch(_) {}
 }
 
+function _pushUserMetadata(firebaseUser = auth.currentUser) {
+  const email = String(firebaseUser?.email || firebaseUser?.providerData?.[0]?.email || '').toLowerCase();
+  return {
+    uid: firebaseUser?.uid || '',
+    familyCode: getFamilyCode() || '',
+    email,
+  };
+}
+
+async function _saveFcmTokenForUser(firebaseUser, token) {
+  if (!firebaseUser?.uid || !token) return false;
+  const data = _pushUserMetadata(firebaseUser);
+  await db.doc(`users/${firebaseUser.uid}`).set(
+    { ...data, fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
+    { merge: true }
+  );
+  return true;
+}
+
 async function initPushNotifications(firebaseUser) {
   if (!isNative()) return false; // push notifications only on device, not in browser
   try {
@@ -101,10 +120,7 @@ async function initPushNotifications(firebaseUser) {
         { merge: true }
       ).catch(() => {});
     }
-    await db.doc(`users/${firebaseUser.uid}`).set(
-      { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
-      { merge: true }
-    );
+    await _saveFcmTokenForUser(firebaseUser, token);
     try { localStorage.setItem(LAST_PUSH_UID_KEY, firebaseUser.uid); } catch(_) {}
     if (_pushListenerUid !== firebaseUser.uid) {
       await _resetPushListeners(FirebaseMessaging);
@@ -112,10 +128,7 @@ async function initPushNotifications(firebaseUser) {
       // Refresh token if it changes
       _pushListenerHandles.push(await FirebaseMessaging.addListener('tokenReceived', async (event) => {
         if (!event?.token || !firebaseUser?.uid) return;
-        await db.doc(`users/${firebaseUser.uid}`).set(
-          { fcmTokens: firebase.firestore.FieldValue.arrayUnion(event.token) },
-          { merge: true }
-        ).catch(() => {});
+        await _saveFcmTokenForUser(firebaseUser, event.token).catch(() => {});
       }));
       // Foreground message: keep views fresh when a new push arrives.
       _pushListenerHandles.push(await FirebaseMessaging.addListener('notificationReceived', (event) => {
@@ -2255,6 +2268,11 @@ function setParentAuthUid(uid) {
 function isParentSignedIn() {
   const uid = getParentAuthUid();
   if (!uid) return false;
+  const firebaseUid = auth.currentUser?.uid || '';
+  if (!firebaseUid || firebaseUid !== uid) {
+    setParentAuthUid(null);
+    return false;
+  }
   const trustedFamily = _getParentAuthFamilyCode();
   const activeFamily = getFamilyCode() || '';
   if (!trustedFamily || (activeFamily && trustedFamily !== activeFamily)) {
@@ -6871,6 +6889,16 @@ async function devTestPushPermission() {
     if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); toast('FirebaseMessaging plugin not found'); return; }
     const result = await FirebaseMessaging.requestPermissions();
     console.log('Permission status:', result.receive);
+    if (result.receive === 'denied') {
+      showQuickActionModal(`
+        <div style="padding:8px">
+          <div style="font-weight:800;margin-bottom:10px"><i class="ph-duotone ph-bell-slash" style="vertical-align:middle;margin-right:6px"></i>Notifications Are Off</div>
+          <p style="font-size:0.9rem;color:var(--muted);line-height:1.5;margin-bottom:14px">iOS will not show the permission prompt again after notifications have been denied. Open iPhone Settings, find GemSprout, and turn Notifications back on.</p>
+          <button class="btn btn-primary btn-full" onclick="closeModal()">Okay</button>
+        </div>`, 'quick-action-modal-wide');
+      toast('Permission denied in iPhone Settings');
+      return;
+    }
     toast(`<i class="ph-duotone ph-bell" style="font-size:1rem;vertical-align:middle"></i> Permission: ${result.receive}`);
   } catch(e) {
     console.error('devTestPushPermission error:', e);
@@ -6880,33 +6908,50 @@ async function devTestPushPermission() {
 
 async function devShowPushToken() {
   if (!isNative()) { console.log('Push notifications only work on device.'); toast('Push notifications only work on device'); return; }
+  let token = '';
+  let tokenSaved = false;
+  let saveError = '';
   try {
     const { FirebaseMessaging } = Capacitor.Plugins;
     if (!FirebaseMessaging) { console.warn('FirebaseMessaging plugin not found'); toast('FirebaseMessaging plugin not found'); return; }
     const perm = await FirebaseMessaging.requestPermissions();
     if (perm.receive !== 'granted') { console.warn('Permission not granted:', perm.receive); toast(`Permission not granted: ${perm.receive}`); return; }
     const result = await FirebaseMessaging.getToken();
-    const token = result?.token;
+    token = result?.token || '';
     if (!token) { console.warn('No token returned'); toast('No token returned from FirebaseMessaging'); return; }
+  } catch(e) {
+    console.error('devShowPushToken fetch error:', e);
+    toast(`Token fetch failed: ${e?.message || 'unknown error'}`);
+    return;
+  }
+
+  try {
     const uid = getParentAuthUid();
-    if (uid) {
-      await db.doc(`users/${uid}`).set(
-        { fcmTokens: firebase.firestore.FieldValue.arrayUnion(token) },
-        { merge: true }
-      );
+    const firebaseUser = auth.currentUser;
+    if (uid && firebaseUser?.uid !== uid) {
+      throw new Error('Parent auth UID does not match the signed-in Firebase user. Sign out and sign back in as the parent.');
     }
+    if (uid) tokenSaved = await _saveFcmTokenForUser(firebaseUser, token);
+  } catch(e) {
+    saveError = e?.message || 'unknown error';
+    console.error('devShowPushToken save error:', e);
+    toast(`Token fetched, Firestore save failed: ${saveError}`);
+  }
+
+  try {
+    const uid = getParentAuthUid();
     const escapedToken = token.replace(/'/g, "\\'");
     showQuickActionModal(`
       <div style="padding:8px">
         <div style="font-weight:700;margin-bottom:10px"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:6px"></i>FCM Token</div>
         <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.6">${token}</div>
-        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${uid ? 'Token saved to Firestore.' : 'Not signed in - token not saved.'}</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${uid ? (tokenSaved ? 'Token saved to Firestore.' : `Token fetched, but Firestore save failed: ${esc(saveError || 'unknown error')}`) : 'Not signed in - token not saved.'}</div>
         <button class="btn btn-secondary btn-full" style="margin-top:12px" onclick="navigator.clipboard?.writeText('${escapedToken}').then(()=>toast('Copied!')).catch(()=>toast('Copy failed'))">Copy Token</button>
       </div>`);
-    toast('<i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Token retrieved');
+    if (tokenSaved || !uid) toast('<i class="ph-duotone ph-check-circle" style="font-size:1rem;vertical-align:middle"></i> Token retrieved');
   } catch(e) {
-    console.error('devShowPushToken error:', e);
-    toast(`Token fetch failed: ${e?.message || 'unknown error'}`);
+    console.error('devShowPushToken display error:', e);
+    toast(`Token display failed: ${e?.message || 'unknown error'}`);
   }
 }
 
