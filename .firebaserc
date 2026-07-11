@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "gemsprout1"
+    "default": "gemsprout1",
+    "v2dev": "gemsprout-v2-dev"
   }
 }

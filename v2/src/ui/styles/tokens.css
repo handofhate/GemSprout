@@ -1,0 +1,19 @@
+:root {
+  --purple: #3f6c5f;
+  --pink: #d97757;
+  --teal: #1d6b57;
+  --yellow: #e8c76a;
+  --green: #5f8f63;
+  --orange: #c96f3b;
+  --blue: #6f8f99;
+  --bg: #f4efe4;
+  --card: #fffdf8;
+  --text: #273229;
+  --muted: #6b6d63;
+  --border: #ddd4c4;
+  --shadow: 0 12px 32px rgba(63, 56, 39, 0.10);
+  --radius-sm: 14px;
+  --radius: 18px;
+  --radius-lg: 24px;
+  --base-font: 16px;
+}
