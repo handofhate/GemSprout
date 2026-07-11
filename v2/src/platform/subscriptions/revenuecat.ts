@@ -22,6 +22,9 @@ type PurchasesPlugin = {
   getOfferings?: () => Promise<{ current?: { availablePackages?: RevenueCatPackage[] } }>;
   purchasePackage?: (input: { aPackage: RevenueCatPackage }) => Promise<{ customerInfo?: CustomerInfo }>;
   restorePurchases?: () => Promise<{ customerInfo?: CustomerInfo } | void>;
+  invalidateCustomerInfoCache?: () => Promise<void>;
+  syncPurchases?: () => Promise<void>;
+  addCustomerInfoUpdateListener?: (listener: (customerInfo: CustomerInfo) => void) => Promise<string>;
 };
 
 type CapacitorWindow = Window & {
@@ -47,6 +50,7 @@ export type SubscriptionState = {
 };
 
 let configuredAppUserId = '';
+let customerInfoListenerRegistered = false;
 let packages: Partial<Record<SubscriptionPlanId, RevenueCatPackage>> = {};
 
 export const subscriptionState: SubscriptionState = {
@@ -84,7 +88,8 @@ export async function initRevenueCat(appUserId: string): Promise<SubscriptionSta
       await purchases.configure({ apiKey: RC_API_KEY, appUserID: appUserId });
       configuredAppUserId = appUserId;
     }
-    const { customerInfo } = await purchases.getCustomerInfo();
+    registerCustomerInfoListener(purchases);
+    const { customerInfo } = await readFreshCustomerInfo(purchases);
     subscriptionState.isPro = hasProAccess(customerInfo);
   } catch {
     subscriptionState.isPro = false;
@@ -106,7 +111,7 @@ export async function refreshEntitlement(): Promise<boolean> {
     return false;
   }
   try {
-    const { customerInfo } = await purchases.getCustomerInfo();
+    const { customerInfo } = await readFreshCustomerInfo(purchases);
     subscriptionState.isPro = hasProAccess(customerInfo);
   } catch {
     // Preserve the last known value if RevenueCat is temporarily unreachable.
@@ -163,10 +168,10 @@ export async function purchaseSelectedPlan(): Promise<{ ok: boolean; cancelled?:
   if (!purchases?.purchasePackage) return { ok: false, message: 'Purchases are unavailable on this device.' };
   try {
     const result = await purchases.purchasePackage({ aPackage: selectedPackage });
-    subscriptionState.isPro = hasProAccess(result?.customerInfo) || await refreshEntitlement();
+    subscriptionState.isPro = hasProAccess(result?.customerInfo) || await syncAndRefreshEntitlement(purchases);
     return subscriptionState.isPro ? { ok: true } : { ok: false, message: 'Purchase is processing. Please tap Restore Purchases.' };
   } catch (error) {
-    const entitled = await refreshEntitlement();
+    const entitled = await syncAndRefreshEntitlement(purchases);
     if (entitled) return { ok: true };
     const maybeCancelled = error as { userCancelled?: boolean; message?: string };
     return { ok: false, cancelled: !!maybeCancelled.userCancelled, message: maybeCancelled.userCancelled ? undefined : 'Purchase failed - please try again' };
@@ -182,7 +187,7 @@ export async function restorePurchases(): Promise<boolean> {
   if (!purchases?.restorePurchases) return false;
   try {
     const result = await purchases.restorePurchases();
-    subscriptionState.isPro = hasProAccess(result?.customerInfo) || await refreshEntitlement();
+    subscriptionState.isPro = hasProAccess(result?.customerInfo) || await syncAndRefreshEntitlement(purchases);
   } catch {
     subscriptionState.isPro = false;
   }
@@ -199,6 +204,43 @@ export function openPrivacyPolicy(): void {
 
 export function openTermsOfUse(): void {
   openExternalUrl('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/');
+}
+
+async function syncAndRefreshEntitlement(purchases = getPurchasesPlugin()): Promise<boolean> {
+  if (!purchases) return refreshEntitlement();
+  try {
+    await purchases.syncPurchases?.();
+  } catch {}
+  for (const delayMs of [0, 700, 1800]) {
+    if (delayMs) await delay(delayMs);
+    try {
+      const { customerInfo } = await readFreshCustomerInfo(purchases);
+      subscriptionState.isPro = hasProAccess(customerInfo);
+      if (subscriptionState.isPro) return true;
+    } catch {}
+  }
+  return subscriptionState.isPro;
+}
+
+async function readFreshCustomerInfo(purchases: PurchasesPlugin): Promise<{ customerInfo?: CustomerInfo }> {
+  try {
+    await purchases.invalidateCustomerInfoCache?.();
+  } catch {}
+  return purchases.getCustomerInfo?.() || {};
+}
+
+function registerCustomerInfoListener(purchases: PurchasesPlugin): void {
+  if (customerInfoListenerRegistered || !purchases.addCustomerInfoUpdateListener) return;
+  customerInfoListenerRegistered = true;
+  void purchases.addCustomerInfoUpdateListener(customerInfo => {
+    subscriptionState.isPro = hasProAccess(customerInfo);
+  }).catch(() => {
+    customerInfoListenerRegistered = false;
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
 function hasProAccess(customerInfo?: CustomerInfo): boolean {

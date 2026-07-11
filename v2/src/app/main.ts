@@ -96,6 +96,7 @@ let devFirestoreRefreshQueued = false;
 let parentPushRegistrationKey = '';
 let subscriptionAppUserId = '';
 let paywallOpen = false;
+const DEV_PAYWALL_BYPASS_KEY = 'gemsprout.v2.devPaywallBypass';
 let devPhotoCleanupInFlight = false;
 let devPhotoCleanupLastRun = 0;
 let autoSavingsInterestRunKey = '';
@@ -5722,6 +5723,7 @@ async function ensureSubscriptionForState(state: DemoAppState): Promise<void> {
 }
 
 function shouldShowSubscriptionPaywall(viewer: DemoMember): boolean {
+  if (isDevPaywallBypassed()) return false;
   return viewer.role === 'parent' && subscriptionState.isNative && subscriptionState.initialized && !subscriptionState.isPro;
 }
 
@@ -5798,6 +5800,10 @@ function paywallHtml(): string {
             <button data-paywall-start type="button" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
               Start ${trialDays}-Day Free Trial
             </button>
+            ${useDevFirestore() ? `
+              <button data-paywall-dev-bypass type="button" style="width:100%;margin-top:10px;padding:13px;border-radius:14px;border:2px solid rgba(39,66,57,0.18);background:rgba(255,251,244,0.92);color:#29423a;font-size:0.9rem;font-weight:800;cursor:pointer">
+                Continue v2 TestFlight Testing
+              </button>` : ''}
             ${subscriptionState.offeringsStatus === 'error' ? `
               <div style="margin-top:8px;color:#9A3412;background:#FFF7ED;border:1px solid #FDBA74;border-radius:10px;padding:8px 10px;font-size:0.78rem;line-height:1.4">
                 Could not load subscription products. Tap Retry or Restore Purchases.
@@ -5834,6 +5840,12 @@ function bindPaywallActions(root: HTMLElement): void {
   root.querySelector<HTMLElement>('[data-paywall-start]')?.addEventListener('click', () => {
     void startSubscriptionPurchase();
   });
+  root.querySelector<HTMLElement>('[data-paywall-dev-bypass]')?.addEventListener('click', () => {
+    setDevPaywallBypassed();
+    paywallOpen = false;
+    toast('v2 TestFlight bypass enabled');
+    render();
+  });
   root.querySelector<HTMLElement>('[data-paywall-retry]')?.addEventListener('click', () => void showPaywall());
   root.querySelector<HTMLElement>('[data-paywall-restore]')?.addEventListener('click', () => void restoreSubscriptionFromPaywall());
   root.querySelector<HTMLElement>('[data-paywall-account]')?.addEventListener('click', openPaywallAccountOptions);
@@ -5845,7 +5857,9 @@ function bindPaywallActions(root: HTMLElement): void {
 }
 
 async function startSubscriptionPurchase(): Promise<void> {
+  setPaywallPrimaryBusy(true);
   const result = await purchaseSelectedPlan();
+  setPaywallPrimaryBusy(false);
   if (result.ok) {
     paywallOpen = false;
     toast('Subscription active!');
@@ -5853,6 +5867,30 @@ async function startSubscriptionPurchase(): Promise<void> {
     return;
   }
   if (result.message) toast(result.message);
+}
+
+function setPaywallPrimaryBusy(isBusy: boolean): void {
+  const button = document.querySelector<HTMLButtonElement>('[data-paywall-start]');
+  if (!button) return;
+  button.disabled = isBusy;
+  button.style.opacity = isBusy ? '0.76' : '1';
+  button.textContent = isBusy ? 'Checking subscription...' : `Start ${subscriptionState.trialDays || 7}-Day Free Trial`;
+}
+
+function isDevPaywallBypassed(): boolean {
+  if (!useDevFirestore()) return false;
+  try {
+    return window.localStorage.getItem(DEV_PAYWALL_BYPASS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setDevPaywallBypassed(): void {
+  subscriptionState.isPro = true;
+  try {
+    window.localStorage.setItem(DEV_PAYWALL_BYPASS_KEY, '1');
+  } catch {}
 }
 
 async function restoreSubscriptionFromPaywall(): Promise<void> {
