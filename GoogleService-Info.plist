@@ -3,21 +3,21 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508.apps.googleusercontent.com</string>
+	<string>578603238289-a17ehog5c6mnf0q3oingqt2476r6babr.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508</string>
+	<string>com.googleusercontent.apps.578603238289-a17ehog5c6mnf0q3oingqt2476r6babr</string>
 	<key>API_KEY</key>
-	<string>AIzaSyCY3Dnj_8PId-fqigRurLdc8lnlIsBsDMU</string>
+	<string>AIzaSyBtK94O2rF63R0A8ggWZeeVeoTMFlvi4tQ</string>
 	<key>GCM_SENDER_ID</key>
-	<string>493782739457</string>
+	<string>578603238289</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.gemsprout.ios</string>
 	<key>PROJECT_ID</key>
-	<string>gemsprout1</string>
+	<string>gemsprout-v2-dev</string>
 	<key>STORAGE_BUCKET</key>
-	<string>gemsprout1.firebasestorage.app</string>
+	<string>gemsprout-v2-dev.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -29,6 +29,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:493782739457:ios:4c5fbdef76e200ca81ee00</string>
+	<string>1:578603238289:ios:f2ffbd963b9282c2379030</string>
 </dict>
 </plist>

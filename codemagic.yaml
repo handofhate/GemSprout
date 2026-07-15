@@ -131,7 +131,9 @@ workflows:
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
           plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
           plutil -insert NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist || plutil -replace NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist
-          plutil -insert CFBundleURLTypes -json '[{"CFBundleURLSchemes":["com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508"]}]' ios/App/App/Info.plist || true
+          REVERSED_CLIENT_ID=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" GoogleService-Info.plist)
+          plutil -remove CFBundleURLTypes ios/App/App/Info.plist 2>/dev/null || true
+          plutil -insert CFBundleURLTypes -json "[{\"CFBundleURLSchemes\":[\"$REVERSED_CLIENT_ID\"]}]" ios/App/App/Info.plist
           plutil -insert NSUserNotificationsUsageDescription -string "GemSprout sends notifications to alert parents when kids complete chores." ios/App/App/Info.plist || plutil -replace NSUserNotificationsUsageDescription -string "GemSprout sends notifications to alert parents when kids complete chores." ios/App/App/Info.plist
 
       - name: Resolve Swift packages
@@ -289,7 +291,9 @@ workflows:
           plutil -insert ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist || plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
           plutil -insert NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist || plutil -replace NSCameraUsageDescription -string "GemSprout uses your camera so kids can take before and after photos of completed chores." ios/App/App/Info.plist
           plutil -insert NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist || plutil -replace NSFaceIDUsageDescription -string "GemSprout uses Face ID to let parents quickly and securely unlock the app." ios/App/App/Info.plist
-          plutil -insert CFBundleURLTypes -json '[{"CFBundleURLSchemes":["com.googleusercontent.apps.493782739457-ns4jh9okmpv472t3i1pqlutmkjrab508"]}]' ios/App/App/Info.plist || true
+          REVERSED_CLIENT_ID=$(/usr/libexec/PlistBuddy -c "Print :REVERSED_CLIENT_ID" GoogleService-Info.plist)
+          plutil -remove CFBundleURLTypes ios/App/App/Info.plist 2>/dev/null || true
+          plutil -insert CFBundleURLTypes -json "[{\"CFBundleURLSchemes\":[\"$REVERSED_CLIENT_ID\"]}]" ios/App/App/Info.plist
           plutil -insert NSUserNotificationsUsageDescription -string "GemSprout sends notifications to alert parents when kids complete chores." ios/App/App/Info.plist || plutil -replace NSUserNotificationsUsageDescription -string "GemSprout sends notifications to alert parents when kids complete chores." ios/App/App/Info.plist
 
       - name: Resolve Swift packages
