@@ -1091,6 +1091,9 @@ async function leaveDevice(): Promise<void> {
   activeOnboardingStep = null;
   activeFamilyId = '';
   writeStoredActiveFamilyId('');
+  subscriptionAppUserId = '';
+  subscriptionState.initialized = false;
+  subscriptionState.isPro = true;
   paywallOpen = false;
   clearOnboardingAuthUser();
   startNewOnboardingDraft();
@@ -5131,7 +5134,7 @@ function getBiometricLabel(): string {
 }
 
 async function ensureSubscriptionForState(state: AppState): Promise<void> {
-  const appUserId = String(state.familyCode || state.familyId || DEV_FIRESTORE_FAMILY_ID);
+  const appUserId = String(state.familyCode || '');
   if (subscriptionAppUserId === appUserId && subscriptionState.initialized) return;
   subscriptionAppUserId = appUserId;
   await initRevenueCat(appUserId);
@@ -5214,6 +5217,9 @@ function paywallHtml(): string {
             <button data-paywall-start type="button" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
               Start ${trialDays}-Day Free Trial
             </button>
+            <button data-paywall-dev-bypass type="button" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px dashed rgba(31,95,79,0.45);background:#fffdf8;color:#1f5f4f;font-size:0.86rem;font-weight:800;cursor:pointer">
+              Continue Without Subscription
+            </button>
             ${subscriptionState.offeringsStatus === 'error' ? `
               <div style="margin-top:8px;color:#9A3412;background:#FFF7ED;border:1px solid #FDBA74;border-radius:10px;padding:8px 10px;font-size:0.78rem;line-height:1.4">
                 Could not load subscription products. Tap Retry or Restore Purchases.
@@ -5250,6 +5256,9 @@ function bindPaywallActions(root: HTMLElement): void {
   root.querySelector<HTMLElement>('[data-paywall-start]')?.addEventListener('click', () => {
     void startSubscriptionPurchase();
   });
+  root.querySelector<HTMLElement>('[data-paywall-dev-bypass]')?.addEventListener('click', () => {
+    bypassPaywallForCurrentSession();
+  });
   root.querySelector<HTMLElement>('[data-paywall-retry]')?.addEventListener('click', () => void showPaywall());
   root.querySelector<HTMLElement>('[data-paywall-restore]')?.addEventListener('click', () => void restoreSubscriptionFromPaywall());
   root.querySelector<HTMLElement>('[data-paywall-account]')?.addEventListener('click', openPaywallAccountOptions);
@@ -5258,6 +5267,12 @@ function bindPaywallActions(root: HTMLElement): void {
   root.querySelector<HTMLElement>('[data-paywall-sign-out]')?.addEventListener('click', () => {
     void sendDeviceToLandingAfterAccountChange();
   });
+}
+
+function bypassPaywallForCurrentSession(): void {
+  subscriptionState.isPro = true;
+  paywallOpen = false;
+  render();
 }
 
 async function startSubscriptionPurchase(): Promise<void> {
@@ -5480,6 +5495,9 @@ async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
   activeOnboardingStep = null;
   activeFamilyId = '';
   writeStoredActiveFamilyId('');
+  subscriptionAppUserId = '';
+  subscriptionState.initialized = false;
+  subscriptionState.isPro = true;
   paywallOpen = false;
   clearOnboardingAuthUser();
   startNewOnboardingDraft();
