@@ -58,6 +58,7 @@ The first numbered device pass produced a broad bug list in `v2/docs/iphone-test
 
 - Give device testers a clean leave/reset-family path so front door, returning sign-in, kid join/profile picker, settings account/security, and migration can be tested without getting trapped in seeded data.
 - Use the ported hidden push diagnostics in v2 before chasing notification failures; unlock it by tapping `GemSprout v2` seven times at the bottom of Settings. v2 now saves native FCM tokens to `users/<authUid>.fcmTokens` during parent push registration and exposes permission/token/auth/family diagnostics on device.
+- Kid task pending display is now anchored to parent-visible pending requests, not standalone pending completion docs. This prevents stale or half-written completion state from showing a task as pending on the kid dashboard when the parent inbox has nothing to approve. The dev seed was reset after this change; `migration-preview` has two pending task requests and no orphan pending completions.
 - Continue reducing kid-dashboard redraws/scroll jumps, especially after approvals, undo, not-listening updates, savings, and prize actions.
 - Finish native readiness checks: app lock on background/reopen, app badge count, local savings-interest notification, offline recovery, and subscriptions.
 - Tune iPad holo badge card proportions and remove overlapping badge-earned modals.

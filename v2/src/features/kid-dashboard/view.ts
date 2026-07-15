@@ -1374,6 +1374,11 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
     && request.targetMemberId === member.id
     && request.source?.choreId === taskId
   );
+  const pendingRequestCompletionIds = pendingCompletionIdsForRequests(pendingRequests);
+  const pendingCompletions = relevantCompletions.filter(entry =>
+    entry.status === 'pending'
+    && pendingRequestCompletionIds.has(String(entry.id || ''))
+  );
   const approvedHistoryCount = state.historyRows.filter(row =>
     row.memberId === member.id
     && (row.type === 'chore' || row.type === 'request.approved')
@@ -1391,7 +1396,7 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
     approvedHistoryCount,
   );
   const pendingCount = Math.max(
-    relevantCompletions.filter(entry => entry.status === 'pending').length,
+    pendingCompletions.length,
     pendingRequests.length,
   );
   const completedCount = Math.min(targetCount, doneCount + pendingCount);
@@ -1402,8 +1407,8 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
     return { label: slotSummary(slot), status: 'waiting' as const };
   });
   const beforeApproved = relevantCompletions.some(entry => entry.entryType === 'before' && entry.status === 'approved');
-  const beforePending = relevantCompletions.some(entry => entry.entryType === 'before' && entry.status === 'pending') || pendingRequests.some(request => request.kind === 'chore_start');
-  const afterPending = relevantCompletions.some(entry => entry.entryType !== 'before' && entry.status === 'pending') || pendingRequests.some(request => request.kind === 'chore_completion');
+  const beforePending = pendingCompletions.some(entry => entry.entryType === 'before') || pendingRequests.some(request => request.kind === 'chore_start');
+  const afterPending = pendingCompletions.some(entry => entry.entryType !== 'before') || pendingRequests.some(request => request.kind === 'chore_completion');
   let status: ChoreStatus = 'todo';
   if (!scheduledToday) status = 'unavailable';
   else if (doneCount >= targetCount) status = 'done';
@@ -1513,14 +1518,26 @@ function slotProgressStatus(task: DemoTask, completions: DemoCompletion[], reque
     const completionId = String(request.source?.completionId || '');
     return completionId && slotCompletions.some(entry => entry.id === completionId);
   });
+  const slotPendingCompletionIds = pendingCompletionIdsForRequests(slotRequests);
+  const hasLinkedPendingCompletion = slotCompletions.some(entry =>
+    entry.status === 'pending'
+    && slotPendingCompletionIds.has(String(entry.id || ''))
+  );
   if (task.photoMode === 'before_after') {
     if (slotCompletions.some(entry => entry.entryType !== 'before' && entry.status === 'approved')) return 'done';
-    if (slotCompletions.some(entry => entry.status === 'pending') || slotRequests.some(request => request.status === 'pending')) return 'pending';
+    if (hasLinkedPendingCompletion || slotRequests.some(request => request.status === 'pending')) return 'pending';
     return null;
   }
   if (slotCompletions.some(entry => entry.status === 'approved')) return 'done';
-  if (slotCompletions.some(entry => entry.status === 'pending') || slotRequests.some(request => request.status === 'pending')) return 'pending';
+  if (hasLinkedPendingCompletion || slotRequests.some(request => request.status === 'pending')) return 'pending';
   return null;
+}
+
+function pendingCompletionIdsForRequests(requests: DemoAppState['requests']): Set<string> {
+  return new Set(requests
+    .filter(request => request.status === 'pending')
+    .map(request => String(request.source?.completionId || ''))
+    .filter(Boolean));
 }
 
 export function renderKidPhotoCapture(task: DemoTask, entryType: 'before' | 'after', slotId = ''): string {
