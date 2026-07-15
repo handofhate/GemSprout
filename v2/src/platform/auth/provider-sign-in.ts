@@ -1,6 +1,13 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { deleteUser, getAuth, GoogleAuthProvider, OAuthProvider, signInWithCredential, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth';
-import { DEV_FIRESTORE_CONFIG } from '../firebase/dev-firestore-config';
+const NATIVE_AUTH_FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU',
+  authDomain: 'gemsprout1.firebaseapp.com',
+  projectId: 'gemsprout1',
+  storageBucket: 'gemsprout1.firebasestorage.app',
+  messagingSenderId: '493782739457',
+  appId: '1:493782739457:web:64d2afa5766ee1b481ee00',
+};
 
 type FirebaseAuthenticationPlugin = {
   signInWithGoogle?: () => Promise<NativeAuthResult>;
@@ -121,7 +128,8 @@ function getNativeAuthPlugin(): FirebaseAuthenticationPlugin | null {
 }
 
 function getFirebaseAuth(): Auth {
-  const app = getApps().length ? getApp() : initializeApp(DEV_FIRESTORE_CONFIG);
+  const existing = getApps().find(app => app.name === 'gemsprout-auth');
+  const app = existing || initializeApp(NATIVE_AUTH_FIREBASE_CONFIG, 'gemsprout-auth');
   return getAuth(app);
 }
 
