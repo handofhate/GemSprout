@@ -72,6 +72,7 @@ let firestoreState: AppState | null = null;
 let firestoreError = '';
 let firestoreBusy = false;
 let devFirestoreUnsubscribe: (() => void) | null = null;
+let devFirestoreSubscriptionFamilyId = '';
 let devFirestoreRefreshTimer = 0;
 let devFirestoreRefreshInFlight = false;
 let devFirestoreRefreshQueued = false;
@@ -81,6 +82,7 @@ let paywallOpen = false;
 let devPhotoCleanupInFlight = false;
 let devPhotoCleanupLastRun = 0;
 let autoSavingsInterestRunKey = '';
+let activeFamilyId = readStoredActiveFamilyId();
 type FirestoreOverviewWrite =
   | { kind: 'request'; action: 'approve' | 'deny'; requestId: string; resolve: (applied: boolean) => void }
   | { kind: 'undo'; historyId: string; resolve: (applied: boolean) => void };
@@ -662,7 +664,7 @@ async function runFirestoreAction(action: 'approve' | 'deny', requestId: string,
   let applied = false;
   try {
     const { commitDevRequestAction } = await import('../platform/firebase/dev-firestore-operations.js');
-    const execution = await commitDevRequestAction({ action, requestId });
+    const execution = await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action, requestId });
     applied = execution.ok || execution.duplicate;
     if (!options.suppressRender && action === 'approve' && execution.ok && !execution.duplicate) {
       firestoreState = null;
@@ -718,7 +720,7 @@ async function processFirestoreOverviewWriteQueue(): Promise<void> {
   try {
     if (item.kind === 'request') {
       const { commitDevRequestAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      const execution = await commitDevRequestAction({ action: item.action, requestId: item.requestId });
+      const execution = await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action: item.action, requestId: item.requestId });
       applied = execution.ok || execution.duplicate;
       firestoreState = item.action === 'approve' && execution.ok && !execution.duplicate
         ? null
@@ -1087,6 +1089,11 @@ async function leaveDevice(): Promise<void> {
   activeKidTimeTaskId = null;
   activeSettingsPage = 'main';
   activeOnboardingStep = null;
+  activeFamilyId = '';
+  writeStoredActiveFamilyId('');
+  paywallOpen = false;
+  clearOnboardingAuthUser();
+  startNewOnboardingDraft();
   landingMode = 'landing';
   signInMessage = '';
   kidEntryMessage = '';
@@ -1338,7 +1345,7 @@ async function saveKidProfileLook(): Promise<void> {
     render();
     try {
       const { commitDevMemberWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevMemberWrite({ memberId: String(updatedMember.id || ''), data: updatedMember });
+      await commitDevMemberWrite({ familyId: currentFirestoreFamilyId(), memberId: String(updatedMember.id || ''), data: updatedMember });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -1838,7 +1845,7 @@ async function submitKidSavingsConversion(memberId: string, gemsToConvert: numbe
   const historyRows: AppHistoryRow[] = [
     {
       id: makeHistoryId('savings', memberId),
-      familyId: DEV_FIRESTORE_FAMILY_ID,
+      familyId: currentFirestoreFamilyId(),
       memberId,
       type: 'savings',
       title: `Converted ${gemsToConvert} gems to savings`,
@@ -1848,7 +1855,7 @@ async function submitKidSavingsConversion(memberId: string, gemsToConvert: numbe
     },
     ...(matchDollars > 0 ? [{
       id: makeHistoryId('savings-match', memberId),
-      familyId: DEV_FIRESTORE_FAMILY_ID,
+      familyId: currentFirestoreFamilyId(),
       memberId,
       type: 'savings',
       title: `Parent match (${matchPct}%) +${currency}${matchDollars.toFixed(2)}`,
@@ -1869,7 +1876,7 @@ async function submitKidSavingsConversion(memberId: string, gemsToConvert: numbe
     render();
     try {
       const { commitDevManualQuickAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevManualQuickAction({ memberWrites: [{ memberId, data: updatedMember }], historyWrites: historyRows });
+      await commitDevManualQuickAction({ familyId: currentFirestoreFamilyId(), memberWrites: [{ memberId, data: updatedMember }], historyWrites: historyRows });
     } catch {
       firestoreState = previous;
       render();
@@ -1917,7 +1924,7 @@ async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' |
   const now = Date.now();
   const history: AppHistoryRow = {
     id: makeHistoryId('savings-interest', memberId),
-    familyId: DEV_FIRESTORE_FAMILY_ID,
+    familyId: currentFirestoreFamilyId(),
     memberId,
     type: 'savings',
     title: `${titlePrefix} (${rate}% ${period}) +${currency}${amount.toFixed(2)}`,
@@ -1946,7 +1953,7 @@ async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' |
     render();
     try {
       const { commitDevManualQuickAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevManualQuickAction({ memberWrites: [{ memberId, data: findMemberById(firestoreState, memberId) }], historyWrites: [history] });
+      await commitDevManualQuickAction({ familyId: currentFirestoreFamilyId(), memberWrites: [{ memberId, data: findMemberById(firestoreState, memberId) }], historyWrites: [history] });
       return true;
     } catch {
       firestoreState = previous;
@@ -2076,7 +2083,7 @@ async function submitKidSavingsSpendRequest(memberId: string, amount: number, re
     render();
     try {
       const { commitDevKidSavingsSpendRequest } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevKidSavingsSpendRequest({ requestId, memberId, amount, reason, now });
+      await commitDevKidSavingsSpendRequest({ familyId: currentFirestoreFamilyId(), requestId, memberId, amount, reason, now });
       void sendSavingsSpendPush({ memberId, amount, reason });
     } catch (error) {
       firestoreState = previous;
@@ -2702,7 +2709,7 @@ async function submitKidTeamContribution(memberId: string, goalId: string, reque
   const now = Date.now();
   const history: AppHistoryRow = {
     id: `history:goal:${memberId}:${goalId}:${now}`,
-    familyId: DEV_FIRESTORE_FAMILY_ID,
+    familyId: currentFirestoreFamilyId(),
     requestId: '',
     memberId,
     type: 'goal',
@@ -2725,7 +2732,7 @@ async function submitKidTeamContribution(memberId: string, goalId: string, reque
     render();
     try {
       const { commitDevKidTeamContribution } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevKidTeamContribution({ memberId, member: { ...member, gems: nextBalance, diamonds: nextBalance }, teamGoals: nextGoals, history });
+      await commitDevKidTeamContribution({ familyId: currentFirestoreFamilyId(), memberId, member: { ...member, gems: nextBalance, diamonds: nextBalance }, teamGoals: nextGoals, history });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -2850,7 +2857,7 @@ async function submitKidPrizeRequest(prizeId: string): Promise<void> {
     render();
     try {
       const { commitDevKidPrizeRequest } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevKidPrizeRequest({ requestId, memberId: String(viewer.id), prizeId, title: String(prize.title || 'Prize'), cost: Math.max(0, Number(prize.cost || 0)), now });
+      await commitDevKidPrizeRequest({ familyId: currentFirestoreFamilyId(), requestId, memberId: String(viewer.id), prizeId, title: String(prize.title || 'Prize'), cost: Math.max(0, Number(prize.cost || 0)), now });
       void sendParentApprovalPush({ memberId: String(viewer.id), title: String(prize.title || 'Prize'), kind: 'prize_request' });
       toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent for parent approval');
       if (isLittleKidMode(viewer)) speak(`Request sent for ${String(prize.title || 'prize')}. Waiting for your grown-up.`);
@@ -2913,7 +2920,7 @@ async function redeemKidPrize(member: AppMember, prize: AppPrize): Promise<{ ok:
   };
   const history: AppHistoryRow = {
     id: historyId,
-    familyId: DEV_FIRESTORE_FAMILY_ID,
+    familyId: currentFirestoreFamilyId(),
     requestId: '',
     memberId: String(member.id || ''),
     type: 'prize',
@@ -2935,7 +2942,7 @@ async function redeemKidPrize(member: AppMember, prize: AppPrize): Promise<{ ok:
     render();
     try {
       const { commitDevKidPrizeRedeem } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevKidPrizeRedeem({ memberId: String(member.id || ''), prizeId: String(prize.id || ''), cost, redemption, history, now });
+      await commitDevKidPrizeRedeem({ familyId: currentFirestoreFamilyId(), memberId: String(member.id || ''), prizeId: String(prize.id || ''), cost, redemption, history, now });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4093,7 +4100,7 @@ async function saveFamilySettingsPatch(settingsPatch: Record<string, unknown>): 
     void renderDevFirestore();
     try {
       const { commitDevFamilyWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevFamilyWrite({ data: { settings: nextSettings } });
+      await commitDevFamilyWrite({ familyId: currentFirestoreFamilyId(), data: { settings: nextSettings } });
       saved = true;
     } catch (error) {
       firestoreState = previous;
@@ -4276,7 +4283,7 @@ async function saveMemberPatch(memberId: string, patch: Record<string, unknown>,
     try {
       const { commitDevMemberWrite } = await import('../platform/firebase/dev-firestore-operations.js');
       const existing = previous?.members.find(member => member.id === memberId) || {};
-      await commitDevMemberWrite({ memberId, data: { ...existing, ...patch } });
+      await commitDevMemberWrite({ familyId: currentFirestoreFamilyId(), memberId, data: { ...existing, ...patch } });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4294,7 +4301,7 @@ function taskDocFromDraft(state: AppState, draft: ParentTaskEditorDraft, taskId:
   return {
     ...(existing || {}),
     id: taskId,
-    familyId: DEV_FIRESTORE_FAMILY_ID,
+    familyId: currentFirestoreFamilyId(),
     title: draft.title || 'Untitled task',
     icon: draft.icon,
     iconColor: draft.iconColor,
@@ -4323,7 +4330,7 @@ async function saveTaskDraft(): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevTaskWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevTaskWrite({ taskId, data: docData });
+      await commitDevTaskWrite({ familyId: currentFirestoreFamilyId(), taskId, data: docData });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4357,7 +4364,7 @@ async function deleteActiveTask(): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevTaskDelete } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevTaskDelete({ taskId });
+      await commitDevTaskDelete({ familyId: currentFirestoreFamilyId(), taskId });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4397,7 +4404,7 @@ async function savePrizeDraft(): Promise<void> {
   const docData: Record<string, unknown> = {
     ...(existing || {}),
     id: prizeId,
-    familyId: DEV_FIRESTORE_FAMILY_ID,
+    familyId: currentFirestoreFamilyId(),
     title: draft.title || 'Untitled prize',
     icon: draft.icon,
     iconColor: draft.iconColor,
@@ -4417,7 +4424,7 @@ async function savePrizeDraft(): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevPrizeWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevPrizeWrite({ prizeId, data: docData });
+      await commitDevPrizeWrite({ familyId: currentFirestoreFamilyId(), prizeId, data: docData });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4451,7 +4458,7 @@ async function saveGoalDraft(): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevTeamGoalsWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevTeamGoalsWrite({ teamGoals: nextGoals });
+      await commitDevTeamGoalsWrite({ familyId: currentFirestoreFamilyId(), teamGoals: nextGoals });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4472,7 +4479,7 @@ async function deleteActivePrize(): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevPrizeDelete } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevPrizeDelete({ prizeId });
+      await commitDevPrizeDelete({ familyId: currentFirestoreFamilyId(), prizeId });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4495,7 +4502,7 @@ async function deleteActiveGoal(): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevTeamGoalsWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevTeamGoalsWrite({ teamGoals: nextGoals });
+      await commitDevTeamGoalsWrite({ familyId: currentFirestoreFamilyId(), teamGoals: nextGoals });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4517,7 +4524,7 @@ async function resetPrizeRedemptions(prizeId: string): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevPrizeWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevPrizeWrite({ prizeId, data: docData });
+      await commitDevPrizeWrite({ familyId: currentFirestoreFamilyId(), prizeId, data: docData });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4539,7 +4546,7 @@ async function resetGoalContributions(goalId: string): Promise<void> {
     void renderDevFirestore();
     try {
       const { commitDevTeamGoalsWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevTeamGoalsWrite({ teamGoals: nextGoals });
+      await commitDevTeamGoalsWrite({ familyId: currentFirestoreFamilyId(), teamGoals: nextGoals });
     } catch (error) {
       firestoreState = previous;
       firestoreError = error instanceof Error ? error.message : String(error);
@@ -4657,7 +4664,7 @@ async function awardSavedComboIfComplete(kidId: string, finalIds: string[], toda
   
     try {
       const { commitDevDailyComboOverrideAward } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevDailyComboOverrideAward({ memberId: kidId, comboIds: finalIds, now: Date.now() });
+      await commitDevDailyComboOverrideAward({ familyId: currentFirestoreFamilyId(), memberId: kidId, comboIds: finalIds, now: Date.now() });
       const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
       firestoreState = await loadDevFirestoreState();
     } catch (error) {
@@ -4746,7 +4753,7 @@ async function persistTasks(nextTasks: AppState['tasks']): Promise<void> {
       const { commitDevTaskWrite } = await import('../platform/firebase/dev-firestore-operations.js');
       for (const task of nextTasks) {
         if (!task.id) continue;
-        await commitDevTaskWrite({ taskId: String(task.id), data: task as unknown as Record<string, unknown> });
+        await commitDevTaskWrite({ familyId: currentFirestoreFamilyId(), taskId: String(task.id), data: task as unknown as Record<string, unknown> });
       }
     } catch (error) {
       firestoreState = previous;
@@ -5006,7 +5013,7 @@ async function linkAccountProvider(provider: 'google' | 'apple'): Promise<void> 
   
     try {
       const { commitDevFamilyWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevFamilyWrite({ data: { parentAuthUid: authUser.uid } });
+      await commitDevFamilyWrite({ familyId: currentFirestoreFamilyId(), data: { parentAuthUid: authUser.uid } });
     } catch (error) {
       console.warn('Unable to update parent auth mapping:', error);
     }
@@ -5037,7 +5044,7 @@ async function unlinkAccountProvider(provider: 'google' | 'apple'): Promise<void
   
     try {
       const { commitDevFamilyWrite } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevFamilyWrite({ data: { parentAuthUid: nextProviders[0]?.uid || '' } });
+      await commitDevFamilyWrite({ familyId: currentFirestoreFamilyId(), data: { parentAuthUid: nextProviders[0]?.uid || '' } });
     } catch (error) {
       console.warn('Unable to update parent auth mapping:', error);
     }
@@ -5471,6 +5478,11 @@ async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
   activeKidTab = 'chores';
   activeSettingsPage = 'main';
   activeOnboardingStep = null;
+  activeFamilyId = '';
+  writeStoredActiveFamilyId('');
+  paywallOpen = false;
+  clearOnboardingAuthUser();
+  startNewOnboardingDraft();
   landingMode = 'landing';
   signInMessage = '';
   kidEntryMessage = '';
@@ -6130,11 +6142,12 @@ async function submitGemsQuickAction(): Promise<void> {
   const now = Date.now();
   
     if (!firestoreState) return;
+    const familyId = firestoreState.familyId || currentFirestoreFamilyId();
     const updates = quick.selectedKidIds.map(memberId => ({
       memberId,
       history: {
         id: makeHistoryId('gems', memberId),
-        familyId: 'migration-preview',
+        familyId,
         memberId,
         type: 'bonus',
         title: reason,
@@ -6156,7 +6169,7 @@ async function submitGemsQuickAction(): Promise<void> {
     render();
     try {
       const { commitDevManualQuickAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevManualQuickAction({ memberWrites: updates.map(item => ({ memberId: item.memberId, data: findMemberById(firestoreState, item.memberId) })), historyWrites: updates.map(item => item.history) });
+      await commitDevManualQuickAction({ familyId: currentFirestoreFamilyId(), memberWrites: updates.map(item => ({ memberId: item.memberId, data: findMemberById(firestoreState, item.memberId) })), historyWrites: updates.map(item => item.history) });
       closeModal();
     } catch {
       firestoreState = prevState;
@@ -6182,7 +6195,7 @@ async function submitSavingsQuickAction(): Promise<void> {
     memberId,
     history: {
       id: makeHistoryId('savings', memberId),
-      familyId: DEV_FIRESTORE_FAMILY_ID,
+      familyId: currentFirestoreFamilyId(),
       memberId,
       type: historyType,
       title,
@@ -6206,7 +6219,7 @@ async function submitSavingsQuickAction(): Promise<void> {
     render();
     try {
       const { commitDevManualQuickAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevManualQuickAction({ memberWrites: updates.map(item => ({ memberId: item.memberId, data: findMemberById(firestoreState, item.memberId) })), historyWrites: updates.map(item => item.history) });
+      await commitDevManualQuickAction({ familyId: currentFirestoreFamilyId(), memberWrites: updates.map(item => ({ memberId: item.memberId, data: findMemberById(firestoreState, item.memberId) })), historyWrites: updates.map(item => item.history) });
       closeModal();
     } catch {
       firestoreState = prevState;
@@ -6242,7 +6255,7 @@ async function submitListeningQuickAction(): Promise<void> {
       memberId,
       history: {
         id: makeHistoryId('penalty', memberId),
-        familyId: DEV_FIRESTORE_FAMILY_ID,
+        familyId: currentFirestoreFamilyId(),
         memberId,
         type: 'penalty',
         title: 'Not listening penalty',
@@ -6273,7 +6286,7 @@ async function submitListeningQuickAction(): Promise<void> {
     render();
     try {
       const { commitDevManualQuickAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      await commitDevManualQuickAction({ memberWrites: updates.map(item => ({ memberId: item.memberId, data: findMemberById(firestoreState, item.memberId) })), historyWrites: updates.map(item => item.history) });
+      await commitDevManualQuickAction({ familyId: currentFirestoreFamilyId(), memberWrites: updates.map(item => ({ memberId: item.memberId, data: findMemberById(firestoreState, item.memberId) })), historyWrites: updates.map(item => item.history) });
       closeModal();
     } catch {
       firestoreState = prevState;
@@ -6370,11 +6383,17 @@ function renderError(message: string): void {
   if (content) content.innerHTML = `<section class="card"><div class="card-title">Could not load dev Firestore</div><div class="text-muted">${message}</div></section>`;
 }
 
-function ensureDevFirestoreSubscription(): void {
-  if (devFirestoreUnsubscribe) return;
+function currentFirestoreFamilyId(): string {
+  return firestoreState?.familyId || activeFamilyId || DEV_FIRESTORE_FAMILY_ID;
+}
+
+function ensureDevFirestoreSubscription(familyId = currentFirestoreFamilyId()): void {
+  if (devFirestoreUnsubscribe && devFirestoreSubscriptionFamilyId === familyId) return;
+  devFirestoreUnsubscribe?.();
+  devFirestoreSubscriptionFamilyId = familyId;
   devFirestoreUnsubscribe = subscribeDevFirestoreState(() => {
     scheduleDevFirestoreRefresh();
-  });
+  }, familyId);
 }
 
 function scheduleDevFirestoreRefresh(delayMs = 120): void {  window.clearTimeout(devFirestoreRefreshTimer);
@@ -6393,7 +6412,9 @@ async function refreshDevFirestoreState(options: { rerender?: boolean } = {}): P
   }
   devFirestoreRefreshInFlight = true;
   try {
-    firestoreState = await loadDevFirestoreState();
+    firestoreState = await loadDevFirestoreState(currentFirestoreFamilyId());
+    activeFamilyId = firestoreState.familyId || activeFamilyId;
+    writeStoredActiveFamilyId(activeFamilyId);
     firestoreError = '';
     void cleanupSettledCompletionPhotos();
     await syncNativeAppBadge();
@@ -6444,8 +6465,10 @@ async function renderDevFirestore(): Promise<void> {
   if (!firestoreState && !firestoreError) {
     renderLoading();
     try {
-      firestoreState = await loadDevFirestoreState();
-      ensureDevFirestoreSubscription();
+      firestoreState = await loadDevFirestoreState(currentFirestoreFamilyId());
+      activeFamilyId = firestoreState.familyId || activeFamilyId;
+      writeStoredActiveFamilyId(activeFamilyId);
+      ensureDevFirestoreSubscription(firestoreState.familyId || currentFirestoreFamilyId());
     } catch (error) {
       if (isMissingDevFirestoreFamilyError(error)) {
         firestoreError = '';
@@ -6460,7 +6483,7 @@ async function renderDevFirestore(): Promise<void> {
     renderError(firestoreError || 'Unknown Firestore load error.');
     return;
   }
-  ensureDevFirestoreSubscription();
+  ensureDevFirestoreSubscription(firestoreState.familyId || currentFirestoreFamilyId());
   void cleanupSettledCompletionPhotos();
   void syncNativeAppBadge();
   maybeApplyAutoSavingsInterest(firestoreState);
@@ -6529,6 +6552,26 @@ async function renderDevFirestore(): Promise<void> {
 
 function isMissingDevFirestoreFamilyError(error: unknown): boolean {
   return error instanceof Error && /^Dev Firestore family ".+" was not found\.$/.test(error.message);
+}
+
+function readStoredActiveFamilyId(): string {
+  try {
+    return window.localStorage.getItem('gemsprout.v2.activeFamilyId') || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeStoredActiveFamilyId(familyId: string): void {
+  try {
+    if (familyId) window.localStorage.setItem('gemsprout.v2.activeFamilyId', familyId);
+    else window.localStorage.removeItem('gemsprout.v2.activeFamilyId');
+  } catch {}
+}
+
+function makeNewFamilyDocumentId(): string {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `family_${Date.now().toString(36)}_${random}`;
 }
 
 function render(): void {
@@ -6739,11 +6782,13 @@ async function handleReturningSignIn(action: string): Promise<void> {
     renderLandingPreview();
     return;
   }
+  activeFamilyId = family.familyId || '';
+  writeStoredActiveFamilyId(activeFamilyId);
+  firestoreState = family.state || null;
   activeViewerMemberId = family.parentMemberId || null;
   landingMode = 'landing';
   signInMessage = '';
   activeOnboardingStep = null;
-  firestoreState = null;
   firestoreError = '';
   const url = new URL(window.location.href);
   url.searchParams.delete('landing');
@@ -6751,12 +6796,19 @@ async function handleReturningSignIn(action: string): Promise<void> {
   render();
 }
 
-async function resolveReturningDevFamily(authUser: { uid?: string; email?: string }): Promise<{ found: boolean; parentMemberId?: string }> {
+async function resolveReturningDevFamily(authUser: { uid?: string; email?: string }): Promise<{ found: boolean; familyId?: string; parentMemberId?: string; state?: AppState }> {
   try {
-    const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
-    const state = await loadDevFirestoreState();
+    const [{ lookupDevAuthFamily }, { loadDevFirestoreState }] = await Promise.all([
+      import('../platform/firebase/dev-firestore-operations.js'),
+      import('../platform/firebase/dev-firestore-loader.js'),
+    ]);
+    const link = await lookupDevAuthFamily(authUser);
+    if (!link?.familyId) return { found: false };
+    const state = await loadDevFirestoreState(link.familyId);
     const email = String(authUser.email || '').toLowerCase();
-    const parent = state.members.find(member => {
+    const parent = link.memberId
+      ? state.members.find(member => member.id === link.memberId)
+      : state.members.find(member => {
       if (member.role !== 'parent') return false;
       const authUid = String((member as AppMember & { authUid?: string }).authUid || '');
       const providers = Array.isArray((member as AppMember & { authProviders?: Array<{ uid?: string; email?: string }> }).authProviders)
@@ -6764,7 +6816,7 @@ async function resolveReturningDevFamily(authUser: { uid?: string; email?: strin
         : [];
       return authUid === authUser.uid || providers.some(provider => provider.uid === authUser.uid || (email && String(provider.email || '').toLowerCase() === email));
     });
-    return { found: !!parent, parentMemberId: parent?.id };
+    return { found: !!parent, familyId: link.familyId, parentMemberId: parent?.id, state };
   } catch {
     return { found: false };
   }
@@ -6899,7 +6951,10 @@ async function finishOnboardingPreview(): Promise<void> {
   }
   try {
     const { commitDevOnboardingSetup } = await import('../platform/firebase/dev-firestore-operations.js');
-    await commitDevOnboardingSetup({ draft });
+    const familyId = makeNewFamilyDocumentId();
+    await commitDevOnboardingSetup({ familyId, draft });
+    activeFamilyId = familyId;
+    writeStoredActiveFamilyId(familyId);
     const parent = draft.parents[0] || null;
     activeViewerMemberId = parent?.id || null;
     activeOnboardingStep = null;
@@ -6911,7 +6966,7 @@ async function finishOnboardingPreview(): Promise<void> {
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     void registerParentPushNotifications({
       userId: parent?.id,
-      familyId: DEV_FIRESTORE_FAMILY_ID,
+      familyId,
       memberId: parent?.id,
       notifyChoreApproval: draft.settings.notifyChoreApproval,
       notifySavingsSpend: draft.settings.notifySavingsSpend,
@@ -7088,7 +7143,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
   const dateKey = todayKeyForApp(now);
   const completionDoc = {
     id: completionId,
-    familyId: DEV_FIRESTORE_FAMILY_ID,
+    familyId: currentFirestoreFamilyId(),
     choreId: taskId,
     memberId: viewer.id,
     status: autoApprove ? 'approved' : 'pending',
@@ -7122,6 +7177,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
     try {
       const { commitDevKidCompletionRequest, commitDevRequestAction } = await import('../platform/firebase/dev-firestore-operations.js');
       await commitDevKidCompletionRequest({
+        familyId: currentFirestoreFamilyId(),
         completionId,
         requestId,
         memberId: String(viewer.id),
@@ -7137,7 +7193,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
         void sendParentApprovalPush({ memberId: String(viewer.id), title: String(task.title || 'Task'), kind: 'chore_request' });
       }
       if (autoApprove) {
-        await commitDevRequestAction({ action: 'approve', requestId, actorMemberId: 'parent_1', now });
+        await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action: 'approve', requestId, actorMemberId: 'parent_1', now });
         const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
         firestoreState = await loadDevFirestoreState();
         activeViewerMemberId = String(viewer.id);
@@ -7194,3 +7250,4 @@ function applySubmittedCompletionToState(
 
 registerAppSecurityListeners();
 render();
+
