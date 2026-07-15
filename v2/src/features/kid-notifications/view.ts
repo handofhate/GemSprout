@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoHistoryRow, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 type KidNotification = {
@@ -29,7 +29,7 @@ const queuedIds = new Set<string>();
 const queue: Array<{ item: KidNotification; options: KidNotificationOptions }> = [];
 let active = false;
 
-export function reconcileKidNotificationModals(state: DemoAppState, member: DemoMember, options: KidNotificationOptions = {}): void {
+export function reconcileKidNotificationModals(state: AppState, member: AppMember, options: KidNotificationOptions = {}): void {
   if (!member.id || member.role !== 'kid') return;
   const items = buildKidNotifications(state, member);
   const seen = readSeenIds(member.id);
@@ -49,14 +49,14 @@ export function reconcileKidNotificationModals(state: DemoAppState, member: Demo
   drainQueue();
 }
 
-function buildKidNotifications(state: DemoAppState, member: DemoMember): KidNotification[] {
+function buildKidNotifications(state: AppState, member: AppMember): KidNotification[] {
   const rows = state.historyRows
     .filter(row => row.memberId === member.id && row.id)
     .sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0));
   return rows.flatMap(row => notificationFromHistory(row, state, member)).filter(Boolean);
 }
 
-function notificationFromHistory(row: DemoHistoryRow, state: DemoAppState, member: DemoMember): KidNotification[] {
+function notificationFromHistory(row: AppHistoryRow, state: AppState, member: AppMember): KidNotification[] {
   const whileAway = Number(row.createdAt || 0) < sessionStartedAt;
   const titlePrefix = whileAway ? '<i class="ph-duotone ph-moon-stars" style="color:#7C3AED"></i> While you were away...' : '';
   const type = String(row.type || '');
@@ -281,7 +281,7 @@ function launchRain(
   }, 5000);
 }
 
-function iconForTask(row: DemoHistoryRow, state: DemoAppState): string {
+function iconForTask(row: AppHistoryRow, state: AppState): string {
   const taskId = String(row.metadata?.choreId || '');
   const task = taskId ? state.tasks.find(item => item.id === taskId) : null;
   const icon = String(task?.icon || 'confetti').replace(/^ph-/, '');
@@ -289,14 +289,14 @@ function iconForTask(row: DemoHistoryRow, state: DemoAppState): string {
   return `<i class="ph-duotone ph-${escapeHtml(icon)}" style="color:${escapeHtml(color)};font-size:3rem"></i>`;
 }
 
-function deniedTitle(row: DemoHistoryRow): string {
+function deniedTitle(row: AppHistoryRow): string {
   const kind = String(row.metadata?.kind || '');
   if (kind === 'savings_spend') return '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Not This Time';
   if (kind === 'prize_redeem') return '<i class="ph-duotone ph-x-circle" style="color:#9CA3AF"></i> Prize Not Approved';
   return '<i class="ph-duotone ph-x-circle" style="color:#EF4444"></i> Task Declined';
 }
 
-function deniedSub(row: DemoHistoryRow): string {
+function deniedSub(row: AppHistoryRow): string {
   const kind = String(row.metadata?.kind || '');
   const title = String(row.title || 'Request');
   if (kind === 'savings_spend') return `Your spend request for "${title}" was not approved.`;
@@ -304,7 +304,7 @@ function deniedSub(row: DemoHistoryRow): string {
   return `"${title}" was declined.`;
 }
 
-function deniedIcon(row: DemoHistoryRow): string {
+function deniedIcon(row: AppHistoryRow): string {
   const kind = String(row.metadata?.kind || '');
   if (kind === 'savings_spend') return '<i class="ph-duotone ph-smiley-sad" style="color:#9CA3AF;font-size:3rem"></i>';
   if (kind === 'prize_redeem') return '<i class="ph-duotone ph-gift" style="color:#9CA3AF;font-size:3rem"></i>';
@@ -318,7 +318,7 @@ function resizeIcon(icon: string, size: string): string {
     : icon.replace(/style="/, `style="font-size:${size};`);
 }
 
-function isLittleKid(member: DemoMember): boolean {
+function isLittleKid(member: AppMember): boolean {
   return member.displayMode === 'tiny' || member.mode === 'tiny';
 }
 

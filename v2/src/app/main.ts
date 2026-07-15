@@ -1,4 +1,3 @@
-import { FakeFirestoreGateway, commitRequestOperation } from '../platform/firebase';
 import { DEV_FIRESTORE_FAMILY_ID } from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
 import { createParentDashboardModel } from '../features/parent-dashboard/model';
@@ -32,7 +31,7 @@ import {
   type OnboardingTransitionDirection,
 } from '../features/onboarding/view';
 import { registerParentPushNotifications } from '../platform/notifications/push-registration';
-import { signInParentWithProvider, createDevBypassParentAuth as createAuthDevBypass, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
+import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
 import {
   initRevenueCat,
   loadOfferings,
@@ -62,31 +61,14 @@ import {
   type ParentQuickActionState,
   type SavingsQuickActionState,
 } from '../features/parent-dashboard/quick-actions';
-import { OPERATION_KINDS, makeRequestOperation } from '../sync';
 import { REQUEST_KINDS, REQUEST_STATUSES } from '../domain/requests';
-import { chorePath, completionPath, familyPath, historyPath, memberPath, operationPath, prizePath, requestPath } from '../sync/firestore-paths';
-import { loadSharedLabStore, resetSharedLabStore, saveSharedLabStore, subscribeSharedLabStore } from './shared-lab-store';
-import {
-  LAB_FAMILY_ID,
-  runPrizeApprovalFailureOnStore,
-  runSavingsApprovalOnStore,
-  runStaleApprovedRequestOnStore,
-  runStaleDeniedRequestOnStore,
-  runTwoDeviceApprovalRaceOnStore,
-  type LabScenarioResult,
-} from './approval-lab-scenarios';
-import { createDemoFamilySeedStore } from './demo-family-seed';
-import { renderDevLab, type LabLog } from './dev-lab-view';
-import { readDemoAppState, type DemoAppState, type DemoCompletion, type DemoHistoryRow, type DemoMember, type DemoPrize, type DemoRequest, type DemoTask, type DemoTeamGoal } from './local-demo-state';
+import { type AppState, type AppCompletion, type AppHistoryRow, type AppMember, type AppPrize, type AppRequest, type AppTask, type AppTeamGoal } from './app-state';
 import { todayKeyForTimezone } from './date-keys';
 import '../ui/styles/index.css';
 
 declare const GEMSPROUT_V2_DATA_SOURCE: string | undefined;
 
-let store = loadSharedLabStore(createDemoFamilySeedStore);
-let logs: LabLog[] = [];
-let lastScenario: LabScenarioResult | null = null;
-let firestoreState: DemoAppState | null = null;
+let firestoreState: AppState | null = null;
 let firestoreError = '';
 let firestoreBusy = false;
 let devFirestoreUnsubscribe: (() => void) | null = null;
@@ -96,7 +78,6 @@ let devFirestoreRefreshQueued = false;
 let parentPushRegistrationKey = '';
 let subscriptionAppUserId = '';
 let paywallOpen = false;
-const DEV_PAYWALL_BYPASS_KEY = 'gemsprout.v2.devPaywallBypass';
 let devPhotoCleanupInFlight = false;
 let devPhotoCleanupLastRun = 0;
 let autoSavingsInterestRunKey = '';
@@ -192,7 +173,7 @@ let onboardingFinishBusy = false;
 let landingMode: 'landing' | 'signin' | 'signin-not-found' | 'kid-entry' | 'kid-select' | 'kid-qr' = 'landing';
 let signInMessage = '';
 let kidEntryMessage = '';
-let kidEntryMembers: DemoMember[] = [];
+let kidEntryMembers: AppMember[] = [];
 let joinDifferentFamilyConfirmOpen = false;
 let leaveDevicePinBuffer = '';
 let leaveDevicePreviousMemberId: string | null = null;
@@ -200,20 +181,11 @@ let appLockPinBuffer = '';
 let appLockRequired = false;
 let appLockOpen = false;
 
-function useDevFirestore(): boolean {
-  return new URLSearchParams(window.location.search).get('source') === 'firestore'
-    || (typeof GEMSPROUT_V2_DATA_SOURCE !== 'undefined' && GEMSPROUT_V2_DATA_SOURCE === 'firestore');
+function allowImplicitViewerSelection(): boolean {
+  return false;
 }
 
-function showLab(): boolean {
-  return new URLSearchParams(window.location.search).get('lab') === '1';
-}
-
-function showLandingPreview(): boolean {
-  return new URLSearchParams(window.location.search).get('landing') === '1';
-}
-
-function pendingCount(state: DemoAppState | null): number {
+function pendingCount(state: AppState | null): number {
   return state?.requests.filter(request => request.status === 'pending').length || 0;
 }
 
@@ -230,7 +202,7 @@ function roundMoney(value: unknown): number {
   return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
 }
 
-function reduceSavingsBuckets(member: DemoMember, amount: number): DemoMember {
+function reduceSavingsBuckets(member: AppMember, amount: number): AppMember {
   const next = { ...member };
   let remaining = roundMoney(amount);
   (['savingsGifted', 'savingsMatched', 'savingsInterest'] as const).forEach(key => {
@@ -244,36 +216,37 @@ function reduceSavingsBuckets(member: DemoMember, amount: number): DemoMember {
   return next;
 }
 
-function currentDemoState(): DemoAppState {
-  return useDevFirestore() ? (firestoreState as DemoAppState) : readDemoAppState(store);
+function currentAppState(): AppState {
+  return firestoreState as AppState;
 }
 
-function getActiveViewer(state: DemoAppState): DemoMember | null {
+function getActiveViewer(state: AppState): AppMember | null {
   const members = state.members || [];
   if (activeViewerMemberId) {
     const selected = members.find(member => member.id === activeViewerMemberId) || null;
     if (selected) return selected;
   }
+  if (!allowImplicitViewerSelection()) return null;
   const parent = members.find(member => member.role === 'parent') || null;
   const fallback = parent || members[0] || null;
   if (fallback?.id) activeViewerMemberId = String(fallback.id);
   return fallback;
 }
 
-function pickPrimaryDemoRequest(requests: DemoAppState['requests']): DemoAppState['request'] {
+function pickPrimaryAppRequest(requests: AppState['requests']): AppState['request'] {
   return requests.find(request => request.status === 'pending') || requests[0] || null;
 }
 
-function applyExecutionToFirestoreState(current: DemoAppState | null, execution: {
+function applyExecutionToFirestoreState(current: AppState | null, execution: {
   operation: { status?: string; error?: { reason?: string } | null } | null;
   state: {
-    membersById?: Record<string, DemoMember>;
+    membersById?: Record<string, AppMember>;
     prizesById?: Record<string, Record<string, unknown>>;
-    requestsById?: Record<string, DemoRequest>;
-    completionsById?: Record<string, DemoCompletion>;
+    requestsById?: Record<string, AppRequest>;
+    completionsById?: Record<string, AppCompletion>;
   };
-  history: DemoHistoryRow[];
-}): DemoAppState | null {
+  history: AppHistoryRow[];
+}): AppState | null {
   if (!current) return current;
   const nextMembers = [...current.members];
   for (const member of Object.values(execution.state.membersById || {})) {
@@ -296,7 +269,7 @@ function applyExecutionToFirestoreState(current: DemoAppState | null, execution:
     if (!prize?.id) continue;
     const index = nextPrizes.findIndex(item => item.id === prize.id);
     if (index >= 0) nextPrizes[index] = { ...nextPrizes[index], ...prize };
-    else nextPrizes.push(prize as DemoAppState['prizes'][number]);
+    else nextPrizes.push(prize as AppState['prizes'][number]);
   }
   nextPrizes.sort((left, right) => Number(left.cost || 0) - Number(right.cost || 0) || String(left.title || '').localeCompare(String(right.title || '')));
 
@@ -317,7 +290,7 @@ function applyExecutionToFirestoreState(current: DemoAppState | null, execution:
   }
   nextHistoryRows.sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
 
-  const primaryRequest = pickPrimaryDemoRequest(nextRequests);
+  const primaryRequest = pickPrimaryAppRequest(nextRequests);
   const primaryMember = primaryRequest?.targetMemberId
     ? nextMembers.find(member => member.id === primaryRequest.targetMemberId) || current.member
     : nextMembers.find(member => member.id === current.member?.id) || current.member;
@@ -339,7 +312,7 @@ function applyExecutionToFirestoreState(current: DemoAppState | null, execution:
   };
 }
 
-function applyUndoToFirestoreState(current: DemoAppState | null, historyId: string): DemoAppState | null {
+function applyUndoToFirestoreState(current: AppState | null, historyId: string): AppState | null {
   if (!current) return current;
   const history = current.historyRows.find(row => row.id === historyId);
   if (!history) return current;
@@ -392,7 +365,7 @@ function applyUndoToFirestoreState(current: DemoAppState | null, historyId: stri
     };
   });
 
-  const completionId = request.source?.completionId || (request as DemoRequest & { completionId?: string }).completionId || String(history.metadata?.completionId || '');
+  const completionId = request.source?.completionId || (request as AppRequest & { completionId?: string }).completionId || String(history.metadata?.completionId || '');
   const resetsCompletion = request.kind === REQUEST_KINDS.CHORE_START || request.kind === REQUEST_KINDS.CHORE_COMPLETION;
   const nextCompletions = current.completions.map(completion => {
     if (!resetsCompletion || !completionId || completion.id !== completionId) return completion;
@@ -402,7 +375,7 @@ function applyUndoToFirestoreState(current: DemoAppState | null, historyId: stri
     ? { ...current.completion, status: 'pending', approvedAt: null, approvedByMemberId: null }
     : current.completion;
   const nextHistoryRows = current.historyRows.filter(row => row.id !== historyId);
-  const primaryRequest = pickPrimaryDemoRequest(nextRequests);
+  const primaryRequest = pickPrimaryAppRequest(nextRequests);
   const primaryMember = primaryRequest?.targetMemberId
     ? nextMembers.find(member => member.id === primaryRequest.targetMemberId) || current.member
     : nextMembers.find(member => member.id === current.member?.id) || current.member;
@@ -421,11 +394,11 @@ function applyUndoToFirestoreState(current: DemoAppState | null, historyId: stri
   };
 }
 
-function primaryCompletionMatches(completion: DemoAppState['completion'], completionId: string): boolean {
+function primaryCompletionMatches(completion: AppState['completion'], completionId: string): boolean {
   return !!completionId && !!completion && (completion as { id?: string }).id === completionId;
 }
 
-function buildOptimisticHistoryRow(request: DemoRequest, action: 'approve' | 'deny', now: number): DemoHistoryRow {
+function buildOptimisticHistoryRow(request: AppRequest, action: 'approve' | 'deny', now: number): AppHistoryRow {
   if (action === 'deny') {
     return {
       id: `history:request:${request.id}:deny`,
@@ -489,7 +462,7 @@ function buildOptimisticHistoryRow(request: DemoRequest, action: 'approve' | 'de
   };
 }
 
-function applyOptimisticRequestAction(current: DemoAppState | null, action: 'approve' | 'deny', requestId: string): DemoAppState | null {
+function applyOptimisticRequestAction(current: AppState | null, action: 'approve' | 'deny', requestId: string): AppState | null {
   if (!current) return current;
   const now = Date.now();
   const targetRequest = current.requests.find(request => request.id === requestId);
@@ -527,16 +500,12 @@ function applyOptimisticRequestAction(current: DemoAppState | null, action: 'app
   const historyRow = buildOptimisticHistoryRow(request, action, now);
   next.historyRows = [historyRow, ...next.historyRows.filter(row => row.id !== historyRow.id)].sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
   next.history = next.historyRows[0] || null;
-  next.request = pickPrimaryDemoRequest(next.requests);
+  next.request = pickPrimaryAppRequest(next.requests);
   next.member = next.request?.targetMemberId
     ? next.members.find(item => item.id === next.request?.targetMemberId) || next.member
     : next.members.find(item => item.id === current.member?.id) || next.member;
   next.operation = { status: action === 'approve' ? 'applied' : 'applied', error: undefined };
   return next;
-}
-
-function addLog(text: string): void {
-  logs = [{ at: new Date().toLocaleTimeString(), text }, ...logs].slice(0, 8);
 }
 
 function captureOverviewLayoutPositions(): Map<string, DOMRect> {
@@ -683,84 +652,6 @@ function showScreen(id: string): void {
   document.getElementById(id)?.classList.add('active');
 }
 
-function createRequestAction(action: 'approve' | 'deny', requestId: string, familyId = LAB_FAMILY_ID, now = Date.now()) {
-  return makeRequestOperation({
-    id: `op:request:${action}:${requestId}`,
-    familyId,
-    kind: action === 'approve' ? OPERATION_KINDS.REQUEST_APPROVE : OPERATION_KINDS.REQUEST_DENY,
-    requestId,
-    actorMemberId: 'parent_1',
-    createdAt: now,
-  });
-}
-
-function runApproval(requestId = 'request_1'): void {
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  const now = Date.now();
-  const result = commitRequestOperation(store, createRequestAction('approve', requestId, LAB_FAMILY_ID, now), { now });
-  if (result.ok && !result.duplicate) {
-    applyApprovalProgressionToStore(store, LAB_FAMILY_ID, requestId, now);
-    applyDailyComboBonusToStore(store, LAB_FAMILY_ID, requestId, now);
-  }
-  saveSharedLabStore(store);
-  addLog(result.duplicate ? 'Replay ignored: operation was already applied.' : result.ok ? 'Approval applied.' : `Approval failed: ${result.error?.reason || 'unknown'}`);
-  render();
-}
-
-function runDenial(requestId = 'request_1'): void {
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  const result = commitRequestOperation(store, createRequestAction('deny', requestId), { now: Date.now() });
-  saveSharedLabStore(store);
-  addLog(result.duplicate ? 'Replay ignored: denial was already applied.' : result.ok ? 'Request denied.' : `Denial failed: ${result.error?.reason || 'unknown'}`);
-  render();
-}
-
-function runRace(): void {
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  lastScenario = runTwoDeviceApprovalRaceOnStore(store, Date.now());
-  saveSharedLabStore(store);
-  addLog(`Race: first applied=${lastScenario.firstApplied}, second duplicate=${lastScenario.secondDuplicate}.`);
-  render();
-}
-
-function runScenario(name: string, runOnStore: (store: FakeFirestoreGateway, now?: number) => LabScenarioResult): void {
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  lastScenario = runOnStore(store, Date.now());
-  saveSharedLabStore(store);
-  addLog(`${name}: request=${lastScenario.requestStatus}, operation=${lastScenario.operationStatus}${lastScenario.reason ? `, reason=${lastScenario.reason}` : ''}.`);
-  render();
-}
-
-function resetLocalState(): void {
-  store = resetSharedLabStore(createDemoFamilySeedStore);
-  logs = [];
-  lastScenario = null;
-  addLog('Local v2 state reset.');
-  render();
-}
-
-function bindActions(): void {
-  document.getElementById('reset-state-btn')?.addEventListener('click', openSettingsPane);
-  document.getElementById('reset-hero-btn')?.addEventListener('click', resetLocalState);
-  document.querySelectorAll<HTMLButtonElement>('[data-approve-request-id]').forEach(button => {
-    button.addEventListener('click', () => animateHandledInboxRow(button, () => runApproval(button.dataset.approveRequestId || 'request_1')));
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-deny-request-id]').forEach(button => {
-    button.addEventListener('click', () => animateHandledInboxRow(button, () => runDenial(button.dataset.denyRequestId || 'request_1')));
-  });
-  document.getElementById('lab-approve-btn')?.addEventListener('click', () => runApproval());
-  document.getElementById('lab-replay-btn')?.addEventListener('click', () => runApproval());
-  document.getElementById('race-btn')?.addEventListener('click', runRace);
-  document.getElementById('prize-fail-btn')?.addEventListener('click', () => runScenario('Prize failure', runPrizeApprovalFailureOnStore));
-  document.getElementById('stale-approved-btn')?.addEventListener('click', () => runScenario('Stale approved', runStaleApprovedRequestOnStore));
-  document.getElementById('stale-denied-btn')?.addEventListener('click', () => runScenario('Stale denied', runStaleDeniedRequestOnStore));
-  document.getElementById('savings-btn')?.addEventListener('click', () => runScenario('Savings', runSavingsApprovalOnStore));
-  bindParentQuickActions(readDemoAppState(store));
-  bindHomeScreenActions(readDemoAppState(store));
-  bindKidPlaceholderActions();
-  bindPhotoPreviewActions();
-}
-
 async function runFirestoreAction(action: 'approve' | 'deny', requestId: string, options: { suppressRender?: boolean } = {}): Promise<boolean> {
   if (firestoreBusy) return false;
   firestoreBusy = true;
@@ -852,140 +743,7 @@ async function processFirestoreOverviewWriteQueue(): Promise<void> {
   }
 }
 
-function applyDailyComboBonusToStore(gateway: FakeFirestoreGateway, familyId: string, requestId: string, now: number): void {
-  const request = gateway.get<DemoRequest & { familyId?: string }>(requestPath(familyId, requestId));
-  if (request?.kind !== REQUEST_KINDS.CHORE_COMPLETION || request.status !== REQUEST_STATUSES.APPROVED) return;
-  const memberId = String(request.targetMemberId || '');
-  const completedChoreId = String(request.source?.choreId || '');
-  if (!memberId || !completedChoreId) return;
-
-  const family = gateway.get<{ settings?: DemoAppState['settings'] }>(familyPath(familyId)) || {};
-  const settings = family.settings || {};
-  if (settings.comboEnabled === false) return;
-  const today = dateKeyFromTime(now, settings.familyTimezone);
-  const member = gateway.get<DemoMember>(memberPath(familyId, memberId));
-  if (!member || member.comboBonusDate === today) return;
-
-  const dump = gateway.dump();
-  const members = Object.entries(dump)
-    .filter(([path]) => path.startsWith(`${familyPath(familyId)}/members/`))
-    .map(([, value]) => value as DemoMember)
-    .filter(item => !!item?.id);
-  const tasks = Object.entries(dump)
-    .filter(([path]) => path.startsWith(`${familyPath(familyId)}/chores/`))
-    .map(([, value]) => value as DemoTask)
-    .filter(task => !!task?.id);
-  const comboIds = getDailyComboIdsForMember({ members, tasks, settings }, memberId, today);
-  if (comboIds.length < 3 || !comboIds.includes(completedChoreId)) return;
-  applyDailyComboBonusToStoreForCombo(gateway, familyId, memberId, comboIds, today, now);
-}
-
-function applyDailyComboBonusToStoreForCombo(gateway: FakeFirestoreGateway, familyId: string, memberId: string, comboIds: string[], today: string, now: number): void {
-  const family = gateway.get<{ settings?: DemoAppState['settings'] }>(familyPath(familyId)) || {};
-  const settings = family.settings || {};
-  if (settings.comboEnabled === false) return;
-  const member = gateway.get<DemoMember>(memberPath(familyId, memberId));
-  if (!member || member.comboBonusDate === today) return;
-  const allDone = comboIds.every(choreId => isComboTaskApprovedToday(gateway, familyId, memberId, choreId, today));
-  if (!allDone) return;
-  const dump = gateway.dump();
-  const tasks = Object.entries(dump)
-    .filter(([path]) => path.startsWith(`${familyPath(familyId)}/chores/`))
-    .map(([, value]) => value as DemoTask)
-    .filter(task => !!task?.id);
-  const taskById = new Map(tasks.map(task => [String(task.id || ''), task]));
-  const baseSum = comboIds.reduce((sum, choreId) => {
-    const task = taskById.get(choreId);
-    return sum + Number(task?.gems ?? task?.diamonds ?? 0);
-  }, 0);
-  const bonusGems = Math.max(1, Number(settings.comboMultiplier || 2) - 1) * baseSum;
-  const currentGems = Number(member.gems || member.diamonds || 0);
-  const comboStreak = nextComboStreak(member.comboStreak, today);
-  const nextMember: DemoMember = {
-    ...member,
-    gems: currentGems + bonusGems,
-    diamonds: currentGems + bonusGems,
-    totalEarned: Number(member.totalEarned || 0) + bonusGems,
-    xp: settings.levelingEnabled === false ? member.xp : Number(member.xp || 0) + bonusGems,
-    comboBonusDate: today,
-    comboStreak,
-  };
-  const historyId = `history:combo:${memberId}:${today}`;
-  gateway.set(memberPath(familyId, memberId), nextMember);
-  gateway.set(historyPath(familyId, historyId), {
-    id: historyId,
-    familyId,
-    memberId,
-    type: 'bonus',
-    title: 'Daily Combo Bonus!',
-    gems: bonusGems,
-    amount: null,
-    createdAt: now,
-    occurredAt: now,
-    metadata: { comboTaskIds: comboIds, comboMultiplier: Number(settings.comboMultiplier || 2) },
-  });
-}
-
-function applyApprovalProgressionToStore(gateway: FakeFirestoreGateway, familyId: string, requestId: string, now: number): void {
-  const request = gateway.get<DemoRequest & { familyId?: string }>(requestPath(familyId, requestId));
-  if (request?.kind !== REQUEST_KINDS.CHORE_COMPLETION || request.status !== REQUEST_STATUSES.APPROVED) return;
-  const memberId = String(request.targetMemberId || '');
-  const choreId = String(request.source?.choreId || '');
-  const points = Number(request.snapshot?.points || 0);
-  if (!memberId || !choreId) return;
-
-  const family = gateway.get<{ settings?: DemoAppState['settings'] }>(familyPath(familyId)) || {};
-  const settings = family.settings || {};
-  const member = gateway.get<DemoMember>(memberPath(familyId, memberId));
-  const task = gateway.get<DemoTask>(chorePath(familyId, choreId));
-  if (!member) return;
-
-  const today = dateKeyFromTime(now, settings.familyTimezone);
-  const previousLevel = currentLevelNumber(settings, member);
-  const nextMember = cloneDemoState(member) as DemoMember;
-  if (settings.levelingEnabled !== false) nextMember.xp = Number(nextMember.xp || 0) + points;
-
-  const streakBonus = settings.streakEnabled !== false ? updateMemberStreak(nextMember, settings, today) : 0;
-  if (streakBonus > 0) {
-    const nextGems = Number(nextMember.gems || nextMember.diamonds || 0) + streakBonus;
-    nextMember.gems = nextGems;
-    nextMember.diamonds = nextGems;
-    nextMember.totalEarned = Number(nextMember.totalEarned || 0) + streakBonus;
-    if (settings.levelingEnabled !== false) nextMember.xp = Number(nextMember.xp || 0) + streakBonus;
-    gateway.set(historyPath(familyId, `history:streak:${memberId}:${today}`), {
-      id: `history:streak:${memberId}:${today}`,
-      familyId,
-      memberId,
-      type: 'chore',
-      title: `Streak bonus (${nextMember.streak?.current || 0} days)`,
-      gems: streakBonus,
-      amount: null,
-      createdAt: now + 1,
-      occurredAt: now + 1,
-      metadata: { streak: nextMember.streak?.current || 0 },
-    });
-  }
-  if (settings.streakEnabled !== false) awardStreakBadges(gateway, familyId, nextMember, settings, now + 2);
-
-  awardBaseBadge(gateway, familyId, nextMember, settings, 'first_chore', now + 2);
-  awardGemBadges(gateway, familyId, nextMember, settings, now + 3);
-  if (settings.choreBadgesEnabled !== false && task) awardTaskBadges(gateway, familyId, nextMember, task, countApprovedTaskCompletions(gateway, familyId, memberId, choreId), now + 4);
-  if (settings.levelingEnabled !== false) awardLevelBadges(gateway, familyId, nextMember, settings, previousLevel, now + 5);
-  gateway.set(memberPath(familyId, memberId), nextMember);
-}
-
-function isComboTaskApprovedToday(gateway: FakeFirestoreGateway, familyId: string, memberId: string, choreId: string, today: string): boolean {
-  return Object.entries(gateway.dump()).some(([path, value]) => {
-    if (!path.startsWith(`${familyPath(familyId)}/completions/`)) return false;
-    const completion = value as DemoCompletion;
-    return completion.memberId === memberId
-      && completion.choreId === choreId
-      && completion.date === today
-      && completion.status === 'approved';
-  });
-}
-
-function getDailyComboIdsForMember(input: { members: DemoMember[]; tasks: DemoTask[]; settings: DemoAppState['settings'] }, memberId: string, today: string): string[] {
+function getDailyComboIdsForMember(input: { members: AppMember[]; tasks: AppTask[]; settings: AppState['settings'] }, memberId: string, today: string): string[] {
   const override = input.settings.comboOverrides?.[memberId];
   if (override?.date === today && Array.isArray(override.ids)) return override.ids.slice(0, 3).filter(Boolean);
   const assigned = input.settings.comboAssignments?.[memberId];
@@ -993,7 +751,7 @@ function getDailyComboIdsForMember(input: { members: DemoMember[]; tasks: DemoTa
   return getAllDailyComboIds(input.members, input.tasks, today)[memberId] || [];
 }
 
-function getAllDailyComboIds(members: DemoMember[], tasks: DemoTask[], today: string): Record<string, string[]> {
+function getAllDailyComboIds(members: AppMember[], tasks: AppTask[], today: string): Record<string, string[]> {
   const kids = members.filter(member => member.role === 'kid' && !member.deleted).sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
   const used = new Set<string>();
   const combos: Record<string, string[]> = {};
@@ -1022,134 +780,7 @@ function dailyComboSeed(value: string): number {
   return seed >>> 0;
 }
 
-function currentLevelNumber(settings: DemoAppState['settings'], member: DemoMember): number {
-  const xp = Number(member.xp ?? member.totalEarned ?? 0);
-  return getLevels(settings)
-    .slice()
-    .sort((left, right) => Number(left.minXp || 0) - Number(right.minXp || 0))
-    .reduce((level, candidate) => xp >= Number(candidate.minXp || 0) ? Number(candidate.level || level) : level, 1);
-}
-
-function awardBaseBadge(gateway: FakeFirestoreGateway, familyId: string, member: DemoMember, settings: DemoAppState['settings'], badgeId: string, now: number): void {
-  if (settings.baseBadgesEnabled === false) return;
-  const def = getBaseBadgeDef(settings, badgeId);
-  if (!def) return;
-  if (!Array.isArray(member.badges)) member.badges = [];
-  if (member.badges.includes(badgeId)) return;
-  member.badges.push(badgeId);
-  gateway.set(historyPath(familyId, `history:badge:${member.id}:${badgeId}`), {
-    id: `history:badge:${member.id}:${badgeId}`,
-    familyId,
-    memberId: member.id,
-    type: 'badge',
-    title: def.name,
-    gems: 0,
-    amount: null,
-    createdAt: now,
-    occurredAt: now,
-    metadata: { badgeId, badgeIcon: def.icon },
-  });
-}
-
-function awardGemBadges(gateway: FakeFirestoreGateway, familyId: string, member: DemoMember, settings: DemoAppState['settings'], now: number): void {
-  const xp = Number(member.xp ?? member.totalEarned ?? 0);
-  if (xp >= 50) awardBaseBadge(gateway, familyId, member, settings, 'dmds_50', now);
-  if (xp >= 200) awardBaseBadge(gateway, familyId, member, settings, 'dmds_200', now);
-  if (xp >= 500) awardBaseBadge(gateway, familyId, member, settings, 'dmds_500', now);
-  if (xp >= 1000) awardBaseBadge(gateway, familyId, member, settings, 'dmds_1000', now);
-}
-
-function awardLevelBadges(gateway: FakeFirestoreGateway, familyId: string, member: DemoMember, settings: DemoAppState['settings'], previousLevel: number, now: number): void {
-  const currentLevel = currentLevelNumber(settings, member);
-  if (currentLevel <= previousLevel) return;
-  awardBaseBadge(gateway, familyId, member, settings, 'level_up', now);
-  const maxLevel = getLevels(settings).reduce((max, level) => Math.max(max, Number(level.level || 0)), 0);
-  if (currentLevel >= maxLevel) awardBaseBadge(gateway, familyId, member, settings, 'level_master', now + 1);
-  const current = getLevels(settings).find(level => Number(level.level || 0) === currentLevel);
-  gateway.set(historyPath(familyId, `history:level:${member.id}:${currentLevel}`), {
-    id: `history:level:${member.id}:${currentLevel}`,
-    familyId,
-    memberId: member.id,
-    type: 'level',
-    title: `Level Up - ${current?.name || `Level ${currentLevel}`}!`,
-    gems: 0,
-    amount: null,
-    createdAt: now + 2,
-    occurredAt: now + 2,
-    metadata: { level: currentLevel },
-  });
-}
-
-function awardStreakBadges(gateway: FakeFirestoreGateway, familyId: string, member: DemoMember, settings: DemoAppState['settings'], now: number): void {
-  const current = Number(member.streak?.current || 0);
-  if (current >= 3) awardBaseBadge(gateway, familyId, member, settings, 'streak_3', now);
-  if (current >= 7) awardBaseBadge(gateway, familyId, member, settings, 'streak_7', now + 1);
-  if (current >= 14) awardBaseBadge(gateway, familyId, member, settings, 'streak_14', now + 2);
-  if (current >= 30) awardBaseBadge(gateway, familyId, member, settings, 'streak_30', now + 3);
-}
-
-function awardTaskBadges(gateway: FakeFirestoreGateway, familyId: string, member: DemoMember, task: DemoTask, doneCount: number, now: number): void {
-  if (!Array.isArray(task.badges) || !task.badges.length) return;
-  if (!Array.isArray(member.badges)) member.badges = [];
-  for (const badge of task.badges) {
-    if (!badge.id || !badge.count) continue;
-    const key = `cb_${badge.id}`;
-    if (doneCount < Number(badge.count) || member.badges.includes(key)) continue;
-    member.badges.push(key);
-    gateway.set(historyPath(familyId, `history:badge:${member.id}:${key}`), {
-      id: `history:badge:${member.id}:${key}`,
-      familyId,
-      memberId: member.id,
-      type: 'badge',
-      title: badge.name || 'Badge',
-      gems: 0,
-      amount: null,
-      createdAt: now,
-      occurredAt: now,
-      metadata: { badgeId: key, badgeIcon: badge.icon || '<i class="ph-duotone ph-medal" style="color:#7C3AED"></i>', choreTitle: task.title || '' },
-    });
-  }
-}
-
-function countApprovedTaskCompletions(gateway: FakeFirestoreGateway, familyId: string, memberId: string, choreId: string): number {
-  return Object.entries(gateway.dump()).filter(([path, value]) => {
-    if (!path.startsWith(`${familyPath(familyId)}/completions/`)) return false;
-    const completion = value as DemoCompletion;
-    return completion.memberId === memberId
-      && completion.choreId === choreId
-      && completion.status === 'approved'
-      && completion.entryType !== 'before';
-  }).length;
-}
-
-function updateMemberStreak(member: DemoMember, settings: DemoAppState['settings'], today: string): number {
-  const streak = member.streak || { current: 0, best: 0, lastDate: null };
-  if (streak.lastDate === today) {
-    member.streak = streak;
-    return 0;
-  }
-  if (streak.lastDate && !streakHasGap(member, streak.lastDate, today)) streak.current = Number(streak.current || 0) + 1;
-  else streak.current = 1;
-  streak.best = Math.max(Number(streak.best || 0), Number(streak.current || 0));
-  streak.lastDate = today;
-  member.streak = streak;
-  return getStreakBonus(settings, Number(streak.current || 0));
-}
-
-function streakHasGap(member: DemoMember, fromDate: string, toDate: string): boolean {
-  const from = new Date(`${fromDate}T00:00:00`);
-  const to = new Date(`${toDate}T00:00:00`);
-  const diff = Math.round((to.getTime() - from.getTime()) / 86400000);
-  if (diff <= 1) return false;
-  for (let day = 1; day < diff; day += 1) {
-    const date = new Date(from.getTime() + day * 86400000);
-    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    if (isMemberHereOnDate(member, dateKey)) return true;
-  }
-  return false;
-}
-
-function isMemberHereOnDate(member: DemoMember, dateKey: string): boolean {
+function isMemberHereOnDate(member: AppMember, dateKey: string): boolean {
   const split = member.splitHousehold;
   if (split?.overrides && dateKey in split.overrides) return split.overrides[dateKey] !== false;
   if (!split?.enabled) return true;
@@ -1158,14 +789,6 @@ function isMemberHereOnDate(member: DemoMember, dateKey: string): boolean {
   const diff = Math.round((date.getTime() - reference.getTime()) / 86400000);
   const pos = ((diff % 14) + 14) % 14;
   return split.cycle?.[pos] !== false;
-}
-
-function getStreakBonus(settings: DemoAppState['settings'], streakCount: number): number {
-  if (streakCount >= 30) return Number(settings.streakBonus30 || 10);
-  if (streakCount >= 14) return Number(settings.streakBonus14 || 5);
-  if (streakCount >= 7) return Number(settings.streakBonus7 || 3);
-  if (streakCount >= 3) return Number(settings.streakBonus3 || 1);
-  return 0;
 }
 
 function seededShuffle<T>(items: T[], seed: number): T[] {
@@ -1183,27 +806,6 @@ function seededShuffle<T>(items: T[], seed: number): T[] {
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
   return copy;
-}
-
-function dateKeyFromTime(time: number, timezone?: string): string {
-  return todayKeyForTimezone(timezone, time);
-}
-
-function nextComboStreak(current: DemoMember['comboStreak'] | undefined, today: string): NonNullable<DemoMember['comboStreak']> {
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-  const previous = current || {};
-  const nextCurrent = previous.lastDate === yesterdayKey
-    ? Number(previous.current || 0) + 1
-    : previous.lastDate === today
-      ? Number(previous.current || 1)
-      : 1;
-  return {
-    current: nextCurrent,
-    best: Math.max(Number(previous.best || 0), nextCurrent),
-    lastDate: today,
-  };
 }
 
 function bindFirestoreActions(): void {
@@ -1340,7 +942,7 @@ function bindStatsGemEasterEgg(): void {
 }
 
 function triggerKidAvatarEasterEgg(): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = getActiveViewer(state);
   if (!member || member.role !== 'kid') return;
   const avatar = String(member.avatar || '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>');
@@ -1363,7 +965,7 @@ function renderAvatarPreviewHtml(avatar: string, color: string, fallback = '<i c
 
 function openKidSettings(triggerEl?: Element | null): void {
   kidProfileDraft = null;
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = getActiveViewer(state);
   if (!member || member.role !== 'kid') return;
   const root = document.getElementById('modal-root');
@@ -1405,7 +1007,7 @@ function bindKidSettingsModalActions(): void {
 }
 
 function showLeaveDevicePin(): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = getActiveViewer(state);
   if (!member || member.role !== 'kid') return;
   leaveDevicePinBuffer = '';
@@ -1492,8 +1094,8 @@ async function leaveDevice(): Promise<void> {
   firestoreState = null;
   firestoreError = '';
   const url = new URL(window.location.href);
-  if (useDevFirestore()) url.searchParams.set('source', 'firestore');
-  url.searchParams.set('landing', '1');
+  url.searchParams.delete('source');
+  url.searchParams.delete('landing');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   render();
 }
@@ -1502,7 +1104,7 @@ function shouldUseAppLock(): boolean {
   const settings = currentSettings();
   if (!settings.lockOnBackground) return false;
   if (!settings.parentPin && !getStoredBiometricCredentialId()) return false;
-  return !!getActiveViewer(currentDemoState());
+  return !!getActiveViewer(currentAppState());
 }
 
 function registerAppSecurityListeners(): void {
@@ -1512,12 +1114,12 @@ function registerAppSecurityListeners(): void {
       return;
     }
     if (document.visibilityState === 'visible') {
-      if (useDevFirestore()) scheduleDevFirestoreRefresh(40);
+      scheduleDevFirestoreRefresh(40);
       if (appLockRequired) openAppLockModal();
     }
   });
   window.addEventListener('focus', () => {
-    if (useDevFirestore()) scheduleDevFirestoreRefresh(40);
+    scheduleDevFirestoreRefresh(40);
     if (appLockRequired) openAppLockModal();
   });
 }
@@ -1528,7 +1130,7 @@ function openAppLockModal(): void {
   if (!root) return;
   appLockOpen = true;
   appLockPinBuffer = '';
-  const viewer = getActiveViewer(currentDemoState());
+  const viewer = getActiveViewer(currentAppState());
   const pinEnabled = !!currentSettings().parentPin;
   const biometricId = getStoredBiometricCredentialId();
   root.innerHTML = `
@@ -1631,7 +1233,7 @@ function kidProfileColorSwatches(field: 'avatarColor' | 'color', selected: strin
 }
 
 function openKidProfileLookModal(replace = false): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = getActiveViewer(state);
   if (!member || member.role !== 'kid' || !member.id) return;
   kidProfileDraft = {
@@ -1643,7 +1245,7 @@ function openKidProfileLookModal(replace = false): void {
   renderKidProfileLookModal(member, replace);
 }
 
-function renderKidProfileLookModal(member: DemoMember, replace = false): void {
+function renderKidProfileLookModal(member: AppMember, replace = false): void {
   if (!kidProfileDraft) return;
   const root = document.getElementById('modal-root');
   if (!root) return;
@@ -1693,7 +1295,7 @@ function bindKidProfileLookActions(): void {
     button.addEventListener('click', () => {
       if (!kidProfileDraft) return;
       kidProfileDraft.avatar = decodeURIComponent(button.dataset.kidProfileAvatar || '');
-      const member = currentDemoState().members.find(item => item.id === kidProfileDraft?.memberId);
+      const member = currentAppState().members.find(item => item.id === kidProfileDraft?.memberId);
       if (member) renderKidProfileLookModal(member, true);
     });
   });
@@ -1702,7 +1304,7 @@ function bindKidProfileLookActions(): void {
       if (!kidProfileDraft) return;
       const field = button.dataset.kidProfileColorField === 'avatarColor' ? 'avatarColor' : 'color';
       kidProfileDraft[field] = button.dataset.kidProfileColor || PROFILE_COLORS[0];
-      const member = currentDemoState().members.find(item => item.id === kidProfileDraft?.memberId);
+      const member = currentAppState().members.find(item => item.id === kidProfileDraft?.memberId);
       if (member) renderKidProfileLookModal(member, true);
     });
   });
@@ -1713,7 +1315,7 @@ function bindKidProfileLookActions(): void {
 async function saveKidProfileLook(): Promise<void> {
   if (!kidProfileDraft) return;
   const draft = kidProfileDraft;
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === draft.memberId);
   if (!member) return;
   const updatedMember = {
@@ -1723,7 +1325,7 @@ async function saveKidProfileLook(): Promise<void> {
     color: draft.color || member.color || PROFILE_COLORS[0],
   };
   kidProfileDraft = null;
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     if (firestoreState) {
       firestoreState = {
@@ -1743,17 +1345,12 @@ async function saveKidProfileLook(): Promise<void> {
       render();
       return;
     }
-  } else {
-    store.set(memberPath(LAB_FAMILY_ID, String(updatedMember.id || '')), updatedMember);
-    saveSharedLabStore(store);
-    closeModal();
-    render();
-  }
+  
   toast('Profile updated');
 }
 
 function openBadgeCardFromDataset(dataset: DOMStringMap): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const badgeId = String(dataset.badgeId || '');
   const type = dataset.badgeType === 'chore' ? 'chore' : 'base';
   const memberId = String(dataset.badgeMember || activeViewerMemberId || '');
@@ -1807,7 +1404,7 @@ function openBadgeCardFromDataset(dataset: DOMStringMap): void {
 }
 
 function resolveBadgeCardDefinition(
-  state: DemoAppState,
+  state: AppState,
   badgeId: string,
   type: 'base' | 'chore',
   choreTitle: string,
@@ -1830,12 +1427,12 @@ function resolveBadgeCardDefinition(
   };
 }
 
-function findBadgeEarnedDate(state: DemoAppState, badgeName: string, member: DemoMember, type: 'base' | 'chore', choreTitle: string): string | null {
+function findBadgeEarnedDate(state: AppState, badgeName: string, member: AppMember, type: 'base' | 'chore', choreTitle: string): string | null {
   const row = state.historyRows.find(item => {
     if (item.type !== 'badge' || item.memberId !== member.id) return false;
     if (String(item.title || '') !== badgeName) return false;
     if (type !== 'chore') return true;
-    const rowChoreTitle = String((item.metadata?.choreTitle as string | undefined) || (item as DemoHistoryRow & { choreTitle?: string }).choreTitle || '');
+    const rowChoreTitle = String((item.metadata?.choreTitle as string | undefined) || (item as AppHistoryRow & { choreTitle?: string }).choreTitle || '');
     return !rowChoreTitle || rowChoreTitle === choreTitle;
   });
   return formatBadgeEarnedDate(Number(row?.createdAt || 0));
@@ -2143,7 +1740,7 @@ function closePhotoPreview(): void {
 }
 
 function openKidSavingsModal(memberId: string, triggerEl?: HTMLElement): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   const root = document.getElementById('modal-root');
   if (!member || !root) return;
@@ -2207,7 +1804,7 @@ function bindKidSavingsModalActions(): void {
 
 function kidSavingsPreview(gems: number): string {
   if (gems <= 0) return '';
-  const state = currentDemoState();
+  const state = currentAppState();
   const rate = Number(state.settings.diamondsPerDollar || 10);
   const currency = String(state.settings.currency || '$');
   const matchOn = state.settings.savingsMatchingEnabled === true && state.settings.savingsEnabled !== false;
@@ -2220,7 +1817,7 @@ function kidSavingsPreview(gems: number): string {
 }
 
 async function submitKidSavingsConversion(memberId: string, gemsToConvert: number): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   const currentGems = Number(member?.gems || member?.diamonds || 0);
   if (!member || gemsToConvert <= 0 || gemsToConvert > currentGems) return;
@@ -2231,17 +1828,17 @@ async function submitKidSavingsConversion(memberId: string, gemsToConvert: numbe
   const dollars = Number((gemsToConvert / rate).toFixed(2));
   const matchDollars = matchOn ? Number((dollars * matchPct / 100).toFixed(2)) : 0;
   const now = Date.now();
-  const updatedMember: DemoMember = {
+  const updatedMember: AppMember = {
     ...member,
     gems: currentGems - gemsToConvert,
     diamonds: currentGems - gemsToConvert,
     savings: Number((Number(member.savings || 0) + dollars + matchDollars).toFixed(2)),
     savingsMatched: matchDollars > 0 ? Number((Number(member.savingsMatched || 0) + matchDollars).toFixed(2)) : member.savingsMatched,
   };
-  const historyRows: DemoHistoryRow[] = [
+  const historyRows: AppHistoryRow[] = [
     {
       id: makeHistoryId('savings', memberId),
-      familyId: useDevFirestore() ? 'migration-preview' : LAB_FAMILY_ID,
+      familyId: DEV_FIRESTORE_FAMILY_ID,
       memberId,
       type: 'savings',
       title: `Converted ${gemsToConvert} gems to savings`,
@@ -2251,17 +1848,17 @@ async function submitKidSavingsConversion(memberId: string, gemsToConvert: numbe
     },
     ...(matchDollars > 0 ? [{
       id: makeHistoryId('savings-match', memberId),
-      familyId: useDevFirestore() ? 'migration-preview' : LAB_FAMILY_ID,
+      familyId: DEV_FIRESTORE_FAMILY_ID,
       memberId,
       type: 'savings',
       title: `Parent match (${matchPct}%) +${currency}${matchDollars.toFixed(2)}`,
       gems: 0,
       amount: matchDollars,
       createdAt: now + 1,
-    } as DemoHistoryRow] : []),
+    } as AppHistoryRow] : []),
   ];
   const previous = cloneDemoState(firestoreState);
-  if (useDevFirestore()) {
+  
     if (!firestoreState) return;
     firestoreState = applyManualMemberUpdates(firestoreState, [{
       memberId,
@@ -2278,15 +1875,10 @@ async function submitKidSavingsConversion(memberId: string, gemsToConvert: numbe
       render();
     }
     return;
-  }
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  applyManualUpdatesToStore(historyRows.map(history => ({ memberId, history, apply: () => updatedMember })));
-  saveSharedLabStore(store);
-  closeModal();
-  void renderLocalLab();
+  
 }
 
-function isSavingsInterestDay(state: DemoAppState, todayKey = todayKeyForApp()): boolean {
+function isSavingsInterestDay(state: AppState, todayKey = todayKeyForApp()): boolean {
   if (state.settings.savingsEnabled === false || state.settings.savingsInterestEnabled !== true) return false;
   const parsed = new Date(`${todayKey}T00:00:00`);
   if (String(state.settings.savingsInterestPeriod || 'monthly') === 'weekly') {
@@ -2295,11 +1887,11 @@ function isSavingsInterestDay(state: DemoAppState, todayKey = todayKeyForApp()):
   return parsed.getDate() === Number(state.settings.savingsInterestDayOfMonth || 1);
 }
 
-function getSavingsInterestMode(state: DemoAppState): 'kid_claim' | 'auto_claim' {
+function getSavingsInterestMode(state: AppState): 'kid_claim' | 'auto_claim' {
   return state.settings.savingsInterestMode === 'auto_claim' ? 'auto_claim' : 'kid_claim';
 }
 
-function calculateClaimableSavingsInterest(state: DemoAppState, member: DemoMember, todayKey = todayKeyForApp()): number {
+function calculateClaimableSavingsInterest(state: AppState, member: AppMember, todayKey = todayKeyForApp()): number {
   if (!isSavingsInterestDay(state, todayKey)) return 0;
   if (member.savingsInterestLastDate === todayKey) return 0;
   const savings = Number(member.savings || 0);
@@ -2309,7 +1901,7 @@ function calculateClaimableSavingsInterest(state: DemoAppState, member: DemoMemb
 }
 
 async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' | 'auto' = 'kid'): Promise<boolean> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const mode = getSavingsInterestMode(state);
   if (source === 'kid' && mode === 'auto_claim') return false;
   if (source === 'parent' && mode !== 'kid_claim') return false;
@@ -2323,9 +1915,9 @@ async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' |
   const period = String(state.settings.savingsInterestPeriod || 'monthly');
   const titlePrefix = source === 'parent' ? 'Parent claimed interest' : source === 'auto' ? 'Auto-claimed interest' : 'Claimed interest';
   const now = Date.now();
-  const history: DemoHistoryRow = {
+  const history: AppHistoryRow = {
     id: makeHistoryId('savings-interest', memberId),
-    familyId: useDevFirestore() ? 'migration-preview' : LAB_FAMILY_ID,
+    familyId: DEV_FIRESTORE_FAMILY_ID,
     memberId,
     type: 'savings',
     title: `${titlePrefix} (${rate}% ${period}) +${currency}${amount.toFixed(2)}`,
@@ -2337,7 +1929,7 @@ async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' |
   const update = {
     memberId,
     history,
-    apply(current: DemoMember) {
+    apply(current: AppMember) {
       return {
         ...current,
         savings: roundMoney(Number(current.savings || 0) + amount),
@@ -2347,7 +1939,7 @@ async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' |
     },
   };
 
-  if (useDevFirestore()) {
+  
     if (!firestoreState) return false;
     const previous = cloneDemoState(firestoreState);
     firestoreState = applyManualMemberUpdates(firestoreState, [update]);
@@ -2361,26 +1953,20 @@ async function claimSavingsInterest(memberId: string, source: 'kid' | 'parent' |
       render();
       return false;
     }
-  }
-
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  applyManualUpdatesToStore([update]);
-  saveSharedLabStore(store);
-  void renderLocalLab();
-  return true;
+  
 }
 
 async function applyAutoSavingsInterest(): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   if (getSavingsInterestMode(state) !== 'auto_claim' || !isSavingsInterestDay(state)) return;
   for (const member of state.members.filter(item => item.role === 'kid' && !item.deleted)) {
     await claimSavingsInterest(String(member.id || ''), 'auto');
   }
 }
 
-function maybeApplyAutoSavingsInterest(state: DemoAppState): void {
+function maybeApplyAutoSavingsInterest(state: AppState): void {
   const todayKey = todayKeyForTimezone(state.settings.familyTimezone);
-  const key = `${state.familyId || LAB_FAMILY_ID}:${todayKey}`;
+  const key = `${state.familyId || DEV_FIRESTORE_FAMILY_ID}:${todayKey}`;
   if (autoSavingsInterestRunKey === key) return;
   if (getSavingsInterestMode(state) !== 'auto_claim' || !isSavingsInterestDay(state, todayKey)) return;
   autoSavingsInterestRunKey = key;
@@ -2388,7 +1974,7 @@ function maybeApplyAutoSavingsInterest(state: DemoAppState): void {
 }
 
 function openKidSavingsHistory(memberId: string, triggerEl?: HTMLElement): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   const root = document.getElementById('modal-root');
   if (!member || !root) return;
@@ -2411,7 +1997,7 @@ function openKidSavingsHistory(memberId: string, triggerEl?: HTMLElement): void 
 }
 
 function openKidSavingsSpendModal(memberId: string, triggerEl?: HTMLElement): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   const root = document.getElementById('modal-root');
   if (!member || !root) return;
@@ -2456,7 +2042,7 @@ function openKidSavingsSpendModal(memberId: string, triggerEl?: HTMLElement): vo
 }
 
 async function submitKidSavingsSpendRequest(memberId: string, amount: number, reason: string): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   if (!member || amount <= 0 || amount > Number(member.savings || 0)) return;
   const hasPending = state.requests.some(request =>
@@ -2467,7 +2053,7 @@ async function submitKidSavingsSpendRequest(memberId: string, amount: number, re
   if (hasPending) return;
   const now = Date.now();
   const requestId = `request:savings:${memberId}:${now}:${Math.random().toString(36).slice(2, 7)}`;
-  const requestDoc: DemoRequest = {
+  const requestDoc: AppRequest = {
     id: requestId,
     status: REQUEST_STATUSES.PENDING,
     kind: REQUEST_KINDS.SAVINGS_SPEND,
@@ -2478,7 +2064,7 @@ async function submitKidSavingsSpendRequest(memberId: string, amount: number, re
     snapshot: { title: reason || 'Savings spend request', amount },
     source: { choreId: null, completionId: null, prizeId: null, reason, amount },
   };
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     if (!firestoreState) return;
     firestoreState = {
@@ -2498,19 +2084,10 @@ async function submitKidSavingsSpendRequest(memberId: string, amount: number, re
       render();
     }
     return;
-  }
-  store.set(requestPath(LAB_FAMILY_ID, requestId), {
-    ...requestDoc,
-    familyId: LAB_FAMILY_ID,
-    requesterMemberId: memberId,
-  });
-  saveSharedLabStore(store);
-  void sendSavingsSpendPush({ memberId, amount, reason });
-  closeModal();
-  render();
+  
 }
 
-function savingsHistoryRows(state: DemoAppState, memberId: string): string {
+function savingsHistoryRows(state: AppState, memberId: string): string {
   const savingsTypes = new Set(['savings', 'savings_deposit', 'savings_withdraw']);
   const entries = state.historyRows.filter(row => row.memberId === memberId && savingsTypes.has(String(row.type || '')));
   if (!entries.length) return '<div class="empty-state" style="padding:10px 0 4px"><div class="empty-text">No savings activity yet</div></div>';
@@ -2540,7 +2117,7 @@ function savingsHistoryRows(state: DemoAppState, memberId: string): string {
   }).join('');
 }
 
-function savingsHistoryIcon(row: DemoHistoryRow): string {
+function savingsHistoryIcon(row: AppHistoryRow): string {
   const type = String(row.type || '');
   const title = String(row.title || '').toLowerCase();
   if (type === 'savings_deposit') return '<i class="ph-duotone ph-arrow-circle-down" style="color:#2563EB"></i>';
@@ -2552,7 +2129,7 @@ function savingsHistoryIcon(row: DemoHistoryRow): string {
 }
 
 function openKidFullActivityPane(): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   if (!viewer?.id) return;
   const root = document.getElementById('settings-root');
@@ -2577,7 +2154,7 @@ function openKidFullActivityPane(): void {
   root.querySelectorAll<HTMLElement>('[data-close-kid-activity]').forEach(button => button.addEventListener('click', closeSettingsPane));
 }
 
-function renderKidActivityPaneRow(row: DemoHistoryRow, currency: string): string {
+function renderKidActivityPaneRow(row: AppHistoryRow, currency: string): string {
   const value = Number(row.amount || 0) > 0
     ? `${currency}${Number(row.amount || 0).toFixed(2)}`
     : `${Number(row.gems || 0) > 0 ? '+' : ''}${Number(row.gems || 0)}`;
@@ -2595,7 +2172,7 @@ function renderKidActivityPaneRow(row: DemoHistoryRow, currency: string): string
   </div>`;
 }
 
-function activityPaneBadge(row: DemoHistoryRow): { icon: string; bg: string; color: string } {
+function activityPaneBadge(row: AppHistoryRow): { icon: string; bg: string; color: string } {
   const type = String(row.type || '');
   if (type.includes('savings')) return { icon: '<i class="ph-duotone ph-piggy-bank"></i>', bg: '#DCFCE7', color: '#166534' };
   if (type.includes('badge')) return { icon: '<i class="ph-duotone ph-medal"></i>', bg: '#F3E8FF', color: '#7C3AED' };
@@ -2860,7 +2437,7 @@ function handleStatsGemEasterEggTap(): void {
   });
 }
 
-function bindHomeScreenActions(state: DemoAppState): void {
+function bindHomeScreenActions(state: AppState): void {
   document.querySelectorAll<HTMLElement>('[data-select-viewer]').forEach(button => {
     button.addEventListener('click', () => {
       const memberId = button.dataset.selectViewer || '';
@@ -3042,7 +2619,7 @@ function bindKidTeamActions(): void {
 }
 
 function openKidTeamContributionModal(memberId: string, goalId: string, triggerEl?: HTMLElement): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   const goal = state.teamGoals.find(item => item.id === goalId);
   const root = document.getElementById('modal-root');
@@ -3093,11 +2670,11 @@ function openKidTeamContributionModal(memberId: string, goalId: string, triggerE
 async function submitKidTeamContribution(memberId: string, goalId: string, requestedGems: number): Promise<void> {
   if (requestedGems <= 0) {
     toast('Enter gems to contribute');
-    const viewer = currentDemoState().members.find(item => item.id === memberId);
+    const viewer = currentAppState().members.find(item => item.id === memberId);
     if (isLittleKidMode(viewer)) speak('Enter gems to contribute.');
     return;
   }
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   const goal = state.teamGoals.find(item => item.id === goalId);
   if (!member || !goal) return;
@@ -3114,7 +2691,7 @@ async function submitKidTeamContribution(memberId: string, goalId: string, reque
   }
   const refund = Math.max(0, requestedGems - applied);
   const nextBalance = Math.max(0, owned - applied);
-  const nextGoal: DemoTeamGoal = {
+  const nextGoal: AppTeamGoal = {
     ...goal,
     contributions: {
       ...(goal.contributions || {}),
@@ -3123,9 +2700,9 @@ async function submitKidTeamContribution(memberId: string, goalId: string, reque
   };
   const nextGoals = state.teamGoals.map(item => item.id === goalId ? nextGoal : item);
   const now = Date.now();
-  const history: DemoHistoryRow = {
+  const history: AppHistoryRow = {
     id: `history:goal:${memberId}:${goalId}:${now}`,
-    familyId: useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID,
+    familyId: DEV_FIRESTORE_FAMILY_ID,
     requestId: '',
     memberId,
     type: 'goal',
@@ -3136,7 +2713,7 @@ async function submitKidTeamContribution(memberId: string, goalId: string, reque
     metadata: { goalId, contribution: applied },
   };
   closeModal();
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     if (!firestoreState) return;
     firestoreState = {
@@ -3154,20 +2731,13 @@ async function submitKidTeamContribution(memberId: string, goalId: string, reque
       firestoreError = error instanceof Error ? error.message : String(error);
       render();
     }
-  } else {
-    const family = store.get<{ settings?: DemoAppState['settings']; teamGoals?: DemoTeamGoal[] }>(familyPath(LAB_FAMILY_ID)) || {};
-    store.set(memberPath(LAB_FAMILY_ID, memberId), { ...member, gems: nextBalance, diamonds: nextBalance });
-    store.set(familyPath(LAB_FAMILY_ID), { ...family, teamGoals: nextGoals });
-    store.set(historyPath(LAB_FAMILY_ID, String(history.id || '')), history);
-    saveSharedLabStore(store);
-    render();
-  }
+  
   toast(`${applied} gem${applied === 1 ? '' : 's'} contributed to "${goal.title}"! <i class="ph-duotone ph-trophy" style="color:#D97706;font-size:0.9rem;vertical-align:middle"></i>`);
   if (isLittleKidMode(member)) speak(`You gave ${applied} gem${applied === 1 ? '' : 's'} to the team! Amazing!`);
   if (refund > 0) openKidTeamContributionAdjustmentModal(member, goal, { refund, remaining, owned });
 }
 
-function openKidTeamContributionAdjustmentModal(_member: DemoMember, _goal: DemoTeamGoal, details: { refund: number; remaining: number; owned: number }): void {
+function openKidTeamContributionAdjustmentModal(_member: AppMember, _goal: AppTeamGoal, details: { refund: number; remaining: number; owned: number }): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
   const reasonText = details.remaining < details.owned
@@ -3191,12 +2761,12 @@ function openKidTeamContributionAdjustmentModal(_member: DemoMember, _goal: Demo
   });
 }
 
-function teamGoalTotal(goal: DemoTeamGoal): number {
+function teamGoalTotal(goal: AppTeamGoal): number {
   return Object.values(goal.contributions || {}).reduce((sum, value) => sum + Number(value || 0), 0);
 }
 
 function openKidPrizeModal(prizeId: string, triggerEl?: HTMLElement): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   const prize = state.prizes.find(item => String(item.id || '') === prizeId);
   const root = document.getElementById('modal-root');
@@ -3238,7 +2808,7 @@ function openKidPrizeModal(prizeId: string, triggerEl?: HTMLElement): void {
 }
 
 async function submitKidPrizeRequest(prizeId: string): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   const prize = state.prizes.find(item => String(item.id || '') === prizeId);
   if (!viewer?.id || viewer.role === 'parent' || !prize) return;
@@ -3262,7 +2832,7 @@ async function submitKidPrizeRequest(prizeId: string): Promise<void> {
   }
   const now = Date.now();
   const requestId = `request:prize:${viewer.id}:${prizeId}:${now}:${Math.random().toString(36).slice(2, 7)}`;
-  const requestDoc: DemoRequest = {
+  const requestDoc: AppRequest = {
     id: requestId,
     status: REQUEST_STATUSES.PENDING,
     kind: REQUEST_KINDS.PRIZE_REDEEM,
@@ -3273,7 +2843,7 @@ async function submitKidPrizeRequest(prizeId: string): Promise<void> {
     snapshot: { title: String(prize.title || 'Prize'), cost: Math.max(0, Number(prize.cost || 0)) },
     source: { choreId: null, completionId: null, prizeId, reason: '', amount: null },
   };
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     if (!firestoreState) return;
     firestoreState = { ...firestoreState, requests: [...firestoreState.requests, requestDoc], request: requestDoc };
@@ -3290,17 +2860,11 @@ async function submitKidPrizeRequest(prizeId: string): Promise<void> {
       render();
     }
     return;
-  }
-  store.set(requestPath(LAB_FAMILY_ID, requestId), { ...requestDoc, familyId: LAB_FAMILY_ID, requesterMemberId: viewer.id });
-  saveSharedLabStore(store);
-  void sendParentApprovalPush({ memberId: String(viewer.id), title: String(prize.title || 'Prize'), kind: 'prize_request' });
-  toast('<i class="ph-duotone ph-hourglass" style="font-size:1rem;vertical-align:middle"></i> Request sent for parent approval');
-  if (isLittleKidMode(viewer)) speak(`Request sent for ${String(prize.title || 'prize')}. Waiting for your grown-up.`);
-  render();
+  
 }
 
 async function confirmKidPrizeRedeem(prizeId: string): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   const prize = state.prizes.find(item => String(item.id || '') === prizeId);
   if (!viewer?.id || viewer.role === 'parent' || !prize) return;
@@ -3322,8 +2886,8 @@ async function confirmKidPrizeRedeem(prizeId: string): Promise<void> {
   }
 }
 
-async function redeemKidPrize(member: DemoMember, prize: DemoPrize): Promise<{ ok: boolean; message?: string }> {
-  const state = currentDemoState();
+async function redeemKidPrize(member: AppMember, prize: AppPrize): Promise<{ ok: boolean; message?: string }> {
+  const state = currentAppState();
   const status = getKidPrizeRedeemStatus(state, prize, member);
   if (!status.ok) return { ok: false, message: formatPrizeRedeemStatusMessage(status) };
   const now = Date.now();
@@ -3347,9 +2911,9 @@ async function redeemKidPrize(member: DemoMember, prize: DemoPrize): Promise<{ o
       recurrence: prize.recurrence || 'anytime',
     },
   };
-  const history: DemoHistoryRow = {
+  const history: AppHistoryRow = {
     id: historyId,
-    familyId: useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID,
+    familyId: DEV_FIRESTORE_FAMILY_ID,
     requestId: '',
     memberId: String(member.id || ''),
     type: 'prize',
@@ -3359,7 +2923,7 @@ async function redeemKidPrize(member: DemoMember, prize: DemoPrize): Promise<{ o
     createdAt: now,
     metadata: { prizeId: prize.id, redemptionId },
   };
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     if (!firestoreState) return { ok: false, message: 'Prize no longer available' };
     firestoreState = {
@@ -3379,16 +2943,10 @@ async function redeemKidPrize(member: DemoMember, prize: DemoPrize): Promise<{ o
       return { ok: false, message: 'Prize no longer available' };
     }
     return { ok: true };
-  }
-  store.set(memberPath(LAB_FAMILY_ID, String(member.id || '')), { ...member, gems: nextBalance, diamonds: nextBalance });
-  store.set(prizePath(LAB_FAMILY_ID, String(prize.id || '')), { ...prize, redemptions: [...(prize.redemptions || []), redemption] });
-  store.set(historyPath(LAB_FAMILY_ID, historyId), history);
-  saveSharedLabStore(store);
-  render();
-  return { ok: true };
+  
 }
 
-function showKidPrizeCelebration(prize: DemoPrize): void {
+function showKidPrizeCelebration(prize: AppPrize): void {
   const root = document.getElementById('celebration-root');
   if (!root) return;
   root.innerHTML = `
@@ -3407,7 +2965,7 @@ function showKidPrizeCelebration(prize: DemoPrize): void {
   });
 }
 
-function renderPrizeIconHtml(prize: DemoPrize, style = ''): string {
+function renderPrizeIconHtml(prize: AppPrize, style = ''): string {
   const icon = String(prize.icon || 'gift').replace(/^ph-/, '');
   const color = String(prize.iconColor || '#FF6584');
   return `<i class="ph-duotone ph-${escapeHtmlAttr(icon)}" style="color:${escapeHtmlAttr(color)};${style}"></i>`;
@@ -3425,7 +2983,7 @@ function formatPrizeRecurrenceForModal(value: unknown): string {
 function renderKidTimePickerOverlay(): void {
   document.querySelector('[data-kid-time-picker-shell]')?.remove();
   if (!activeKidTimeTaskId) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   if (!viewer || viewer.role === 'parent') return;
   document.getElementById('screen-kid')?.insertAdjacentHTML('beforeend', renderKidTimePicker(state, viewer, activeKidTimeTaskId));
@@ -3442,7 +3000,7 @@ function bindKidTimePickerActions(): void {
       const entryType = button.dataset.kidTimeEntryType || '';
       const status = button.dataset.kidTimeSlotStatus || '';
       const label = button.dataset.kidTimeSlotLabel || 'Time';
-      const viewer = getActiveViewer(currentDemoState());
+      const viewer = getActiveViewer(currentAppState());
       if (viewer && isLittleKidMode(viewer)) {
         if (status === 'done') {
           speak(`${label}. Already done.`);
@@ -3571,7 +3129,7 @@ function compressPhotoToDataUrl(file: File, maxSide: number, quality: number): P
 }
 
 function openKidPhotoCapture(taskId: string, slotId: string | null, entryType: 'before' | 'after'): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const task = state.tasks.find(item => String(item.id || '') === taskId);
   const root = document.getElementById('modal-root');
   if (!task || !root) return;
@@ -3585,7 +3143,7 @@ function closeKidPhotoCapture(): void {
   if (root) root.innerHTML = '';
 }
 
-function bindParentQuickActions(state: DemoAppState): void {
+function bindParentQuickActions(state: AppState): void {
   const trigger = document.querySelector<HTMLButtonElement>('[data-parent-quick-trigger]');
   const host = document.getElementById('parent-quick-launch');
   trigger?.addEventListener('click', () => {
@@ -3715,11 +3273,10 @@ function bindRecentActivityActions(root: Document | HTMLElement): void {
       snapshotSwipeSuppressTapUntil = Date.now() + 600;
       const historyId = button.dataset.historyUndo || '';
       if (!historyId) return;
-      if (useDevFirestore()) {
+      
         void handleFirestoreUndoAction(historyId);
         return;
-      }
-      undoLocalHistory(historyId);
+      
     });
     button.addEventListener('click', event => {
       event.preventDefault();
@@ -3728,14 +3285,14 @@ function bindRecentActivityActions(root: Document | HTMLElement): void {
   });
   root.querySelectorAll<HTMLButtonElement>('[data-open-full-history]').forEach(button => {
     button.addEventListener('click', () => {
-      const state = useDevFirestore() ? firestoreState : readDemoAppState(store);
+      const state = firestoreState;
       if (!state) return;
       openFullHistoryModal(state);
     });
   });
 }
 
-function bindTaskTabActions(state: DemoAppState): void {
+function bindTaskTabActions(state: AppState): void {
   document.querySelectorAll<HTMLElement>('.task-swipe-card').forEach(card => {
     card.addEventListener('pointerdown', event => startSnapshotSwipe(event));
     card.addEventListener('pointermove', event => moveSnapshotSwipe(event));
@@ -3790,7 +3347,7 @@ function bindTaskTabActions(state: DemoAppState): void {
   });
 }
 
-function bindPrizeTabActions(state: DemoAppState): void {
+function bindPrizeTabActions(state: AppState): void {
   document.querySelectorAll<HTMLElement>('.prize-swipe-card').forEach(card => {
     card.addEventListener('pointerdown', event => startSnapshotSwipe(event));
     card.addEventListener('pointermove', event => moveSnapshotSwipe(event));
@@ -3893,7 +3450,7 @@ function bindPrizeTabActions(state: DemoAppState): void {
   });
 }
 
-function bindStatsTabActions(state: DemoAppState): void {
+function bindStatsTabActions(state: AppState): void {
   bindWeekReviewLaunch(document, state);
   document.querySelectorAll<HTMLElement>('[data-open-stats]').forEach(button => {
     button.addEventListener('click', () => {
@@ -3905,7 +3462,7 @@ function bindStatsTabActions(state: DemoAppState): void {
   });
 }
 
-function bindLevelsTabActions(state: DemoAppState): void {
+function bindLevelsTabActions(state: AppState): void {
   document.querySelectorAll<HTMLInputElement>('[data-setting-toggle]').forEach(input => {
     input.addEventListener('change', () => void saveFamilySettingsPatch({ [input.dataset.settingToggle || '']: input.checked }));
   });
@@ -4081,7 +3638,7 @@ function handleSnapshotSummaryTap(event: MouseEvent): void {
   const snapshotId = card?.dataset.summaryCard || '';
   const side = card?.dataset.summarySide === 'right' ? 'right' : 'left';
   if (!snapshotId) return;
-  const state = useDevFirestore() ? firestoreState : readDemoAppState(store);
+  const state = firestoreState;
   if (!state) return;
   closeAllSnapshotSummaryReveals();
   openSnapshotModal(state, snapshotId, side);
@@ -4166,7 +3723,7 @@ function cancelSnapshotSummarySwipe(): void {
   snapshotSummarySwipeSession = null;
 }
 
-function openSnapshotModal(state: DemoAppState, snapshotId: string, side: 'left' | 'right'): void {
+function openSnapshotModal(state: AppState, snapshotId: string, side: 'left' | 'right'): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
   root.innerHTML = renderParentSnapshotModal(state, snapshotId, side);
@@ -4176,7 +3733,7 @@ function openSnapshotModal(state: DemoAppState, snapshotId: string, side: 'left'
   root.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
 }
 
-function openStatsModal(state: DemoAppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left'): void {
+function openStatsModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left'): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
   const panel = renderStatsDetailModal(state, kind, memberId, side);
@@ -4199,7 +3756,7 @@ function openTaskModal(sourceButton: HTMLElement): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
   const rect = sourceButton.getBoundingClientRect();
-  const state = currentDemoState();
+  const state = currentAppState();
   root.innerHTML = `
     <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="--modal-origin-x:${rect.left + rect.width / 2}px;--modal-origin-y:${rect.top + rect.height / 2}px">
       <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
@@ -4210,7 +3767,7 @@ function openTaskModal(sourceButton: HTMLElement): void {
   bindTaskEditorModal();
 }
 
-function openDeleteTaskModal(task: DemoAppState['tasks'][number], sourceButton: HTMLElement): void {
+function openDeleteTaskModal(task: AppState['tasks'][number], sourceButton: HTMLElement): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
   const rect = sourceButton.getBoundingClientRect();
@@ -4232,7 +3789,7 @@ function openPrizeEditorModal(sourceButton: HTMLElement): void {
   root.innerHTML = `
     <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="--modal-origin-x:${rect.left + rect.width / 2}px;--modal-origin-y:${rect.top + rect.height / 2}px">
       <div class="modal quick-action-modal quick-action-modal-wide prize-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
-        ${renderPrizeEditorModal(currentDemoState(), activePrizeEditorDraft)}
+        ${renderPrizeEditorModal(currentAppState(), activePrizeEditorDraft)}
       </div>
     </div>
   `;
@@ -4304,7 +3861,7 @@ function bindTaskEditorModal(): void {
         root.innerHTML = `
           <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="${root.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || ''}">
             <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
-              ${renderTaskEditorModal(currentDemoState(), activeTaskEditorDraft, editorMode)}
+              ${renderTaskEditorModal(currentAppState(), activeTaskEditorDraft, editorMode)}
             </div>
           </div>
         `;
@@ -4320,7 +3877,7 @@ function bindTaskEditorModal(): void {
       root.innerHTML = `
         <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="${root.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || ''}">
           <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
-            ${renderTaskEditorModal(currentDemoState(), activeTaskEditorDraft, editorMode)}
+            ${renderTaskEditorModal(currentAppState(), activeTaskEditorDraft, editorMode)}
           </div>
         </div>
       `;
@@ -4444,7 +4001,7 @@ function rerenderPrizeEditorModal(): void {
   root.innerHTML = `
     <div class="modal-overlay quick-modal-overlay" data-modal-overlay style="${overlayStyle}">
       <div class="modal quick-action-modal quick-action-modal-wide prize-editor-modal" role="dialog" aria-modal="true">
-        ${renderPrizeEditorModal(currentDemoState(), activePrizeEditorDraft)}
+        ${renderPrizeEditorModal(currentAppState(), activePrizeEditorDraft)}
       </div>
     </div>
   `;
@@ -4508,8 +4065,8 @@ function readGoalEditorDraftFromDom(): ParentGoalEditorDraft | null {
   };
 }
 
-function currentSettings(): DemoAppState['settings'] {
-  return currentDemoState().settings || {};
+function currentSettings(): AppState['settings'] {
+  return currentAppState().settings || {};
 }
 
 function shouldRerenderSettingsPaneForPatch(settingsPatch: Record<string, unknown>): boolean {
@@ -4529,10 +4086,10 @@ async function saveFamilySettingsPatch(settingsPatch: Record<string, unknown>): 
   const nextSettings = { ...currentSettings(), ...settingsPatch };
   const shouldRerenderSettings = shouldRerenderSettingsPaneForPatch(settingsPatch);
   const settingsScrollTop = document.querySelector<HTMLElement>('#settings-root .settings-subpane')?.scrollTop || 0;
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     let saved = false;
-    firestoreState = { ...(firestoreState as DemoAppState), settings: nextSettings };
+    firestoreState = { ...(firestoreState as AppState), settings: nextSettings };
     void renderDevFirestore();
     try {
       const { commitDevFamilyWrite } = await import('../platform/firebase/dev-firestore-operations.js');
@@ -4547,16 +4104,10 @@ async function saveFamilySettingsPatch(settingsPatch: Record<string, unknown>): 
     }
     if (saved) applyNotificationSettingsEffects(settingsPatch, nextSettings);
     return;
-  }
-  const family = store.get<Record<string, unknown>>(familyPath(LAB_FAMILY_ID)) || {};
-  store.set(familyPath(LAB_FAMILY_ID), { ...family, settings: nextSettings });
-  saveSharedLabStore(store);
-  render();
-  if (shouldRerenderSettings) rerenderSettingsPane(settingsScrollTop);
-  applyNotificationSettingsEffects(settingsPatch, nextSettings);
+  
 }
 
-function applyNotificationSettingsEffects(settingsPatch: Record<string, unknown>, settings: DemoAppState['settings']): void {
+function applyNotificationSettingsEffects(settingsPatch: Record<string, unknown>, settings: AppState['settings']): void {
   const changed = new Set(Object.keys(settingsPatch));
   if (changed.has('notifyChoreApproval') || changed.has('notifySavingsSpend')) {
     if (settings.notifyChoreApproval !== false || settings.notifySavingsSpend !== false) {
@@ -4576,13 +4127,13 @@ function applyNotificationSettingsEffects(settingsPatch: Record<string, unknown>
 }
 
 async function ensureParentPushRegistration(settings = currentSettings()): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const parent = getActiveViewer(state)?.role === 'parent'
     ? getActiveViewer(state)
     : state.members.find(member => member.role === 'parent') || null;
   await registerParentPushNotifications({
     userId: String(parent?.id || ''),
-    familyId: String(state.familyId || (useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID)),
+    familyId: String(state.familyId || (DEV_FIRESTORE_FAMILY_ID)),
     memberId: String(parent?.id || ''),
     notifyChoreApproval: settings.notifyChoreApproval !== false,
     notifySavingsSpend: settings.notifySavingsSpend !== false,
@@ -4598,7 +4149,7 @@ async function ensureParentPushRegistration(settings = currentSettings()): Promi
   });
 }
 
-function maybeEnsureParentPushRegistration(state: DemoAppState, parent: DemoMember): void {
+function maybeEnsureParentPushRegistration(state: AppState, parent: AppMember): void {
   const settings = state.settings || {};
   if (settings.notifyChoreApproval === false && settings.notifySavingsSpend === false) return;
   const key = `${state.familyId || DEV_FIRESTORE_FAMILY_ID}:${parent.id || ''}:${settings.notifyChoreApproval !== false}:${settings.notifySavingsSpend !== false}`;
@@ -4607,10 +4158,8 @@ function maybeEnsureParentPushRegistration(state: DemoAppState, parent: DemoMemb
   void ensureParentPushRegistration(settings);
 }
 
-async function handleParentNotificationEvent(event: unknown, options: { openInbox: boolean }): Promise<void> {
-  if (!useDevFirestore()) return;
-  if (options.openInbox) {
-    const state = currentDemoState();
+async function handleParentNotificationEvent(event: unknown, options: { openInbox: boolean }): Promise<void> {  if (options.openInbox) {
+    const state = currentAppState();
     const parent = state.members.find(member => member.role === 'parent') || null;
     if (parent?.id) activeViewerMemberId = String(parent.id);
     activeParentTab = 'overview';
@@ -4630,7 +4179,7 @@ async function scheduleInterestDayNotification(settings = currentSettings()): Pr
   if (!localNotifications?.schedule) return;
   await localNotifications.cancel?.({ notifications: [{ id: 1001 }] }).catch(() => undefined);
   if (settings.interestDayNotify === false || settings.savingsInterestEnabled !== true || settings.savingsEnabled === false) return;
-  const hasSavings = currentDemoState().members.some(member => member.role === 'kid' && !member.deleted && Number(member.savings || 0) > 0);
+  const hasSavings = currentAppState().members.some(member => member.role === 'kid' && !member.deleted && Number(member.savings || 0) > 0);
   if (!hasSavings) return;
   const at = getNextInterestDayDate(settings);
   if (at <= new Date()) return;
@@ -4645,7 +4194,7 @@ async function scheduleInterestDayNotification(settings = currentSettings()): Pr
   }).catch(() => undefined);
 }
 
-function getNextInterestDayDate(settings: DemoAppState['settings']): Date {
+function getNextInterestDayDate(settings: AppState['settings']): Date {
   const now = new Date();
   const date = new Date(now);
   date.setHours(9, 0, 0, 0);
@@ -4666,7 +4215,7 @@ function getNextInterestDayDate(settings: DemoAppState['settings']): Date {
 }
 
 async function sendParentApprovalPush(input: { memberId: string; title: string; kind: 'chore_request' | 'prize_request' }): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   if (state.settings.notifyChoreApproval === false) return;
   try {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
@@ -4674,7 +4223,7 @@ async function sendParentApprovalPush(input: { memberId: string; title: string; 
     const sendApprovalNotification = httpsCallable(getFunctions(), 'sendApprovalNotification');
     await sendApprovalNotification({
       familyCode: String(state.familyCode || ''),
-      familyId: String(state.familyId || (useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID)),
+      familyId: String(state.familyId || (DEV_FIRESTORE_FAMILY_ID)),
       kidName: String(member?.name || 'A kid'),
       choreName: input.title,
       prizeName: input.title,
@@ -4687,7 +4236,7 @@ async function sendParentApprovalPush(input: { memberId: string; title: string; 
 }
 
 async function sendSavingsSpendPush(input: { memberId: string; amount: number; reason: string }): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   if (state.settings.notifySavingsSpend === false) return;
   try {
     const { getFunctions, httpsCallable } = await import('firebase/functions');
@@ -4695,7 +4244,7 @@ async function sendSavingsSpendPush(input: { memberId: string; amount: number; r
     const sendSpendNotification = httpsCallable(getFunctions(), 'sendSpendNotification');
     await sendSpendNotification({
       familyCode: String(state.familyCode || ''),
-      familyId: String(state.familyId || (useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID)),
+      familyId: String(state.familyId || (DEV_FIRESTORE_FAMILY_ID)),
       kidName: String(member?.name || 'A kid'),
       amount: input.amount,
       reason: input.reason || '',
@@ -4711,16 +4260,16 @@ async function saveMemberPatch(memberId: string, patch: Record<string, unknown>,
   const shouldRerenderSettings = options.rerenderSettings ?? true;
   const shouldRerenderApp = options.rerenderApp ?? true;
   const settingsScrollTop = document.querySelector<HTMLElement>('#settings-root .settings-subpane')?.scrollTop || 0;
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     firestoreState = {
-      ...(firestoreState as DemoAppState),
-      members: (firestoreState as DemoAppState).members.map(member => member.id === memberId ? { ...member, ...patch } : member),
+      ...(firestoreState as AppState),
+      members: (firestoreState as AppState).members.map(member => member.id === memberId ? { ...member, ...patch } : member),
     };
-    if ((firestoreState as DemoAppState).member?.id === memberId) {
+    if ((firestoreState as AppState).member?.id === memberId) {
       firestoreState = {
-        ...(firestoreState as DemoAppState),
-        member: { ...((firestoreState as DemoAppState).member as DemoMember), ...patch },
+        ...(firestoreState as AppState),
+        member: { ...((firestoreState as AppState).member as AppMember), ...patch },
       };
     }
     if (shouldRerenderApp) void renderDevFirestore();
@@ -4737,20 +4286,15 @@ async function saveMemberPatch(memberId: string, patch: Record<string, unknown>,
       if (shouldRerenderSettings) rerenderSettingsPane(settingsScrollTop);
     }
     return;
-  }
-  const existing = store.get<Record<string, unknown>>(memberPath(LAB_FAMILY_ID, memberId)) || {};
-  store.set(memberPath(LAB_FAMILY_ID, memberId), { ...existing, ...patch });
-  saveSharedLabStore(store);
-  if (shouldRerenderApp) render();
-  if (shouldRerenderSettings) rerenderSettingsPane(settingsScrollTop);
+  
 }
 
-function taskDocFromDraft(state: DemoAppState, draft: ParentTaskEditorDraft, taskId: string): Record<string, unknown> {
+function taskDocFromDraft(state: AppState, draft: ParentTaskEditorDraft, taskId: string): Record<string, unknown> {
   const existing = state.tasks.find(task => task.id === taskId);
   return {
     ...(existing || {}),
     id: taskId,
-    familyId: useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID,
+    familyId: DEV_FIRESTORE_FAMILY_ID,
     title: draft.title || 'Untitled task',
     icon: draft.icon,
     iconColor: draft.iconColor,
@@ -4766,14 +4310,14 @@ function taskDocFromDraft(state: DemoAppState, draft: ParentTaskEditorDraft, tas
 async function saveTaskDraft(): Promise<void> {
   const draft = readTaskEditorDraftFromDom();
   if (!draft) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const taskId = activeTaskId || `task_${Date.now()}`;
   const docData = taskDocFromDraft(state, draft, taskId);
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     firestoreState = {
-      ...(firestoreState as DemoAppState),
-      tasks: upsertTaskList((firestoreState as DemoAppState).tasks, docData),
+      ...(firestoreState as AppState),
+      tasks: upsertTaskList((firestoreState as AppState).tasks, docData),
     };
     closeModal();
     void renderDevFirestore();
@@ -4787,19 +4331,12 @@ async function saveTaskDraft(): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  store.set(chorePath(LAB_FAMILY_ID, taskId), docData);
-  saveSharedLabStore(store);
-  activeTaskEditorDraft = null;
-  activeTaskEditorMode = null;
-  activeTaskId = null;
-  closeModal();
-  render();
+  
 }
 
-function upsertTaskList(tasks: DemoAppState['tasks'], docData: Record<string, unknown>): DemoAppState['tasks'] {
+function upsertTaskList(tasks: AppState['tasks'], docData: Record<string, unknown>): AppState['tasks'] {
   const next = tasks.filter(task => task.id !== String(docData.id || ''));
-  next.push(docData as DemoAppState['tasks'][number]);
+  next.push(docData as AppState['tasks'][number]);
   return next.sort((left, right) => {
     const byGems = Number(left.gems ?? left.diamonds ?? 0) - Number(right.gems ?? right.diamonds ?? 0);
     if (byGems !== 0) return byGems;
@@ -4810,11 +4347,11 @@ function upsertTaskList(tasks: DemoAppState['tasks'], docData: Record<string, un
 async function deleteActiveTask(): Promise<void> {
   const taskId = activeTaskId || '';
   if (!taskId) return;
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     firestoreState = {
-      ...(firestoreState as DemoAppState),
-      tasks: (firestoreState as DemoAppState).tasks.filter(task => task.id !== taskId),
+      ...(firestoreState as AppState),
+      tasks: (firestoreState as AppState).tasks.filter(task => task.id !== taskId),
     };
     closeModal();
     void renderDevFirestore();
@@ -4828,17 +4365,12 @@ async function deleteActiveTask(): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  store.set(chorePath(LAB_FAMILY_ID, taskId), null);
-  saveSharedLabStore(store);
-  activeTaskId = null;
-  closeModal();
-  render();
+  
 }
 
-function upsertPrizeList(prizes: DemoAppState['prizes'], docData: Record<string, unknown>): DemoAppState['prizes'] {
+function upsertPrizeList(prizes: AppState['prizes'], docData: Record<string, unknown>): AppState['prizes'] {
   const next = prizes.filter(prize => prize.id !== String(docData.id || ''));
-  next.push(docData as DemoAppState['prizes'][number]);
+  next.push(docData as AppState['prizes'][number]);
   return next.sort((left, right) => {
     const byCost = Number(left.cost || 0) - Number(right.cost || 0);
     if (byCost !== 0) return byCost;
@@ -4846,9 +4378,9 @@ function upsertPrizeList(prizes: DemoAppState['prizes'], docData: Record<string,
   });
 }
 
-function upsertGoalList(goals: DemoAppState['teamGoals'], goalData: Record<string, unknown>): DemoAppState['teamGoals'] {
+function upsertGoalList(goals: AppState['teamGoals'], goalData: Record<string, unknown>): AppState['teamGoals'] {
   const next = goals.filter(goal => goal.id !== String(goalData.id || ''));
-  next.push(goalData as DemoAppState['teamGoals'][number]);
+  next.push(goalData as AppState['teamGoals'][number]);
   return next.sort((left, right) => {
     const byTarget = Number(left.targetPoints || 0) - Number(right.targetPoints || 0);
     if (byTarget !== 0) return byTarget;
@@ -4859,13 +4391,13 @@ function upsertGoalList(goals: DemoAppState['teamGoals'], goalData: Record<strin
 async function savePrizeDraft(): Promise<void> {
   const draft = readPrizeEditorDraftFromDom();
   if (!draft) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const prizeId = activePrizeId || `prize_${Date.now()}`;
   const existing = state.prizes.find(prize => prize.id === prizeId);
   const docData: Record<string, unknown> = {
     ...(existing || {}),
     id: prizeId,
-    familyId: useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID,
+    familyId: DEV_FIRESTORE_FAMILY_ID,
     title: draft.title || 'Untitled prize',
     icon: draft.icon,
     iconColor: draft.iconColor,
@@ -4878,9 +4410,9 @@ async function savePrizeDraft(): Promise<void> {
     requirementTaskIds: draft.requirementEnabled ? draft.requirementTaskIds : [],
     redemptions: existing?.redemptions || [],
   };
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), prizes: upsertPrizeList((firestoreState as DemoAppState).prizes, docData) };
+    firestoreState = { ...(firestoreState as AppState), prizes: upsertPrizeList((firestoreState as AppState).prizes, docData) };
     closeModal();
     void renderDevFirestore();
     try {
@@ -4893,17 +4425,13 @@ async function savePrizeDraft(): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  store.set(prizePath(LAB_FAMILY_ID, prizeId), docData);
-  saveSharedLabStore(store);
-  closeModal();
-  render();
+  
 }
 
 async function saveGoalDraft(): Promise<void> {
   const draft = readGoalEditorDraftFromDom();
   if (!draft) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const goalId = activeGoalId || `goal_${Date.now()}`;
   const existing = state.teamGoals.find(goal => goal.id === goalId);
   const goalData: Record<string, unknown> = {
@@ -4916,9 +4444,9 @@ async function saveGoalDraft(): Promise<void> {
     contributions: existing?.contributions || {},
   };
   const nextGoals = upsertGoalList(state.teamGoals, goalData);
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), teamGoals: nextGoals };
+    firestoreState = { ...(firestoreState as AppState), teamGoals: nextGoals };
     closeModal();
     void renderDevFirestore();
     try {
@@ -4931,20 +4459,15 @@ async function saveGoalDraft(): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  const family = store.get<Record<string, unknown>>(familyPath(LAB_FAMILY_ID)) || {};
-  store.set(familyPath(LAB_FAMILY_ID), { ...family, teamGoals: nextGoals });
-  saveSharedLabStore(store);
-  closeModal();
-  render();
+  
 }
 
 async function deleteActivePrize(): Promise<void> {
   const prizeId = activePrizeId || '';
   if (!prizeId) return;
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), prizes: (firestoreState as DemoAppState).prizes.filter(prize => prize.id !== prizeId) };
+    firestoreState = { ...(firestoreState as AppState), prizes: (firestoreState as AppState).prizes.filter(prize => prize.id !== prizeId) };
     closeModal();
     void renderDevFirestore();
     try {
@@ -4957,21 +4480,17 @@ async function deleteActivePrize(): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  store.set(prizePath(LAB_FAMILY_ID, prizeId), null);
-  saveSharedLabStore(store);
-  closeModal();
-  render();
+  
 }
 
 async function deleteActiveGoal(): Promise<void> {
   const goalId = activeGoalId || '';
   if (!goalId) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const nextGoals = state.teamGoals.filter(goal => goal.id !== goalId);
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), teamGoals: nextGoals };
+    firestoreState = { ...(firestoreState as AppState), teamGoals: nextGoals };
     closeModal();
     void renderDevFirestore();
     try {
@@ -4984,22 +4503,17 @@ async function deleteActiveGoal(): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  const family = store.get<Record<string, unknown>>(familyPath(LAB_FAMILY_ID)) || {};
-  store.set(familyPath(LAB_FAMILY_ID), { ...family, teamGoals: nextGoals });
-  saveSharedLabStore(store);
-  closeModal();
-  render();
+  
 }
 
 async function resetPrizeRedemptions(prizeId: string): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const prize = state.prizes.find(item => item.id === prizeId);
   if (!prize) return;
   const docData = { ...prize, redemptions: [] };
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), prizes: upsertPrizeList((firestoreState as DemoAppState).prizes, docData) };
+    firestoreState = { ...(firestoreState as AppState), prizes: upsertPrizeList((firestoreState as AppState).prizes, docData) };
     void renderDevFirestore();
     try {
       const { commitDevPrizeWrite } = await import('../platform/firebase/dev-firestore-operations.js');
@@ -5011,20 +4525,17 @@ async function resetPrizeRedemptions(prizeId: string): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  store.set(prizePath(LAB_FAMILY_ID, prizeId), docData);
-  saveSharedLabStore(store);
-  render();
+  
 }
 
 async function resetGoalContributions(goalId: string): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const goal = state.teamGoals.find(item => item.id === goalId);
   if (!goal) return;
   const nextGoals = upsertGoalList(state.teamGoals, { ...goal, contributions: {} });
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), teamGoals: nextGoals };
+    firestoreState = { ...(firestoreState as AppState), teamGoals: nextGoals };
     void renderDevFirestore();
     try {
       const { commitDevTeamGoalsWrite } = await import('../platform/firebase/dev-firestore-operations.js');
@@ -5036,11 +4547,7 @@ async function resetGoalContributions(goalId: string): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  const family = store.get<Record<string, unknown>>(familyPath(LAB_FAMILY_ID)) || {};
-  store.set(familyPath(LAB_FAMILY_ID), { ...family, teamGoals: nextGoals });
-  saveSharedLabStore(store);
-  render();
+  
 }
 
 async function saveLevelsFromDom(): Promise<void> {
@@ -5077,7 +4584,7 @@ async function resetLevels(): Promise<void> {
 
 async function saveComboOverride(kidId: string, force = false): Promise<void> {
   if (!kidId) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const today = todayKeyForApp();
   const pending = pendingComboOverrides[kidId] || {};
   const currentCombo = getDailyComboIdsForMember({ members: state.members, tasks: state.tasks, settings: state.settings }, kidId, today);
@@ -5098,8 +4605,8 @@ async function saveComboOverride(kidId: string, force = false): Promise<void> {
   await awardSavedComboIfComplete(kidId, finalIds, today);
 }
 
-function openComboWillCompleteModal(member: DemoMember, finalIds: string[]): void {
-  const state = currentDemoState();
+function openComboWillCompleteModal(member: AppMember, finalIds: string[]): void {
+  const state = currentAppState();
   const baseSum = finalIds.reduce((sum, taskId) => {
     const task = state.tasks.find(item => item.id === taskId);
     return sum + Number(task?.gems ?? task?.diamonds ?? 0);
@@ -5131,7 +4638,7 @@ function openComboWillCompleteModal(member: DemoMember, finalIds: string[]): voi
   });
 }
 
-function areComboTasksComplete(state: DemoAppState, memberId: string, taskIds: string[], today: string): boolean {
+function areComboTasksComplete(state: AppState, memberId: string, taskIds: string[], today: string): boolean {
   return taskIds.every(taskId => state.completions.some(completion =>
     completion.memberId === memberId
     && completion.choreId === taskId
@@ -5142,12 +4649,12 @@ function areComboTasksComplete(state: DemoAppState, memberId: string, taskIds: s
 }
 
 async function awardSavedComboIfComplete(kidId: string, finalIds: string[], today: string): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   if (!areComboTasksComplete(state, kidId, finalIds, today)) {
     render();
     return;
   }
-  if (useDevFirestore()) {
+  
     try {
       const { commitDevDailyComboOverrideAward } = await import('../platform/firebase/dev-firestore-operations.js');
       await commitDevDailyComboOverrideAward({ memberId: kidId, comboIds: finalIds, now: Date.now() });
@@ -5159,14 +4666,11 @@ async function awardSavedComboIfComplete(kidId: string, finalIds: string[], toda
       void renderDevFirestore();
     }
     return;
-  }
-  applyDailyComboBonusToStoreForCombo(store, LAB_FAMILY_ID, kidId, finalIds, today, Date.now());
-  saveSharedLabStore(store);
-  render();
+  
 }
 
 async function saveTaskBadgesFromDom(): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const nextTasks = state.tasks.map(task => ({ ...task, badges: Array.isArray(task.badges) ? task.badges.map(badge => ({ ...badge })) : [] }));
   nextTasks.forEach((task, taskIndex) => {
     (task.badges || []).forEach((badge, badgeIndex) => {
@@ -5178,7 +4682,7 @@ async function saveTaskBadgesFromDom(): Promise<void> {
 }
 
 async function addTaskBadge(taskIndex: number): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const nextTasks = state.tasks.map(task => ({ ...task, badges: Array.isArray(task.badges) ? task.badges.map(badge => ({ ...badge })) : [] }));
   const task = nextTasks[taskIndex];
   if (!task) return;
@@ -5190,14 +4694,14 @@ async function addTaskBadge(taskIndex: number): Promise<void> {
 }
 
 async function deleteTaskBadge(taskIndex: number, badgeIndex: number): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const nextTasks = state.tasks.map(task => ({ ...task, badges: Array.isArray(task.badges) ? task.badges.map(badge => ({ ...badge })) : [] }));
   nextTasks[taskIndex]?.badges?.splice(badgeIndex, 1);
   await persistTasks(nextTasks);
 }
 
 async function toggleTaskBadgeSecret(taskIndex: number, badgeIndex: number): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const nextTasks = state.tasks.map(task => ({ ...task, badges: Array.isArray(task.badges) ? task.badges.map(badge => ({ ...badge })) : [] }));
   const badge = nextTasks[taskIndex]?.badges?.[badgeIndex];
   if (!badge) return;
@@ -5224,7 +4728,7 @@ async function applyPickedIcon(optionIndex: number): Promise<void> {
     closeModal();
     return;
   }
-  const state = currentDemoState();
+  const state = currentAppState();
   const nextTasks = state.tasks.map(task => ({ ...task, badges: Array.isArray(task.badges) ? task.badges.map(badge => ({ ...badge })) : [] }));
   const badge = nextTasks[Number(activeIconPicker.a)]?.badges?.[Number(activeIconPicker.b || 0)];
   if (!badge) return;
@@ -5233,10 +4737,10 @@ async function applyPickedIcon(optionIndex: number): Promise<void> {
   closeModal();
 }
 
-async function persistTasks(nextTasks: DemoAppState['tasks']): Promise<void> {
-  if (useDevFirestore()) {
+async function persistTasks(nextTasks: AppState['tasks']): Promise<void> {
+  
     const previous = cloneDemoState(firestoreState);
-    firestoreState = { ...(firestoreState as DemoAppState), tasks: nextTasks };
+    firestoreState = { ...(firestoreState as AppState), tasks: nextTasks };
     void renderDevFirestore();
     try {
       const { commitDevTaskWrite } = await import('../platform/firebase/dev-firestore-operations.js');
@@ -5251,25 +4755,7 @@ async function persistTasks(nextTasks: DemoAppState['tasks']): Promise<void> {
       void renderDevFirestore();
     }
     return;
-  }
-  nextTasks.forEach(task => {
-    if (!task.id) return;
-    store.set(chorePath(LAB_FAMILY_ID, String(task.id)), task);
-  });
-  saveSharedLabStore(store);
-  render();
-}
-
-function undoLocalHistory(historyId: string): void {
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  const history = store.get<{ id?: string; requestId?: string; memberId?: string; type?: string; amount?: number | null; gems?: number; metadata?: Record<string, unknown> }>(historyPath(LAB_FAMILY_ID, historyId));
-  const requestId = getUndoRequestId(historyId, history?.requestId);
-  if (!requestId) return;
-  const request = store.get<Record<string, unknown>>(requestPath(LAB_FAMILY_ID, requestId));
-  if (!request) return;
-  revertRequestFromHistory(store, LAB_FAMILY_ID, historyId, { ...history, requestId }, request);
-  saveSharedLabStore(store);
-  render();
+  
 }
 
 async function handleFirestoreUndoAction(historyId: string): Promise<void> {
@@ -5284,88 +4770,13 @@ async function handleFirestoreUndoAction(historyId: string): Promise<void> {
   }
 }
 
-function revertRequestFromHistory(
-  gateway: Pick<FakeFirestoreGateway, 'get' | 'set'>,
-  familyId: string,
-  historyId: string,
-  history: { requestId?: string; memberId?: string; type?: string; amount?: number | null; gems?: number; metadata?: Record<string, unknown> },
-  request: Record<string, unknown>,
-): void {
-  const requestId = String(history.requestId || '');
-  const requestKind = String(request.kind || '');
-  const memberId = String(request.targetMemberId || history.memberId || '');
-  const requestSource = (request.source || {}) as { completionId?: string; prizeId?: string };
-  const requestSnapshot = (request.snapshot || {}) as { points?: number };
-  const requestDoc = {
-    ...request,
-    status: 'pending',
-    resolvedAt: null,
-    resolvedByMemberId: null,
-  };
-  gateway.set(requestPath(familyId, requestId), requestDoc);
-
-  if (String(historyId).endsWith(':approve')) {
-    if (requestKind === 'chore_completion') {
-      const member = gateway.get<Record<string, unknown>>(memberPath(familyId, memberId)) || {};
-      const completionId = String(requestSource.completionId || (history.metadata?.completionId as string) || '');
-      const points = Number(requestSnapshot.points || history.gems || 0);
-      gateway.set(memberPath(familyId, memberId), {
-        ...member,
-        gems: Number(member.gems || member.diamonds || 0) - points,
-        diamonds: Number(member.gems || member.diamonds || 0) - points,
-        totalEarned: Number(member.totalEarned || 0) - points,
-      });
-      if (completionId) {
-        const completion = gateway.get<Record<string, unknown>>(completionPath(familyId, completionId)) || {};
-        gateway.set(completionPath(familyId, completionId), {
-          ...completion,
-          status: 'pending',
-          approvedAt: null,
-          approvedByMemberId: null,
-        });
-      }
-    } else if (requestKind === 'prize_redeem') {
-      const member = gateway.get<Record<string, unknown>>(memberPath(familyId, memberId)) || {};
-      const prizeId = String(requestSource.prizeId || history.metadata?.prizeId || '');
-      const cost = Math.abs(Number(history.gems || 0));
-      gateway.set(memberPath(familyId, memberId), {
-        ...member,
-        gems: Number(member.gems || member.diamonds || 0) + cost,
-        diamonds: Number(member.gems || member.diamonds || 0) + cost,
-      });
-      if (prizeId) {
-        const prize = gateway.get<Record<string, unknown>>(prizePath(familyId, prizeId)) || {};
-        const redemptions = Array.isArray(prize.redemptions) ? prize.redemptions.filter((entry: unknown) => {
-          const value = entry as { requestId?: string; id?: string };
-          return value.requestId !== requestId && value.id !== history.metadata?.redemptionId;
-        }) : [];
-        gateway.set(prizePath(familyId, prizeId), { ...prize, redemptions });
-      }
-    } else if (requestKind === 'savings_spend') {
-      const member = gateway.get<Record<string, unknown>>(memberPath(familyId, memberId)) || {};
-      const amount = Number(history.amount || 0);
-      const bucketsBefore = history.metadata?.savingsBucketsBefore as { savingsGifted?: number; savingsMatched?: number; savingsInterest?: number } | undefined;
-      gateway.set(memberPath(familyId, memberId), {
-        ...member,
-        savings: Number(member.savings || 0) + amount,
-        savingsGifted: bucketsBefore ? bucketsBefore.savingsGifted : Number(member.savingsGifted || 0) + amount,
-        savingsMatched: bucketsBefore ? bucketsBefore.savingsMatched : member.savingsMatched,
-        savingsInterest: bucketsBefore ? bucketsBefore.savingsInterest : member.savingsInterest,
-      });
-    }
-  }
-
-  gateway.set(historyPath(familyId, historyId), null);
-  gateway.set(operationPath(familyId, `op:request:${String(historyId).endsWith(':deny') ? 'deny' : 'approve'}:${requestId}`), null);
-}
-
 function getUndoRequestId(historyId: string, requestId?: string): string {
   if (requestId) return String(requestId);
   const match = String(historyId).match(/^history:request:(.+):(approve|deny)$/);
   return match?.[1] || '';
 }
 
-function openFullHistoryModal(state: DemoAppState): void {
+function openFullHistoryModal(state: AppState): void {
   const root = document.getElementById('settings-root');
   if (!root) return;
   root.innerHTML = renderFullHistoryModal(state.historyRows);
@@ -5388,7 +4799,7 @@ function openSettingsPane(): void {
 function openSwitchUserScreen(): void {
   closeSettingsPane();
   showScreen('screen-home');
-  const state = currentDemoState();
+  const state = currentAppState();
   const home = document.getElementById('screen-home');
   if (!home) return;
   home.innerHTML = renderHomeScreen(state);
@@ -5405,11 +4816,9 @@ function closeSettingsPane(): void {
 function rerenderSettingsPane(scrollTop?: number): void {
   const root = document.getElementById('settings-root');
   if (!root) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   root.innerHTML = renderParentSettings(state, {
     page: activeSettingsPage,
-    showDevTools: false,
-    canReset: !useDevFirestore(),
     subscription: subscriptionState,
   });
   root.classList.add('open');
@@ -5522,7 +4931,7 @@ function bindSettingsPane(): void {
     openSettingsAddUserModal(event.currentTarget as Element | null);
   });
   root.querySelector<HTMLElement>('[data-settings-edit-family]')?.addEventListener('click', () => {
-    const state = currentDemoState();
+    const state = currentAppState();
     closeSettingsPane();
     startOnboardingEditDraft(state);
     activeOnboardingStep = 'welcome';
@@ -5562,8 +4971,8 @@ function bindSettingsPane(): void {
   });
 }
 
-function getActiveParentMember(): DemoMember | null {
-  const state = currentDemoState();
+function getActiveParentMember(): AppMember | null {
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   if (viewer?.role === 'parent') return viewer;
   return state.members.find(member => member.role === 'parent') || null;
@@ -5584,10 +4993,9 @@ async function linkAccountProvider(provider: 'google' | 'apple'): Promise<void> 
     uid: authUser.uid,
     email: authUser.email,
     linkedAt: Date.now(),
-    devBypass: !!authUser.isDevBypass,
   };
   const nextProviders = [
-    ...currentProviders.filter(item => item.providerId !== providerId && item.providerId !== 'dev-bypass'),
+    ...currentProviders.filter(item => item.providerId !== providerId),
     nextProvider,
   ];
   await saveMemberPatch(String(parent.id), {
@@ -5595,14 +5003,14 @@ async function linkAccountProvider(provider: 'google' | 'apple'): Promise<void> 
     authUids: nextProviders.map(item => item.uid).filter(Boolean),
     authProviders: nextProviders,
   });
-  if (useDevFirestore()) {
+  
     try {
       const { commitDevFamilyWrite } = await import('../platform/firebase/dev-firestore-operations.js');
       await commitDevFamilyWrite({ data: { parentAuthUid: authUser.uid } });
     } catch (error) {
       console.warn('Unable to update parent auth mapping:', error);
     }
-  }
+  
   await saveFamilySettingsPatch({ lastSync: Date.now() });
   toast(`${provider === 'google' ? 'Google' : 'Apple'} account linked`);
 }
@@ -5626,14 +5034,14 @@ async function unlinkAccountProvider(provider: 'google' | 'apple'): Promise<void
     authUids: nextProviders.map(item => item.uid).filter(Boolean),
     authProviders: nextProviders,
   });
-  if (useDevFirestore()) {
+  
     try {
       const { commitDevFamilyWrite } = await import('../platform/firebase/dev-firestore-operations.js');
       await commitDevFamilyWrite({ data: { parentAuthUid: nextProviders[0]?.uid || '' } });
     } catch (error) {
       console.warn('Unable to update parent auth mapping:', error);
     }
-  }
+  
   await saveFamilySettingsPatch({ lastSync: Date.now() });
   toast(`${provider === 'google' ? 'Google' : 'Apple'} unlinked`);
 }
@@ -5715,15 +5123,14 @@ function getBiometricLabel(): string {
   return /iPad|iPhone|Mac/i.test(navigator.userAgent) ? 'Face ID / Touch ID' : 'Biometric';
 }
 
-async function ensureSubscriptionForState(state: DemoAppState): Promise<void> {
+async function ensureSubscriptionForState(state: AppState): Promise<void> {
   const appUserId = String(state.familyCode || state.familyId || DEV_FIRESTORE_FAMILY_ID);
   if (subscriptionAppUserId === appUserId && subscriptionState.initialized) return;
   subscriptionAppUserId = appUserId;
   await initRevenueCat(appUserId);
 }
 
-function shouldShowSubscriptionPaywall(viewer: DemoMember): boolean {
-  if (isDevPaywallBypassed()) return false;
+function shouldShowSubscriptionPaywall(viewer: AppMember): boolean {
   return viewer.role === 'parent' && subscriptionState.isNative && subscriptionState.initialized && !subscriptionState.isPro;
 }
 
@@ -5800,10 +5207,6 @@ function paywallHtml(): string {
             <button data-paywall-start type="button" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
               Start ${trialDays}-Day Free Trial
             </button>
-            ${useDevFirestore() ? `
-              <button data-paywall-dev-bypass type="button" style="width:100%;margin-top:10px;padding:13px;border-radius:14px;border:2px solid rgba(39,66,57,0.18);background:rgba(255,251,244,0.92);color:#29423a;font-size:0.9rem;font-weight:800;cursor:pointer">
-                Continue v2 TestFlight Testing
-              </button>` : ''}
             ${subscriptionState.offeringsStatus === 'error' ? `
               <div style="margin-top:8px;color:#9A3412;background:#FFF7ED;border:1px solid #FDBA74;border-radius:10px;padding:8px 10px;font-size:0.78rem;line-height:1.4">
                 Could not load subscription products. Tap Retry or Restore Purchases.
@@ -5840,12 +5243,6 @@ function bindPaywallActions(root: HTMLElement): void {
   root.querySelector<HTMLElement>('[data-paywall-start]')?.addEventListener('click', () => {
     void startSubscriptionPurchase();
   });
-  root.querySelector<HTMLElement>('[data-paywall-dev-bypass]')?.addEventListener('click', () => {
-    setDevPaywallBypassed();
-    paywallOpen = false;
-    toast('v2 TestFlight bypass enabled');
-    render();
-  });
   root.querySelector<HTMLElement>('[data-paywall-retry]')?.addEventListener('click', () => void showPaywall());
   root.querySelector<HTMLElement>('[data-paywall-restore]')?.addEventListener('click', () => void restoreSubscriptionFromPaywall());
   root.querySelector<HTMLElement>('[data-paywall-account]')?.addEventListener('click', openPaywallAccountOptions);
@@ -5875,22 +5272,6 @@ function setPaywallPrimaryBusy(isBusy: boolean): void {
   button.disabled = isBusy;
   button.style.opacity = isBusy ? '0.76' : '1';
   button.textContent = isBusy ? 'Checking subscription...' : `Start ${subscriptionState.trialDays || 7}-Day Free Trial`;
-}
-
-function isDevPaywallBypassed(): boolean {
-  if (!useDevFirestore()) return false;
-  try {
-    return window.localStorage.getItem(DEV_PAYWALL_BYPASS_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function setDevPaywallBypassed(): void {
-  subscriptionState.isPro = true;
-  try {
-    window.localStorage.setItem(DEV_PAYWALL_BYPASS_KEY, '1');
-  } catch {}
 }
 
 async function restoreSubscriptionFromPaywall(): Promise<void> {
@@ -6037,16 +5418,14 @@ async function resetAllFamilyData(): Promise<void> {
   closeModal();
   closeSettingsPane();
   clearLocalAccountSecurityState();
-  if (useDevFirestore()) {
+  
     try {
       const { deleteDevFamilyData } = await import('../platform/firebase/dev-firestore-operations.js');
       await deleteDevFamilyData();
     } catch (error) {
       console.warn('Dev family reset failed:', error);
     }
-  } else {
-    resetLocalState();
-  }
+  
   await sendDeviceToLandingAfterAccountChange();
 }
 
@@ -6055,7 +5434,7 @@ async function deleteAccountAndReturnHome(): Promise<void> {
   closeSettingsPane();
   clearLocalAccountSecurityState();
   const authUid = getCurrentParentAuthUid();
-  if (useDevFirestore()) {
+  
     try {
       const { deleteDevFamilyData, deleteDevUserDoc } = await import('../platform/firebase/dev-firestore-operations.js');
       await deleteDevFamilyData();
@@ -6063,9 +5442,7 @@ async function deleteAccountAndReturnHome(): Promise<void> {
     } catch (error) {
       console.warn('Dev family delete failed:', error);
     }
-  } else {
-    resetLocalState();
-  }
+  
   try {
     await deleteCurrentParentAuth();
   } catch (error) {
@@ -6101,14 +5478,13 @@ async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
   firestoreState = null;
   firestoreError = '';
   const url = new URL(window.location.href);
-  if (useDevFirestore()) url.searchParams.set('source', 'firestore');
   url.searchParams.set('landing', '1');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   render();
 }
 
 function openSettingsAddUserModal(triggerEl?: Element | null): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const code = String(state.familyCode || '------').toUpperCase();
   const root = document.getElementById('modal-root');
   if (!root) return;
@@ -6150,7 +5526,7 @@ function bindSettingsAddUserModalActions(): void {
   });
   root.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
   root.querySelector<HTMLElement>('[data-copy-family-code]')?.addEventListener('click', () => {
-    const code = String(currentDemoState().familyCode || '').toUpperCase();
+    const code = String(currentAppState().familyCode || '').toUpperCase();
     void navigator.clipboard?.writeText(code);
   });
   root.querySelector<HTMLElement>('[data-settings-kid-qr]')?.addEventListener('click', openSettingsKidQrModal);
@@ -6158,7 +5534,7 @@ function bindSettingsAddUserModalActions(): void {
 }
 
 function openSettingsKidQrModal(): void {
-  const code = String(currentDemoState().familyCode || '------').toUpperCase();
+  const code = String(currentAppState().familyCode || '------').toUpperCase();
   const root = document.getElementById('modal-root');
   if (!root) return;
   const overlayStyle = root.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || modalOriginStyle();
@@ -6224,7 +5600,7 @@ async function submitSettingsParentInvite(): Promise<void> {
   if (!email || !email.includes('@')) return;
   const body = root?.querySelector<HTMLElement>('#invite-modal-body');
   if (!body) return;
-  if (useDevFirestore()) {
+  
     const button = root?.querySelector<HTMLButtonElement>('[data-submit-parent-invite]');
     if (button) {
       button.disabled = true;
@@ -6234,7 +5610,7 @@ async function submitSettingsParentInvite(): Promise<void> {
       const { commitDevParentInvite } = await import('../platform/firebase/dev-firestore-operations.js');
       await commitDevParentInvite({
         email,
-        familyCode: String(currentDemoState().familyCode || ''),
+        familyCode: String(currentAppState().familyCode || ''),
         createdByMemberId: activeViewerMemberId || '',
       });
     } catch {
@@ -6244,7 +5620,7 @@ async function submitSettingsParentInvite(): Promise<void> {
       }
       return;
     }
-  }
+  
   body.innerHTML = `
     <div style="text-align:center;padding:8px 0">
       <i class="ph-duotone ph-check-circle" style="font-size:2rem;color:var(--green)"></i>
@@ -6289,7 +5665,7 @@ function openSettingsChangelogModal(triggerEl?: Element | null): void {
 }
 
 async function setFamilySplitHousehold(enabled: boolean): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const kids = state.members.filter(member => member.role !== 'parent' && !member.deleted && member.id);
   const patches = kids.map(member => {
     const existing = member.splitHousehold || {};
@@ -6309,7 +5685,7 @@ async function setFamilySplitHousehold(enabled: boolean): Promise<void> {
 }
 
 async function setMemberTodayPresence(memberId: string, isHere: boolean): Promise<void> {
-  const state = currentDemoState();
+  const state = currentAppState();
   const member = state.members.find(item => item.id === memberId);
   if (!member) return;
   const todayKey = todayKeyForApp();
@@ -6329,7 +5705,7 @@ async function setMemberTodayPresence(memberId: string, isHere: boolean): Promis
 }
 
 function openSplitHouseholdModal(triggerEl?: Element | null): void {
-  const state = currentDemoState();
+  const state = currentAppState();
   const kids = state.members.filter(member => member.role !== 'parent' && !member.deleted);
   const source = kids.find(member => member.splitHousehold?.enabled) || kids[0];
   if (!source) return;
@@ -6406,7 +5782,7 @@ async function saveSplitHouseholdSchedule(): Promise<void> {
     const pos = Number(button.dataset.splitDay || 0);
     cycle[pos] = button.classList.contains('here');
   });
-  const state = currentDemoState();
+  const state = currentAppState();
   const kids = state.members.filter(member => member.role !== 'parent' && !member.deleted && member.id);
   await Promise.all(kids.map(member => saveMemberPatch(String(member.id), {
     splitHousehold: {
@@ -6478,7 +5854,6 @@ async function confirmJoinDifferentFamily(): Promise<void> {
   firestoreError = '';
   closeSettingsPane();
   const url = new URL(window.location.href);
-  url.searchParams.set('source', 'firestore');
   url.searchParams.set('landing', '1');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   render();
@@ -6588,7 +5963,7 @@ function showParentQuickCoachMark(): void {
 
 function rerenderActiveQuickActionModal(): void {
   if (!activeQuickActionId || !activeQuickActionState) return;
-  const state = currentDemoState();
+  const state = currentAppState();
   const root = document.getElementById('modal-root');
   if (!root) return;
   const originX = activeQuickActionOrigin?.x || window.innerWidth / 2;
@@ -6753,7 +6128,7 @@ async function submitGemsQuickAction(): Promise<void> {
   const reason = quick.reason.trim() || (delta > 0 ? 'A special bonus from your parent!' : 'Gem adjustment');
   const prevState = cloneDemoState(firestoreState);
   const now = Date.now();
-  if (useDevFirestore()) {
+  
     if (!firestoreState) return;
     const updates = quick.selectedKidIds.map(memberId => ({
       memberId,
@@ -6766,8 +6141,8 @@ async function submitGemsQuickAction(): Promise<void> {
         gems: delta,
         amount: null,
         createdAt: now,
-      } as DemoHistoryRow,
-      apply(member: DemoMember) {
+      } as AppHistoryRow,
+      apply(member: AppMember) {
         const gems = Math.max(0, Number(member.gems || member.diamonds || 0) + delta);
         return {
           ...member,
@@ -6788,35 +6163,8 @@ async function submitGemsQuickAction(): Promise<void> {
       render();
     }
     return;
-  }
+  
 
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  const updates = quick.selectedKidIds.map(memberId => ({
-    memberId,
-    history: {
-      id: makeHistoryId('gems', memberId),
-      familyId: LAB_FAMILY_ID,
-      memberId,
-      type: 'bonus',
-      title: reason,
-      gems: delta,
-      amount: null,
-      createdAt: now,
-    } as DemoHistoryRow,
-    apply(member: DemoMember) {
-      const gems = Math.max(0, Number(member.gems || member.diamonds || 0) + delta);
-      return {
-        ...member,
-        gems,
-        diamonds: gems,
-        totalEarned: delta > 0 ? Number(member.totalEarned || 0) + delta : Number(member.totalEarned || 0),
-      };
-    },
-  }));
-  applyManualUpdatesToStore(updates);
-  saveSharedLabStore(store);
-  closeModal();
-  void renderLocalLab();
 }
 
 async function submitSavingsQuickAction(): Promise<void> {
@@ -6834,15 +6182,15 @@ async function submitSavingsQuickAction(): Promise<void> {
     memberId,
     history: {
       id: makeHistoryId('savings', memberId),
-      familyId: useDevFirestore() ? 'migration-preview' : LAB_FAMILY_ID,
+      familyId: DEV_FIRESTORE_FAMILY_ID,
       memberId,
       type: historyType,
       title,
       gems: 0,
       amount: Math.abs(delta),
       createdAt: now,
-    } as DemoHistoryRow,
-    apply(member: DemoMember) {
+    } as AppHistoryRow,
+    apply(member: AppMember) {
       const next = delta < 0 ? reduceSavingsBuckets(member, Math.abs(delta)) : { ...member };
       return {
         ...next,
@@ -6852,7 +6200,7 @@ async function submitSavingsQuickAction(): Promise<void> {
     },
   }));
 
-  if (useDevFirestore()) {
+  
     if (!firestoreState) return;
     firestoreState = applyManualMemberUpdates(firestoreState, updates);
     render();
@@ -6865,13 +6213,8 @@ async function submitSavingsQuickAction(): Promise<void> {
       render();
     }
     return;
-  }
+  
 
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  applyManualUpdatesToStore(updates);
-  saveSharedLabStore(store);
-  closeModal();
-  void renderLocalLab();
 }
 
 async function submitListeningQuickAction(): Promise<void> {
@@ -6887,7 +6230,7 @@ async function submitListeningQuickAction(): Promise<void> {
   const todayKey = todayKeyForApp(now);
   const secsPerGem = Math.max(1, Number(currentSettings().notListeningSecs || 60));
   const prevState = cloneDemoState(firestoreState);
-  const state = currentDemoState();
+  const state = currentAppState();
   const updates = quick.selectedKidIds.map(memberId => {
     const member = state.members.find(item => item.id === memberId);
     const existingToday = member?.nlDate === todayKey ? Number(member.nlTodaySecs || 0) : 0;
@@ -6899,7 +6242,7 @@ async function submitListeningQuickAction(): Promise<void> {
       memberId,
       history: {
         id: makeHistoryId('penalty', memberId),
-        familyId: useDevFirestore() ? 'migration-preview' : LAB_FAMILY_ID,
+        familyId: DEV_FIRESTORE_FAMILY_ID,
         memberId,
         type: 'penalty',
         title: 'Not listening penalty',
@@ -6907,9 +6250,9 @@ async function submitListeningQuickAction(): Promise<void> {
         amount: null,
         createdAt: now,
         metadata: { sessionSecs, secsPerGem },
-      } as DemoHistoryRow,
-      apply(current: DemoMember) {
-        const existingLifetime = Number((current as DemoMember & { nlLifetimeSecs?: number }).nlLifetimeSecs || 0);
+      } as AppHistoryRow,
+      apply(current: AppMember) {
+        const existingLifetime = Number((current as AppMember & { nlLifetimeSecs?: number }).nlLifetimeSecs || 0);
         const gems = Math.max(0, Number(current.gems || current.diamonds || 0) - appliedPenalty);
         return {
           ...current,
@@ -6919,12 +6262,12 @@ async function submitListeningQuickAction(): Promise<void> {
           nlPendingSecs: remainder,
           gems,
           diamonds: gems,
-        } as DemoMember;
+        } as AppMember;
       },
     };
   });
 
-  if (useDevFirestore()) {
+  
     if (!firestoreState) return;
     firestoreState = applyManualMemberUpdates(firestoreState, updates);
     render();
@@ -6937,23 +6280,18 @@ async function submitListeningQuickAction(): Promise<void> {
       render();
     }
     return;
-  }
+  
 
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  applyManualUpdatesToStore(updates);
-  saveSharedLabStore(store);
-  closeModal();
-  void renderLocalLab();
 }
 
-function findMemberById(state: DemoAppState | null, memberId: string): DemoMember | null {
+function findMemberById(state: AppState | null, memberId: string): AppMember | null {
   return state?.members.find(member => member.id === memberId) || null;
 }
 
 function applyManualMemberUpdates(
-  current: DemoAppState | null,
-  updates: Array<{ memberId: string; history: DemoHistoryRow; apply(member: DemoMember): DemoMember }>,
-): DemoAppState | null {
+  current: AppState | null,
+  updates: Array<{ memberId: string; history: AppHistoryRow; apply(member: AppMember): AppMember }>,
+): AppState | null {
   if (!current) return current;
   const next = cloneDemoState(current);
   next.members = next.members.map(member => {
@@ -6969,18 +6307,7 @@ function applyManualMemberUpdates(
   return next;
 }
 
-function applyManualUpdatesToStore(
-  updates: Array<{ memberId: string; history: DemoHistoryRow; apply(member: DemoMember): DemoMember }>,
-): void {
-  updates.forEach(update => {
-    const member = store.get<DemoMember>(memberPath(LAB_FAMILY_ID, update.memberId));
-    if (!member) return;
-    store.set(memberPath(LAB_FAMILY_ID, update.memberId), update.apply(member));
-    store.set(historyPath(LAB_FAMILY_ID, update.history.id || ''), update.history);
-  });
-}
-
-function openQuickActionModal(actionId: ParentQuickActionId, state: DemoAppState, sourceButton: HTMLElement): void {
+function openQuickActionModal(actionId: ParentQuickActionId, state: AppState, sourceButton: HTMLElement): void {
   closeParentQuickFan();
   const rect = sourceButton.getBoundingClientRect();
   activeQuickActionId = actionId;
@@ -7044,23 +6371,19 @@ function renderError(message: string): void {
 }
 
 function ensureDevFirestoreSubscription(): void {
-  if (!useDevFirestore() || devFirestoreUnsubscribe) return;
+  if (devFirestoreUnsubscribe) return;
   devFirestoreUnsubscribe = subscribeDevFirestoreState(() => {
     scheduleDevFirestoreRefresh();
   });
 }
 
-function scheduleDevFirestoreRefresh(delayMs = 120): void {
-  if (!useDevFirestore()) return;
-  window.clearTimeout(devFirestoreRefreshTimer);
+function scheduleDevFirestoreRefresh(delayMs = 120): void {  window.clearTimeout(devFirestoreRefreshTimer);
   devFirestoreRefreshTimer = window.setTimeout(() => {
     void refreshDevFirestoreState();
   }, delayMs);
 }
 
-async function refreshDevFirestoreState(options: { rerender?: boolean } = {}): Promise<void> {
-  if (!useDevFirestore()) return;
-  if (hasPendingFirestoreOverviewWrites()) {
+async function refreshDevFirestoreState(options: { rerender?: boolean } = {}): Promise<void> {  if (hasPendingFirestoreOverviewWrites()) {
     devFirestoreRefreshQueued = true;
     return;
   }
@@ -7087,7 +6410,7 @@ async function refreshDevFirestoreState(options: { rerender?: boolean } = {}): P
 }
 
 async function cleanupSettledCompletionPhotos(): Promise<void> {
-  if (devPhotoCleanupInFlight || !useDevFirestore()) return;
+  if (devPhotoCleanupInFlight) return;
   if (Date.now() - devPhotoCleanupLastRun < 30000) return;
   devPhotoCleanupInFlight = true;
   try {
@@ -7133,10 +6456,7 @@ async function renderDevFirestore(): Promise<void> {
 
   const activeViewer = getActiveViewer(firestoreState);
   if (!activeViewer) {
-    showScreen('screen-home');
-    const home = document.getElementById('screen-home');
-    if (home) home.innerHTML = renderHomeScreen(firestoreState);
-    bindHomeScreenActions(firestoreState);
+    renderLandingPreview();
     return;
   }
   if (activeViewer.role !== 'parent') {
@@ -7196,93 +6516,12 @@ async function renderDevFirestore(): Promise<void> {
   showWeekReviewIfNeeded(firestoreState);
 }
 
-async function renderLocalLab(): Promise<void> {
-  store = loadSharedLabStore(createDemoFamilySeedStore);
-  const state = readDemoAppState(store);
-  maybeApplyAutoSavingsInterest(state);
-  const activeViewer = getActiveViewer(state);
-  if (!activeViewer) {
-    showScreen('screen-home');
-    const home = document.getElementById('screen-home');
-    if (home) home.innerHTML = renderHomeScreen(state);
-    bindHomeScreenActions(state);
-    return;
-  }
-  if (activeViewer.role !== 'parent') {
-    showScreen('screen-kid');
-    const screen = document.getElementById('screen-kid');
-    if (screen) screen.innerHTML = `${renderKidScreen(state, activeViewer, activeKidTab)}${activeKidTimeTaskId ? renderKidTimePicker(state, activeViewer, activeKidTimeTaskId) : ''}`;
-    bindKidPlaceholderActions();
-    restoreKidScrollPosition();
-    if (!isLittleKidMode(activeViewer) && activeKidTab === 'chores') bounceFirstHint('.kid-routine-shell');
-    reconcileKidNotificationModals(state, activeViewer, { onClose: () => { void renderLocalLab(); }, speak });
-    return;
-  }
-  await ensureSubscriptionForState(state);
-  if (shouldShowSubscriptionPaywall(activeViewer)) {
-    if (!paywallOpen) await showPaywall();
-    else renderPaywall();
-    return;
-  }
-  paywallOpen = false;
-  showScreen('screen-parent');
-
-  const header = document.getElementById('parent-header');
-  if (header) header.innerHTML = renderParentHeader(state, activeViewer);
-
-  const nav = document.getElementById('parent-nav');
-  if (nav) nav.innerHTML = renderParentNav(activeParentTab, pendingCount(state));
-
-  const content = document.getElementById('parent-content');
-  if (!content) return;
-  const previousLayout = captureOverviewLayoutPositions();
-  content.innerHTML = activeParentTab === 'tasks'
-    ? `${renderParentTasks(state)}${showLab() ? renderDevLab(state, logs, lastScenario) : ''}`
-    : activeParentTab === 'prizes'
-      ? `${renderParentPrizes(state)}${showLab() ? renderDevLab(state, logs, lastScenario) : ''}`
-      : activeParentTab === 'levels'
-        ? `${renderParentLevels(state, pendingComboOverrides)}${showLab() ? renderDevLab(state, logs, lastScenario) : ''}`
-        : activeParentTab === 'stats'
-          ? `${renderParentStats(state)}${showLab() ? renderDevLab(state, logs, lastScenario) : ''}`
-    : `
-      ${renderParentDashboard(state)}
-      ${showLab() ? renderDevLab(state, logs, lastScenario) : ''}
-    `;
-  bindParentTabNav();
-  bindActions();
-  if (activeParentTab === 'tasks') {
-    bindTaskTabActions(state);
-    bounceFirstHint('.parent-chore-shell');
-  } else if (activeParentTab === 'prizes') {
-    bindPrizeTabActions(state);
-    bounceFirstHint('.parent-prize-shell');
-  }
-  else if (activeParentTab === 'levels') bindLevelsTabActions(state);
-  else if (activeParentTab === 'stats') bindStatsTabActions(state);
-  else {
-    bindOverviewSwipeActions();
-    animateOverviewLayoutShift(previousLayout);
-    showParentQuickCoachMark();
-    bounceFirstHint('.snapshot-summary-shell');
-    bounceFirstHint('.activity-swipe-shell');
-  }
-  showWeekReviewIfNeeded(state);
-}
-
 function render(): void {
   if (activeOnboardingStep && isOnboardingEditMode()) {
     renderActiveOnboardingFlow();
     return;
   }
-  if (showLandingPreview()) {
-    renderLandingPreview();
-    return;
-  }
-  if (useDevFirestore()) {
-    void renderDevFirestore();
-    return;
-  }
-  void renderLocalLab();
+  void renderDevFirestore();
 }
 
 function renderLandingPreview(): void {
@@ -7397,11 +6636,8 @@ function bindKidEntryActions(): void {
     kidEntryMessage = '';
     renderLandingPreview();
   });
-  document.querySelector<HTMLElement>('[data-kid-dev]')?.addEventListener('click', () => {
-    void enterKidFamily(true);
-  });
   document.querySelector<HTMLElement>('[data-kid-join]')?.addEventListener('click', () => {
-    void enterKidFamily(false);
+    void enterKidFamily();
   });
   document.querySelectorAll<HTMLElement>('[data-kid-select]').forEach(button => {
     button.addEventListener('click', () => {
@@ -7415,7 +6651,6 @@ function bindKidEntryActions(): void {
       firestoreState = null;
       firestoreError = '';
       const url = new URL(window.location.href);
-      url.searchParams.set('source', 'firestore');
       url.searchParams.delete('landing');
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
       render();
@@ -7423,15 +6658,15 @@ function bindKidEntryActions(): void {
   });
 }
 
-async function enterKidFamily(devBypass: boolean): Promise<void> {
+async function enterKidFamily(): Promise<void> {
   const input = document.querySelector<HTMLInputElement>('[data-kid-family-code]');
-  const code = devBypass ? '' : normalizeFamilyCode(input?.value || '');
-  if (!devBypass && !code) {
+  const code = normalizeFamilyCode(input?.value || '');
+  if (!code) {
     kidEntryMessage = 'Enter your family code first.';
     renderLandingPreview();
     return;
   }
-  const result = await resolveKidDevFamily(code, devBypass);
+  const result = await resolveKidDevFamily(code);
   if (!result.found) {
     kidEntryMessage = 'Family code not found.';
     renderLandingPreview();
@@ -7447,7 +6682,6 @@ async function enterKidFamily(devBypass: boolean): Promise<void> {
     firestoreState = null;
     firestoreError = '';
     const url = new URL(window.location.href);
-    url.searchParams.set('source', 'firestore');
     url.searchParams.delete('landing');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     render();
@@ -7458,12 +6692,12 @@ async function enterKidFamily(devBypass: boolean): Promise<void> {
   renderLandingPreview();
 }
 
-async function resolveKidDevFamily(code: string, devBypass: boolean): Promise<{ found: boolean; members: DemoMember[] }> {
+async function resolveKidDevFamily(code: string): Promise<{ found: boolean; members: AppMember[] }> {
   try {
     const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
     const state = await loadDevFirestoreState();
     const familyCode = normalizeFamilyCode(String(state.familyCode || ''));
-    if (devBypass || !code || code === familyCode) return { found: true, members: state.members };
+    if (code === familyCode) return { found: true, members: state.members };
     return { found: false, members: [] };
   } catch {
     return { found: false, members: [] };
@@ -7475,13 +6709,12 @@ function normalizeFamilyCode(value: string): string {
 }
 
 async function handleReturningSignIn(action: string): Promise<void> {
-  const authUser = action === 'dev-bypass'
-    ? createAuthDevBypass()
-    : action === 'google' || action === 'apple'
+  const authUser = action === 'google' || action === 'apple'
       ? await signInParentWithProvider(action)
       : null;
   if (!authUser) {
-    signInMessage = 'Sign-in did not complete.';
+    const authError = getLastParentAuthError();
+    signInMessage = authError ? `Sign-in failed: ${authError}` : 'Sign-in did not complete.';
     renderLandingPreview();
     return;
   }
@@ -7498,23 +6731,21 @@ async function handleReturningSignIn(action: string): Promise<void> {
   firestoreState = null;
   firestoreError = '';
   const url = new URL(window.location.href);
-  url.searchParams.set('source', 'firestore');
   url.searchParams.delete('landing');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   render();
 }
 
-async function resolveReturningDevFamily(authUser: { uid?: string; email?: string; isDevBypass?: boolean }): Promise<{ found: boolean; parentMemberId?: string }> {
-  if (authUser.isDevBypass) return { found: true, parentMemberId: 'preview-parent' };
+async function resolveReturningDevFamily(authUser: { uid?: string; email?: string }): Promise<{ found: boolean; parentMemberId?: string }> {
   try {
     const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
     const state = await loadDevFirestoreState();
     const email = String(authUser.email || '').toLowerCase();
     const parent = state.members.find(member => {
       if (member.role !== 'parent') return false;
-      const authUid = String((member as DemoMember & { authUid?: string }).authUid || '');
-      const providers = Array.isArray((member as DemoMember & { authProviders?: Array<{ uid?: string; email?: string }> }).authProviders)
-        ? (member as DemoMember & { authProviders?: Array<{ uid?: string; email?: string }> }).authProviders || []
+      const authUid = String((member as AppMember & { authUid?: string }).authUid || '');
+      const providers = Array.isArray((member as AppMember & { authProviders?: Array<{ uid?: string; email?: string }> }).authProviders)
+        ? (member as AppMember & { authProviders?: Array<{ uid?: string; email?: string }> }).authProviders || []
         : [];
       return authUid === authUser.uid || providers.some(provider => provider.uid === authUser.uid || (email && String(provider.email || '').toLowerCase() === email));
     });
@@ -7606,14 +6837,13 @@ async function handleOnboardingAuth(action: string): Promise<void> {
     renderOnboardingPreservingSetupScroll();
     return;
   }
-  const authUser = action === 'dev-bypass'
-    ? createAuthDevBypass()
-    : action === 'google' || action === 'apple'
+  const authUser = action === 'google' || action === 'apple'
       ? await signInParentWithProvider(action)
       : null;
   if (!authUser) {
     if (action === 'google' || action === 'apple') {
-      setOnboardingAuthError('Sign-in did not complete in this local preview. Use the dev bypass here, or try the real provider flow on a configured app/device.');
+      const authError = getLastParentAuthError();
+      setOnboardingAuthError(authError ? `Sign-in failed: ${authError}` : 'Sign-in did not complete. Try again or use the other sign-in option.');
       renderOnboardingPreservingSetupScroll();
     }
     return;
@@ -7650,7 +6880,6 @@ async function finishOnboardingPreview(): Promise<void> {
     firestoreState = null;
     firestoreError = '';
     const url = new URL(window.location.href);
-    url.searchParams.set('source', 'firestore');
     url.searchParams.delete('landing');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     void registerParentPushNotifications({
@@ -7670,8 +6899,8 @@ async function finishOnboardingPreview(): Promise<void> {
 }
 
 async function finishOnboardingEdit(draft: ReturnType<typeof getOnboardingSetupDraft>): Promise<void> {
-  const state = currentDemoState();
-  const familyId = state.familyId || (useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID);
+  const state = currentAppState();
+  const familyId = state.familyId || (DEV_FIRESTORE_FAMILY_ID);
   const nextActiveMembers = [...draft.parents, ...draft.kids].map(member => {
     const existing = state.members.find(item => item.id === member.id) || {};
     return {
@@ -7680,7 +6909,7 @@ async function finishOnboardingEdit(draft: ReturnType<typeof getOnboardingSetupD
       familyId,
       role: member.role,
       deleted: false,
-    } as DemoMember;
+    } as AppMember;
   });
   const nextIds = new Set(nextActiveMembers.map(member => String(member.id || '')));
   const softDeletedMembers = state.members
@@ -7689,9 +6918,9 @@ async function finishOnboardingEdit(draft: ReturnType<typeof getOnboardingSetupD
   const nextMembers = [...nextActiveMembers, ...softDeletedMembers];
   const nextFamilyPatch = { name: draft.familyName, updatedAt: Date.now() };
 
-  if (useDevFirestore()) {
+  
     firestoreState = {
-      ...(state as DemoAppState),
+      ...(state as AppState),
       familyName: draft.familyName,
       members: nextMembers,
       member: null,
@@ -7709,14 +6938,7 @@ async function finishOnboardingEdit(draft: ReturnType<typeof getOnboardingSetupD
       render();
       return;
     }
-  } else {
-    const existingFamily = store.get<Record<string, unknown>>(familyPath(familyId)) || {};
-    store.set(familyPath(familyId), { ...existingFamily, ...nextFamilyPatch });
-    nextMembers.forEach(member => {
-      if (member.id) store.set(memberPath(familyId, String(member.id)), member);
-    });
-    saveSharedLabStore(store);
-  }
+  
 
   activeOnboardingStep = null;
   onboardingTransitionDirection = 'none';
@@ -7809,7 +7031,7 @@ function restoreKidScrollPosition(): void {
 async function submitKidTaskCompletion(taskId: string, slotId: string | null, photoUrl: string | null = null, entryTypeOverride: 'before' | 'after' | null = null): Promise<void> {
   if (pendingKidScrollTop == null) captureKidScrollPosition();
   activeKidTimeTaskId = null;
-  const state = currentDemoState();
+  const state = currentAppState();
   const viewer = getActiveViewer(state);
   if (!viewer?.id || viewer.role === 'parent') return;
   const task = state.tasks.find(item => item.id === taskId);
@@ -7830,7 +7052,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
   const dateKey = todayKeyForApp(now);
   const completionDoc = {
     id: completionId,
-    familyId: useDevFirestore() ? DEV_FIRESTORE_FAMILY_ID : LAB_FAMILY_ID,
+    familyId: DEV_FIRESTORE_FAMILY_ID,
     choreId: taskId,
     memberId: viewer.id,
     status: autoApprove ? 'approved' : 'pending',
@@ -7843,7 +7065,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
     photoUrl,
     date: dateKey,
   };
-  const requestDoc: DemoRequest = {
+  const requestDoc: AppRequest = {
     id: requestId,
     status: autoApprove ? REQUEST_STATUSES.APPROVED : REQUEST_STATUSES.PENDING,
     kind: entryType === 'before' ? REQUEST_KINDS.CHORE_START : REQUEST_KINDS.CHORE_COMPLETION,
@@ -7855,7 +7077,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
     source: { choreId: taskId, completionId, prizeId: null, amount: null, reason: '' },
   };
 
-  if (useDevFirestore()) {
+  
     const previous = cloneDemoState(firestoreState);
     firestoreState = applySubmittedCompletionToState(firestoreState, requestDoc, completionDoc, autoApprove, now);
     void renderDevFirestore();
@@ -7893,62 +7115,17 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
       restoreKidScrollPosition();
     }
     return;
-  }
+  
 
-  const submittingMember = store.get<DemoMember>(memberPath(LAB_FAMILY_ID, String(viewer.id)));
-  if (submittingMember?.splitHousehold?.enabled && !isMemberHereOnDate(submittingMember, dateKey)) {
-    store.set(memberPath(LAB_FAMILY_ID, String(viewer.id)), {
-      ...submittingMember,
-      isHereToday: true,
-      splitHousehold: {
-        ...submittingMember.splitHousehold,
-        overrides: { ...(submittingMember.splitHousehold.overrides || {}), [dateKey]: true },
-      },
-    });
-  }
-  store.set(completionPath(LAB_FAMILY_ID, completionId), completionDoc);
-  store.set(requestPath(LAB_FAMILY_ID, requestId), {
-    ...requestDoc,
-    familyId: LAB_FAMILY_ID,
-    requesterMemberId: viewer.id,
-  });
-  if (!autoApprove) {
-    void sendParentApprovalPush({ memberId: String(viewer.id), title: String(task.title || 'Task'), kind: 'chore_request' });
-  }
-  if (autoApprove) {
-    store.set(completionPath(LAB_FAMILY_ID, completionId), {
-      ...completionDoc,
-      status: 'pending',
-      approvedAt: null,
-      approvedByMemberId: null,
-    });
-    store.set(requestPath(LAB_FAMILY_ID, requestId), {
-      ...requestDoc,
-      familyId: LAB_FAMILY_ID,
-      requesterMemberId: viewer.id,
-      status: REQUEST_STATUSES.PENDING,
-      resolvedAt: null,
-      resolvedByMemberId: null,
-    });
-    const result = commitRequestOperation(store, createRequestAction('approve', requestId, LAB_FAMILY_ID, now), { now });
-    if (result.ok && !result.duplicate) {
-      applyApprovalProgressionToStore(store, LAB_FAMILY_ID, requestId, now);
-      applyDailyComboBonusToStore(store, LAB_FAMILY_ID, requestId, now);
-    }
-  }
-  saveSharedLabStore(store);
-  render();
-  restoreKidScrollPosition();
-  if (shouldSpeakConfirmation) speak('Great job!');
 }
 
 function applySubmittedCompletionToState(
-  current: DemoAppState | null,
-  requestDoc: DemoRequest,
-  completionDoc: DemoCompletion,
+  current: AppState | null,
+  requestDoc: AppRequest,
+  completionDoc: AppCompletion,
   autoApprove: boolean,
   now: number,
-): DemoAppState | null {
+): AppState | null {
   if (!current) return current;
   const next = cloneDemoState(current);
   next.requests = [...(next.requests || []), requestDoc];
@@ -7975,12 +7152,9 @@ function applySubmittedCompletionToState(
     next.historyRows = [historyRow, ...next.historyRows.filter(row => row.id !== historyRow.id)].sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
     next.history = next.historyRows[0] || null;
   }
-  next.request = pickPrimaryDemoRequest(next.requests);
+  next.request = pickPrimaryAppRequest(next.requests);
   return next;
 }
 
-subscribeSharedLabStore(() => {
-  if (!useDevFirestore()) void renderLocalLab();
-});
 registerAppSecurityListeners();
 render();

@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoHistoryRow, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app-state';
 import { todayKeyForTimezone } from '../../app/date-keys';
 
 export type ParentInboxItem = {
@@ -33,7 +33,7 @@ export type ParentSnapshotCard = {
 };
 
 export type ParentDashboardModel = {
-  state: DemoAppState;
+  state: AppState;
   kidName: string;
   gems: number;
   totalEarned: number;
@@ -45,15 +45,15 @@ export type ParentDashboardModel = {
   completionStatus: string;
   inboxItems: ParentInboxItem[];
   snapshots: ParentSnapshotCard[];
-  historyRows: DemoHistoryRow[];
+  historyRows: AppHistoryRow[];
 };
 
-export function createParentDashboardModel(state: DemoAppState): ParentDashboardModel {
+export function createParentDashboardModel(state: AppState): ParentDashboardModel {
   const kidName = state.member?.name || 'Avery';
   const kidMembers = (state.members || []).filter(member => member.role === 'kid' && !member.deleted);
   const kids = kidMembers.length
     ? kidMembers
-    : [state.member].filter((member): member is DemoMember => !!member && member.role !== 'parent');
+    : [state.member].filter((member): member is AppMember => !!member && member.role !== 'parent');
   const snapshots = kids.map((member, index) => snapshotForMember(member, state, index));
   const requestStatus = state.request?.status || 'missing';
   const completionStatus = state.completion?.status || 'missing';
@@ -106,11 +106,11 @@ export function createParentDashboardModel(state: DemoAppState): ParentDashboard
   };
 }
 
-function snapshotForMember(member: DemoMember, state: DemoAppState, index: number): ParentSnapshotCard {
+function snapshotForMember(member: AppMember, state: AppState, index: number): ParentSnapshotCard {
   const id = String(member.id || `kid_${index + 1}`);
   const requests = state.requests;
   const historyRows = state.historyRows;
-  const memberHistory = historyRows.filter(row => !('memberId' in row) || (row as DemoHistoryRow & { memberId?: string }).memberId === id);
+  const memberHistory = historyRows.filter(row => !('memberId' in row) || (row as AppHistoryRow & { memberId?: string }).memberId === id);
   const completeCount = memberHistory.filter(row => row.type === 'chore' || row.type === 'request.approved').length;
   const waitingCount = requests.filter(request => request.status === 'pending' && request.targetMemberId === id).length;
   return {
@@ -129,7 +129,7 @@ function snapshotForMember(member: DemoMember, state: DemoAppState, index: numbe
   };
 }
 
-function isMemberHereOnDate(member: DemoMember, dateKey: string): boolean {
+function isMemberHereOnDate(member: AppMember, dateKey: string): boolean {
   const split = member.splitHousehold;
   if (split?.overrides && dateKey in split.overrides) return split.overrides[dateKey] !== false;
   if (!split?.enabled) return member.isHereToday !== false;
@@ -140,7 +140,7 @@ function isMemberHereOnDate(member: DemoMember, dateKey: string): boolean {
   return split.cycle?.[pos] !== false;
 }
 
-function calculateSavingsInterest(state: DemoAppState, member: DemoMember): number {
+function calculateSavingsInterest(state: AppState, member: AppMember): number {
   if (state.settings.savingsEnabled === false || state.settings.savingsInterestEnabled !== true) return 0;
   if (state.settings.savingsInterestMode === 'auto_claim') return 0;
   const todayKey = todayKeyForTimezone(state.settings.familyTimezone);
@@ -156,7 +156,7 @@ function calculateSavingsInterest(state: DemoAppState, member: DemoMember): numb
   return interest > 0 ? interest : 0;
 }
 
-function memberNameForRequest(request: DemoAppState['requests'][number], members: DemoMember[], fallback: string): string {
+function memberNameForRequest(request: AppState['requests'][number], members: AppMember[], fallback: string): string {
   const member = members.find(item => item.id && item.id === request.targetMemberId);
   return String(member?.name || fallback);
 }

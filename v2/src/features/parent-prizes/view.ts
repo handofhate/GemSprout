@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoPrize, type DemoTask, type DemoTeamGoal } from '../../app/local-demo-state';
+import { type AppState, type AppPrize, type AppTask, type AppTeamGoal } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 export type ParentPrizeEditorDraft = {
@@ -26,7 +26,7 @@ export type ParentGoalEditorDraft = {
 const ICON_OPTIONS = ['gift', 'popcorn', 'game-controller', 'ice-cream', 'pizza', 'moon-stars', 'trophy', 'sparkle', 'confetti', 'star'];
 const COLOR_OPTIONS = ['#FF6584', '#6C63FF', '#FFD93D', '#45B7D1', '#6BCB77', '#F59E0B', '#1D6B57', '#EF4444'];
 
-export function renderParentPrizes(state: DemoAppState): string {
+export function renderParentPrizes(state: AppState): string {
   const prizes = state.prizes.filter(prize => (prize.type || 'individual') === 'individual');
   const goals = state.teamGoals;
   return `
@@ -46,7 +46,7 @@ export function renderParentPrizes(state: DemoAppState): string {
   `;
 }
 
-function renderPrizeCard(prize: DemoPrize): string {
+function renderPrizeCard(prize: AppPrize): string {
   const oneTimeRedeemed = prize.recurrence === 'one_time' && Array.isArray(prize.redemptions) && prize.redemptions.length > 0;
   const redeemedByCount = Math.max(1, new Set((prize.redemptions || []).map(item => item.memberId).filter(Boolean)).size || 0);
   const requirementSummary = getPrizeRequirementSummary(prize);
@@ -94,7 +94,7 @@ function renderPrizeCard(prize: DemoPrize): string {
   `;
 }
 
-function renderGoalCard(goal: DemoTeamGoal): string {
+function renderGoalCard(goal: AppTeamGoal): string {
   const total = goalTotal(goal);
   const target = Number(goal.targetPoints || 0);
   const pct = Math.min(100, Math.round(total / Math.max(1, target) * 100));
@@ -145,7 +145,7 @@ function renderGoalCard(goal: DemoTeamGoal): string {
   `;
 }
 
-export function createPrizeEditorDraft(prize: DemoPrize | null): ParentPrizeEditorDraft {
+export function createPrizeEditorDraft(prize: AppPrize | null): ParentPrizeEditorDraft {
   return {
     id: String(prize?.id || ''),
     title: String(prize?.title || ''),
@@ -161,7 +161,7 @@ export function createPrizeEditorDraft(prize: DemoPrize | null): ParentPrizeEdit
   };
 }
 
-export function createGoalEditorDraft(goal: DemoTeamGoal | null): ParentGoalEditorDraft {
+export function createGoalEditorDraft(goal: AppTeamGoal | null): ParentGoalEditorDraft {
   return {
     id: String(goal?.id || ''),
     title: String(goal?.title || ''),
@@ -171,7 +171,7 @@ export function createGoalEditorDraft(goal: DemoTeamGoal | null): ParentGoalEdit
   };
 }
 
-export function renderPrizeEditorModal(state: DemoAppState, draft: ParentPrizeEditorDraft): string {
+export function renderPrizeEditorModal(state: AppState, draft: ParentPrizeEditorDraft): string {
   const requirementTasks = renderTaskChecks(state.tasks, draft.requirementTaskIds);
   return `
     <button class="modal-close-x" data-close-modal type="button" aria-label="Close"><i class="ph-duotone ph-x"></i></button>
@@ -270,7 +270,7 @@ export function renderPrizeDeleteModal(kind: 'prize' | 'goal', title: string): s
   `;
 }
 
-function renderTaskChecks(tasks: DemoTask[], selectedIds: string[]): string {
+function renderTaskChecks(tasks: AppTask[], selectedIds: string[]): string {
   const selected = new Set(selectedIds);
   if (!tasks.length) return `<div style="color:var(--muted);font-size:0.85rem;padding:6px 0">No tasks yet</div>`;
   return tasks.map(task => `
@@ -286,7 +286,7 @@ function renderIcon(icon: string | undefined, color: string | undefined): string
   return `<i class="ph-duotone ph-${escapeHtml(String(icon || 'gift'))}" style="color:${escapeHtml(String(color || '#FF6584'))}"></i>`;
 }
 
-export function goalTotal(goal: DemoTeamGoal | null | undefined): number {
+export function goalTotal(goal: AppTeamGoal | null | undefined): number {
   return Object.values(goal?.contributions || {}).reduce((sum, value) => sum + Number(value || 0), 0);
 }
 
@@ -298,7 +298,7 @@ function formatPrizeRecurrence(recurrence: string | undefined): string {
   return 'Unlimited';
 }
 
-function getPrizeRequirementSummary(prize: DemoPrize): string {
+function getPrizeRequirementSummary(prize: AppPrize): string {
   if (prize.requirementType === 'task_count') {
     const count = Math.max(1, Number(prize.requirementTaskCount || 1) || 1);
     return `Requires ${count} task${count === 1 ? '' : 's'} completed`;

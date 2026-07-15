@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoFamilySettings, type DemoTask } from '../../app/local-demo-state';
+import { type AppState, type AppFamilySettings, type AppTask } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 export const LEVEL_ICON_OPTIONS = [
@@ -37,7 +37,7 @@ const DEFAULT_LEVELS = [
   { level: 4, name: 'Superstar', icon: '<i class="ph-duotone ph-crown" style="color:#D97706;font-size:1em"></i>', minXp: 500 },
 ];
 
-export function renderParentLevels(state: DemoAppState, pendingComboOverrides: Record<string, Record<number, string>> = {}): string {
+export function renderParentLevels(state: AppState, pendingComboOverrides: Record<string, Record<number, string>> = {}): string {
   const s = state.settings || {};
   const levels = getLevels(s);
   const baseBadgesEnabled = s.baseBadgesEnabled !== false;
@@ -131,7 +131,7 @@ function renderLevelRow(level: { level?: number; name?: string; icon?: string; m
   </div>`;
 }
 
-function renderComboSettings(state: DemoAppState, pendingComboOverrides: Record<string, Record<number, string>>): string {
+function renderComboSettings(state: AppState, pendingComboOverrides: Record<string, Record<number, string>>): string {
   const kids = state.members.filter(member => member.role === 'kid');
   if (!kids.length) return '';
   const multiplier = state.settings.comboMultiplier || 2;
@@ -175,7 +175,7 @@ function renderComboSettings(state: DemoAppState, pendingComboOverrides: Record<
   `;
 }
 
-function todayKeyForCombo(state: DemoAppState): string {
+function todayKeyForCombo(state: AppState): string {
   const timezone = state.settings.familyTimezone;
   if (timezone) {
     try {
@@ -188,7 +188,7 @@ function todayKeyForCombo(state: DemoAppState): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function getDailyComboIdsForMember(state: DemoAppState, memberId: string, today: string): string[] {
+function getDailyComboIdsForMember(state: AppState, memberId: string, today: string): string[] {
   const override = state.settings.comboOverrides?.[memberId];
   if (override?.date === today && Array.isArray(override.ids)) return override.ids.slice(0, 3).filter(Boolean);
   const assigned = state.settings.comboAssignments?.[memberId];
@@ -196,7 +196,7 @@ function getDailyComboIdsForMember(state: DemoAppState, memberId: string, today:
   return getAllDailyComboIds(state, today)[memberId] || [];
 }
 
-function getAllDailyComboIds(state: DemoAppState, today: string): Record<string, string[]> {
+function getAllDailyComboIds(state: AppState, today: string): Record<string, string[]> {
   const kids = state.members.filter(member => member.role === 'kid' && !member.deleted).sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
   const used = new Set<string>();
   const combos: Record<string, string[]> = {};
@@ -240,7 +240,7 @@ function seededShuffle<T>(items: T[], seed: number): T[] {
   return copy;
 }
 
-function renderTaskBadgeCard(task: DemoTask, taskIndex: number): string {
+function renderTaskBadgeCard(task: AppTask, taskIndex: number): string {
   const badges = Array.isArray(task.badges) ? task.badges : [];
   return `<div style="margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -270,11 +270,11 @@ function renderTaskBadgeCard(task: DemoTask, taskIndex: number): string {
   </div>`;
 }
 
-export function getLevels(settings: DemoFamilySettings): Array<{ level?: number; name?: string; icon?: string; minXp?: number }> {
+export function getLevels(settings: AppFamilySettings): Array<{ level?: number; name?: string; icon?: string; minXp?: number }> {
   return Array.isArray(settings.customLevels) && settings.customLevels.length >= 2 ? settings.customLevels : DEFAULT_LEVELS;
 }
 
-export function getBaseBadgeDef(settings: DemoFamilySettings, id: string): { icon: string; name: string; desc: string } {
+export function getBaseBadgeDef(settings: AppFamilySettings, id: string): { icon: string; name: string; desc: string } {
   const base = BADGE_DEFS.find(badge => badge.id === id) || BADGE_DEFS[0];
   const custom = settings.customBadgeDefs?.[id] || {};
   return { ...base, ...custom };

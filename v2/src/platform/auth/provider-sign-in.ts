@@ -21,31 +21,28 @@ export type ParentAuthUser = {
   email: string;
   displayName: string;
   providerId: string;
-  isDevBypass?: boolean;
 };
 
+let lastParentAuthError = '';
+
 export async function signInParentWithProvider(providerId: AuthProviderId): Promise<ParentAuthUser | null> {
+  lastParentAuthError = '';
   try {
     const user = providerId === 'google'
       ? await signInWithGoogle()
       : await signInWithApple();
     return user ? normalizeAuthUser(user, providerId === 'google' ? 'google.com' : 'apple.com') : null;
   } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
     const message = error instanceof Error ? error.message : String(error);
+    lastParentAuthError = [code, message].filter(Boolean).join(': ');
     if (!/cancel/i.test(message)) console.warn(`${providerId} sign-in failed:`, message);
     return null;
   }
 }
 
-export function createDevBypassParentAuth(): ParentAuthUser {
-  const now = Date.now();
-  return {
-    uid: `dev-parent-${now}`,
-    email: 'dev-parent@gemsprout.local',
-    displayName: 'Parent',
-    providerId: 'dev-bypass',
-    isDevBypass: true,
-  };
+export function getLastParentAuthError(): string {
+  return lastParentAuthError;
 }
 
 export async function signOutParentAuth(): Promise<void> {

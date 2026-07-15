@@ -15,7 +15,7 @@ Core workflows v2 must preserve before release.
 As of 2026-07-10:
 
 - Parent dashboard overview, settings panes, inbox rows, recent activity, snapshot cards, quick actions, task/prize/team-prize creation modals, family stats visuals, account/security settings, notification settings, and Week in Review are largely migrated.
-- Parent inbox approve/deny, recent activity undo, auto-approve tasks, savings banking, split-household home/away controls, levels, streaks, Daily Combo, base badges, and task badges are wired for the dev Firestore path.
+- Parent inbox approve/deny, recent activity undo, auto-approve tasks, savings banking, split-household home/away controls, levels, streaks, Daily Combo, base badges, and task badges are wired on the Firestore-backed replacement app path.
 - Regular kid dashboard is largely migrated across Tasks, Gems, Shop, Team, Stats, kid settings, badge cards, approval/denial/reward pop-up modals, savings requests, prize requests, and little kid TTS hooks.
 - Little kid mode is migrated across Tasks, Gems, Shop, Team, and Stats with large simplified visuals and TTS.
 - Landing, returning sign-in, kid entry/profile picker, onboarding/setup panes, join different family, edit family, and parent/kid routing are in place for current dev testing.

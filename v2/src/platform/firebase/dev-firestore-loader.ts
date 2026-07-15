@@ -1,9 +1,9 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { collection, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, orderBy, query, type Firestore, type Unsubscribe } from 'firebase/firestore';
-import { type DemoAppState, type DemoCompletion, type DemoFamilySettings, type DemoHistoryRow, type DemoMember, type DemoPrize, type DemoRequest, type DemoTask, type DemoTeamGoal } from '../../app/local-demo-state';
+import { type AppState, type AppCompletion, type AppFamilySettings, type AppHistoryRow, type AppMember, type AppPrize, type AppRequest, type AppTask, type AppTeamGoal } from '../../app/app-state';
 import { DEV_FIRESTORE_CONFIG, DEV_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
 
-type CompletionDoc = DemoCompletion;
+type CompletionDoc = AppCompletion;
 type OperationDoc = { id?: string; status?: string; error?: { reason?: string } };
 
 export function getDevFirestore(): Firestore {
@@ -19,15 +19,15 @@ function byCreatedAtDesc<T extends { createdAt?: number }>(left: T, right: T): n
   return Number(right.createdAt || 0) - Number(left.createdAt || 0);
 }
 
-function chooseKid(members: DemoMember[]): DemoMember | null {
+function chooseKid(members: AppMember[]): AppMember | null {
   return members.find(member => member.role === 'kid') || members.find(member => member.role !== 'parent') || members[0] || null;
 }
 
-function pickPrimaryRequest(requests: DemoRequest[]): DemoRequest | null {
+function pickPrimaryRequest(requests: AppRequest[]): AppRequest | null {
   return requests.find(request => request.status === 'pending') || requests[0] || null;
 }
 
-function matchingCompletion(completions: CompletionDoc[], request: DemoRequest | null): CompletionDoc | null {
+function matchingCompletion(completions: CompletionDoc[], request: AppRequest | null): CompletionDoc | null {
   const completionId = request?.source?.completionId || '';
   if (completionId) return completions.find(completion => completion.id === completionId) || null;
   return completions.find(completion => completion.status === 'pending') || completions[0] || null;
@@ -38,25 +38,25 @@ async function loadCollection<T>(db: Firestore, path: string): Promise<T[]> {
   return snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as T);
 }
 
-async function loadHistory(db: Firestore, familyId: string): Promise<DemoHistoryRow[]> {
+async function loadHistory(db: Firestore, familyId: string): Promise<AppHistoryRow[]> {
   try {
     const historyQuery = query(collection(db, `families/${familyId}/history`), orderBy('createdAt', 'desc'), limit(100));
     const snapshot = await getDocs(historyQuery);
-    return snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as DemoHistoryRow);
+    return snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as AppHistoryRow);
   } catch {
-    const rows = await loadCollection<DemoHistoryRow>(db, `families/${familyId}/history`);
+    const rows = await loadCollection<AppHistoryRow>(db, `families/${familyId}/history`);
     return rows.sort(byCreatedAtDesc).slice(0, 100);
   }
 }
 
-export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID): Promise<DemoAppState> {
+export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID): Promise<AppState> {
   const db = getDevFirestore();
   const [familyDoc, members, tasks, prizes, requests, completions, operations, historyRows] = await Promise.all([
     getDoc(doc(db, `families/${familyId}`)),
-    loadCollection<DemoMember>(db, `families/${familyId}/members`),
-    loadCollection<DemoTask>(db, `families/${familyId}/chores`),
-    loadCollection<DemoPrize>(db, `families/${familyId}/prizes`),
-    loadCollection<DemoRequest>(db, `families/${familyId}/requests`),
+    loadCollection<AppMember>(db, `families/${familyId}/members`),
+    loadCollection<AppTask>(db, `families/${familyId}/chores`),
+    loadCollection<AppPrize>(db, `families/${familyId}/prizes`),
+    loadCollection<AppRequest>(db, `families/${familyId}/requests`),
     loadCollection<CompletionDoc>(db, `families/${familyId}/completions`),
     loadCollection<OperationDoc>(db, `families/${familyId}/operations`),
     loadHistory(db, familyId),
@@ -66,7 +66,7 @@ export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID):
     throw new Error(`Dev Firestore family "${familyId}" was not found.`);
   }
 
-  const familyData = familyDoc.data() as { id?: string; name?: string; familyCode?: string; teamGoals?: DemoTeamGoal[]; settings?: DemoFamilySettings };
+  const familyData = familyDoc.data() as { id?: string; name?: string; familyCode?: string; teamGoals?: AppTeamGoal[]; settings?: AppFamilySettings };
   const sortedRequests = requests.sort(byCreatedAtAsc);
   const request = pickPrimaryRequest(sortedRequests);
   return {

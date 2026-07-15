@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoHistoryRow, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 import { getLevels } from '../parent-levels/view';
 import { renderWeekReviewLaunchCard } from '../week-review/view';
@@ -14,7 +14,7 @@ type MemberStats = {
   currentLevel: { level?: number; name?: string; icon?: string };
 };
 
-export function renderParentStats(state: DemoAppState): string {
+export function renderParentStats(state: AppState): string {
   const kids = state.members.filter(member => member.role === 'kid');
   return `
     <section data-motion-key="stats-launch">
@@ -30,7 +30,7 @@ export function renderParentStats(state: DemoAppState): string {
   `;
 }
 
-export function renderStatsDetailModal(state: DemoAppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left'): string {
+export function renderStatsDetailModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left'): string {
   if (kind === 'family') {
     const kids = state.members.filter(member => member.role === 'kid');
     return `
@@ -64,7 +64,7 @@ export function renderStatsDetailModal(state: DemoAppState, kind: 'family' | 'ki
   `;
 }
 
-function renderFamilyStatsLaunchCard(kids: DemoMember[], state: DemoAppState): string {
+function renderFamilyStatsLaunchCard(kids: AppMember[], state: AppState): string {
   const choreHist = state.historyRows.filter(row => row.type === 'chore');
   const totalDiamonds = kids.reduce((sum, kid) => sum + Number(kid.totalEarned || 0), 0);
   const totalPrizes = state.prizes.reduce((sum, prize) => sum + (prize.redemptions || []).length, 0);
@@ -97,7 +97,7 @@ function renderFamilyStatsLaunchCard(kids: DemoMember[], state: DemoAppState): s
   `;
 }
 
-function renderMemberStatsLaunchCard(member: DemoMember, state: DemoAppState, side: 'left' | 'right'): string {
+function renderMemberStatsLaunchCard(member: AppMember, state: AppState, side: 'left' | 'right'): string {
   const stats = buildMemberStats(member, state);
   return `
     <button class="snapshot-summary-card stats-launch-card" data-open-stats="kid" data-stats-member-id="${escapeHtml(String(member.id || ''))}" data-stats-side="${side}" type="button" style="--stats-accent:${escapeHtml(String(member.color || '#6C63FF'))}">
@@ -126,13 +126,13 @@ function renderMemberStatsLaunchCard(member: DemoMember, state: DemoAppState, si
   `;
 }
 
-function renderFamilyStatsCard(kids: DemoMember[], state: DemoAppState): string {
+function renderFamilyStatsCard(kids: AppMember[], state: AppState): string {
   const totalEarned = kids.reduce((sum, kid) => sum + Number(kid.totalEarned || 0), 0);
   const totalSavings = kids.reduce((sum, kid) => sum + Number(kid.savings || 0), 0);
   const totalTasks = state.historyRows.filter(row => row.type === 'chore').length;
   const totalPrizes = state.historyRows.filter(row => row.type === 'prize').length;
   const totalBadges = state.historyRows.filter(row => row.type === 'badge').length;
-  const streakingKids = kids.filter(kid => Number((kid as DemoMember & { streak?: { current?: number } }).streak?.current || 0) > 0).length;
+  const streakingKids = kids.filter(kid => Number((kid as AppMember & { streak?: { current?: number } }).streak?.current || 0) > 0).length;
   return `
     <div class="stats-panel-card stats-panel-family-card">
       <div class="stats-panel-section">
@@ -161,7 +161,7 @@ function renderFamilyStatsCard(kids: DemoMember[], state: DemoAppState): string 
   `;
 }
 
-function renderMemberStatsCard(member: DemoMember, state: DemoAppState): string {
+function renderMemberStatsCard(member: AppMember, state: AppState): string {
   const stats = buildMemberStats(member, state);
   const levelLabel = stats.currentLevel.level ? `Level ${stats.currentLevel.level}` : 'Current level';
   return `
@@ -191,7 +191,7 @@ function renderMemberStatsCard(member: DemoMember, state: DemoAppState): string 
   `;
 }
 
-function buildMemberStats(member: DemoMember, state: DemoAppState): MemberStats {
+function buildMemberStats(member: AppMember, state: AppState): MemberStats {
   const history = state.historyRows.filter(row => row.memberId === member.id);
   const levels = getLevels(state.settings || {});
   const totalXP = Number(member.totalEarned || 0);
@@ -206,12 +206,12 @@ function buildMemberStats(member: DemoMember, state: DemoAppState): MemberStats 
     rewardCount: history.filter(row => row.type === 'prize').length,
     badgeCount: history.filter(row => row.type === 'badge').length,
     totalXP,
-    streak: Number((member as DemoMember & { streak?: { current?: number } }).streak?.current || 0),
+    streak: Number((member as AppMember & { streak?: { current?: number } }).streak?.current || 0),
     currentLevel,
   };
 }
 
-function renderMemberAvatar(member: DemoMember): string {
+function renderMemberAvatar(member: AppMember): string {
   const avatar = String(member.avatar || member.icon || 'smiley');
   const iconName = avatar.replace(/^ph-/, '');
   return `<i class="ph-duotone ph-${escapeHtml(iconName)}" style="color:${escapeHtml(String(member.color || '#6C63FF'))}"></i>`;

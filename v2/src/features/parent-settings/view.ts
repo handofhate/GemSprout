@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoFamilySettings, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppFamilySettings, type AppMember } from '../../app/app-state';
 import { type SubscriptionState } from '../../platform/subscriptions/revenuecat';
 import { escapeHtml } from '../../ui/html';
 
@@ -6,18 +6,16 @@ export type ParentSettingsPage = 'main' | 'account' | 'notifications';
 
 type RenderSettingsOptions = {
   page: ParentSettingsPage;
-  showDevTools?: boolean;
-  canReset?: boolean;
   subscription?: SubscriptionState;
 };
 
-export function renderParentSettings(state: DemoAppState, options: RenderSettingsOptions): string {
+export function renderParentSettings(state: AppState, options: RenderSettingsOptions): string {
   if (options.page === 'account') return renderAccountSettings(state, options.subscription);
   if (options.page === 'notifications') return renderNotificationSettings(state.settings || {});
   return renderMainSettings(state, options);
 }
 
-function renderMainSettings(state: DemoAppState, options: RenderSettingsOptions): string {
+function renderMainSettings(state: AppState, options: RenderSettingsOptions): string {
   const settings = state.settings || {};
   const kids = state.members.filter(member => member.role !== 'parent' && !member.deleted);
   const splitHouseholdEnabled = kids.some(kid => Boolean(kid.splitHousehold?.enabled));
@@ -166,36 +164,18 @@ function renderMainSettings(state: DemoAppState, options: RenderSettingsOptions)
         </button>
         <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px">GemSprout v2</div>
 
-        ${(options.showDevTools || options.canReset) ? `
-          <div style="height:14px"></div>
-          <div class="section-row"><span class="section-title"><i class="ph-duotone ph-terminal" style="font-size:1rem;vertical-align:middle"></i> Dev Settings</span></div>
-          <div class="card settings-dev-card">
-            ${options.canReset ? `
-              <details class="settings-dev-section" open>
-                <summary class="settings-dev-section-title">
-                  <span class="settings-dev-summary-main"><i class="ph-duotone ph-arrow-counter-clockwise" style="vertical-align:middle;margin-right:4px"></i> Local Demo</span>
-                  <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
-                </summary>
-                <div class="settings-dev-section-body">
-                  <div class="settings-dev-tip">Reset the shared local test data</div>
-                  <button class="btn btn-secondary btn-full" data-settings-reset type="button">Reset Local State</button>
-                </div>
-              </details>
-            ` : ''}
-          </div>
-        ` : ''}
       </div>
     </div>
   `;
 }
 
-function renderAccountSettings(state: DemoAppState, subscription?: SubscriptionState): string {
+function renderAccountSettings(state: AppState, subscription?: SubscriptionState): string {
   const settings = state.settings || {};
   const parent = state.members.find(member => member.role === 'parent') || null;
   const providers = parent?.authProviders || [];
   const google = providers.find(provider => provider.providerId === 'google.com');
   const apple = providers.find(provider => provider.providerId === 'apple.com');
-  const linkedCount = providers.filter(provider => provider.providerId && provider.providerId !== 'dev-bypass').length;
+  const linkedCount = providers.filter(provider => provider.providerId).length;
   const anyLinked = linkedCount > 0;
   const pinSet = !!settings.parentPin;
   const biometricId = getBiometricCredentialIdForSettings();
@@ -271,7 +251,7 @@ function renderAccountSettings(state: DemoAppState, subscription?: SubscriptionS
   `;
 }
 
-function renderNotificationSettings(settings: DemoFamilySettings): string {
+function renderNotificationSettings(settings: AppFamilySettings): string {
   const interestOn = settings.savingsEnabled !== false && settings.savingsInterestEnabled;
   return `
     <div class="settings-subpane">
@@ -310,7 +290,7 @@ function renderToggleRow(label: string, sub: string, key: string, checked: boole
   `;
 }
 
-function renderFamilyRow(member: DemoMember, settings: DemoFamilySettings): string {
+function renderFamilyRow(member: AppMember, settings: AppFamilySettings): string {
   const currency = String(settings.currency || '$');
   const todayKey = todayKeyForSettings(settings);
   const isHereToday = isMemberHereOnDateForSettings(member, todayKey);
@@ -329,14 +309,14 @@ function renderFamilyRow(member: DemoMember, settings: DemoFamilySettings): stri
   `;
 }
 
-function todayKeyForSettings(settings: DemoFamilySettings): string {
+function todayKeyForSettings(settings: AppFamilySettings): string {
   const timezone = String(settings.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Phoenix');
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function isMemberHereOnDateForSettings(member: DemoMember, dateKey: string): boolean {
+function isMemberHereOnDateForSettings(member: AppMember, dateKey: string): boolean {
   const split = member.splitHousehold;
   if (split?.overrides && dateKey in split.overrides) return split.overrides[dateKey] !== false;
   if (!split?.enabled) return member.isHereToday !== false;
@@ -347,7 +327,7 @@ function isMemberHereOnDateForSettings(member: DemoMember, dateKey: string): boo
   return split.cycle?.[pos] !== false;
 }
 
-function renderSettingsMemberAvatar(member: DemoMember): string {
+function renderSettingsMemberAvatar(member: AppMember): string {
   const rawAvatar = String(member.avatar || member.icon || 'ph-smiley');
   const color = String(member.avatarColor || member.color || '#9CA3AF');
   if (/\.(png|jpe?g|gif|webp)$/i.test(rawAvatar)) {

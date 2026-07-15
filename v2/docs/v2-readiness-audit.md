@@ -18,7 +18,8 @@ Likely ready for focused manual verification:
 
 ### P0 Before Full iPhone Parity Pass
 
-- Real-time Firestore refresh/subscription: the dev Firestore path mostly reloads snapshots after local actions. Cross-device actions, parent approvals triggering kid pop-up modals, and notification badge counts need live subscription or a deliberate foreground/visibility refresh strategy.
+- Real app entry/auth/family selection: the default v2 path must behave like the replacement app, not a seeded review lane. Landing, sign-in, onboarding, returning family lookup, kid join, stored viewer selection, and leave-device behavior need to be production-shaped before the v1 swap.
+- Real-time Firestore refresh/subscription: the Firestore-backed app path mostly reloads snapshots after local actions. Cross-device actions, parent approvals triggering kid pop-up modals, and notification badge counts need live subscription or a deliberate foreground/visibility refresh strategy.
 - RevenueCat/paywall/restore/manage subscription flow: the first v2 adapter and paywall/account settings wiring are now in place, modeled on v1. It still needs iPhone/App Store sandbox verification and the later Remote Config beta/fail-open decision.
 - Photo proof storage: v2 now follows the v1 cost-saving pattern rather than Firebase Storage. Photos are compressed client-side into small inline data URLs, kept on pending/recently undoable completion records, and cleaned after the related history row is no longer undoable. This still needs manual approval/undo verification on dev Firestore.
 - iOS build wiring for v2: root Capacitor config still points at `webDir: "www"`. We need confirm the v2 build output is copied/synced into the native app, and verify GoogleService, bundle id, associated auth providers, camera strings, push entitlements, and plugins on a device.
@@ -44,12 +45,13 @@ Likely ready for focused manual verification:
 
 ## Recommended Order
 
-1. Finish verifying real-time Firestore subscription/refresh and app badge sync on two devices. The first v2 implementation is now in place for the dev Firestore path.
-2. Verify RevenueCat/paywall/restore/manage behavior on iPhone with App Store sandbox.
-3. Verify photo proof approval/denial/undo cleanup on dev Firestore, including before/after photo tasks.
-4. Verify and adjust iOS/Capacitor build wiring for v2, then run a first device smoke test.
-5. Finish QR scanner/invite delivery/maintenance mode.
-6. Run the full iPhone test plan and fix findings feature by feature.
+1. Make the default v2 route production-shaped: real landing, auth, onboarding, returning sign-in, kid join, persisted viewer/family selection, and no fake-data default.
+2. Finish verifying real-time Firestore subscription/refresh and app badge sync on two devices. The first v2 implementation is now in place for the Firestore-backed app path.
+3. Verify RevenueCat/paywall/restore/manage behavior on iPhone with App Store sandbox.
+4. Verify photo proof approval/denial/undo cleanup on dev Firestore, including before/after photo tasks.
+5. Verify and adjust iOS/Capacitor build wiring for v2, then run a first device smoke test.
+6. Finish QR scanner/invite delivery/maintenance mode.
+7. Run the full iPhone test plan and fix findings feature by feature.
 
 ## Data And Sync Safety Checklist
 

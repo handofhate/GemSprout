@@ -11,7 +11,7 @@ type DevOnboardingSetupDraft = {
   familyName: string;
   familyCode: string;
   parentPin: string;
-  authUser: { uid?: string; email?: string; displayName?: string; providerId?: string; isDevBypass?: boolean } | null;
+  authUser: { uid?: string; email?: string; displayName?: string; providerId?: string } | null;
   settings: {
     autoApprove: boolean;
     hideUnavailable: boolean;
@@ -856,7 +856,6 @@ export async function commitDevOnboardingSetup(input: {
           uid: input.draft.authUser.uid || '',
           email: input.draft.authUser.email || '',
           linkedAt: now,
-          devBypass: !!input.draft.authUser.isDevBypass,
         }] : [],
         gems: 0,
         diamonds: 0,

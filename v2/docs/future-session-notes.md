@@ -35,7 +35,7 @@ The chosen strategy is a controlled architecture rewrite, not a blank-page produ
 
 - Keep chat quieter during GemSprout work. Do not send mid-edit status updates unless there is a blocker, a risky choice, or the user asks for progress. Make the edits, then report when done with a concise summary.
 - Do not run automated tests/typecheck by default for now. The current priority is real-world/manual testing unless the user explicitly asks for tests or a command is needed to answer a specific question.
-- At the start of each GemSprout session, spin up the v2 test server so it is available if needed. The server path still needs a cleanup pass to remove lab/alternate URL behavior; handle that separately before relying on it as a true app-path mirror.
+- At the start of each GemSprout session, spin up v2 if live review is useful, but treat the default v2 path as the replacement app path. Do not center work around local-route test lanes; the fake-data approval lab and preview-family URL lane have been removed.
 
 ## Why v2 Exists
 
@@ -53,11 +53,11 @@ v2 should make the app easier to maintain by:
 
 v2 has moved beyond the initial contracts/lab stage. It now has:
 
-- A real dev Firestore path using copied v1 data in `gemsprout-v2-dev`, especially `families/migration-preview`.
+- A real app entry path backed by dev Firestore data in `gemsprout-v2-dev`, especially the imported `families/migration-preview` data used for migration and device verification.
 - A parent dashboard with most visuals and settings panes migrated.
 - A regular kid dashboard with Tasks, Gems, Shop, Team, Stats, settings, badge holo cards, savings/history/spend flows, prize redemption/request flows, photo submission, time-slot selection, daily combos, TTS where v1 used it, and the GemSprout easter-egg rain behavior.
 - A little kid mode keyed by legacy-compatible `displayMode: 'tiny'` / `mode: 'tiny'`, with clearer v2 code naming around "little kid" where safe. Little kid Tasks, Gems, Shop, Team, and Stats have been migrated with large simplified visuals and TTS.
-- Landing, returning sign-in, kid join/profile picker, onboarding/setup panes, edit family, join different family, and profile routing are in place for the current dev path.
+- Landing, returning sign-in, kid join/profile picker, onboarding/setup panes, edit family, join different family, and profile routing are in place on the replacement app path.
 - Main settings behavior, levels, streaks, Daily Combo, base/task badges, savings banking, split household home/away, notification settings, account/security settings, Week in Review, and kid in-app reward/approval/denial modals have been migrated far enough for focused parity verification.
 - The v1 loading screen has been migrated into a reusable v2 `renderLoadingScreen()` helper on `screen-auth`.
 
@@ -73,15 +73,16 @@ Important current behavior:
 
 Last known good v2 app-code checkpoint for Build 109-era testing is `e5b374f` (`revcat bypass`). Later commits on `main` may update documentation only; do not move the app-code baseline unless app code changes are intentionally accepted. The July 14 device-debug commits were backed up on `origin/codex/pre-revert-device-pass-backup` and should not be treated as the active baseline.
 
-Next work should start with the readiness pass documented in `v2/docs/v2-readiness-audit.md` and `v2/docs/iphone-test-plan.md`:
+Next work should stay on the replacement-app runway documented in `v2/docs/v2-readiness-audit.md` and `v2/docs/iphone-test-plan.md`:
 
-1. Add real-time Firestore subscription/foreground refresh and native app badge sync.
-2. Port RevenueCat/paywall/restore/manage subscription behavior.
-3. Port durable photo storage.
-4. Verify and adjust iOS/Capacitor build wiring for v2.
-5. Finish QR scanner/invite delivery/maintenance mode, then run the full iPhone test plan.
+1. Make auth, family creation, returning sign-in, kid join, and stored viewer selection production-shaped rather than preview-family driven.
+2. Verify real-time Firestore subscription/foreground refresh and native app badge sync.
+3. Verify RevenueCat/paywall/restore/manage subscription behavior.
+4. Verify photo proof approval/denial/undo lifecycle.
+5. Verify and adjust iOS/Capacitor build wiring for v2.
+6. Finish QR scanner/invite delivery/maintenance mode, then run the full iPhone test plan.
 
-Continue using v1 as the visual and functional source of truth. The user reviews in the browser and prefers concise end summaries over ongoing status chatter. For this phase, do not run backend-heavy tests unless requested; `npm run typecheck:v2` has been the lightweight safety check after edits.
+Continue using v1 as the visual and functional source of truth. The goal is now a production replacement build that can be swapped in for v1, built, and pushed to the App Store after verification. Browser review is useful only when it reflects the real app path; do not route future work through `?source=firestore` or local fake-data lanes. For this phase, do not run backend-heavy tests unless requested; `npm run typecheck:v2` has been the lightweight safety check after edits.
 
 ## v1 Bug List From Pre-v2 Review
 

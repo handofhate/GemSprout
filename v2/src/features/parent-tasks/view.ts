@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoTask } from '../../app/local-demo-state';
+import { type AppState, type AppTask } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 export type ParentTaskEditorDraft = {
@@ -15,7 +15,7 @@ export type ParentTaskEditorDraft = {
 const TASK_ICON_OPTIONS = ['broom', 'tooth', 'bed', 'dog', 't-shirt', 'backpack', 'book-open-text', 'sparkle', 'fork-knife', 'bathtub'];
 const TASK_COLOR_OPTIONS = ['#6BCB77', '#F59E0B', '#45B7D1', '#6C63FF', '#FF6584', '#1D6B57', '#EF4444', '#A78BFA'];
 
-export function renderParentTasks(state: DemoAppState): string {
+export function renderParentTasks(state: AppState): string {
   return `
     <section data-motion-key="tasks-list">
       <div class="section-row">
@@ -29,7 +29,7 @@ export function renderParentTasks(state: DemoAppState): string {
   `;
 }
 
-function renderTaskCard(task: DemoTask): string {
+function renderTaskCard(task: AppTask): string {
   const taskId = escapeHtml(String(task.id || ''));
   const swipeId = `parent_chore_${taskId}`;
   return `
@@ -80,7 +80,7 @@ function formatDaysOfWeek(daysOfWeek: number[] | undefined): string {
   return daysOfWeek.map(day => labels[day] || '').filter(Boolean).join(', ');
 }
 
-function parentChoreMetaSummary(task: DemoTask): string {
+function parentChoreMetaSummary(task: AppTask): string {
   const schedule = task.schedule || {};
   if (schedule.period === 'once') return 'one-time';
   const slotCount = Array.isArray(schedule.slots) ? schedule.slots.length : 0;
@@ -92,7 +92,7 @@ function parentChoreMetaSummary(task: DemoTask): string {
   return `${countLabel}\n${formatDaysOfWeek(schedule.daysOfWeek)}`;
 }
 
-export function createTaskEditorDraft(task: DemoTask | null): ParentTaskEditorDraft {
+export function createTaskEditorDraft(task: AppTask | null): ParentTaskEditorDraft {
   return {
     id: String(task?.id || ''),
     title: String(task?.title || ''),
@@ -105,7 +105,7 @@ export function createTaskEditorDraft(task: DemoTask | null): ParentTaskEditorDr
   };
 }
 
-export function renderTaskEditorModal(state: DemoAppState, draft: ParentTaskEditorDraft, mode: 'create' | 'edit'): string {
+export function renderTaskEditorModal(state: AppState, draft: ParentTaskEditorDraft, mode: 'create' | 'edit'): string {
   const kids = state.members.filter(member => member.role === 'kid');
   return `
     <button class="modal-close-x" data-close-modal type="button" aria-label="Close">
@@ -150,7 +150,7 @@ export function renderTaskEditorModal(state: DemoAppState, draft: ParentTaskEdit
   `;
 }
 
-export function renderTaskDeleteModal(task: DemoTask): string {
+export function renderTaskDeleteModal(task: AppTask): string {
   return `
     <button class="modal-close-x" data-close-modal type="button" aria-label="Close">
       <i class="ph-duotone ph-x"></i>

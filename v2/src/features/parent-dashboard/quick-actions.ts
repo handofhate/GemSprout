@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppMember } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 export type ParentQuickActionId = 'listening' | 'savings' | 'gems';
@@ -43,7 +43,7 @@ const PARENT_QUICK_ACTIONS: ParentQuickAction[] = [
   { id: 'gems', label: 'Gems', icon: 'ph-sketch-logo', tint: '#f4d58d' },
 ];
 
-export function renderParentQuickLaunch(state: DemoAppState): string {
+export function renderParentQuickLaunch(state: AppState): string {
   const actions = PARENT_QUICK_ACTIONS.filter(action => action.id !== 'listening' || state.settings.notListeningEnabled !== false);
   const quickActionsHtml = actions.map(action => `
     <button
@@ -67,7 +67,7 @@ export function renderParentQuickLaunch(state: DemoAppState): string {
   `;
 }
 
-export function createInitialQuickActionState(actionId: ParentQuickActionId, state: DemoAppState): ParentQuickActionState {
+export function createInitialQuickActionState(actionId: ParentQuickActionId, state: AppState): ParentQuickActionState {
   const kids = getKids(state);
   const defaultSelectedKidIds = kids.length === 1 && kids[0].id ? [kids[0].id] : [];
   if (actionId === 'listening') {
@@ -100,7 +100,7 @@ export function createInitialQuickActionState(actionId: ParentQuickActionId, sta
   };
 }
 
-export function renderParentQuickActionModal(actionId: ParentQuickActionId, state: DemoAppState, quickState: ParentQuickActionState): string {
+export function renderParentQuickActionModal(actionId: ParentQuickActionId, state: AppState, quickState: ParentQuickActionState): string {
   switch (actionId) {
     case 'listening':
       return renderNotListeningModal(state, quickState.listening || createInitialQuickActionState('listening', state).listening!);
@@ -113,7 +113,7 @@ export function renderParentQuickActionModal(actionId: ParentQuickActionId, stat
   }
 }
 
-function renderNotListeningModal(state: DemoAppState, quickState: ListeningQuickActionState): string {
+function renderNotListeningModal(state: AppState, quickState: ListeningQuickActionState): string {
   const kids = getKids(state);
   const totalSecs = Math.floor(quickState.accumulatedMs / 1000);
   const mins = String(Math.floor(totalSecs / 60)).padStart(2, '0');
@@ -149,7 +149,7 @@ function renderNotListeningModal(state: DemoAppState, quickState: ListeningQuick
   );
 }
 
-function renderSavingsModal(state: DemoAppState, quickState: SavingsQuickActionState): string {
+function renderSavingsModal(state: AppState, quickState: SavingsQuickActionState): string {
   const kids = getKids(state);
   const currency = '$';
   return renderQuickModalShell(
@@ -175,7 +175,7 @@ function renderSavingsModal(state: DemoAppState, quickState: SavingsQuickActionS
   );
 }
 
-function renderGemsModal(state: DemoAppState, quickState: GemsQuickActionState): string {
+function renderGemsModal(state: AppState, quickState: GemsQuickActionState): string {
   const kids = getKids(state);
   return renderQuickModalShell(
     'Gems',
@@ -230,7 +230,7 @@ function renderActionToggle(label: string, sign: 1 | -1, positiveLabel: string, 
   `;
 }
 
-function renderKidSelector(kids: DemoMember[], selectedKidIds: string[], color: string, background: string): string {
+function renderKidSelector(kids: AppMember[], selectedKidIds: string[], color: string, background: string): string {
   if (kids.length <= 1) return '';
   return `
     <div style="margin-bottom:16px">
@@ -252,13 +252,13 @@ function renderKidSelector(kids: DemoMember[], selectedKidIds: string[], color: 
   `;
 }
 
-function renderKidChipAvatar(member: DemoMember): string {
+function renderKidChipAvatar(member: AppMember): string {
   const avatar = String(member.avatar || '').trim();
   if (/ph-/.test(avatar)) return avatar;
   return '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>';
 }
 
-function formatKidListeningLabel(state: DemoAppState, member: DemoMember, quickState: ListeningQuickActionState, selected: boolean): string {
+function formatKidListeningLabel(state: AppState, member: AppMember, quickState: ListeningQuickActionState, selected: boolean): string {
   const todayKey = todayKeyForQuickAction(state);
   const currentSecs = member.nlDate === todayKey ? Number(member.nlTodaySecs || 0) : 0;
   const previewSecs = selected ? currentSecs + Math.floor(quickState.accumulatedMs / 1000) : currentSecs;
@@ -266,14 +266,14 @@ function formatKidListeningLabel(state: DemoAppState, member: DemoMember, quickS
   return `${Math.floor(previewSecs / 60)}m${previewSecs % 60}s today`;
 }
 
-function todayKeyForQuickAction(state: DemoAppState): string {
+function todayKeyForQuickAction(state: AppState): string {
   const timezone = String(state.settings.familyTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Phoenix');
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function getKids(state: DemoAppState): DemoMember[] {
-  const members = state.members?.length ? state.members : [state.member].filter((member): member is DemoMember => !!member);
+function getKids(state: AppState): AppMember[] {
+  const members = state.members?.length ? state.members : [state.member].filter((member): member is AppMember => !!member);
   return members.filter(member => member.role === 'kid' || !member.role);
 }

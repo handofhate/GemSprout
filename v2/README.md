@@ -25,7 +25,7 @@ The public app remains in the root v1 files while v2 is built and verified in is
 - `src/utils/` - small framework-neutral helpers.
 - `tests/` - v2 fixtures, domain tests, integration tests, and migrated e2e coverage.
 
-## Local Development
+## Replacement App Development
 
 Run:
 
@@ -33,29 +33,18 @@ Run:
 npm run dev:v2
 ```
 
-Use the dev Firestore data for current visual/functionality testing:
-
-```text
-http://127.0.0.1:4273/?source=firestore
-```
-
-This reads and writes the isolated `gemsprout-v2-dev` project, not production. The current imported preview family is `families/migration-preview`.
-
-Local fake-data testing is still available at:
+The default v2 entry path now acts like the real app: landing, sign-in, kid join, onboarding, and Firestore-backed family state are the normal route.
 
 ```text
 http://127.0.0.1:4273/
 ```
 
-The original approval lab is hidden behind:
-
-```text
-http://127.0.0.1:4273/?lab=1
-```
+During replacement work this still reads and writes the isolated `gemsprout-v2-dev` project, not production. The current imported preview family is `families/migration-preview`, but it should be treated as migration/test data behind the real app entry path, not as a separate app lane.
+The old fake-data approval lab, local-store route, and preview-family URL lane have been removed. Use the real app entry path for review and device testing.
 
 ## Current App State
 
-Parent dashboard visuals, landing/login/onboarding, regular kid dashboard, little kid mode, main settings behavior, account/security settings, notification settings, Week in Review, and kid in-app notification modals are mostly migrated for the current dev path. Current next step is the readiness pass: real-time sync/refresh, RevenueCat/paywall, durable photo storage, QR/invite/maintenance behavior, iOS build wiring, and full on-device verification.
+Parent dashboard visuals, landing/login/onboarding, regular kid dashboard, little kid mode, main settings behavior, account/security settings, notification settings, Week in Review, and kid in-app notification modals are mostly migrated for the replacement app path. Current next step is the readiness pass: production-shaped auth/family selection, real-time sync/refresh, RevenueCat/paywall, photo proof lifecycle, QR/invite/maintenance behavior, iOS build wiring, and full on-device verification.
 
 For browser review work, prefer targeted UI changes plus `npm run typecheck:v2`. Avoid broad rewrites and preserve v1 behavior/visuals unless the user explicitly approves a change.
 

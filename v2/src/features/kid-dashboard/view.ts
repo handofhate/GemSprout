@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoCompletion, type DemoMember, type DemoPrize, type DemoTask, type DemoTeamGoal } from '../../app/local-demo-state';
+import { type AppState, type AppCompletion, type AppMember, type AppPrize, type AppTask, type AppTeamGoal } from '../../app/app-state';
 import { getBaseBadgeDef } from '../parent-levels/view';
 import { escapeHtml } from '../../ui/html';
 import { dayIndexForDateKey, todayKeyForTimezone } from '../../app/date-keys';
@@ -15,7 +15,7 @@ export type KidPrizeRedeemStatus = {
   gemsNeeded: number;
 };
 
-export function isLittleKidMode(member: DemoMember | null | undefined): boolean {
+export function isLittleKidMode(member: AppMember | null | undefined): boolean {
   if (!member) return false;
   if (member.displayMode) return member.displayMode === 'tiny' || member.displayMode === 'little';
   return member.mode === 'tiny' || member.mode === 'little';
@@ -25,7 +25,7 @@ function speakAttr(text: string): string {
   return ` data-speak="${escapeHtml(text)}"`;
 }
 
-export function renderKidScreen(state: DemoAppState, member: DemoMember, activeTab: KidTabId): string {
+export function renderKidScreen(state: AppState, member: AppMember, activeTab: KidTabId): string {
   const littleKid = isLittleKidMode(member);
   const headerClass = littleKid ? ' little-kid-header tiny-kid-header' : '';
   const contentClass = littleKid ? ' little-kid-mode tiny-mode' : '';
@@ -37,7 +37,7 @@ export function renderKidScreen(state: DemoAppState, member: DemoMember, activeT
   `;
 }
 
-function renderKidHeader(state: DemoAppState, member: DemoMember): string {
+function renderKidHeader(state: AppState, member: AppMember): string {
   const gems = Number(member.gems || member.diamonds || 0);
   const accent = String(member.color || '#6C63FF');
   const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
@@ -60,7 +60,7 @@ function renderKidHeader(state: DemoAppState, member: DemoMember): string {
   `;
 }
 
-function renderKidNav(member: DemoMember, activeTab: KidTabId): string {
+function renderKidNav(member: AppMember, activeTab: KidTabId): string {
   const accent = String(member.color || '#6C63FF');
   const littleKid = isLittleKidMode(member);
   const themeVars = `--kid-accent:${accent};--kid-accent-soft:${accent}1A;--kid-accent-softer:${accent}0E;--kid-accent-border:${accent}40`;
@@ -86,7 +86,7 @@ function kidTabSpeech(tab: KidTabId): string {
   return 'Stats.';
 }
 
-function renderKidTab(state: DemoAppState, member: DemoMember, activeTab: KidTabId): string {
+function renderKidTab(state: AppState, member: AppMember, activeTab: KidTabId): string {
   switch (activeTab) {
     case 'chores':
       return renderKidChores(state, member);
@@ -101,7 +101,7 @@ function renderKidTab(state: DemoAppState, member: DemoMember, activeTab: KidTab
   }
 }
 
-function renderKidChores(state: DemoAppState, member: DemoMember): string {
+function renderKidChores(state: AppState, member: AppMember): string {
   const chores = assignedTasks(state, member);
   const littleKid = isLittleKidMode(member);
   const hideUnavailable = state.settings.hideUnavailable === true;
@@ -171,7 +171,7 @@ function renderKidChores(state: DemoAppState, member: DemoMember): string {
   `;
 }
 
-function renderKidGems(state: DemoAppState, member: DemoMember): string {
+function renderKidGems(state: AppState, member: AppMember): string {
   const gems = Number(member.gems || member.diamonds || 0);
   const savings = Number(member.savings || 0);
   const accent = String(member.color || '#6C63FF');
@@ -208,7 +208,7 @@ function renderKidGems(state: DemoAppState, member: DemoMember): string {
   `;
 }
 
-function renderKidLevelCard(state: DemoAppState, member: DemoMember, littleKid = false): string {
+function renderKidLevelCard(state: AppState, member: AppMember, littleKid = false): string {
   const progress = getKidLevelProgress(state, member);
   const speech = progress.next
     ? `You are currently level ${Number(progress.current.level || 1)}, and need ${Math.max(0, progress.xpNeeded - progress.xpIntoLevel)} more X P to level up.`
@@ -229,7 +229,7 @@ function renderKidLevelCard(state: DemoAppState, member: DemoMember, littleKid =
   `;
 }
 
-function renderKidStreakCard(member: DemoMember, littleKid = false): string {
+function renderKidStreakCard(member: AppMember, littleKid = false): string {
   const streak = Number(member.streak?.current || member.comboStreak?.current || 0);
   const best = Number(member.streak?.best || member.comboStreak?.best || 0);
   const speech = streak > 0 && streak >= best
@@ -247,7 +247,7 @@ function renderKidStreakCard(member: DemoMember, littleKid = false): string {
   `;
 }
 
-function renderKidNotListeningCard(state: DemoAppState, member: DemoMember): string {
+function renderKidNotListeningCard(state: AppState, member: AppMember): string {
   const notListeningSecondsPerGem = Math.max(1, Number(state.settings.notListeningSecs || 60));
   const pendingSeconds = Number(member.nlPendingSecs || 0);
   const todaySeconds = member.nlDate === todayKey(state) ? Number(member.nlTodaySecs || 0) : 0;
@@ -269,7 +269,7 @@ function renderKidNotListeningCard(state: DemoAppState, member: DemoMember): str
   `;
 }
 
-function renderKidBadges(state: DemoAppState, member: DemoMember, littleKid = false): string {
+function renderKidBadges(state: AppState, member: AppMember, littleKid = false): string {
   if (state.settings.levelingEnabled === false) return '';
   const earned = Array.isArray(member.badges) ? member.badges : [];
   const baseBadges = state.settings.baseBadgesEnabled === false
@@ -301,7 +301,7 @@ function renderKidBadges(state: DemoAppState, member: DemoMember, littleKid = fa
   `;
 }
 
-function renderKidSavingsCard(state: DemoAppState, member: DemoMember, littleKid = false): string {
+function renderKidSavingsCard(state: AppState, member: AppMember, littleKid = false): string {
   const savings = Number(member.savings || 0);
   const currency = String(state.settings.currency || '$');
   const gifted = Number(member.savingsGifted || 0);
@@ -367,7 +367,7 @@ function renderKidSavingsCard(state: DemoAppState, member: DemoMember, littleKid
   `;
 }
 
-function calculateSavingsInterestForView(state: DemoAppState, member: DemoMember, todayKey: string): number {
+function calculateSavingsInterestForView(state: AppState, member: AppMember, todayKey: string): number {
   if (state.settings.savingsEnabled === false || state.settings.savingsInterestEnabled !== true) return 0;
   if (!isSavingsInterestDayForView(state, todayKey)) return 0;
   if (member.savingsInterestLastDate === todayKey) return 0;
@@ -377,7 +377,7 @@ function calculateSavingsInterestForView(state: DemoAppState, member: DemoMember
   return interest > 0 ? interest : 0;
 }
 
-function isSavingsInterestDayForView(state: DemoAppState, todayKey: string): boolean {
+function isSavingsInterestDayForView(state: AppState, todayKey: string): boolean {
   const parsed = new Date(`${todayKey}T00:00:00`);
   if (String(state.settings.savingsInterestPeriod || 'monthly') === 'weekly') {
     return parsed.getDay() === Number(state.settings.savingsInterestDay ?? 1);
@@ -385,7 +385,7 @@ function isSavingsInterestDayForView(state: DemoAppState, todayKey: string): boo
   return parsed.getDate() === Number(state.settings.savingsInterestDayOfMonth || 1);
 }
 
-function renderKidRecentActivity(recentHistory: DemoAppState['historyRows'], totalHistory: number, littleKid = false): string {
+function renderKidRecentActivity(recentHistory: AppState['historyRows'], totalHistory: number, littleKid = false): string {
   if (!recentHistory.length) {
     return `<div class="empty-state"><div class="empty-icon"><i class="ph-duotone ph-scroll" style="color:#9CA3AF;font-size:3rem"></i></div><div class="empty-text">Complete tasks to earn gems!</div></div>`;
   }
@@ -400,7 +400,7 @@ function renderKidRecentActivity(recentHistory: DemoAppState['historyRows'], tot
   `;
 }
 
-function renderKidShop(state: DemoAppState, member: DemoMember): string {
+function renderKidShop(state: AppState, member: AppMember): string {
   const showLockedRecurringPrizes = state.settings.showLockedRecurringPrizes !== false;
   const littleKid = isLittleKidMode(member);
   const prizes = state.prizes
@@ -434,7 +434,7 @@ function renderKidShop(state: DemoAppState, member: DemoMember): string {
   `;
 }
 
-function renderKidPrizeCard(state: DemoAppState, prize: DemoPrize, member: DemoMember, littleKid = false): string {
+function renderKidPrizeCard(state: AppState, prize: AppPrize, member: AppMember, littleKid = false): string {
   const title = String(prize.title || 'Untitled prize');
   const cost = Math.max(0, Number(prize.cost || 0));
   const status = getKidPrizeRedeemStatus(state, prize, member);
@@ -468,7 +468,7 @@ function kidPrizeSpeech(title: string, cost: number, status: KidPrizeRedeemStatu
   return `${title}. ${costClause}${condition ? ` ${condition}.` : ''}`;
 }
 
-function renderKidTeam(state: DemoAppState, member: DemoMember): string {
+function renderKidTeam(state: AppState, member: AppMember): string {
   const gems = Number(member.gems ?? member.diamonds ?? 0);
   const littleKid = isLittleKidMode(member);
   const goals = (state.teamGoals || [])
@@ -494,7 +494,7 @@ function renderKidTeam(state: DemoAppState, member: DemoMember): string {
   `;
 }
 
-function renderKidTeamGoalCard(goal: DemoTeamGoal, kids: DemoMember[], gems: number, memberId: string, littleKid = false): string {
+function renderKidTeamGoalCard(goal: AppTeamGoal, kids: AppMember[], gems: number, memberId: string, littleKid = false): string {
   const total = goalTotal(goal);
   const target = Math.max(1, Number(goal.targetPoints || 1));
   const pct = Math.min(100, Math.round((total / target) * 100));
@@ -542,17 +542,17 @@ function renderKidTeamGoalCard(goal: DemoTeamGoal, kids: DemoMember[], gems: num
     </div>`;
 }
 
-function goalTotal(goal: DemoTeamGoal): number {
+function goalTotal(goal: AppTeamGoal): number {
   return Object.values(goal.contributions || {}).reduce((sum, value) => sum + Number(value || 0), 0);
 }
 
-function renderGoalIcon(goal: DemoTeamGoal): string {
+function renderGoalIcon(goal: AppTeamGoal): string {
   const icon = String(goal.icon || 'trophy').replace(/^ph-/, '');
   const color = String(goal.iconColor || '#D97706');
   return `<i class="ph-duotone ph-${escapeHtml(icon)}" style="color:${escapeHtml(color)};font-size:2rem"></i>`;
 }
 
-function renderKidStats(state: DemoAppState, member: DemoMember): string {
+function renderKidStats(state: AppState, member: AppMember): string {
   const littleKid = isLittleKidMode(member);
   return `
     <div>
@@ -567,7 +567,7 @@ function renderKidStats(state: DemoAppState, member: DemoMember): string {
   `;
 }
 
-function renderKidStatsCard(state: DemoAppState, member: DemoMember): string {
+function renderKidStatsCard(state: AppState, member: AppMember): string {
   const stats = buildKidStats(state, member);
   const color = String(member.color || '#6C63FF');
   const littleKid = isLittleKidMode(member);
@@ -683,7 +683,7 @@ function renderPrizeStatsBreakdown(rows: Array<[string, { count: number; icon?: 
     </div>`;
 }
 
-function renderKidStatsBadgeGrid(state: DemoAppState, member: DemoMember, littleKid = false): string {
+function renderKidStatsBadgeGrid(state: AppState, member: AppMember, littleKid = false): string {
   if (state.settings.levelingEnabled === false) return '';
   const earned = new Set(member.badges || []);
   const baseBadges = state.settings.baseBadgesEnabled === false ? '' : `
@@ -714,7 +714,7 @@ function renderKidStatsBadgeGrid(state: DemoAppState, member: DemoMember, little
   return `${baseBadges}${choreBadges}`;
 }
 
-function buildKidStats(state: DemoAppState, member: DemoMember): {
+function buildKidStats(state: AppState, member: AppMember): {
   choreDone: number;
   gemsEarned: number;
   totalXP: number;
@@ -774,7 +774,7 @@ function buildKidStats(state: DemoAppState, member: DemoMember): {
   const savings = Number(member.savings || 0);
   const totalDeposited = Math.max(savings + totalWithdrawn, savingsDepositRows.reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0));
   const progress = getKidLevelProgress(state, member);
-  const nlLifetimeSecs = Number((member as DemoMember & { nlLifetimeSecs?: number }).nlLifetimeSecs || 0);
+  const nlLifetimeSecs = Number((member as AppMember & { nlLifetimeSecs?: number }).nlLifetimeSecs || 0);
   return {
     choreDone: choreRows.length,
     gemsEarned: Number(member.totalEarned || 0),
@@ -814,7 +814,7 @@ function countBy(values: string[]): Record<string, number> {
   }, {});
 }
 
-function rowDateKey(row: DemoAppState['historyRows'][number]): string {
+function rowDateKey(row: AppState['historyRows'][number]): string {
   const metadataDate = typeof row.metadata?.date === 'string' ? row.metadata.date : '';
   if (metadataDate) return metadataDate;
   return dateKeyFromTimestamp(Number(row.createdAt || 0));
@@ -837,7 +837,7 @@ function renderInlineIcon(iconValue: string): string {
   return `<i class="ph-duotone ph-${escapeHtml(icon)}"></i>`;
 }
 
-function renderPrizeIcon(prize: DemoPrize): string {
+function renderPrizeIcon(prize: AppPrize): string {
   const icon = String(prize.icon || 'gift').replace(/^ph-/, '');
   const color = String(prize.iconColor || '#FF6584');
   return `<i class="ph-duotone ph-${escapeHtml(icon)}" style="color:${escapeHtml(color)}"></i>`;
@@ -851,7 +851,7 @@ function formatPrizeRecurrence(recurrence: string): string {
   return 'Unlimited';
 }
 
-export function getPrizeRequirementSummary(state: DemoAppState | null, prize: DemoPrize): string {
+export function getPrizeRequirementSummary(state: AppState | null, prize: AppPrize): string {
   if (prize.requirementType === 'task_count') {
     const count = Math.max(1, Number(prize.requirementTaskCount || 1) || 1);
     return `Requires ${count} task${count === 1 ? '' : 's'} completed`;
@@ -876,7 +876,7 @@ export function formatPrizeRedeemStatusMessage(status: KidPrizeRedeemStatus | nu
   return 'This prize is not ready yet';
 }
 
-export function getKidPrizeRedeemStatus(state: DemoAppState, prize: DemoPrize, member: DemoMember, dateStr = todayKey(state)): KidPrizeRedeemStatus {
+export function getKidPrizeRedeemStatus(state: AppState, prize: AppPrize, member: AppMember, dateStr = todayKey(state)): KidPrizeRedeemStatus {
   const cost = Math.max(0, Number(prize.cost || 0));
   const balance = Math.max(0, Number(member.gems ?? member.diamonds ?? 0));
   const schedule = getPrizeScheduleStatus(prize, String(member.id || ''), dateStr);
@@ -889,7 +889,7 @@ export function getKidPrizeRedeemStatus(state: DemoAppState, prize: DemoPrize, m
   return { ok: true, reason: 'ok', message: '', schedule, requirement, canAfford, gemsNeeded };
 }
 
-function getPrizeRequirementStatus(state: DemoAppState, prize: DemoPrize, member: DemoMember, dateStr: string): { ok: boolean; reason: string; message: string } {
+function getPrizeRequirementStatus(state: AppState, prize: AppPrize, member: AppMember, dateStr: string): { ok: boolean; reason: string; message: string } {
   const memberId = String(member.id || '');
   const requirementType = String(prize.requirementType || 'none');
   if (requirementType === 'none') return { ok: true, reason: 'none', message: '' };
@@ -924,7 +924,7 @@ function getPrizeRequirementStatus(state: DemoAppState, prize: DemoPrize, member
   return { ok: true, reason: 'none', message: '' };
 }
 
-function getMemberCompletedTaskIdsOnDate(state: DemoAppState, memberId: string, dateStr: string): string[] {
+function getMemberCompletedTaskIdsOnDate(state: AppState, memberId: string, dateStr: string): string[] {
   const ids = new Set<string>();
   state.completions.forEach(completion => {
     if (completion.memberId !== memberId) return;
@@ -943,7 +943,7 @@ function getMemberCompletedTaskIdsOnDate(state: DemoAppState, memberId: string, 
   return [...ids];
 }
 
-function getPrizeScheduleStatus(prize: DemoPrize, memberId: string, dateStr: string): { ok: boolean; reason: string; periodKey: string; message: string } {
+function getPrizeScheduleStatus(prize: AppPrize, memberId: string, dateStr: string): { ok: boolean; reason: string; periodKey: string; message: string } {
   const recurrence = normalizePrizeRecurrence(prize.recurrence);
   const redemptions = Array.isArray(prize.redemptions) ? prize.redemptions : [];
   if (recurrence === 'one_time') {
@@ -1010,7 +1010,7 @@ function getDaysUntilDate(dateKey: string, todayDateKey: string): number {
   return Math.max(0, Math.ceil((target.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
-function todayKey(state?: DemoAppState): string {
+function todayKey(state?: AppState): string {
   return todayKeyForTimezone(state?.settings.familyTimezone);
 }
 
@@ -1021,7 +1021,7 @@ function startOfWeekKey(dateKey: string): string {
   return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
 }
 
-function renderKidActivityRow(row: DemoAppState['historyRows'][number], littleKid = false): string {
+function renderKidActivityRow(row: AppState['historyRows'][number], littleKid = false): string {
   const badge = activityBadge(row);
   const delta = Number(row.gems || 0);
   const amount = Number(row.amount || 0);
@@ -1049,7 +1049,7 @@ function renderKidActivityRow(row: DemoAppState['historyRows'][number], littleKi
   `;
 }
 
-function activitySpeech(row: DemoAppState['historyRows'][number], title: string, delta: number, amount: number): string {
+function activitySpeech(row: AppState['historyRows'][number], title: string, delta: number, amount: number): string {
   const type = String(row.type || '');
   const absGems = Math.abs(delta);
   const absAmount = Math.abs(amount);
@@ -1258,7 +1258,7 @@ const V1_KID_LEVELS = [
   { level: 7, name: 'Master', icon: '<i class="ph-duotone ph-crown" style="color:#D97706"></i>', minXp: 1200 },
 ];
 
-function getKidLevelProgress(state: DemoAppState, member: DemoMember): {
+function getKidLevelProgress(state: AppState, member: AppMember): {
   current: { level?: number; name?: string; icon?: string; minXp?: number };
   next: { level?: number; name?: string; icon?: string; minXp?: number } | null;
   xpIntoLevel: number;
@@ -1281,13 +1281,13 @@ function getKidLevelProgress(state: DemoAppState, member: DemoMember): {
   return { current, next, xpIntoLevel, xpNeeded, pct: Math.max(0, Math.min(100, Math.round((xpIntoLevel / xpNeeded) * 100))) };
 }
 
-function getKidLevels(state: DemoAppState): Array<{ level?: number; name?: string; icon?: string; minXp?: number }> {
+function getKidLevels(state: AppState): Array<{ level?: number; name?: string; icon?: string; minXp?: number }> {
   return Array.isArray(state.settings.customLevels) && state.settings.customLevels.length >= 2
     ? state.settings.customLevels
     : V1_KID_LEVELS;
 }
 
-function activityBadge(row: DemoAppState['historyRows'][number]): { icon: string; bg: string; color: string } {
+function activityBadge(row: AppState['historyRows'][number]): { icon: string; bg: string; color: string } {
   const type = String(row.type || '');
   if (type.includes('savings')) return { icon: '<i class="ph-duotone ph-piggy-bank"></i>', bg: '#DCFCE7', color: '#166534' };
   if (type.includes('badge')) return { icon: '<i class="ph-duotone ph-medal"></i>', bg: '#F3E8FF', color: '#7C3AED' };
@@ -1334,7 +1334,7 @@ function formatHistoryDate(createdAt: number): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function summarizeChores(state: DemoAppState, member: DemoMember, chores: DemoTask[]) {
+function summarizeChores(state: AppState, member: AppMember, chores: AppTask[]) {
   const comboIds = new Set(getDailyComboTasks(state, member).map(task => String(task.id || '')));
   const models = chores.map(task => buildChoreCardModel(state, member, task, comboIds));
   const todo = models.filter(item => item.status === 'todo');
@@ -1350,7 +1350,7 @@ function summarizeChores(state: DemoAppState, member: DemoMember, chores: DemoTa
   return { models, todo, partial, pending, done, unavailable, totalUnits, doneUnits, earnedGems, percent };
 }
 
-function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: DemoTask, comboIds = new Set<string>()): ChoreCardModel {
+function buildChoreCardModel(state: AppState, member: AppMember, task: AppTask, comboIds = new Set<string>()): ChoreCardModel {
   const taskId = String(task.id || '');
   const schedule = normalizeSchedule(task);
   const today = todayKey(state);
@@ -1445,7 +1445,7 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
   };
 }
 
-export function renderKidTimePicker(state: DemoAppState, member: DemoMember, taskId: string): string {
+export function renderKidTimePicker(state: AppState, member: AppMember, taskId: string): string {
   const task = state.tasks.find(item => String(item.id || '') === taskId);
   if (!task) return '';
   const littleKid = isLittleKidMode(member);
@@ -1494,7 +1494,7 @@ export function renderKidTimePicker(state: DemoAppState, member: DemoMember, tas
   </div>`;
 }
 
-function slotProgressStatus(task: DemoTask, completions: DemoCompletion[], requests: DemoAppState['requests'], slot: { id?: string }): 'done' | 'pending' | null {
+function slotProgressStatus(task: AppTask, completions: AppCompletion[], requests: AppState['requests'], slot: { id?: string }): 'done' | 'pending' | null {
   const slotId = String(slot.id || '');
   const slotCompletions = completions.filter(entry => String(entry.slotId || '') === slotId);
   const slotRequests = requests.filter(request => {
@@ -1511,7 +1511,7 @@ function slotProgressStatus(task: DemoTask, completions: DemoCompletion[], reque
   return null;
 }
 
-export function renderKidPhotoCapture(task: DemoTask, entryType: 'before' | 'after', slotId = ''): string {
+export function renderKidPhotoCapture(task: AppTask, entryType: 'before' | 'after', slotId = ''): string {
   const isBefore = entryType === 'before';
   return `
     <div class="photo-capture-overlay" data-photo-capture-overlay>
@@ -1538,7 +1538,7 @@ export function renderKidPhotoCapture(task: DemoTask, entryType: 'before' | 'aft
     </div>`;
 }
 
-function renderDailyCombo(state: DemoAppState, member: DemoMember, models: ChoreCardModel[], littleKid = false): string {
+function renderDailyCombo(state: AppState, member: AppMember, models: ChoreCardModel[], littleKid = false): string {
   if (state.settings.comboEnabled === false) return '';
   const comboTasks = getDailyComboTasks(state, member);
   if (comboTasks.length < 3) return '';
@@ -1588,7 +1588,7 @@ function renderDailyCombo(state: DemoAppState, member: DemoMember, models: Chore
   `;
 }
 
-function getDailyComboTasks(state: DemoAppState, member: DemoMember): DemoTask[] {
+function getDailyComboTasks(state: AppState, member: AppMember): AppTask[] {
   const memberId = String(member.id || '');
   const today = todayKey(state);
   const override = state.settings.comboOverrides?.[memberId];
@@ -1597,11 +1597,11 @@ function getDailyComboTasks(state: DemoAppState, member: DemoMember): DemoTask[]
     : state.settings.comboAssignments?.[memberId] || getAllDailyComboIds(state)[memberId] || [];
   return configuredIds
     .map(id => state.tasks.find(task => String(task.id || '') === String(id)))
-    .filter((task): task is DemoTask => !!task)
+    .filter((task): task is AppTask => !!task)
     .slice(0, 3);
 }
 
-function getAllDailyComboIds(state: DemoAppState): Record<string, string[]> {
+function getAllDailyComboIds(state: AppState): Record<string, string[]> {
   const kids = state.members.filter(member => member.role === 'kid' && !member.deleted).sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
   const used = new Set<string>();
   const combos: Record<string, string[]> = {};
@@ -1647,7 +1647,7 @@ function seededShuffle<T>(items: T[], seed: number): T[] {
   return copy;
 }
 
-function assignedTasks(state: DemoAppState, member: DemoMember): DemoTask[] {
+function assignedTasks(state: AppState, member: AppMember): AppTask[] {
   return state.tasks
     .filter(task => Array.isArray(task.assignedTo) && task.assignedTo.includes(String(member.id || '')))
     .sort((left, right) => Number(left.gems ?? left.diamonds ?? 0) - Number(right.gems ?? right.diamonds ?? 0) || String(left.title || '').localeCompare(String(right.title || '')));
@@ -1662,7 +1662,7 @@ function renderKidPlaceholderCard(title: string, copy: string): string {
   `;
 }
 
-function renderMemberAvatar(member: DemoMember, preferCircle = false): string {
+function renderMemberAvatar(member: AppMember, preferCircle = false): string {
   const rawAvatar = String(member.avatar || member.icon || '').trim();
   const fallback = preferCircle ? 'user-circle' : 'smiley';
   const avatarColor = String(member.avatarColor || member.color || '#6C63FF');
@@ -1681,7 +1681,7 @@ function applyAvatarColor(html: string, color: string): string {
   return html.replace('<i ', `<i style="color:${escapeHtml(color)}" `);
 }
 
-function normalizeSchedule(task: DemoTask): { period: string; targetCount: number; daysOfWeek: number[]; windows: Record<string, { start?: string; end?: string }>; slots: Array<{ id?: string; label?: string; start?: string; end?: string }> } {
+function normalizeSchedule(task: AppTask): { period: string; targetCount: number; daysOfWeek: number[]; windows: Record<string, { start?: string; end?: string }>; slots: Array<{ id?: string; label?: string; start?: string; end?: string }> } {
   const schedule = task.schedule || {};
   return {
     period: String(schedule.period || 'day'),
@@ -1692,7 +1692,7 @@ function normalizeSchedule(task: DemoTask): { period: string; targetCount: numbe
   };
 }
 
-function isCompletionRelevant(completion: DemoCompletion, schedule: ReturnType<typeof normalizeSchedule>, today: string): boolean {
+function isCompletionRelevant(completion: AppCompletion, schedule: ReturnType<typeof normalizeSchedule>, today: string): boolean {
   if (schedule.period === 'once') return true;
   if (schedule.period === 'week') {
     const start = startOfWeekKey(today);
@@ -1701,7 +1701,7 @@ function isCompletionRelevant(completion: DemoCompletion, schedule: ReturnType<t
   return String(completion.date || '') === today;
 }
 
-function isHistoryFromToday(row: DemoAppState['historyRows'][number], schedule: ReturnType<typeof normalizeSchedule>, today: string): boolean {
+function isHistoryFromToday(row: AppState['historyRows'][number], schedule: ReturnType<typeof normalizeSchedule>, today: string): boolean {
   const createdAt = Number(row.createdAt || 0);
   if (!createdAt) return false;
   const date = new Date(createdAt);
@@ -1721,7 +1721,7 @@ function schedulePrimaryLine(schedule: ReturnType<typeof normalizeSchedule>): st
   return `${schedule.targetCount}x per day`;
 }
 
-function scheduleSecondaryLines(_task: DemoTask, schedule: ReturnType<typeof normalizeSchedule>, _status: ChoreStatus, _slotStatuses: Array<{ label: string; status: 'done' | 'pending' | 'available' | 'waiting' }>): string[] {
+function scheduleSecondaryLines(_task: AppTask, schedule: ReturnType<typeof normalizeSchedule>, _status: ChoreStatus, _slotStatuses: Array<{ label: string; status: 'done' | 'pending' | 'available' | 'waiting' }>): string[] {
   const lines: string[] = [];
   const days = formatDays(schedule.daysOfWeek);
   if (days) lines.push(days);
@@ -1746,7 +1746,7 @@ function slotSummary(slot: { label?: string; start?: string; end?: string }): st
   return formatWindow({ start: slot.start, end: slot.end }) || 'Any time';
 }
 
-function isWindowOpen(task: DemoTask, dayIndex: number): boolean {
+function isWindowOpen(task: AppTask, dayIndex: number): boolean {
   const schedule = normalizeSchedule(task);
   if (schedule.period !== 'day' && schedule.period !== 'week') return true;
   const window = schedule.windows[String(dayIndex)] || {};

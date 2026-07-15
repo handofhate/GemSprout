@@ -5382,67 +5382,6 @@
         radial-gradient(circle at top right, rgba(255,255,255,0.8), transparent 34%),
         linear-gradient(180deg, rgba(254,251,246,0.98), rgba(242,235,222,0.96));
     }
-    .settings-dev-card {
-      margin-bottom: 0 !important;
-    }
-    .settings-dev-section {
-      margin-top: 12px;
-      border: 1px solid rgba(83,67,48,0.08);
-      border-radius: 20px;
-      background: rgba(255,255,255,0.56);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.76), 0 10px 20px rgba(44,37,24,0.04);
-      overflow: hidden;
-    }
-    .settings-dev-section-title {
-      list-style: none;
-      font-size: 0.9rem;
-      font-weight: 700;
-      color: #21312b;
-      cursor: pointer;
-      padding: 14px 14px;
-      background: rgba(255,255,255,0.62);
-      border-bottom: 1px solid rgba(39, 50, 41, 0.08);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-    .settings-dev-section[open] .settings-dev-section-title {
-      color: #21312b;
-    }
-    .settings-dev-section-title::-webkit-details-marker {
-      display: none;
-    }
-    .settings-dev-summary-main {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-    }
-    .settings-dev-caret {
-      color: var(--muted);
-      flex-shrink: 0;
-      transition: transform 0.2s;
-    }
-    .settings-dev-section[open] .settings-dev-caret {
-      transform: rotate(180deg);
-    }
-    .settings-dev-section-body {
-      padding: 8px 14px 14px;
-    }
-    .settings-dev-tip {
-      font-size: 0.8rem;
-      color: #6a776f;
-      line-height: 1.35;
-      margin-top: 0;
-      margin-bottom: 8px;
-    }
-    .settings-dev-section-body .btn {
-      margin-bottom: 8px;
-    }
-    .settings-dev-section-body .btn:last-child {
-      margin-bottom: 0;
-    }
     .settings-member-actions { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
     .settings-member-action-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #F9FAFB; border-radius: 12px; }
     .settings-member-action-label { font-weight: 700; font-size: 0.88rem; }

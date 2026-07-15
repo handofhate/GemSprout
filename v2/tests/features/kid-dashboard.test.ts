@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderKidScreen } from '../../src/features/kid-dashboard/view';
-import { type DemoAppState, type DemoMember } from '../../src/app/local-demo-state';
+import { type AppState, type AppMember } from '../../src/app/app-state';
 
-const kid: DemoMember = {
+const kid: AppMember = {
   id: 'kid_1',
   name: 'Maya',
   role: 'kid',
@@ -17,7 +17,7 @@ const kid: DemoMember = {
   badges: [],
 };
 
-function state(overrides: Partial<DemoAppState> = {}): DemoAppState {
+function state(overrides: Partial<AppState> = {}): AppState {
   return {
     member: kid,
     members: [kid],

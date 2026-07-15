@@ -1,5 +1,5 @@
 import { todayKeyForTimezone } from '../../app/date-keys';
-import { type DemoAppState, type DemoHistoryRow, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 type WeekReviewSaved = { dollars: number; gems: number };
@@ -31,7 +31,7 @@ type WeekReviewSlide = {
   audioSrc?: string;
 };
 type WeekReviewStory = {
-  state: DemoAppState;
+  state: AppState;
   slides: WeekReviewSlide[];
   index: number;
   timer: number | null;
@@ -76,7 +76,7 @@ let audio: HTMLAudioElement | null = null;
 let audioPrimeToken = 0;
 let press: { dir: 'prev' | 'next' | 'hold'; startedAt: number; suppressNav: boolean } | null = null;
 
-export function renderWeekReviewLaunchCard(state: DemoAppState): string {
+export function renderWeekReviewLaunchCard(state: AppState): string {
   const kids = activeKids(state);
   const { start, end } = getWeekRange(state);
   const summary = buildWeekReviewSummary(state, start, end);
@@ -108,11 +108,11 @@ export function renderWeekReviewLaunchCard(state: DemoAppState): string {
   `;
 }
 
-export function bindWeekReviewLaunch(root: ParentNode, state: DemoAppState): void {
+export function bindWeekReviewLaunch(root: ParentNode, state: AppState): void {
   root.querySelector<HTMLElement>('[data-week-review-open]')?.addEventListener('click', () => showWeekReview(state));
 }
 
-export function showWeekReviewIfNeeded(state: DemoAppState, delayMs = 1600): void {
+export function showWeekReviewIfNeeded(state: AppState, delayMs = 1600): void {
   const today = todayKeyForTimezone(state.settings.familyTimezone || 'America/Phoenix');
   if (parseDateLocal(today).getDay() !== 0) return;
   if (!activeKids(state).length) return;
@@ -123,7 +123,7 @@ export function showWeekReviewIfNeeded(state: DemoAppState, delayMs = 1600): voi
   window.setTimeout(() => showWeekReviewTeaser(state), delayMs);
 }
 
-export function showWeekReview(state: DemoAppState): void {
+export function showWeekReview(state: AppState): void {
   const kids = activeKids(state);
   if (!kids.length) return;
   const { start, end } = getWeekRange(state);
@@ -159,7 +159,7 @@ export function closeWeekReview(): void {
   document.getElementById('week-review-overlay')?.remove();
 }
 
-function showWeekReviewTeaser(state: DemoAppState): void {
+function showWeekReviewTeaser(state: AppState): void {
   const kids = activeKids(state);
   if (!kids.length) return;
   const root = document.getElementById('modal-root');
@@ -190,7 +190,7 @@ function showWeekReviewTeaser(state: DemoAppState): void {
   });
 }
 
-function buildWeekReviewSlides(state: DemoAppState, start: string, end: string): WeekReviewSlide[] {
+function buildWeekReviewSlides(state: AppState, start: string, end: string): WeekReviewSlide[] {
   const kids = activeKids(state);
   const weekRows = weekHistory(state, start, end);
   const choreRows = weekRows.filter(row => row.type === 'chore');
@@ -206,7 +206,7 @@ function buildWeekReviewSlides(state: DemoAppState, start: string, end: string):
   const taskCounts = countByTitle(taskRows);
   const topTask = Object.entries(taskCounts).sort((left, right) => right[1] - left[1])[0];
   const kidData = kids.map(kid => {
-    const kidRows = (rows: DemoHistoryRow[]) => rows.filter(row => row.memberId === kid.id);
+    const kidRows = (rows: AppHistoryRow[]) => rows.filter(row => row.memberId === kid.id);
     const kChores = kidRows(choreRows);
     const kTaskRows = kidRows(taskRows);
     const kBadges = kidRows(badgeRows);
@@ -568,7 +568,7 @@ function weekReviewCss(revealDuration: number): string {
   `;
 }
 
-function buildWeekReviewSummary(state: DemoAppState, start: string, end: string): { totalGems: number; totalTasks: number; totalBadges: number; savedLabel: string } {
+function buildWeekReviewSummary(state: AppState, start: string, end: string): { totalGems: number; totalTasks: number; totalBadges: number; savedLabel: string } {
   const rows = weekHistory(state, start, end);
   const chores = rows.filter(row => row.type === 'chore');
   const bonus = rows.filter(row => row.type === 'bonus');
@@ -582,11 +582,11 @@ function buildWeekReviewSummary(state: DemoAppState, start: string, end: string)
   };
 }
 
-function activeKids(state: DemoAppState): DemoMember[] {
+function activeKids(state: AppState): AppMember[] {
   return state.members.filter(member => member.role === 'kid' && !member.deleted);
 }
 
-function weekHistory(state: DemoAppState, start: string, end: string): DemoHistoryRow[] {
+function weekHistory(state: AppState, start: string, end: string): AppHistoryRow[] {
   const timezone = state.settings.familyTimezone || 'America/Phoenix';
   return state.historyRows.filter(row => {
     const date = historyDateKey(row, timezone);
@@ -594,8 +594,8 @@ function weekHistory(state: DemoAppState, start: string, end: string): DemoHisto
   });
 }
 
-function historyDateKey(row: DemoHistoryRow, timezone: string): string {
-  const date = String((row as DemoHistoryRow & { date?: string }).date || '');
+function historyDateKey(row: AppHistoryRow, timezone: string): string {
+  const date = String((row as AppHistoryRow & { date?: string }).date || '');
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
   return dateKeyFromTimestamp(Number(row.createdAt || Date.now()), timezone);
 }
@@ -612,7 +612,7 @@ function dateKeyFromTimestamp(timestamp: number, timezone: string): string {
   }
 }
 
-function getWeekRange(state: DemoAppState): { start: string; end: string } {
+function getWeekRange(state: AppState): { start: string; end: string } {
   const today = todayKeyForTimezone(state.settings.familyTimezone || 'America/Phoenix');
   const date = parseDateLocal(today);
   const day = date.getDay();
@@ -654,24 +654,24 @@ function formatWeekReviewDateRange(start: string, end: string, multiline = false
   return multiline ? `${startText} -<br>${endText}` : `${startText} - ${endText}, ${endDate.getFullYear()}`;
 }
 
-function sumGems(rows: DemoHistoryRow[]): number {
-  return rows.reduce((sum, row) => sum + (Number((row as DemoHistoryRow & { diamonds?: number }).diamonds ?? row.gems ?? 0) || 0), 0);
+function sumGems(rows: AppHistoryRow[]): number {
+  return rows.reduce((sum, row) => sum + (Number((row as AppHistoryRow & { diamonds?: number }).diamonds ?? row.gems ?? 0) || 0), 0);
 }
 
-function sumAbsGems(rows: DemoHistoryRow[]): number {
-  return rows.reduce((sum, row) => sum + Math.abs(Number((row as DemoHistoryRow & { diamonds?: number }).diamonds ?? row.gems ?? 0) || 0), 0);
+function sumAbsGems(rows: AppHistoryRow[]): number {
+  return rows.reduce((sum, row) => sum + Math.abs(Number((row as AppHistoryRow & { diamonds?: number }).diamonds ?? row.gems ?? 0) || 0), 0);
 }
 
-function computeSavedTotals(rows: DemoHistoryRow[]): WeekReviewSaved {
+function computeSavedTotals(rows: AppHistoryRow[]): WeekReviewSaved {
   return rows.reduce<WeekReviewSaved>((saved, row) => {
-    if (row.type === 'savings_deposit') saved.dollars += Number((row as DemoHistoryRow & { dollars?: number }).dollars ?? row.amount ?? 0) || 0;
+    if (row.type === 'savings_deposit') saved.dollars += Number((row as AppHistoryRow & { dollars?: number }).dollars ?? row.amount ?? 0) || 0;
     if (row.type === 'savings') {
       const dollars = Number(row.amount || 0) || 0;
       if (dollars > 0) {
         saved.dollars += dollars;
         return saved;
       }
-      const delta = Number((row as DemoHistoryRow & { diamonds?: number }).diamonds ?? row.gems ?? 0) || 0;
+      const delta = Number((row as AppHistoryRow & { diamonds?: number }).diamonds ?? row.gems ?? 0) || 0;
       if (delta < 0) saved.gems += Math.abs(delta);
     }
     return saved;
@@ -685,7 +685,7 @@ function savedLabelFor(saved: WeekReviewSaved, currency: string): string {
   return parts.join(' + ');
 }
 
-function countByTitle(rows: DemoHistoryRow[]): Record<string, number> {
+function countByTitle(rows: AppHistoryRow[]): Record<string, number> {
   return rows.reduce<Record<string, number>>((counts, row) => {
     const title = String(row.title || 'Task');
     counts[title] = (counts[title] || 0) + 1;
@@ -699,7 +699,7 @@ function timesLabel(count: number): string {
   return `${count} Times`;
 }
 
-function renderWeekReviewAvatar(member: DemoMember): string {
+function renderWeekReviewAvatar(member: AppMember): string {
   const avatar = String(member.avatar || member.icon || 'smiley');
   const color = String(member.avatarColor || member.color || '#6C63FF');
   if (/\.(png|jpe?g|gif|webp)$/i.test(avatar)) return `<img src="${escapeHtml(avatar)}" class="avatar-img" alt="">`;

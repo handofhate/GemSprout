@@ -1,4 +1,4 @@
-import { type DemoAppState, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppMember } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 export function renderLandingScreen(): string {
@@ -39,10 +39,6 @@ export function renderReturningSignInScreen(message = ''): string {
           <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" data-signin-provider="apple" type="button">
             ${appleIcon('#fff')}
             Continue with Apple&nbsp;
-          </button>
-          <button class="btn btn-secondary" style="font-size:0.9rem;padding:12px 16px;border-radius:12px" data-signin-provider="dev-bypass" type="button">
-            <i class="ph-duotone ph-code" style="font-size:1rem"></i>
-            Dev bypass login
           </button>
         </div>
         ${message ? `<div style="margin:14px auto 0;max-width:320px;color:#991B1B;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:12px;padding:10px 12px;font-size:0.82rem;line-height:1.4;text-align:center">${escapeHtml(message)}</div>` : ''}
@@ -87,9 +83,6 @@ export function renderKidEntryScreen(message = ''): string {
           <button class="btn btn-secondary" data-kid-scan type="button">
             <i class="ph-duotone ph-qr-code" style="vertical-align:middle"></i> Scan QR Code
           </button>
-          <button class="btn btn-secondary" data-kid-dev type="button">
-            <i class="ph-duotone ph-code" style="vertical-align:middle"></i> Dev enter as kid
-          </button>
         </div>
         ${message ? `<div style="margin:14px auto 0;max-width:320px;color:#991B1B;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:12px;padding:10px 12px;font-size:0.82rem;line-height:1.4;text-align:center">${escapeHtml(message)}</div>` : ''}
         <button style="margin-top:16px;background:none;border:none;color:#3f5d52;font-size:0.85rem;cursor:pointer" data-kid-back type="button"><i class="ph-duotone ph-arrow-left" style="font-size:0.95rem;vertical-align:middle"></i> Back</button>
@@ -98,7 +91,7 @@ export function renderKidEntryScreen(message = ''): string {
   `;
 }
 
-export function renderKidMemberSelectScreen(members: DemoMember[], message = ''): string {
+export function renderKidMemberSelectScreen(members: AppMember[], message = ''): string {
   const kids = members.filter(member => member.role !== 'parent' && !member.deleted);
   return `
     <div class="setup-gate-shell">
@@ -137,7 +130,7 @@ export function renderKidQrScannerScreen(): string {
   `;
 }
 
-export function renderHomeScreen(state: DemoAppState): string {
+export function renderHomeScreen(state: AppState): string {
   const members = state.members
     .filter(member => !member.deleted)
     .sort((left, right) => {
@@ -198,7 +191,7 @@ export function renderHomeScreen(state: DemoAppState): string {
   `;
 }
 
-function renderProfileCard(member: DemoMember): string {
+function renderProfileCard(member: AppMember): string {
   const roleLabel = member.role === 'parent' ? 'Parent' : 'Kid';
   return `
     <button class="profile-card" style="--member-color:${escapeHtml(String(member.color || '#6C63FF'))};position:relative" data-select-viewer="${escapeHtml(String(member.id || ''))}" type="button">
@@ -209,7 +202,7 @@ function renderProfileCard(member: DemoMember): string {
   `;
 }
 
-function renderMemberAvatar(member: DemoMember): string {
+function renderMemberAvatar(member: AppMember): string {
   const rawAvatar = String(member.avatar || member.icon || 'smiley');
   const color = String(member.avatarColor || member.color || '#6C63FF');
   if (/\.(png|jpe?g|gif|webp)$/i.test(rawAvatar)) {

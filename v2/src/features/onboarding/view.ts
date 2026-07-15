@@ -42,7 +42,6 @@ export type ParentSetupAuthUser = {
   email: string;
   displayName: string;
   providerId: string;
-  isDevBypass?: boolean;
 };
 
 export type OnboardingSetupDraft = {
@@ -369,10 +368,9 @@ function renderAccountPane(): string {
         <div class="setup-sub">This parent account will own the family setup and sync it across devices.</div>
       </div>
       <div class="card" style="text-align:center">
-        <div style="font-size:2.5rem;margin-bottom:8px">${authUser.providerId === 'google.com' ? googleIcon() : authUser.providerId === 'apple.com' ? appleIcon('#111') : '<i class="ph-duotone ph-code" style="color:#6C63FF"></i>'}</div>
+        <div style="font-size:2.5rem;margin-bottom:8px">${authUser.providerId === 'google.com' ? googleIcon() : appleIcon('#111')}</div>
         <div style="font-weight:800;color:var(--text);font-size:1.05rem">${escapeHtml(authUser.displayName || 'Parent')}</div>
         <div style="color:var(--muted);font-size:0.86rem;margin-top:4px">${escapeHtml(authUser.email || authUser.providerId)}</div>
-        ${authUser.isDevBypass ? '<div style="margin-top:10px;font-size:0.78rem;color:#92400E;background:#FEF3C7;border:1px solid #FCD34D;border-radius:10px;padding:8px 10px">Temporary dev bypass. Real sign-in still uses Google or Apple.</div>' : ''}
       </div>
       <button class="btn btn-secondary btn-full mt-8" data-onboarding-auth="clear" type="button">Use a different account</button>
     `;
@@ -391,10 +389,6 @@ function renderAccountPane(): string {
       <button class="btn" style="background:#000;color:#fff;font-size:1rem;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:center;font-weight:600;border:none" data-onboarding-auth="apple" type="button">
         ${appleIcon('#fff')}
         Continue with Apple&nbsp;
-      </button>
-      <button class="btn btn-secondary" style="font-size:0.9rem;padding:12px 16px;border-radius:12px" data-onboarding-auth="dev-bypass" type="button">
-        <i class="ph-duotone ph-code" style="font-size:1rem"></i>
-        Dev bypass login
       </button>
     </div>
     ${previewSettings.authError ? `<div style="margin:14px auto 0;max-width:320px;color:#991B1B;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:12px;padding:10px 12px;font-size:0.82rem;line-height:1.4;text-align:center">${escapeHtml(previewSettings.authError)}</div>` : ''}

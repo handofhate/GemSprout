@@ -1,11 +1,11 @@
-import { type DemoAppState, type DemoHistoryRow, type DemoMember } from '../../app/local-demo-state';
+import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app-state';
 import { escapeHtml, statusPill } from '../../ui/html';
 import { createParentDashboardModel, type ParentDashboardModel, type ParentSnapshotCard } from './model';
 import { renderParentQuickLaunch } from './quick-actions';
 
 export type ParentTabId = 'overview' | 'tasks' | 'prizes' | 'levels' | 'stats';
 
-export function renderParentHeader(state: DemoAppState, activeParent?: DemoMember | null): string {
+export function renderParentHeader(state: AppState, activeParent?: AppMember | null): string {
   const parent = activeParent?.role === 'parent'
     ? activeParent
     : state.members.find(member => member.role === 'parent') || null;
@@ -58,7 +58,7 @@ export function renderParentNav(activeTab: ParentTabId, pendingCount = 0): strin
   `;
 }
 
-export function renderParentDashboard(state: DemoAppState): string {
+export function renderParentDashboard(state: AppState): string {
   const model = createParentDashboardModel(state);
   return `
     ${renderHero(model)}
@@ -213,7 +213,7 @@ function renderAvatar(avatar: string, color: string): string {
   return escapeHtml(avatar);
 }
 
-export function renderHistory(historyRows: DemoHistoryRow[]): string {
+export function renderHistory(historyRows: AppHistoryRow[]): string {
   const rows = historyRows.length
     ? historyRows.slice(0, 5).map(row => {
       const value = historyValue(row);
@@ -262,14 +262,14 @@ export function renderHistory(historyRows: DemoHistoryRow[]): string {
     </section>
   `;
 }
-function historyValue(row: DemoHistoryRow): string {
+function historyValue(row: AppHistoryRow): string {
   const gems = Number(row.gems || 0);
   if (gems) return `${gems > 0 ? '+' : ''}${gems}`;
   if (row.amount) return `$${Number(row.amount).toFixed(2)}`;
   return '0';
 }
 
-function activityIcon(row: DemoHistoryRow): string {
+function activityIcon(row: AppHistoryRow): string {
   const type = String(row.type || '');
   if (type.includes('prize')) return 'ph-gift';
   if (type.includes('saving')) return 'ph-piggy-bank';
@@ -277,7 +277,7 @@ function activityIcon(row: DemoHistoryRow): string {
   return 'ph-check-circle';
 }
 
-function activityBadgeBackground(row: DemoHistoryRow): string {
+function activityBadgeBackground(row: AppHistoryRow): string {
   const type = String(row.type || '');
   if (type.includes('decline') || type.includes('denied')) return '#FEE2E2';
   if (type.includes('prize')) return '#F3E4B8';
@@ -285,18 +285,18 @@ function activityBadgeBackground(row: DemoHistoryRow): string {
   return '#DCFCE7';
 }
 
-function canUndoHistoryRow(row: DemoHistoryRow): boolean {
+function canUndoHistoryRow(row: AppHistoryRow): boolean {
   return !!getHistoryRequestId(row);
 }
 
-function getHistoryRequestId(row: DemoHistoryRow): string {
+function getHistoryRequestId(row: AppHistoryRow): string {
   if (row.requestId) return String(row.requestId);
   const id = String(row.id || '');
   const match = id.match(/^history:request:(.+):(approve|deny)$/);
   return match?.[1] || '';
 }
 
-export function renderFullHistoryModal(historyRows: DemoHistoryRow[]): string {
+export function renderFullHistoryModal(historyRows: AppHistoryRow[]): string {
   const rows = historyRows.length
     ? historyRows.map(row => {
       const value = historyValue(row);
@@ -333,7 +333,7 @@ export function renderFullHistoryModal(historyRows: DemoHistoryRow[]): string {
     </div>
   `;
 }
-function activityBadgeColor(row: DemoHistoryRow): string {
+function activityBadgeColor(row: AppHistoryRow): string {
   const type = String(row.type || '');
   if (type.includes('decline') || type.includes('denied')) return '#EF4444';
   if (type.includes('prize')) return '#9A6419';
@@ -341,7 +341,7 @@ function activityBadgeColor(row: DemoHistoryRow): string {
   return '#16A34A';
 }
 
-export function renderParentSnapshotModal(state: DemoAppState, snapshotId: string, side: 'left' | 'right' = 'left'): string {
+export function renderParentSnapshotModal(state: AppState, snapshotId: string, side: 'left' | 'right' = 'left'): string {
   const model = createParentDashboardModel(state);
   const snapshot = model.snapshots.find(item => item.id === snapshotId);
   if (!snapshot) return '';
