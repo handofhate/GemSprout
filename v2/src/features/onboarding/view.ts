@@ -131,7 +131,7 @@ let previewParents: SetupMember[] = [
 let previewKids: SetupMember[] = [
   {
     id: 'preview-kid-1',
-    name: 'Avery',
+    name: '',
     role: 'kid',
     avatar: '<i class="ph-duotone ph-smiley" style="color:#F59E0B"></i>',
     color: '#6C63FF',
@@ -172,6 +172,40 @@ export function isOnboardingEditMode(): boolean {
 export function startNewOnboardingDraft(): void {
   onboardingMode = 'new';
   activeModal = null;
+  previewParents = [{
+    id: 'preview-parent',
+    name: 'Parent',
+    role: 'parent',
+    avatar: '<i class="ph-duotone ph-user-circle" style="color:#6C63FF"></i>',
+    color: '#6C63FF',
+    avatarColor: '#6C63FF',
+  }];
+  previewKids = [{
+    id: 'preview-kid-1',
+    name: '',
+    role: 'kid',
+    avatar: '<i class="ph-duotone ph-smiley" style="color:#F59E0B"></i>',
+    color: '#6C63FF',
+    avatarColor: '#F59E0B',
+    displayMode: 'regular',
+  }];
+  previewSettings = {
+    familyName: 'GemSprout Family',
+    parentPin: '',
+    familyCode: makePreviewFamilyCode(),
+    authUser: null,
+    authError: '',
+    validationMessage: '',
+    autoApprove: false,
+    hideUnavailable: false,
+    hideUnavailablePrizes: false,
+    timezone: 'America/Phoenix',
+    notifyChore: true,
+    notifySpend: true,
+    selectedChores: new Set(DEFAULT_CHORES.map(task => task.title)),
+    selectedPrizes: new Set(DEFAULT_PRIZES.map(prize => prize.title)),
+  };
+  nextKidId = 2;
 }
 
 export function startOnboardingEditDraft(state: {
@@ -508,6 +542,7 @@ function renderDonePane(): string {
       <div style="font-size:0.82rem;font-weight:700;color:#6C63FF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em"><i class="ph-duotone ph-user-plus" style="vertical-align:middle;margin-right:4px"></i> Adding your partner</div>
       <p style="font-size:0.83rem;color:var(--muted);line-height:1.5">Have them install GemSprout and sign in with the same account that you invited during setup. If you still need to invite them, go to <strong>Settings &middot; Add user &middot; Invite a parent</strong>.</p>
     </div>
+    ${previewSettings.validationMessage ? `<div style="margin:0 0 10px;color:#991B1B;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:12px;padding:9px 12px;font-size:0.82rem;line-height:1.35;text-align:center">${escapeHtml(previewSettings.validationMessage)}</div>` : ''}
     <button class="btn btn-primary btn-full" data-onboarding-action="finish" type="button">Let's go!</button>
   `;
 }

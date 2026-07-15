@@ -175,7 +175,9 @@ Patched after this pass:
 - Leave-family routing: the landing redirect now happens before native auth sign-out and sign-out has a short timeout, so a stalled native sign-out cannot close Settings and drop the tester back on the parent dashboard.
 - Native/iOS data source: native builds now default to dev Firestore even without `?source=firestore` or a Vite env flag. Use hidden Push Diagnostics to confirm `Data source: firestore`; `?source=local` remains the explicit local-lab escape hatch.
 - Native/iOS write persistence: hidden dev tools now include `Firestore Write Probe`. Run it before a long device pass; if it fails or times out, debug device Firestore writes before trusting onboarding/task persistence results.
-- Native/iOS Firestore transport: after a device write-probe timeout, dev Firestore initialization now enables `experimentalAutoDetectLongPolling` for the Firebase Web SDK in the Capacitor WebView. Rebuild and rerun the write probe before retesting save flows.
+- Native/iOS Firestore transport: after a device write-probe timeout, dev Firestore initialization now forces long polling and disables fetch streams for the Firebase Web SDK in the Capacitor WebView. Rebuild and rerun the write probe before retesting save flows.
+- Real onboarding pass: Google/Apple auth now follows the v1 live pattern: native provider returns OAuth tokens, then Firebase Web Auth signs in with those tokens. New onboarding no longer pre-fills the first kid as Avery. The final `Let's go` save now uses the existing `Saving` loading screen and times out with an inline Firestore error instead of appearing dead.
+- Firestore parity pass: dev rules are writable again to match the v1 client-write testing model. Onboarding uses the 6-character family code as the Firestore family doc id, stores that code locally, and writes `users/<uid>.familyCode` for returning parent lookup, matching v1.
 
 Still open from this pass:
 

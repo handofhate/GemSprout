@@ -1,5 +1,10 @@
 import { FakeFirestoreGateway, commitRequestOperation } from '../platform/firebase';
-import { DEV_FIRESTORE_CONFIG, DEV_FIRESTORE_FAMILY_ID } from '../platform/firebase/dev-firestore-config';
+import {
+  DEV_FIRESTORE_CONFIG,
+  DEV_FIRESTORE_FAMILY_ID,
+  clearDevFirestoreFamilyId,
+  setDevFirestoreFamilyId,
+} from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
 import { createParentDashboardModel } from '../features/parent-dashboard/model';
 import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
@@ -6425,6 +6430,7 @@ async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
 }
 
 function redirectDeviceToLanding(): void {
+  clearDevFirestoreFamilyId();
   activeViewerMemberId = null;
   activeParentTab = 'overview';
   activeKidTab = 'chores';
@@ -7841,6 +7847,20 @@ async function resolveReturningDevFamily(authUser: { uid?: string; email?: strin
   if (authUser.isDevBypass) return { found: true, parentMemberId: 'preview-parent' };
   try {
     const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
+    if (authUser.uid) {
+      const { getDevUserFamilyId } = await import('../platform/firebase/dev-firestore-operations.js');
+      const familyId = await getDevUserFamilyId({ uid: authUser.uid, email: authUser.email || '' });
+      if (familyId) {
+        setDevFirestoreFamilyId(familyId);
+        const state = await loadDevFirestoreState(familyId);
+        const parent = state.members.find(member => {
+          if (member.role !== 'parent') return false;
+          const authUid = String((member as DemoMember & { authUid?: string }).authUid || '');
+          return member.id === authUser.uid || authUid === authUser.uid;
+        });
+        if (parent) return { found: true, parentMemberId: parent.id };
+      }
+    }
     const state = await loadDevFirestoreState();
     const email = String(authUser.email || '').toLowerCase();
     const parent = state.members.find(member => {
@@ -7946,7 +7966,7 @@ async function handleOnboardingAuth(action: string): Promise<void> {
       : null;
   if (!authUser) {
     if (action === 'google' || action === 'apple') {
-      setOnboardingAuthError('Sign-in did not complete in this local preview. Use the dev bypass here, or try the real provider flow on a configured app/device.');
+      setOnboardingAuthError('Sign-in did not complete. Try again, or use the dev bypass only for local preview testing.');
       renderOnboardingPreservingSetupScroll();
     }
     return;
@@ -7975,8 +7995,18 @@ async function finishOnboardingPreview(): Promise<void> {
     return;
   }
   try {
+    if (draft.authUser?.uid && draft.parents[0]) {
+      draft.parents[0] = { ...draft.parents[0], id: draft.authUser.uid };
+    }
+    const familyId = normalizeFamilyCode(draft.familyCode);
+    renderLoadingScreen('Saving');
     const { commitDevOnboardingSetup } = await import('../platform/firebase/dev-firestore-operations.js');
-    await commitDevOnboardingSetup({ draft });
+    await withTimeout(
+      commitDevOnboardingSetup({ familyId, draft, replaceExisting: false }),
+      10000,
+      'Saving timed out while writing to Firestore.',
+    );
+    setDevFirestoreFamilyId(familyId);
     const parent = draft.parents[0] || null;
     activeViewerMemberId = parent?.id || null;
     activeOnboardingStep = null;
@@ -7989,7 +8019,7 @@ async function finishOnboardingPreview(): Promise<void> {
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     void registerParentPushNotifications({
       userId: parent?.id,
-      familyId: DEV_FIRESTORE_FAMILY_ID,
+      familyId,
       memberId: parent?.id,
       notifyChoreApproval: draft.settings.notifyChoreApproval,
       notifySavingsSpend: draft.settings.notifySavingsSpend,
@@ -7999,6 +8029,11 @@ async function finishOnboardingPreview(): Promise<void> {
       },
     });
     render();
+  } catch (error) {
+    activeOnboardingStep = 'done';
+    onboardingTransitionDirection = 'none';
+    setOnboardingValidationMessage(error instanceof Error ? error.message : String(error));
+    renderLandingPreview();
   } finally {
     onboardingFinishBusy = false;
   }

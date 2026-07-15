@@ -1,7 +1,7 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { collection, doc, getDoc, getDocs, getFirestore, initializeFirestore, limit, onSnapshot, orderBy, query, type Firestore, type Unsubscribe } from 'firebase/firestore';
 import { type DemoAppState, type DemoCompletion, type DemoFamilySettings, type DemoHistoryRow, type DemoMember, type DemoPrize, type DemoRequest, type DemoTask, type DemoTeamGoal } from '../../app/local-demo-state';
-import { DEV_FIRESTORE_CONFIG, DEV_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
+import { DEV_FIRESTORE_CONFIG, getDevFirestoreFamilyId } from './dev-firestore-config';
 
 type CompletionDoc = DemoCompletion;
 type OperationDoc = { id?: string; status?: string; error?: { reason?: string } };
@@ -12,9 +12,11 @@ export function getDevFirestore(): Firestore {
   if (devFirestore) return devFirestore;
   const app = getApps().length ? getApp() : initializeApp(DEV_FIRESTORE_CONFIG);
   try {
-    devFirestore = initializeFirestore(app, {
-      experimentalAutoDetectLongPolling: true,
-    });
+    const webViewSettings = {
+      experimentalForceLongPolling: true,
+      useFetchStreams: false,
+    } as unknown as Parameters<typeof initializeFirestore>[1];
+    devFirestore = initializeFirestore(app, webViewSettings);
   } catch {
     devFirestore = getFirestore(app);
   }
@@ -59,7 +61,7 @@ async function loadHistory(db: Firestore, familyId: string): Promise<DemoHistory
   }
 }
 
-export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID): Promise<DemoAppState> {
+export async function loadDevFirestoreState(familyId = getDevFirestoreFamilyId()): Promise<DemoAppState> {
   const db = getDevFirestore();
   const [familyDoc, members, tasks, prizes, requests, completions, operations, historyRows] = await Promise.all([
     getDoc(doc(db, `families/${familyId}`)),
@@ -115,7 +117,7 @@ export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID):
 
 export function subscribeDevFirestoreState(
   onChange: () => void,
-  familyId = DEV_FIRESTORE_FAMILY_ID,
+  familyId = getDevFirestoreFamilyId(),
 ): Unsubscribe {
   const db = getDevFirestore();
   let initialSnapshotsRemaining = 7;

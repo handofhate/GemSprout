@@ -1,8 +1,18 @@
 import { deleteUser, getAuth, GoogleAuthProvider, OAuthProvider, signInWithCredential, signInWithPopup, signOut, type User } from 'firebase/auth';
 
 type FirebaseAuthenticationPlugin = {
-  signInWithGoogle?: () => Promise<{ credential?: { idToken?: string } }>;
-  signInWithApple?: () => Promise<{ credential?: { idToken?: string; nonce?: string } }>;
+  signInWithGoogle?: (options?: { skipNativeAuth?: boolean }) => Promise<NativeAuthResult>;
+  signInWithApple?: (options?: { skipNativeAuth?: boolean }) => Promise<NativeAuthResult>;
+};
+
+type NativeAuthResult = {
+  credential?: { idToken?: string; accessToken?: string; nonce?: string };
+  user?: {
+    uid?: string;
+    email?: string | null;
+    displayName?: string | null;
+    providerId?: string | null;
+  };
 };
 
 type CapacitorWindow = Window & {
@@ -72,8 +82,13 @@ async function signInWithGoogle(): Promise<User | null> {
   const nativeAuth = getNativeAuthPlugin();
   const auth = getAuth();
   if (nativeAuth?.signInWithGoogle) {
-    const result = await nativeAuth.signInWithGoogle();
-    const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+    const result = await nativeAuth.signInWithGoogle({ skipNativeAuth: true });
+    const idToken = result.credential?.idToken || undefined;
+    const accessToken = result.credential?.accessToken || undefined;
+    if (!idToken && !accessToken) {
+      throw new Error('Google sign-in did not return an OAuth token for Firebase Auth.');
+    }
+    const credential = GoogleAuthProvider.credential(idToken, accessToken);
     return (await signInWithCredential(auth, credential)).user;
   }
   return (await signInWithPopup(auth, new GoogleAuthProvider())).user;
@@ -84,7 +99,10 @@ async function signInWithApple(): Promise<User | null> {
   const auth = getAuth();
   const provider = new OAuthProvider('apple.com');
   if (nativeAuth?.signInWithApple) {
-    const result = await nativeAuth.signInWithApple();
+    const result = await nativeAuth.signInWithApple({ skipNativeAuth: true });
+    if (!result.credential?.idToken) {
+      throw new Error('Apple sign-in did not return an ID token for Firebase Auth.');
+    }
     const credential = provider.credential({
       idToken: result.credential?.idToken,
       rawNonce: result.credential?.nonce,
