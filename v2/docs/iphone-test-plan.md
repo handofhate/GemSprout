@@ -171,10 +171,11 @@ Patched after this pass:
 - Levels, Streaks, Combos, Badges 5: if base badges and task badges are both disabled, the kid badges section hides entirely.
 - Two-Device Live Sync 7: kid task/photo submissions now have a narrow in-flight guard to prevent one submit gesture from creating duplicate pending rows.
 - Native/iOS 4: v1-style hidden push diagnostics have been ported to v2 settings. Tap `GemSprout v2` seven times at the bottom of Settings to unlock Push Diagnostics, then use Request Permission, Register and Show FCM Token, and Push Diagnostics on device.
+- Front Door/Onboarding, Returning Sign-In, Kid Join/Profile Picker, Settings account/security, and Migration: parent devices can leave the seeded family from `Settings -> Account & Security -> Join Different Family`, which signs out, clears local lock state, and returns to the front door even on `source=firestore`.
 
 Still open from this pass:
 
-- Front Door/Onboarding, Returning Sign-In, Kid Join/Profile Picker, Settings account/security, and Migration need a clean way to leave/reset the seeded family on device.
+- Front Door/Onboarding, Returning Sign-In, Kid Join/Profile Picker, Settings account/security, and Migration need a full real-family pass after using the leave-family path.
 - Push notifications need to be verified on a real signed-in parent device using the hidden diagnostics panel.
 - Parent edit-family finish should show the migrated loading screen during the save gap.
 - Not-listening needs the v1 alarm sound and should update the kid Stats number without snapping scroll to top.

@@ -6720,27 +6720,9 @@ function closeJoinDifferentFamilyConfirm(): void {
 async function confirmJoinDifferentFamily(): Promise<void> {
   joinDifferentFamilyConfirmOpen = false;
   closeModal();
-  try {
-    await signOutParentAuth();
-  } catch (error) {
-    console.warn('Parent sign-out failed before family switch:', error);
-  }
-  activeViewerMemberId = null;
-  activeParentTab = 'overview';
-  activeKidTab = 'chores';
-  activeSettingsPage = 'main';
-  landingMode = 'landing';
-  signInMessage = '';
-  kidEntryMessage = '';
-  kidEntryMembers = [];
-  firestoreState = null;
-  firestoreError = '';
   closeSettingsPane();
-  const url = new URL(window.location.href);
-  url.searchParams.set('source', 'firestore');
-  url.searchParams.set('landing', '1');
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-  render();
+  clearLocalAccountSecurityState();
+  await sendDeviceToLandingAfterAccountChange();
 }
 
 function openParentQuickFan(): void {
