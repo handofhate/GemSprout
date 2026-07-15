@@ -254,7 +254,8 @@ function renderKidSelector(kids: DemoMember[], selectedKidIds: string[], color: 
 
 function renderKidChipAvatar(member: DemoMember): string {
   const avatar = String(member.avatar || '').trim();
-  if (/ph-/.test(avatar)) return avatar;
+  if (avatar.startsWith('<')) return avatar;
+  if (/^ph-/.test(avatar)) return `<i class="ph-duotone ${escapeHtml(avatar)}" style="color:${escapeHtml(String(member.avatarColor || member.color || '#9CA3AF'))}"></i>`;
   return '<i class="ph-duotone ph-smiley" style="color:#9CA3AF"></i>';
 }
 
@@ -275,5 +276,5 @@ function todayKeyForQuickAction(state: DemoAppState): string {
 
 function getKids(state: DemoAppState): DemoMember[] {
   const members = state.members?.length ? state.members : [state.member].filter((member): member is DemoMember => !!member);
-  return members.filter(member => member.role === 'kid' || !member.role);
+  return members.filter(member => !member.deleted && (member.role === 'kid' || !member.role));
 }

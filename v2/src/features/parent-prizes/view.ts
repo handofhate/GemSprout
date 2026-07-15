@@ -181,7 +181,7 @@ export function renderPrizeEditorModal(state: DemoAppState, draft: ParentPrizeEd
     </div>
     <div class="form-group">
       <div class="icon-color-row">${COLOR_OPTIONS.map(color => `<button class="icon-color-swatch${color === draft.iconColor ? ' sel' : ''}" data-prize-color="${color}" type="button" style="background:${color}"></button>`).join('')}</div>
-      <div class="icon-picker" id="prize-icon-grid" style="color:${escapeHtml(draft.iconColor)}">${ICON_OPTIONS.map(icon => `<button class="icon-opt${icon === draft.icon ? ' sel' : ''}" data-prize-icon="${icon}" type="button"><i class="ph-duotone ph-${icon}"></i></button>`).join('')}</div>
+      <div class="icon-picker" id="prize-icon-grid" style="color:${escapeHtml(draft.iconColor)}">${ICON_OPTIONS.map(icon => `<button class="icon-opt${icon === draft.icon ? ' sel' : ''}" data-prize-icon="${icon}" type="button"><i class="ph-duotone ph-${icon}" style="color:${escapeHtml(draft.iconColor)}"></i></button>`).join('')}</div>
     </div>
     <div class="form-group">
       <label class="form-label">Gems cost</label>
@@ -241,7 +241,7 @@ export function renderGoalEditorModal(draft: ParentGoalEditorDraft): string {
     </div>
     <div class="form-group">
       <div class="icon-color-row">${COLOR_OPTIONS.map(color => `<button class="icon-color-swatch${color === draft.iconColor ? ' sel' : ''}" data-goal-color="${color}" type="button" style="background:${color}"></button>`).join('')}</div>
-      <div class="icon-picker" id="goal-icon-grid" style="color:${escapeHtml(draft.iconColor)}">${ICON_OPTIONS.map(icon => `<button class="icon-opt${icon === draft.icon ? ' sel' : ''}" data-goal-icon="${icon}" type="button"><i class="ph-duotone ph-${icon}"></i></button>`).join('')}</div>
+      <div class="icon-picker" id="goal-icon-grid" style="color:${escapeHtml(draft.iconColor)}">${ICON_OPTIONS.map(icon => `<button class="icon-opt${icon === draft.icon ? ' sel' : ''}" data-goal-icon="${icon}" type="button"><i class="ph-duotone ph-${icon}" style="color:${escapeHtml(draft.iconColor)}"></i></button>`).join('')}</div>
     </div>
     <div class="form-group">
       <label class="form-label">Gems target</label>

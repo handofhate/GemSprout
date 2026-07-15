@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, where, writeBatch, type Firestore } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, setDoc, where, writeBatch, type Firestore } from 'firebase/firestore';
 import { approveRequest, denyRequest, REQUEST_KINDS, REQUEST_STATUSES, type ApprovalRequest, type Completion, type Member, type Prize } from '../../domain/requests';
 import { makeRequestOperation, OPERATION_KINDS, type OperationExecutionResult, type OperationRecord, type OperationState, planRequestOperationTransaction } from '../../sync';
 import { chorePath, completionPath, familyPath, historyPath, memberPath, operationPath, prizePath, requestPath } from '../../sync/firestore-paths';
@@ -771,6 +771,31 @@ export async function deleteDevFamilyData(input: { familyId?: string } = {}): Pr
 export async function deleteDevUserDoc(input: { uid: string }): Promise<void> {
   if (!input.uid) return;
   await deleteDoc(doc(getDevFirestore(), `users/${input.uid}`));
+}
+
+export async function saveDevFcmTokenForUser(input: {
+  uid: string;
+  token: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  if (!input.uid || !input.token) return;
+  await setDoc(doc(getDevFirestore(), `users/${input.uid}`), {
+    fcmTokens: arrayUnion(input.token),
+    lastFcmToken: input.token,
+    lastFcmTokenMetadata: {
+      ...(input.metadata || {}),
+      updatedAt: Date.now(),
+    },
+    updatedAt: Date.now(),
+  }, { merge: true });
+}
+
+export async function getDevFcmTokenCountForUser(input: { uid: string }): Promise<number | null> {
+  if (!input.uid) return null;
+  const snapshot = await getDoc(doc(getDevFirestore(), `users/${input.uid}`));
+  if (!snapshot.exists()) return 0;
+  const tokens = snapshot.data().fcmTokens;
+  return Array.isArray(tokens) ? tokens.length : null;
 }
 
 export async function commitDevParentInvite(input: {

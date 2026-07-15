@@ -106,7 +106,7 @@ export function createTaskEditorDraft(task: DemoTask | null): ParentTaskEditorDr
 }
 
 export function renderTaskEditorModal(state: DemoAppState, draft: ParentTaskEditorDraft, mode: 'create' | 'edit'): string {
-  const kids = state.members.filter(member => member.role === 'kid');
+  const kids = state.members.filter(member => member.role === 'kid' && !member.deleted);
   return `
     <button class="modal-close-x" data-close-modal type="button" aria-label="Close">
       <i class="ph-duotone ph-x"></i>
@@ -117,7 +117,7 @@ export function renderTaskEditorModal(state: DemoAppState, draft: ParentTaskEdit
     </div>
     <div class="form-group">
       <div class="icon-color-row">${TASK_COLOR_OPTIONS.map(color => `<button class="icon-color-swatch${color === draft.iconColor ? ' sel' : ''}" data-task-color="${color}" type="button" style="background:${color}"></button>`).join('')}</div>
-      <div class="icon-picker" id="task-icon-grid" style="color:${escapeHtml(draft.iconColor)}">${TASK_ICON_OPTIONS.map(icon => `<button class="icon-opt${icon === draft.icon ? ' sel' : ''}" data-task-icon="${icon}" data-icon="${icon}" type="button"><i class="ph-duotone ph-${icon}"></i></button>`).join('')}</div>
+      <div class="icon-picker" id="task-icon-grid" style="color:${escapeHtml(draft.iconColor)}">${TASK_ICON_OPTIONS.map(icon => `<button class="icon-opt${icon === draft.icon ? ' sel' : ''}" data-task-icon="${icon}" data-icon="${icon}" type="button"><i class="ph-duotone ph-${icon}" style="color:${escapeHtml(draft.iconColor)}"></i></button>`).join('')}</div>
     </div>
     <div class="input-row">
       <div class="form-group mb-0">

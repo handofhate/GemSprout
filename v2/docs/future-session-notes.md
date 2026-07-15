@@ -52,6 +52,16 @@ Next work should start with the readiness pass documented in `v2/docs/v2-readine
 
 Continue using v1 as the visual and functional source of truth. The user reviews in the browser and prefers concise end summaries over ongoing status chatter. For this phase, do not run backend-heavy tests unless requested; `npm run typecheck:v2` has been the lightweight safety check after edits.
 
+## iPhone/iPad Device Pass - 2026-07-15
+
+The first numbered device pass produced a broad bug list in `v2/docs/iphone-test-plan.md`. Start future follow-up there before re-testing. The highest-value remaining threads are:
+
+- Give device testers a clean leave/reset-family path so front door, returning sign-in, kid join/profile picker, settings account/security, and migration can be tested without getting trapped in seeded data.
+- Use the ported hidden push diagnostics in v2 before chasing notification failures; unlock it by tapping `GemSprout v2` seven times at the bottom of Settings. v2 now saves native FCM tokens to `users/<authUid>.fcmTokens` during parent push registration and exposes permission/token/auth/family diagnostics on device.
+- Continue reducing kid-dashboard redraws/scroll jumps, especially after approvals, undo, not-listening updates, savings, and prize actions.
+- Finish native readiness checks: app lock on background/reopen, app badge count, local savings-interest notification, offline recovery, and subscriptions.
+- Tune iPad holo badge card proportions and remove overlapping badge-earned modals.
+
 ## v1 Bug List From Pre-v2 Review
 
 These are known issues, but current direction is to hold v1 fixes unless needed as production hotfixes:

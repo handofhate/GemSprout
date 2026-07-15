@@ -115,7 +115,7 @@ function renderKidChores(state: DemoAppState, member: DemoMember): string {
   }
 
   const summary = summarizeChores(state, member, chores);
-  const todoVisible = hideUnavailable ? summary.todo.filter(item => item.canSubmit) : summary.todo;
+  const todoVisible = hideUnavailable ? summary.todo.filter(item => item.canSubmit || item.hasAvailableSlot) : summary.todo;
   const progressHeading = summary.percent === 100
     ? 'Everything for today is wrapped up.'
     : todoVisible.length > 0
@@ -270,7 +270,7 @@ function renderKidNotListeningCard(state: DemoAppState, member: DemoMember): str
 }
 
 function renderKidBadges(state: DemoAppState, member: DemoMember, littleKid = false): string {
-  if (state.settings.levelingEnabled === false) return '';
+  if (state.settings.baseBadgesEnabled === false && state.settings.choreBadgesEnabled === false) return '';
   const earned = Array.isArray(member.badges) ? member.badges : [];
   const baseBadges = state.settings.baseBadgesEnabled === false
     ? ''
@@ -444,6 +444,7 @@ function renderKidPrizeCard(state: DemoAppState, prize: DemoPrize, member: DemoM
   const cls = [
     status.ok ? 'can-afford' : '',
     status.reason === 'window_locked' ? 'locked-window' : '',
+    status.reason === 'pending_review' ? 'pending-review' : '',
   ].filter(Boolean).join(' ');
   const speech = kidPrizeSpeech(title, cost, status, note);
   return `
@@ -883,6 +884,13 @@ export function getKidPrizeRedeemStatus(state: DemoAppState, prize: DemoPrize, m
   const requirement = getPrizeRequirementStatus(state, prize, member, dateStr);
   const canAfford = balance >= cost;
   const gemsNeeded = Math.max(0, cost - balance);
+  const pendingReview = state.requests.some(request =>
+    request.status === 'pending'
+    && request.kind === 'prize_redeem'
+    && request.targetMemberId === member.id
+    && request.source?.prizeId === prize.id
+  );
+  if (pendingReview) return { ok: false, reason: 'pending_review', message: 'Pending parent review', schedule, requirement, canAfford, gemsNeeded };
   if (!schedule.ok) return { ok: false, reason: schedule.reason, message: schedule.message, schedule, requirement, canAfford, gemsNeeded };
   if (!requirement.ok) return { ok: false, reason: requirement.reason, message: requirement.message, schedule, requirement, canAfford, gemsNeeded };
   if (!canAfford) return { ok: false, reason: 'gems', message: gemsNeeded > 0 ? `${gemsNeeded} more gems needed` : 'Not enough gems', schedule, requirement, canAfford, gemsNeeded };
@@ -1096,6 +1104,7 @@ type ChoreCardModel = {
   entryType: 'before' | 'after' | null;
   slotId?: string | null;
   hasSlots: boolean;
+  hasAvailableSlot: boolean;
   metaLines: string[];
   isCombo: boolean;
 };
@@ -1401,6 +1410,7 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
   else if (beforePending || afterPending || (pendingCount > 0 && completedCount >= targetCount)) status = 'pending';
   else if (task.photoMode === 'before_after' && beforeApproved) status = 'partial';
   else if (completedCount > 0) status = 'partial';
+  const hasAvailableSlot = slotStatuses.some(slot => slot.status === 'available');
   const canSubmit = scheduledToday && (
     schedule.slots.length > 1
       ? false
@@ -1418,6 +1428,7 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
     schedulePrimaryLine(schedule),
     ...scheduleSecondaryLines(task, schedule, status, slotStatuses),
   ].filter(Boolean);
+  const visibleStatus = status === 'unavailable' && hasAvailableSlot ? 'todo' : status;
   const reveal = canSubmit
     ? { label: entryType === 'before' ? 'Request' : entryType === 'after' ? 'Done' : 'Done', icon: entryType ? 'ph-camera' : 'ph-check-circle' }
     : schedule.slots.length > 1
@@ -1433,13 +1444,14 @@ function buildChoreCardModel(state: DemoAppState, member: DemoMember, task: Demo
     icon: String(task.icon || 'broom').replace(/^ph-/, ''),
     iconColor: String(task.iconColor || '#6BCB77'),
     gems: Number(task.gems ?? task.diamonds ?? 0),
-    status,
+    status: visibleStatus,
     canSubmit,
     revealLabel: reveal.label,
     revealIcon: reveal.icon,
     entryType,
     slotId: schedule.slots.length === 1 ? String(schedule.slots[0]?.id || '') : null,
     hasSlots: schedule.slots.length > 1,
+    hasAvailableSlot,
     metaLines,
     isCombo: comboIds.has(taskId),
   };

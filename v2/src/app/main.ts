@@ -1,5 +1,5 @@
 import { FakeFirestoreGateway, commitRequestOperation } from '../platform/firebase';
-import { DEV_FIRESTORE_FAMILY_ID } from '../platform/firebase/dev-firestore-config';
+import { DEV_FIRESTORE_CONFIG, DEV_FIRESTORE_FAMILY_ID } from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
 import { createParentDashboardModel } from '../features/parent-dashboard/model';
 import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
@@ -32,7 +32,7 @@ import {
   type OnboardingTransitionDirection,
 } from '../features/onboarding/view';
 import { registerParentPushNotifications } from '../platform/notifications/push-registration';
-import { signInParentWithProvider, createDevBypassParentAuth as createAuthDevBypass, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
+import { signInParentWithProvider, createDevBypassParentAuth as createAuthDevBypass, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthInfo, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
 import {
   initRevenueCat,
   loadOfferings,
@@ -145,6 +145,10 @@ let activeGoalId: string | null = null;
 let activePrizeDeleteKind: 'prize' | 'goal' | null = null;
 let activeIconPicker: { kind: 'level' | 'baseBadge' | 'taskBadge'; a: number | string; b?: number } | null = null;
 let activeSettingsPage: ParentSettingsPage = 'main';
+let devSettingsUnlocked = false;
+let devSettingsUnlockTapCount = 0;
+let devSettingsUnlockWindowStart = 0;
+let devPushDiagnosticsClipboard = '';
 let pendingComboOverrides: Record<string, Record<number, string>> = {};
 let activeViewerMemberId: string | null = null;
 let activeKidTab: KidTabId = 'chores';
@@ -156,6 +160,7 @@ let pendingKidScrollTop: number | null = null;
 let badgeCardGyroCleanup: (() => void) | null = null;
 let statsGemCleanup: (() => void) | null = null;
 const activeKidPrizeActionIds = new Set<string>();
+const activeKidTaskActionIds = new Set<string>();
 const rapidTapState: Record<string, { taps: number; timer: number | null }> = {};
 const PROFILE_COLORS = ['#6C63FF', '#FF6584', '#43D9AD', '#FFD93D', '#6BCB77', '#FF9A3C', '#4ECDC4', '#45B7D1', '#E91E63', '#9C27B0'];
 const KID_AVATARS = [
@@ -199,6 +204,8 @@ let leaveDevicePreviousMemberId: string | null = null;
 let appLockPinBuffer = '';
 let appLockRequired = false;
 let appLockOpen = false;
+const uiHintBounceKeys = new Set<string>();
+let uiHintBounceScope = '';
 
 function useDevFirestore(): boolean {
   return new URLSearchParams(window.location.search).get('source') === 'firestore'
@@ -4299,17 +4306,7 @@ function bindTaskEditorModal(): void {
       activeTaskEditorDraft = readTaskEditorDraftFromDom() || activeTaskEditorDraft;
       if (!activeTaskEditorDraft) return;
       activeTaskEditorDraft.iconColor = button.dataset.taskColor || activeTaskEditorDraft.iconColor;
-      const trigger = root.querySelector<HTMLElement>('.quick-action-modal');
-      if (trigger) {
-        root.innerHTML = `
-          <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="${root.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || ''}">
-            <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
-              ${renderTaskEditorModal(currentDemoState(), activeTaskEditorDraft, editorMode)}
-            </div>
-          </div>
-        `;
-        bindTaskEditorModal();
-      }
+      rerenderTaskEditorModal(editorMode);
     });
   });
   root.querySelectorAll<HTMLButtonElement>('[data-task-icon]').forEach(button => {
@@ -4317,17 +4314,24 @@ function bindTaskEditorModal(): void {
       activeTaskEditorDraft = readTaskEditorDraftFromDom() || activeTaskEditorDraft;
       if (!activeTaskEditorDraft) return;
       activeTaskEditorDraft.icon = button.dataset.taskIcon || activeTaskEditorDraft.icon;
-      root.innerHTML = `
-        <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="${root.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || ''}">
-          <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
-            ${renderTaskEditorModal(currentDemoState(), activeTaskEditorDraft, editorMode)}
-          </div>
-        </div>
-      `;
-      bindTaskEditorModal();
+      rerenderTaskEditorModal(editorMode);
     });
   });
   root.querySelector<HTMLButtonElement>('[data-task-save]')?.addEventListener('click', () => void saveTaskDraft());
+}
+
+function rerenderTaskEditorModal(editorMode: 'create' | 'edit'): void {
+  const root = document.getElementById('modal-root');
+  const overlayStyle = root?.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || '';
+  if (!root || !activeTaskEditorDraft) return;
+  root.innerHTML = `
+    <div class="modal-overlay quick-modal-overlay" data-modal-overlay style="${overlayStyle}">
+      <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal" role="dialog" aria-modal="true">
+        ${renderTaskEditorModal(currentDemoState(), activeTaskEditorDraft, editorMode)}
+      </div>
+    </div>
+  `;
+  bindTaskEditorModal();
 }
 
 function bindTaskDeleteModal(): void {
@@ -4588,6 +4592,7 @@ async function ensureParentPushRegistration(settings = currentSettings()): Promi
     notifySavingsSpend: settings.notifySavingsSpend !== false,
     saveToken: async (token, metadata) => {
       window.localStorage.setItem('gemsprout.v2.devPushToken', JSON.stringify({ token, metadata }));
+      await savePushTokenForSignedInUser(token, metadata as Record<string, unknown>);
     },
     onForegroundNotification: event => {
       void handleParentNotificationEvent(event, { openInbox: false });
@@ -5408,7 +5413,7 @@ function rerenderSettingsPane(scrollTop?: number): void {
   const state = currentDemoState();
   root.innerHTML = renderParentSettings(state, {
     page: activeSettingsPage,
-    showDevTools: false,
+    showDevTools: devSettingsUnlocked,
     canReset: !useDevFirestore(),
     subscription: subscriptionState,
   });
@@ -5532,6 +5537,16 @@ function bindSettingsPane(): void {
   root.querySelector<HTMLElement>('[data-settings-whats-new]')?.addEventListener('click', event => {
     openSettingsChangelogModal(event.currentTarget as Element | null);
   });
+  root.querySelector<HTMLElement>('[data-settings-dev-unlock]')?.addEventListener('click', tapSettingsVersionForDevUnlock);
+  root.querySelector<HTMLElement>('[data-settings-dev-push-permission]')?.addEventListener('click', () => {
+    void devTestPushPermission();
+  });
+  root.querySelector<HTMLElement>('[data-settings-dev-push-token]')?.addEventListener('click', () => {
+    void devShowPushToken();
+  });
+  root.querySelector<HTMLElement>('[data-settings-dev-push-diagnostics]')?.addEventListener('click', () => {
+    void devShowPushDiagnostics();
+  });
   root.querySelector<HTMLInputElement>('[data-settings-split-household]')?.addEventListener('change', event => {
     void setFamilySplitHousehold((event.currentTarget as HTMLInputElement).checked);
   });
@@ -5560,6 +5575,250 @@ function bindSettingsPane(): void {
       void setMemberTodayPresence(memberId, mode !== 'away');
     });
   });
+}
+
+function tapSettingsVersionForDevUnlock(): void {
+  if (devSettingsUnlocked) return;
+  const now = Date.now();
+  if (!devSettingsUnlockWindowStart || now - devSettingsUnlockWindowStart > 3000) {
+    devSettingsUnlockWindowStart = now;
+    devSettingsUnlockTapCount = 0;
+  }
+  devSettingsUnlockTapCount += 1;
+  const remaining = 7 - devSettingsUnlockTapCount;
+  if (remaining <= 0) {
+    const scrollTop = document.querySelector<HTMLElement>('#settings-root .settings-subpane')?.scrollTop || 0;
+    devSettingsUnlocked = true;
+    devSettingsUnlockTapCount = 0;
+    devSettingsUnlockWindowStart = 0;
+    toast('Developer options unlocked');
+    rerenderSettingsPane(scrollTop);
+    requestAnimationFrame(() => {
+      const pane = document.querySelector<HTMLElement>('#settings-root .settings-subpane');
+      if (pane) pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
+    });
+    return;
+  }
+  if (devSettingsUnlockTapCount >= 3) toast(`${remaining} more taps to unlock developer options`);
+}
+
+async function savePushTokenForSignedInUser(token: string, metadata: Record<string, unknown> = {}): Promise<boolean> {
+  const uid = getCurrentParentAuthUid();
+  if (!uid || !token) return false;
+  const { saveDevFcmTokenForUser } = await import('../platform/firebase/dev-firestore-operations.js');
+  await saveDevFcmTokenForUser({ uid, token, metadata });
+  return true;
+}
+
+function isNativePlatform(): boolean {
+  const capacitor = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return capacitor?.isNativePlatform?.() === true;
+}
+
+function getFirebaseMessagingPlugin(): {
+  requestPermissions?: () => Promise<{ receive?: string }>;
+  checkPermissions?: () => Promise<{ receive?: string }>;
+  getToken?: () => Promise<{ token?: string }>;
+} | null {
+  const capacitor = (window as Window & {
+    Capacitor?: {
+      Plugins?: {
+        FirebaseMessaging?: {
+          requestPermissions?: () => Promise<{ receive?: string }>;
+          checkPermissions?: () => Promise<{ receive?: string }>;
+          getToken?: () => Promise<{ token?: string }>;
+        };
+      };
+    };
+  }).Capacitor;
+  return capacitor?.Plugins?.FirebaseMessaging || null;
+}
+
+async function devTestPushPermission(): Promise<void> {
+  if (!isNativePlatform()) {
+    toast('Push notifications only work on device');
+    return;
+  }
+  const messaging = getFirebaseMessagingPlugin();
+  if (!messaging?.requestPermissions) {
+    toast('FirebaseMessaging plugin not found');
+    return;
+  }
+  try {
+    const result = await messaging.requestPermissions();
+    toast(`Permission: ${result.receive || 'unknown'}`);
+  } catch (error) {
+    toast(`Permission check failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
+}
+
+async function devShowPushToken(): Promise<void> {
+  if (!isNativePlatform()) {
+    toast('Push notifications only work on device');
+    return;
+  }
+  const messaging = getFirebaseMessagingPlugin();
+  if (!messaging?.requestPermissions || !messaging.getToken) {
+    toast('FirebaseMessaging plugin not found');
+    return;
+  }
+  let token = '';
+  let permission = '';
+  let tokenSaved = false;
+  let saveError = '';
+  try {
+    const perm = await messaging.requestPermissions();
+    permission = perm.receive || 'unknown';
+    if (permission !== 'granted') {
+      toast(`Permission not granted: ${permission}`);
+      return;
+    }
+    token = (await messaging.getToken())?.token || '';
+    if (!token) {
+      toast('No token returned from FirebaseMessaging');
+      return;
+    }
+  } catch (error) {
+    toast(`Token fetch failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    return;
+  }
+  try {
+    const state = currentDemoState();
+    tokenSaved = await savePushTokenForSignedInUser(token, {
+      source: 'dev-diagnostics',
+      familyId: state.familyId || DEV_FIRESTORE_FAMILY_ID,
+      memberId: getActiveViewer(state)?.id || '',
+      permission,
+      platform: 'native',
+    });
+  } catch (error) {
+    saveError = error instanceof Error ? error.message : String(error);
+  }
+  openDevPushTokenModal(token, tokenSaved, saveError);
+}
+
+function openDevPushTokenModal(token: string, tokenSaved: boolean, saveError = ''): void {
+  const root = document.getElementById('modal-root');
+  if (!root) return;
+  root.innerHTML = `
+    <div class="modal-overlay quick-modal-overlay" data-modal-overlay>
+      <div class="modal quick-action-modal quick-action-modal-wide" role="dialog" aria-modal="true">
+        <button class="modal-close-x" data-modal-close type="button" aria-label="Close"><i class="ph-duotone ph-x"></i></button>
+        <div class="modal-title"><i class="ph-duotone ph-bell" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> FCM Token</div>
+        <div style="font-size:0.72rem;font-family:monospace;word-break:break-all;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.6">${escapeHtmlAttr(token)}</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-top:8px">${tokenSaved ? 'Token saved to Firestore.' : `Token fetched, but Firestore save ${saveError ? `failed: ${escapeHtmlAttr(saveError)}` : 'was skipped because no Firebase auth user is signed in.'}`}</div>
+        <button class="btn btn-secondary btn-full" style="margin-top:12px" data-copy-dev-token type="button">Copy Token</button>
+      </div>
+    </div>`;
+  bindBasicModalClose(root);
+  root.querySelector<HTMLElement>('[data-copy-dev-token]')?.addEventListener('click', () => copyTextToClipboard(token, 'Token copied'));
+}
+
+async function devShowPushDiagnostics(): Promise<void> {
+  const state = currentDemoState();
+  const viewer = getActiveViewer(state);
+  const authInfo = getCurrentParentAuthInfo();
+  const parent = state.members.find(member => member.role === 'parent') || null;
+  const parentAuthUid = String((parent as DemoMember & { authUid?: string } | null)?.authUid || '');
+  const messaging = getFirebaseMessagingPlugin();
+  const info: Record<string, unknown> = {
+    firebaseProjectId: DEV_FIRESTORE_CONFIG.projectId,
+    dataSource: useDevFirestore() ? 'dev-firestore' : 'local-demo',
+    nativePlatform: isNativePlatform(),
+    familyId: state.familyId || DEV_FIRESTORE_FAMILY_ID,
+    familyCode: state.familyCode || '',
+    activeViewerId: viewer?.id || '',
+    activeViewerRole: viewer?.role || '',
+    activeViewerName: viewer?.name || '',
+    authUid: authInfo?.uid || '',
+    authEmail: authInfo?.email || '',
+    authProvider: authInfo?.providerId || '',
+    parentAuthUid,
+    notifyChoreApproval: state.settings.notifyChoreApproval !== false,
+    notifySavingsSpend: state.settings.notifySavingsSpend !== false,
+    lockOnBackground: state.settings.lockOnBackground === true,
+    parentPinSet: !!state.settings.parentPin,
+    biometricCredentialSet: !!window.localStorage.getItem('gemsprout.v2.biometricCredentialId'),
+    localTokenCached: !!window.localStorage.getItem('gemsprout.v2.devPushToken'),
+    pushPermission: isNativePlatform() ? (messaging ? 'checking' : 'plugin-missing') : 'web-only',
+    deviceToken: '',
+    authUserTokenCount: '(unknown)',
+    parentAuthTokenCount: '(unknown)',
+  };
+  if (isNativePlatform() && messaging) {
+    try {
+      const permission = messaging.checkPermissions
+        ? await messaging.checkPermissions().catch(() => null)
+        : await messaging.requestPermissions?.().catch(() => null);
+      info.pushPermission = permission?.receive || '(unknown)';
+      if (info.pushPermission === 'granted' && messaging.getToken) {
+        info.deviceToken = (await messaging.getToken().catch(() => null))?.token || '';
+      }
+    } catch (error) {
+      info.pushPermission = `error: ${error instanceof Error ? error.message : 'unknown'}`;
+    }
+  }
+  const { getDevFcmTokenCountForUser } = await import('../platform/firebase/dev-firestore-operations.js');
+  info.authUserTokenCount = authInfo?.uid
+    ? await getDevFcmTokenCountForUser({ uid: authInfo.uid }).catch(error => `error: ${error instanceof Error ? error.message : 'unknown'}`)
+    : '(n/a)';
+  info.parentAuthTokenCount = parentAuthUid
+    ? await getDevFcmTokenCountForUser({ uid: parentAuthUid }).catch(error => `error: ${error instanceof Error ? error.message : 'unknown'}`)
+    : '(n/a)';
+  devPushDiagnosticsClipboard = JSON.stringify(info, null, 2);
+  openDevPushDiagnosticsModal(info);
+}
+
+function openDevPushDiagnosticsModal(info: Record<string, unknown>): void {
+  const root = document.getElementById('modal-root');
+  if (!root) return;
+  const token = String(info.deviceToken || '');
+  const lines = [
+    `Project: ${info.firebaseProjectId}`,
+    `Source: ${info.dataSource}`,
+    `Native: ${info.nativePlatform}`,
+    `Family: ${info.familyCode || '(none)'} / ${info.familyId}`,
+    `Viewer: ${info.activeViewerRole || '(none)'} ${info.activeViewerName || ''} (${info.activeViewerId || 'none'})`,
+    `Auth UID: ${info.authUid || '(none)'}`,
+    `Auth email: ${info.authEmail || '(none)'}`,
+    `Parent auth UID: ${info.parentAuthUid || '(none)'}`,
+    `Push permission: ${info.pushPermission}`,
+    `Device token: ${token ? `${token.slice(0, 24)}...` : '(none)'}`,
+    `users/<authUid> token count: ${info.authUserTokenCount}`,
+    `users/<parentAuthUid> token count: ${info.parentAuthTokenCount}`,
+    `Notify chore approval: ${info.notifyChoreApproval ? 'on' : 'off'}`,
+    `Notify savings spend: ${info.notifySavingsSpend ? 'on' : 'off'}`,
+    `Lock on background: ${info.lockOnBackground ? 'on' : 'off'}`,
+  ];
+  root.innerHTML = `
+    <div class="modal-overlay quick-modal-overlay" data-modal-overlay>
+      <div class="modal quick-action-modal quick-action-modal-wide" role="dialog" aria-modal="true">
+        <button class="modal-close-x" data-modal-close type="button" aria-label="Close"><i class="ph-duotone ph-x"></i></button>
+        <div class="modal-title"><i class="ph-duotone ph-bug" style="color:#6C63FF;font-size:1.2rem;vertical-align:middle"></i> Push Diagnostics</div>
+        <div style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin-bottom:10px">${lines.map(line => escapeHtmlAttr(line)).join('<br>')}</div>
+        <div style="font-size:0.72rem;font-family:monospace;white-space:pre-wrap;word-break:break-word;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.5;max-height:220px;overflow:auto">${escapeHtmlAttr(devPushDiagnosticsClipboard)}</div>
+        <button class="btn btn-secondary btn-full" style="margin-top:12px" data-copy-dev-diagnostics type="button">Copy Diagnostics JSON</button>
+      </div>
+    </div>`;
+  bindBasicModalClose(root);
+  root.querySelector<HTMLElement>('[data-copy-dev-diagnostics]')?.addEventListener('click', () => copyTextToClipboard(devPushDiagnosticsClipboard, 'Diagnostics copied'));
+}
+
+function bindBasicModalClose(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>('[data-modal-close]').forEach(button => button.addEventListener('click', closeModal));
+  root.querySelector<HTMLElement>('[data-modal-overlay]')?.addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeModal();
+  });
+}
+
+function copyTextToClipboard(text: string, successMessage: string): void {
+  if (!text) {
+    toast('Nothing to copy');
+    return;
+  }
+  navigator.clipboard?.writeText(text)
+    .then(() => toast(successMessage))
+    .catch(() => toast('Copy failed'));
 }
 
 function getActiveParentMember(): DemoMember | null {
@@ -6543,6 +6802,20 @@ function bounceFirstHint(selector: string, scope: Document | HTMLElement = docum
     clearUiHintAnimations();
     return;
   }
+  const state = currentDemoState();
+  const viewer = getActiveViewer(state);
+  const nextScope = viewer?.role === 'parent'
+    ? `parent:${activeParentTab}`
+    : viewer?.role === 'kid'
+      ? `kid:${viewer.id || 'kid'}:${activeKidTab}`
+      : 'home';
+  if (uiHintBounceScope !== nextScope) {
+    uiHintBounceScope = nextScope;
+    uiHintBounceKeys.clear();
+  }
+  const hintKey = `${nextScope}:${selector}`;
+  if (uiHintBounceKeys.has(hintKey)) return;
+  uiHintBounceKeys.add(hintKey);
   window.setTimeout(() => {
     if (!uiHintsEnabled()) return;
     const first = scope.querySelector<HTMLElement>(selector);
@@ -7629,6 +7902,7 @@ async function finishOnboardingPreview(): Promise<void> {
   const draft = getOnboardingSetupDraft();
   if (isOnboardingEditMode()) {
     try {
+      renderLoadingScreen('Saving');
       await finishOnboardingEdit(draft);
     } finally {
       onboardingFinishBusy = false;
@@ -7661,6 +7935,7 @@ async function finishOnboardingPreview(): Promise<void> {
       notifySavingsSpend: draft.settings.notifySavingsSpend,
       saveToken: async (token, metadata) => {
         window.localStorage.setItem('gemsprout.v2.devPushToken', JSON.stringify({ token, metadata }));
+        await savePushTokenForSignedInUser(token, metadata as Record<string, unknown>);
       },
     });
     render();
@@ -7821,6 +8096,9 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
     openKidPhotoCapture(taskId, slotId, entryType);
     return;
   }
+  const actionKey = `${viewer.id}:${taskId}:${slotId || 'none'}:${entryTypeOverride || 'after'}:${photoUrl ? 'photo' : 'plain'}`;
+  if (activeKidTaskActionIds.has(actionKey)) return;
+  activeKidTaskActionIds.add(actionKey);
   const now = Date.now();
   const completionId = `completion:${viewer.id}:${taskId}:${now}`;
   const requestId = `request:chore:${completionId}`;
@@ -7891,6 +8169,8 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
       firestoreError = error instanceof Error ? error.message : String(error);
       void renderDevFirestore();
       restoreKidScrollPosition();
+    } finally {
+      activeKidTaskActionIds.delete(actionKey);
     }
     return;
   }
@@ -7940,6 +8220,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
   render();
   restoreKidScrollPosition();
   if (shouldSpeakConfirmation) speak('Great job!');
+  activeKidTaskActionIds.delete(actionKey);
 }
 
 function applySubmittedCompletionToState(

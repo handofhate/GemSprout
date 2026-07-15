@@ -653,7 +653,16 @@ function renderDaySelect(): string {
 }
 
 function renderAvatar(avatar: string, color: string): string {
-  return avatar.replace(/color\s*:\s*[^;"']+/i, `color:${color}`);
+  const value = String(avatar || '').trim();
+  if (!value) return `<i class="ph-duotone ph-smiley" style="color:${escapeHtml(color)}"></i>`;
+  if (value.startsWith('<')) {
+    return value.includes('style=')
+      ? value.replace(/color\s*:\s*[^;"']+/i, `color:${escapeHtml(color)}`)
+      : value.replace('<i ', `<i style="color:${escapeHtml(color)}" `);
+  }
+  if (/\.(png|jpe?g|gif|webp)$/i.test(value)) return `<img src="${escapeHtml(value)}" class="avatar-img">`;
+  const icon = value.replace(/^ph-duotone\s+/, '').replace(/^ph-/, '') || 'smiley';
+  return `<i class="ph-duotone ph-${escapeHtml(icon)}" style="color:${escapeHtml(color)}"></i>`;
 }
 
 function renderIcon(name: string, color: string, extraStyle = ''): string {

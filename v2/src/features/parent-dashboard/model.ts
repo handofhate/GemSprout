@@ -109,9 +109,10 @@ export function createParentDashboardModel(state: DemoAppState): ParentDashboard
 function snapshotForMember(member: DemoMember, state: DemoAppState, index: number): ParentSnapshotCard {
   const id = String(member.id || `kid_${index + 1}`);
   const requests = state.requests;
-  const historyRows = state.historyRows;
-  const memberHistory = historyRows.filter(row => !('memberId' in row) || (row as DemoHistoryRow & { memberId?: string }).memberId === id);
-  const completeCount = memberHistory.filter(row => row.type === 'chore' || row.type === 'request.approved').length;
+  const today = todayKeyForTimezone(state.settings.familyTimezone);
+  const assignedTasks = state.tasks.filter(task => Array.isArray(task.assignedTo) && task.assignedTo.includes(id));
+  const totalTasks = assignedTasks.reduce((sum, task) => sum + taskUnitsForToday(task, today), 0);
+  const completeCount = assignedTasks.reduce((sum, task) => sum + completedUnitsForTask(state, id, String(task.id || ''), today), 0);
   const waitingCount = requests.filter(request => request.status === 'pending' && request.targetMemberId === id).length;
   return {
     id,
@@ -121,12 +122,35 @@ function snapshotForMember(member: DemoMember, state: DemoAppState, index: numbe
     gems: Number(member.gems ?? member.diamonds ?? 0),
     savings: Number(member.savings || 0),
     totalEarned: Number(member.totalEarned || 0),
-    completeCount,
-    totalTasks: Math.max(completeCount + waitingCount, completeCount, waitingCount),
+    completeCount: Math.min(completeCount, totalTasks),
+    totalTasks: Math.max(totalTasks, completeCount, waitingCount),
     waitingCount,
-    isHereToday: isMemberHereOnDate(member, todayKeyForTimezone(state.settings.familyTimezone)),
+    isHereToday: isMemberHereOnDate(member, today),
     claimableSavingsInterest: calculateSavingsInterest(state, member),
   };
+}
+
+function taskUnitsForToday(task: DemoAppState['tasks'][number], today: string): number {
+  const schedule = task.schedule || {};
+  const daysOfWeek = Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length ? schedule.daysOfWeek : [0, 1, 2, 3, 4, 5, 6];
+  if (schedule.period !== 'once' && !daysOfWeek.includes(dayIndex(today))) return 0;
+  const slots = Array.isArray(schedule.slots) ? schedule.slots : [];
+  if (slots.length) return slots.length;
+  return Math.max(1, Number(schedule.targetCount || 1));
+}
+
+function completedUnitsForTask(state: DemoAppState, memberId: string, taskId: string, today: string): number {
+  return state.completions.filter(completion =>
+    completion.memberId === memberId
+    && completion.choreId === taskId
+    && completion.status === 'approved'
+    && completion.entryType !== 'before'
+    && String(completion.date || '') === today
+  ).length;
+}
+
+function dayIndex(dateKey: string): number {
+  return new Date(`${dateKey}T00:00:00`).getDay();
 }
 
 function isMemberHereOnDate(member: DemoMember, dateKey: string): boolean {

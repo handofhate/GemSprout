@@ -13,6 +13,8 @@
     "migration:v2:preview": "npm run build:v2 && node v2/scripts/preview-v1-migration.cjs 6.10backup.json migration-preview",
     "migration:v2:import:dry": "npm run build:v2 && node v2/scripts/import-v1-migration.cjs --input 6.10backup.json --family-id migration-preview --project gemsprout-v2-dev --database \"(default)\"",
     "migration:v2:import:write:dev": "npm run build:v2 && node v2/scripts/import-v1-migration.cjs --input 6.10backup.json --family-id migration-preview --project gemsprout-v2-dev --database \"(default)\" --write",
+    "seed:v2:test-data:dry": "node v2/scripts/seed-v2-test-data.cjs",
+    "seed:v2:test-data:dev": "node v2/scripts/seed-v2-test-data.cjs --write",
     "rules:v2:deploy:dev": "firebase deploy --config v2/firebase.dev.json --only firestore:rules --project gemsprout-v2-dev",
     "test:v2": "npm run build:v2 && node --test \"v2/dist/tests/**/*.test.js\"",
     "test:e2e": "playwright test",

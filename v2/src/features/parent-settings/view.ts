@@ -164,7 +164,7 @@ function renderMainSettings(state: DemoAppState, options: RenderSettingsOptions)
           </div>
           <i class="ph-duotone ph-caret-right" style="color:var(--muted);font-size:1.1rem;flex-shrink:0"></i>
         </button>
-        <div style="text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px">GemSprout v2</div>
+        <button style="display:block;width:100%;border:none;background:transparent;text-align:center;color:var(--muted);font-size:0.78rem;padding:16px 0 8px;cursor:pointer" data-settings-dev-unlock type="button">GemSprout v2</button>
 
         ${(options.showDevTools || options.canReset) ? `
           <div style="height:14px"></div>
@@ -179,6 +179,20 @@ function renderMainSettings(state: DemoAppState, options: RenderSettingsOptions)
                 <div class="settings-dev-section-body">
                   <div class="settings-dev-tip">Reset the shared local test data</div>
                   <button class="btn btn-secondary btn-full" data-settings-reset type="button">Reset Local State</button>
+                </div>
+              </details>
+            ` : ''}
+            ${options.showDevTools ? `
+              <details class="settings-dev-section" data-dev-section="push-notifications" open>
+                <summary class="settings-dev-section-title">
+                  <span class="settings-dev-summary-main"><i class="ph-duotone ph-bell" style="vertical-align:middle;margin-right:4px"></i> Push Diagnostics</span>
+                  <i class="ph-duotone ph-caret-down settings-dev-caret" style="font-size:1rem"></i>
+                </summary>
+                <div class="settings-dev-section-body">
+                  <div class="settings-dev-tip">Use this on device to verify auth, family, Firebase project, notification permission, and token save state.</div>
+                  <button class="btn btn-secondary btn-full" data-settings-dev-push-permission type="button">Request Permission</button>
+                  <button class="btn btn-secondary btn-full" data-settings-dev-push-token type="button">Register and Show FCM Token</button>
+                  <button class="btn btn-secondary btn-full" data-settings-dev-push-diagnostics type="button">Push Diagnostics</button>
                 </div>
               </details>
             ` : ''}

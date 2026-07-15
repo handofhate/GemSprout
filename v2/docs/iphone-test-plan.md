@@ -1,14 +1,53 @@
-# iPhone Test Plan
+# iPhone/iPad Test Plan
 
-Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audit.md` are closed. Test with one parent iPhone and one kid iPhone when possible. If only one iPhone is available, repeat the role-switching steps after fully leaving/rejoining the family.
+Use this as the manual release-style pass for the v2 TestFlight build. Best setup is parent on iPhone and kid on iPad so live sync, kid submissions, parent approvals, and kid in-app modals can be tested without role-switching. If only one device is available, repeat the role-switching steps after fully leaving/rejoining the family.
+
+## Seeded Test Data
+
+Before a full pass, reseed the dev Firestore family:
+
+```sh
+npm run seed:v2:test-data:dry
+npm run seed:v2:test-data:dev
+```
+
+This replaces `gemsprout-v2-dev/families/migration-preview` with a disposable test family:
+
+- Family code: `V2LAB7`
+- Parent PIN: `1234`
+- Parent profile: `Ty`
+- Regular kid: `Avery`
+- Little kid: `Milo`
+- Seed coverage: pending task/photo/prize/savings approvals, regular and little kid tasks, time-slot task, before/after photo task, affordable and locked prizes, redeemed recurring prize, team goals, savings banking, split-household home/away state, earned base badges, earned task badges, current-week history, and previous-week history for Week in Review.
 
 ## Setup
 
 - Install a v2 build that points at the dev Firebase project, not production.
-- Use a fresh dev family and keep the family code visible for kid-device joins.
-- Sign in as a real parent with Apple and/or Google. Use the temporary dev bypass only when testing non-auth UI.
+- On the parent iPhone, join/open the seeded family and select `Ty`.
+- On the kid iPad, tap "I'm a Kid", enter `V2LAB7`, and select `Avery`.
+- Repeat kid-specific checks with `Milo` for little kid mode.
+- Sign in as a real parent with Apple and/or Google when testing auth. Use the temporary dev bypass only when testing non-auth UI or when RevenueCat blocks the app.
 - Enable parent notifications on the parent iPhone. Do not enable push on the kid device.
-- Set family timezone to a known value and note the local date/time before testing streak and "today" behavior.
+- Confirm family timezone is `America/Phoenix` before testing streak and "today" behavior.
+
+## Two-Device Live Sync Pass
+
+1. Parent iPhone: open Parent Dashboard and stay on Overview.
+2. Kid iPad: open Avery's Tasks tab.
+3. Kid iPad: submit `Clear the Table`.
+4. Parent iPhone: confirm the inbox count and approval row appear without force-closing the app.
+5. Parent iPhone: approve the row.
+6. Kid iPad: confirm gems update and the approval celebration/modal appears.
+7. Kid iPad: submit `Make Bed` with seeded/real photo proof.
+8. Parent iPhone: confirm photo thumbnail opens and approve/deny works.
+9. Parent iPhone: use Recent Activity undo.
+10. Kid iPad: confirm the task state reverts without duplicate rewards.
+11. Kid iPad: request `Movie Night`.
+12. Parent iPhone: approve or deny the prize request and confirm the kid iPad receives the matching in-app modal.
+13. Kid iPad: request savings spend for `Book fair`.
+14. Parent iPhone: approve or deny and confirm balances/history update on both devices.
+15. Parent iPhone: toggle Avery home/away from Family Snapshot.
+16. Kid iPad: confirm availability updates without odd redraws or stale task state.
 
 ## Front Door And Onboarding
 
@@ -33,7 +72,7 @@ Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audi
 
 ## Kid Join And Profile Picker
 
-1. On the kid iPhone tap "I'm a Kid."
+1. On the kid iPad tap "I'm a Kid."
 2. Enter the family code manually.
 3. Confirm profile picker copy says "Choose your profile to open your dashboard."
 4. Confirm avatars show on all profile cards.
@@ -82,7 +121,8 @@ Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audi
 4. Complete all Daily Combo tasks and confirm combo bonus/history.
 5. Toggle base badges and task badges off/on and confirm kid badge sections follow.
 6. Edit base badge icons/text and task badge tiers/secrets.
-7. Trigger base, streak, level, and task badges and confirm kid badge pop-up plus badge card.
+7. On the kid iPad, open Avery's Stats/Badges area and tap existing badges to confirm holo badge cards render and animate.
+8. Trigger base, streak, level, and task badges and confirm kid badge pop-up plus badge card.
 
 ## Week In Review
 
@@ -115,3 +155,32 @@ Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audi
 1. Import a current v1 backup into the dev v2 project.
 2. Confirm family code/name, parent profiles, kid profiles, display mode, balances, savings, tasks, prizes, team goals, settings, badges, history, pending approvals, and completed tasks.
 3. Run the parent and kid smoke tests on the imported family.
+
+## Device Pass Findings - 2026-07-15
+
+Patched after this pass:
+
+- Two-Device Live Sync 12: child prize cards now show a pending parent-review state.
+- Parent Dashboard 2/6: `ph-*` avatar strings now render as icons in onboarding/edit-family and quick-action selectors.
+- Parent Dashboard 4/6: soft-deleted kids are filtered out of task assignment and quick-action modals.
+- Parent Dashboard 4: task, prize, and team-prize icon previews now use the selected color; task icon/color changes no longer replay the modal origin animation.
+- Parent Dashboard 4 / Tasks And Approvals 6: swipe-hint bounce runs once per current tab/view instead of replaying on same-tab redraws.
+- Parent Dashboard 4: Family Snapshot task counts now derive from today's assigned tasks/completions instead of lifetime history.
+- Tasks And Approvals 7: hide-unavailable keeps a slotted task visible when at least one time slot is available.
+- Prizes, Team, And Savings 4: prize requests now present pending-review state on child devices.
+- Levels, Streaks, Combos, Badges 5: if base badges and task badges are both disabled, the kid badges section hides entirely.
+- Two-Device Live Sync 7: kid task/photo submissions now have a narrow in-flight guard to prevent one submit gesture from creating duplicate pending rows.
+- Native/iOS 4: v1-style hidden push diagnostics have been ported to v2 settings. Tap `GemSprout v2` seven times at the bottom of Settings to unlock Push Diagnostics, then use Request Permission, Register and Show FCM Token, and Push Diagnostics on device.
+
+Still open from this pass:
+
+- Front Door/Onboarding, Returning Sign-In, Kid Join/Profile Picker, Settings account/security, and Migration need a clean way to leave/reset the seeded family on device.
+- Push notifications need to be verified on a real signed-in parent device using the hidden diagnostics panel.
+- Parent edit-family finish should show the migrated loading screen during the save gap.
+- Not-listening needs the v1 alarm sound and should update the kid Stats number without snapping scroll to top.
+- Kid dashboard still redraws more than desired after some task/prize/savings actions.
+- Redeemed recurring prize visibility and parent undo/reset for recurring redemptions need a focused pass.
+- iPad holo badge card proportions need responsive tuning.
+- Earning a badge can trigger overlapping/new duplicate badge modals.
+- Native app lock did not require PIN/biometric after close/reopen and needs device verification.
+- Offline/bad-network, local savings-interest notification, subscription/paywall, and migration flows remain unverified.

@@ -1489,6 +1489,12 @@
       border-color: rgba(124, 93, 57, 0.08);
       filter: saturate(0.85);
     }
+    .kid-shop-prize-card.pending-review {
+      opacity: 0.68;
+      border-color: rgba(111, 143, 153, 0.18);
+      filter: grayscale(0.2);
+      background: linear-gradient(180deg, #f7f5ee, #f1efe5);
+    }
     .kid-shop-prize-top {
       display: flex;
       align-items: flex-start;

@@ -61,6 +61,13 @@ export function getCurrentParentAuthUid(): string {
   return getAuth().currentUser?.uid || '';
 }
 
+export function getCurrentParentAuthInfo(): ParentAuthUser | null {
+  const user = getAuth().currentUser;
+  if (!user) return null;
+  const providerId = user.providerData[0]?.providerId || 'unknown';
+  return normalizeAuthUser(user, providerId);
+}
+
 async function signInWithGoogle(): Promise<User | null> {
   const nativeAuth = getNativeAuthPlugin();
   const auth = getAuth();
