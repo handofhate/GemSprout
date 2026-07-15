@@ -71,7 +71,7 @@ Important current behavior:
 
 ## Current Working Point
 
-Last known good v2 checkpoint for Build 109-era testing is `75ce98a` (`Document v2 goals and collaboration guardrails`). This is the July 11 `e5b374f` (`revcat bypass`) app state plus the v2 goals/collaboration notes in this file. Later July 14 device-debug commits were backed up on `origin/codex/pre-revert-device-pass-backup` and should not be treated as the active baseline.
+Last known good v2 app-code checkpoint for Build 109-era testing is `e5b374f` (`revcat bypass`). Later commits on `main` may update documentation only; do not move the app-code baseline unless app code changes are intentionally accepted. The July 14 device-debug commits were backed up on `origin/codex/pre-revert-device-pass-backup` and should not be treated as the active baseline.
 
 Next work should start with the readiness pass documented in `v2/docs/v2-readiness-audit.md` and `v2/docs/iphone-test-plan.md`:
 
