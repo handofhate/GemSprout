@@ -31,7 +31,7 @@ import {
   type OnboardingTransitionDirection,
 } from '../features/onboarding/view';
 import { registerParentPushNotifications } from '../platform/notifications/push-registration';
-import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
+import { signInParentWithProvider, getCurrentParentAuthUser, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
 import {
   initRevenueCat,
   loadOfferings,
@@ -6756,6 +6756,10 @@ async function resolveReturningDevFamily(authUser: { uid?: string; email?: strin
 }
 
 function bindOnboardingPreviewActions(): void {
+  if (activeOnboardingStep === 'account' && hydrateOnboardingAuthFromCurrentUser()) {
+    renderOnboardingPreservingSetupScroll();
+    return;
+  }
   document.querySelectorAll<HTMLElement>('[data-onboarding-action]').forEach(button => {
     button.addEventListener('click', () => {
       const action = button.dataset.onboardingAction || '';
@@ -6778,6 +6782,9 @@ function bindOnboardingPreviewActions(): void {
       }
       const steps = getOnboardingSteps();
       const currentIndex = activeOnboardingStep ? steps.indexOf(activeOnboardingStep) : 0;
+      if (action === 'next' && activeOnboardingStep === 'account') {
+        hydrateOnboardingAuthFromCurrentUser();
+      }
       if (action === 'next' && activeOnboardingStep === 'account' && !getOnboardingSetupDraft().authUser) {
         setOnboardingValidationMessage('Please sign in first.');
         renderOnboardingPreservingSetupScroll();
@@ -6851,6 +6858,15 @@ async function handleOnboardingAuth(action: string): Promise<void> {
   clearOnboardingValidationMessage();
   setOnboardingAuthUser(authUser);
   renderOnboardingPreservingSetupScroll();
+}
+
+function hydrateOnboardingAuthFromCurrentUser(): boolean {
+  if (getOnboardingSetupDraft().authUser) return true;
+  const authUser = getCurrentParentAuthUser();
+  if (!authUser) return false;
+  clearOnboardingValidationMessage();
+  setOnboardingAuthUser(authUser);
+  return true;
 }
 
 async function finishOnboardingPreview(): Promise<void> {
