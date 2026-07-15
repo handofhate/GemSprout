@@ -172,6 +172,8 @@ Patched after this pass:
 - Two-Device Live Sync 7: kid task/photo submissions now have a narrow in-flight guard to prevent one submit gesture from creating duplicate pending rows.
 - Native/iOS 4: v1-style hidden push diagnostics have been ported to v2 settings. Tap `GemSprout v2` seven times at the bottom of Settings to unlock Push Diagnostics, then use Request Permission, Register and Show FCM Token, and Push Diagnostics on device.
 - Front Door/Onboarding, Returning Sign-In, Kid Join/Profile Picker, Settings account/security, and Migration: parent devices can leave the seeded family from `Settings -> Account & Security -> Join Different Family`, which signs out, clears local lock state, and returns to the front door even on `source=firestore`.
+- Native/iOS data source: native builds now default to dev Firestore even without `?source=firestore` or a Vite env flag. Use hidden Push Diagnostics to confirm `Data source: firestore`; `?source=local` remains the explicit local-lab escape hatch.
+- Native/iOS write persistence: hidden dev tools now include `Firestore Write Probe`. Run it before a long device pass; if it fails or times out, debug device Firestore writes before trusting onboarding/task persistence results.
 
 Still open from this pass:
 

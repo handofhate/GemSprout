@@ -208,7 +208,10 @@ const uiHintBounceKeys = new Set<string>();
 let uiHintBounceScope = '';
 
 function useDevFirestore(): boolean {
-  return new URLSearchParams(window.location.search).get('source') === 'firestore'
+  const source = new URLSearchParams(window.location.search).get('source');
+  if (source === 'local') return false;
+  return source === 'firestore'
+    || isNativePlatform()
     || (typeof GEMSPROUT_V2_DATA_SOURCE !== 'undefined' && GEMSPROUT_V2_DATA_SOURCE === 'firestore');
 }
 
@@ -1364,8 +1367,7 @@ function renderAvatarPreviewHtml(avatar: string, color: string, fallback = '<i c
   const value = avatar || fallback;
   if (/\.(png|jpe?g|gif|webp)$/i.test(value)) return `<img src="${escapeHtmlAttr(value)}" class="avatar-img">`;
   if (value.includes('<')) return applyAvatarColor(value, color);
-  const icon = value.replace(/^ph-duotone\s+/, '').replace(/^ph-/, '') || 'smiley';
-  return `<i class="ph-duotone ph-${escapeHtmlAttr(icon)}" style="color:${escapeHtmlAttr(color)}"></i>`;
+  return renderPhosphorAvatarIcon(value, color);
 }
 
 function openKidSettings(triggerEl?: Element | null): void {
@@ -2743,9 +2745,18 @@ function applyAvatarColor(html: string, color: string): string {
   return html.replace('<i ', `<i style="color:${color}" `);
 }
 
+function renderPhosphorAvatarIcon(avatar: string, color: string): string {
+  const icon = String(avatar || '')
+    .replace(/^ph-duotone\s+/, '')
+    .replace(/^ph-/, '')
+    || 'smiley';
+  return `<i class="ph-duotone ph-${escapeHtmlAttr(icon)}" style="color:${escapeHtmlAttr(color || '#6C63FF')}"></i>`;
+}
+
 function launchAvatarRain(avatar: string, count = 80, rootElement: HTMLElement | null = null, avatarColor = ''): void {
   const isImage = /\.(png|jpe?g|gif|webp)$/i.test(avatar);
   const isHtml = avatar.includes('<');
+  const iconHtml = !isImage && !isHtml ? renderPhosphorAvatarIcon(avatar, avatarColor) : '';
   launchRain(({ size }) => {
     const piece = isImage ? document.createElement('img') : document.createElement('div');
     if (isImage) {
@@ -2756,7 +2767,7 @@ function launchAvatarRain(avatar: string, count = 80, rootElement: HTMLElement |
       piece.innerHTML = applyAvatarColor(avatar, avatarColor);
       piece.style.cssText = `font-size:${Math.max(1.2, size / 24).toFixed(2)}rem;`;
     } else {
-      piece.textContent = avatar;
+      piece.innerHTML = iconHtml;
       piece.style.cssText = `font-size:${Math.max(1.2, size / 24).toFixed(2)}rem;`;
     }
     return piece;
@@ -5547,6 +5558,9 @@ function bindSettingsPane(): void {
   root.querySelector<HTMLElement>('[data-settings-dev-push-diagnostics]')?.addEventListener('click', () => {
     void devShowPushDiagnostics();
   });
+  root.querySelector<HTMLElement>('[data-settings-dev-write-probe]')?.addEventListener('click', () => {
+    void devRunFirestoreWriteProbe();
+  });
   root.querySelector<HTMLInputElement>('[data-settings-split-household]')?.addEventListener('change', event => {
     void setFamilySplitHousehold((event.currentTarget as HTMLInputElement).checked);
   });
@@ -5769,6 +5783,69 @@ async function devShowPushDiagnostics(): Promise<void> {
   openDevPushDiagnosticsModal(info);
 }
 
+async function devRunFirestoreWriteProbe(): Promise<void> {
+  const state = currentDemoState();
+  const viewer = getActiveViewer(state);
+  const authInfo = getCurrentParentAuthInfo();
+  const startedAt = Date.now();
+  openDevWriteProbeModal({
+    status: 'running',
+    message: 'Writing probe document...',
+    startedAt,
+    dataSource: useDevFirestore() ? 'dev-firestore' : 'local-demo',
+  });
+  try {
+    const { runDevFirestoreWriteProbe } = await import('../platform/firebase/dev-firestore-operations.js');
+    const result = await withTimeout(
+      runDevFirestoreWriteProbe({
+        familyId: String(state.familyId || DEV_FIRESTORE_FAMILY_ID),
+        memberId: String(viewer?.id || ''),
+        authUid: String(authInfo?.uid || ''),
+        now: startedAt,
+      }),
+      10000,
+      'Firestore write probe timed out after 10 seconds.',
+    );
+    openDevWriteProbeModal({
+      status: result.ok ? 'passed' : 'failed',
+      message: result.ok ? 'Write and read-back succeeded.' : 'Probe document was not readable after write.',
+      startedAt,
+      finishedAt: Date.now(),
+      dataSource: useDevFirestore() ? 'dev-firestore' : 'local-demo',
+      result,
+    });
+  } catch (error) {
+    openDevWriteProbeModal({
+      status: 'failed',
+      message: error instanceof Error ? error.message : String(error),
+      startedAt,
+      finishedAt: Date.now(),
+      dataSource: useDevFirestore() ? 'dev-firestore' : 'local-demo',
+    });
+  }
+}
+
+function openDevWriteProbeModal(info: Record<string, unknown>): void {
+  const root = document.getElementById('modal-root');
+  if (!root) return;
+  const status = String(info.status || 'unknown');
+  const color = status === 'passed' ? '#16A34A' : status === 'running' ? '#6C63FF' : '#DC2626';
+  const payload = JSON.stringify(info, null, 2);
+  root.innerHTML = `
+    <div class="modal-overlay quick-modal-overlay" data-modal-overlay>
+      <div class="modal quick-action-modal quick-action-modal-wide" role="dialog" aria-modal="true">
+        <button class="modal-close-x" data-modal-close type="button" aria-label="Close"><i class="ph-duotone ph-x"></i></button>
+        <div class="modal-title"><i class="ph-duotone ph-database" style="color:${color};font-size:1.2rem;vertical-align:middle"></i> Firestore Write Probe</div>
+        <div style="font-size:0.9rem;color:${color};font-weight:800;margin-bottom:8px;text-transform:capitalize">${escapeHtmlAttr(status)}</div>
+        <div style="font-size:0.86rem;color:var(--muted);line-height:1.45;margin-bottom:10px">${escapeHtmlAttr(String(info.message || ''))}</div>
+        <div style="font-size:0.72rem;font-family:monospace;white-space:pre-wrap;word-break:break-word;background:#F3F4F6;padding:10px;border-radius:8px;line-height:1.5;max-height:240px;overflow:auto">${escapeHtmlAttr(payload)}</div>
+        <button class="btn btn-secondary btn-full" style="margin-top:12px" data-copy-write-probe type="button">Copy Probe JSON</button>
+      </div>
+    </div>`;
+  bindBasicModalClose(root);
+  root.querySelector<HTMLElement>('[data-copy-write-probe]')?.addEventListener('click', () => copyTextToClipboard(payload, 'Probe copied'));
+}
+
 function openDevPushDiagnosticsModal(info: Record<string, unknown>): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
@@ -5808,6 +5885,22 @@ function bindBasicModalClose(root: HTMLElement): void {
   root.querySelectorAll<HTMLElement>('[data-modal-close]').forEach(button => button.addEventListener('click', closeModal));
   root.querySelector<HTMLElement>('[data-modal-overlay]')?.addEventListener('click', event => {
     if (event.target === event.currentTarget) closeModal();
+  });
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      value => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
   });
 }
 

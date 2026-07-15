@@ -798,6 +798,36 @@ export async function getDevFcmTokenCountForUser(input: { uid: string }): Promis
   return Array.isArray(tokens) ? tokens.length : null;
 }
 
+export async function runDevFirestoreWriteProbe(input: {
+  familyId?: string;
+  memberId?: string;
+  authUid?: string;
+  now?: number;
+} = {}): Promise<{ ok: boolean; id: string; wroteAt: number; readBackAt: number; data: Record<string, unknown> | null }> {
+  const db = getDevFirestore();
+  const now = input.now || Date.now();
+  const id = `probe_${now}`;
+  const data = omitUndefined({
+    id,
+    familyId: input.familyId || DEV_FIRESTORE_FAMILY_ID,
+    memberId: input.memberId || '',
+    authUid: input.authUid || '',
+    wroteAt: now,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  }) as Record<string, unknown>;
+  const ref = doc(db, `devWriteProbes/${id}`);
+  await setDoc(ref, data, { merge: false });
+  const snapshot = await getDoc(ref);
+  const readBackAt = Date.now();
+  return {
+    ok: snapshot.exists() && snapshot.data()?.id === id,
+    id,
+    wroteAt: now,
+    readBackAt,
+    data: snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Record<string, unknown>) : null,
+  };
+}
+
 export async function commitDevParentInvite(input: {
   email: string;
   familyCode: string;

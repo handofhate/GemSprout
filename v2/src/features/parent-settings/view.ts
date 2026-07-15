@@ -193,6 +193,7 @@ function renderMainSettings(state: DemoAppState, options: RenderSettingsOptions)
                   <button class="btn btn-secondary btn-full" data-settings-dev-push-permission type="button">Request Permission</button>
                   <button class="btn btn-secondary btn-full" data-settings-dev-push-token type="button">Register and Show FCM Token</button>
                   <button class="btn btn-secondary btn-full" data-settings-dev-push-diagnostics type="button">Push Diagnostics</button>
+                  <button class="btn btn-secondary btn-full" data-settings-dev-write-probe type="button">Firestore Write Probe</button>
                 </div>
               </details>
             ` : ''}
