@@ -1,8 +1,10 @@
-import { deleteUser, getAuth, GoogleAuthProvider, OAuthProvider, signInWithCredential, signInWithPopup, signOut, type User } from 'firebase/auth';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import { deleteUser, getAuth, GoogleAuthProvider, OAuthProvider, signInWithCredential, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth';
+import { DEV_FIRESTORE_CONFIG } from '../firebase/dev-firestore-config';
 
 type FirebaseAuthenticationPlugin = {
-  signInWithGoogle?: (options?: { skipNativeAuth?: boolean }) => Promise<NativeAuthResult>;
-  signInWithApple?: (options?: { skipNativeAuth?: boolean }) => Promise<NativeAuthResult>;
+  signInWithGoogle?: () => Promise<NativeAuthResult>;
+  signInWithApple?: () => Promise<NativeAuthResult>;
 };
 
 type NativeAuthResult = {
@@ -59,20 +61,20 @@ export function createDevBypassParentAuth(): ParentAuthUser {
 }
 
 export async function signOutParentAuth(): Promise<void> {
-  await signOut(getAuth());
+  await signOut(getFirebaseAuth());
 }
 
 export async function deleteCurrentParentAuth(): Promise<void> {
-  const user = getAuth().currentUser;
+  const user = getFirebaseAuth().currentUser;
   if (user) await deleteUser(user);
 }
 
 export function getCurrentParentAuthUid(): string {
-  return getAuth().currentUser?.uid || '';
+  return getFirebaseAuth().currentUser?.uid || '';
 }
 
 export function getCurrentParentAuthInfo(): ParentAuthUser | null {
-  const user = getAuth().currentUser;
+  const user = getFirebaseAuth().currentUser;
   if (!user) return null;
   const providerId = user.providerData[0]?.providerId || 'unknown';
   return normalizeAuthUser(user, providerId);
@@ -80,9 +82,9 @@ export function getCurrentParentAuthInfo(): ParentAuthUser | null {
 
 async function signInWithGoogle(): Promise<User | null> {
   const nativeAuth = getNativeAuthPlugin();
-  const auth = getAuth();
+  const auth = getFirebaseAuth();
   if (nativeAuth?.signInWithGoogle) {
-    const result = await nativeAuth.signInWithGoogle({ skipNativeAuth: true });
+    const result = await nativeAuth.signInWithGoogle();
     const idToken = result.credential?.idToken || undefined;
     const accessToken = result.credential?.accessToken || undefined;
     if (!idToken && !accessToken) {
@@ -96,10 +98,10 @@ async function signInWithGoogle(): Promise<User | null> {
 
 async function signInWithApple(): Promise<User | null> {
   const nativeAuth = getNativeAuthPlugin();
-  const auth = getAuth();
+  const auth = getFirebaseAuth();
   const provider = new OAuthProvider('apple.com');
   if (nativeAuth?.signInWithApple) {
-    const result = await nativeAuth.signInWithApple({ skipNativeAuth: true });
+    const result = await nativeAuth.signInWithApple();
     if (!result.credential?.idToken) {
       throw new Error('Apple sign-in did not return an ID token for Firebase Auth.');
     }
@@ -116,6 +118,11 @@ function getNativeAuthPlugin(): FirebaseAuthenticationPlugin | null {
   const capacitor = (window as CapacitorWindow).Capacitor;
   if (!capacitor?.isNativePlatform?.()) return null;
   return capacitor.Plugins?.FirebaseAuthentication || null;
+}
+
+function getFirebaseAuth(): Auth {
+  const app = getApps().length ? getApp() : initializeApp(DEV_FIRESTORE_CONFIG);
+  return getAuth(app);
 }
 
 function normalizeAuthUser(user: User, providerId: string): ParentAuthUser {

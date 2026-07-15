@@ -69,22 +69,16 @@ npm run dev:v2
 Then open:
 
 ```text
-http://127.0.0.1:4273/?source=firestore
+http://127.0.0.1:4273/
 ```
 
-This view uses the dev Firestore database and allows dev approval/denial transactions. Local fake-data testing still uses:
+This view uses the dev Firestore database and allows dev approval/denial transactions:
 
 ```text
 http://127.0.0.1:4273/
 ```
 
 The dev Firestore rules are intentionally open for the isolated dev project while we test browser transactions. They live at `v2/firestore.dev.rules` and must not be reused for production.
-
-The local fake adapter lab is hidden by default. Open it with:
-
-```text
-http://127.0.0.1:4273/?lab=1
-```
 
 ## Cloud Copy Options
 

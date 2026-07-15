@@ -87,8 +87,6 @@ import { readDemoAppState, type DemoAppState, type DemoCompletion, type DemoHist
 import { todayKeyForTimezone } from './date-keys';
 import '../ui/styles/index.css';
 
-declare const GEMSPROUT_V2_DATA_SOURCE: string | undefined;
-
 let store = loadSharedLabStore(createDemoFamilySeedStore);
 let logs: LabLog[] = [];
 let lastScenario: LabScenarioResult | null = null;
@@ -214,11 +212,7 @@ const uiHintBounceKeys = new Set<string>();
 let uiHintBounceScope = '';
 
 function useDevFirestore(): boolean {
-  const source = new URLSearchParams(window.location.search).get('source');
-  if (source === 'local') return false;
-  return source === 'firestore'
-    || isNativePlatform()
-    || (typeof GEMSPROUT_V2_DATA_SOURCE !== 'undefined' && GEMSPROUT_V2_DATA_SOURCE === 'firestore');
+  return true;
 }
 
 function showLab(): boolean {
@@ -6445,7 +6439,7 @@ function redirectDeviceToLanding(): void {
   firestoreState = null;
   firestoreError = '';
   const url = new URL(window.location.href);
-  if (useDevFirestore()) url.searchParams.set('source', 'firestore');
+  url.searchParams.delete('source');
   url.searchParams.set('landing', '1');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   render();
@@ -7765,7 +7759,7 @@ function bindKidEntryActions(): void {
       firestoreState = null;
       firestoreError = '';
       const url = new URL(window.location.href);
-      url.searchParams.set('source', 'firestore');
+      url.searchParams.delete('source');
       url.searchParams.delete('landing');
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
       render();
@@ -7798,7 +7792,7 @@ async function enterKidFamily(devBypass: boolean): Promise<void> {
     firestoreState = null;
     firestoreError = '';
     const url = new URL(window.location.href);
-    url.searchParams.set('source', 'firestore');
+    url.searchParams.delete('source');
     url.searchParams.delete('landing');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     render();
@@ -7852,7 +7846,7 @@ async function handleReturningSignIn(action: string): Promise<void> {
   firestoreState = null;
   firestoreError = '';
   const url = new URL(window.location.href);
-  url.searchParams.set('source', 'firestore');
+  url.searchParams.delete('source');
   url.searchParams.delete('landing');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   render();
@@ -8029,7 +8023,7 @@ async function finishOnboardingPreview(): Promise<void> {
     firestoreState = null;
     firestoreError = '';
     const url = new URL(window.location.href);
-    url.searchParams.set('source', 'firestore');
+    url.searchParams.delete('source');
     url.searchParams.delete('landing');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     void registerParentPushNotifications({
