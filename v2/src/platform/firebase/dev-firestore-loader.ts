@@ -62,6 +62,7 @@ async function loadHistory(db: Firestore, familyId: string): Promise<DemoHistory
 }
 
 export async function loadDevFirestoreState(familyId = getDevFirestoreFamilyId()): Promise<DemoAppState> {
+  if (!familyId) throw new Error('No Firestore family is selected.');
   const db = getDevFirestore();
   const [familyDoc, members, tasks, prizes, requests, completions, operations, historyRows] = await Promise.all([
     getDoc(doc(db, `families/${familyId}`)),

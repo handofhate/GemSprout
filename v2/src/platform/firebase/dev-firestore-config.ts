@@ -20,7 +20,7 @@ function storage(): Storage | null {
 
 export function getDevFirestoreFamilyId(): string {
   const stored = storage()?.getItem(DEV_FIRESTORE_CURRENT_FAMILY_KEY)?.trim();
-  return stored || DEV_FIRESTORE_FAMILY_ID;
+  return stored || '';
 }
 
 export function setDevFirestoreFamilyId(familyId: string): void {

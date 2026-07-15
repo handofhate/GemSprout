@@ -3,6 +3,7 @@ import {
   DEV_FIRESTORE_CONFIG,
   DEV_FIRESTORE_FAMILY_ID,
   clearDevFirestoreFamilyId,
+  getDevFirestoreFamilyId,
   setDevFirestoreFamilyId,
 } from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
@@ -7618,6 +7619,10 @@ function render(): void {
     return;
   }
   if (useDevFirestore()) {
+    if (!getDevFirestoreFamilyId()) {
+      renderLandingPreview();
+      return;
+    }
     void renderDevFirestore();
     return;
   }
@@ -7686,10 +7691,16 @@ function bindLandingPreviewActions(): void {
     button.addEventListener('click', () => {
       const action = button.dataset.landingAction || '';
       if (action === 'start') {
+        clearDevFirestoreFamilyId();
+        firestoreState = null;
+        firestoreError = '';
         startNewOnboardingDraft();
         activeOnboardingStep = 'welcome';
         landingMode = 'landing';
         onboardingTransitionDirection = 'forward';
+        const url = new URL(window.location.href);
+        url.searchParams.set('landing', '1');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
         renderLandingPreview();
       } else if (action === 'signin') {
         landingMode = 'signin';
@@ -7776,6 +7787,7 @@ async function enterKidFamily(devBypass: boolean): Promise<void> {
     renderLandingPreview();
     return;
   }
+  setDevFirestoreFamilyId(result.familyId);
   kidEntryMembers = result.members;
   const kids = kidEntryMembers.filter(member => member.role !== 'parent' && !member.deleted);
   if (kids.length === 1 && kids[0]?.id) {
@@ -7797,15 +7809,18 @@ async function enterKidFamily(devBypass: boolean): Promise<void> {
   renderLandingPreview();
 }
 
-async function resolveKidDevFamily(code: string, devBypass: boolean): Promise<{ found: boolean; members: DemoMember[] }> {
+async function resolveKidDevFamily(code: string, devBypass: boolean): Promise<{ found: boolean; familyId: string; members: DemoMember[] }> {
   try {
     const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
-    const state = await loadDevFirestoreState();
+    const familyId = devBypass ? DEV_FIRESTORE_FAMILY_ID : code;
+    const state = await loadDevFirestoreState(familyId);
     const familyCode = normalizeFamilyCode(String(state.familyCode || ''));
-    if (devBypass || !code || code === familyCode) return { found: true, members: state.members };
-    return { found: false, members: [] };
+    if (devBypass || code === normalizeFamilyCode(String(state.familyId || '')) || code === familyCode) {
+      return { found: true, familyId, members: state.members };
+    }
+    return { found: false, familyId: '', members: [] };
   } catch {
-    return { found: false, members: [] };
+    return { found: false, familyId: '', members: [] };
   }
 }
 

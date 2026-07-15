@@ -177,7 +177,7 @@ Patched after this pass:
 - Native/iOS write persistence: hidden dev tools now include `Firestore Write Probe`. Run it before a long device pass; if it fails or times out, debug device Firestore writes before trusting onboarding/task persistence results.
 - Native/iOS Firestore transport: after a device write-probe timeout, dev Firestore initialization now forces long polling and disables fetch streams for the Firebase Web SDK in the Capacitor WebView. Rebuild and rerun the write probe before retesting save flows.
 - Real onboarding pass: Google/Apple auth now follows the v1 live pattern: native provider returns OAuth tokens, then Firebase Web Auth signs in with those tokens. New onboarding no longer pre-fills the first kid as Avery. The final `Let's go` save now uses the existing `Saving` loading screen and times out with an inline Firestore error instead of appearing dead.
-- Firestore parity pass: dev rules are writable again to match the v1 client-write testing model. Onboarding uses the 6-character family code as the Firestore family doc id, stores that code locally, and writes `users/<uid>.familyCode` for returning parent lookup, matching v1.
+- Firestore parity pass: dev rules are writable again to match the v1 client-write testing model. `source=firestore` selects the backend only; it no longer implies the seeded `migration-preview` family. Onboarding uses the 6-character family code as the Firestore family doc id, stores that code locally, and writes `users/<uid>.familyCode` for returning parent lookup, matching v1. To use seeded test data, enter that family's code or use the dev kid shortcut, not a special dashboard URL.
 
 Still open from this pass:
 
