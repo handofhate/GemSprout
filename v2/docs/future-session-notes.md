@@ -8,6 +8,35 @@ The user wants to prioritize starting v2 over patching the current v1 bug list. 
 
 The chosen strategy is a controlled architecture rewrite, not a blank-page product rewrite. v2 must clone GemSprout v1 customer-facing functionality and appearance 100%. Preserve v1 flows, copy, visual assets, screen behavior, and business rules unless the change is explicitly a bug fix, safety/trustworthiness improvement, or functional accuracy fix. The desired changes are internal code cleanup, organization, sync safety, persistence safety, and correctness.
 
+## V2 Goals And Guardrails
+
+1. Copy v1's visual design and feature set.
+   v2 should look, feel, and behave like the real GemSprout app. V1 remains the source of truth for flows, copy, visual details, family-code behavior, native expectations, and feature coverage unless the user explicitly approves a product change.
+
+2. Fix the v1 code organization problems that made bugs likely.
+   V2 exists to replace the root `app.js` sprawl with maintainable TypeScript modules. Keep domain rules, platform adapters, sync/persistence, app orchestration, and feature views separated. `v2/src/app/main.ts` should coordinate; it should not become a new v1-style catch-all.
+
+3. Build the real app path, not test scaffolding.
+   No special test-family URL, fake default family, local-lab route, or "test scenario" behavior should become part of the app path. Seeded data is just Firestore data. A family is selected by onboarding, returning sign-in, or kid family-code join.
+
+4. Prove the foundations before chasing polish.
+   Before spending time on UI cleanup bugs, verify the basics: iOS native build path, Google/Apple auth, Firestore reads/writes, onboarding creates a real family, returning sign-in finds that family, kid join works by family code, close/reopen restores the correct state, and push/native diagnostics are trustworthy.
+
+5. Protect organization while fixing bugs.
+   App responsiveness is already much better in v2, but it only matters if the code stays maintainable. Each fix should land in the right feature/platform/domain/sync module, with small commits and clear verification. If a change wants to grow `main.ts`, pause and decide where the responsibility belongs.
+
+6. Plan the v1-to-v2 replacement deliberately.
+   Do not build anything that blocks the eventual switch where v2 replaces v1. Keep migration, rollback, Firebase project/auth alignment, TestFlight/App Store build selection, family data shape, and production rules in view. The app path we test now should be compatible with the path we intend to ship.
+
+7. Keep v1 production stable until the switch.
+   V1 remains the public app. Do not patch v1 unless the user explicitly asks for a production hotfix. V2 should learn from v1 and preserve user-facing behavior, but not destabilize the launched app.
+
+## Collaboration Notes
+
+- Keep chat quieter during GemSprout work. Do not send mid-edit status updates unless there is a blocker, a risky choice, or the user asks for progress. Make the edits, then report when done with a concise summary.
+- Do not run automated tests/typecheck by default for now. The current priority is real-world/manual testing unless the user explicitly asks for tests or a command is needed to answer a specific question.
+- At the start of each GemSprout session, spin up the v2 test server so it is available if needed. The server path still needs a cleanup pass to remove lab/alternate URL behavior; handle that separately before relying on it as a true app-path mirror.
+
 ## Why v2 Exists
 
 v1 reached launch, but core behavior is concentrated in a very large `app.js`. Sync, rendering, optimistic actions, history IDs, Firestore persistence, native behavior, and diagnostics are tightly coupled. That makes post-launch fixes risky and hard to reason about.
