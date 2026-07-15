@@ -28,6 +28,22 @@ type DevOnboardingSetupDraft = {
 
 type CompletionWithPhoto = Completion & { photoUrl?: string | null; status?: string };
 
+export class AuthAlreadyLinkedError extends Error {
+  familyCode: string;
+
+  constructor(familyCode: string) {
+    super('This account is already linked to a family.');
+    this.name = 'AuthAlreadyLinkedError';
+    this.familyCode = familyCode;
+  }
+}
+
+export async function assertDevOnboardingAuthIsAvailable(input: {
+  authUser: DevOnboardingSetupDraft['authUser'];
+}): Promise<void> {
+  await assertOnboardingAuthIsAvailable(getDevFirestore(), input.authUser);
+}
+
 function setById<T extends { id?: string }>(target: Record<string, T>, value: T | null | undefined): void {
   if (!value?.id) return;
   target[value.id] = value;
@@ -797,6 +813,7 @@ export async function commitDevOnboardingSetup(input: {
   const db = getDevFirestore();
   const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
   const now = input.now || Date.now();
+  await assertOnboardingAuthIsAvailable(db, input.draft.authUser);
   await clearDevSetupCollections(db, familyId);
   await runTransaction(db, async transaction => {
     transaction.set(doc(db, familyPath(familyId)), omitUndefined({
@@ -911,7 +928,48 @@ export async function commitDevOnboardingSetup(input: {
         redemptions: [],
       }) as Record<string, unknown>, { merge: false });
     });
+
+    if (input.draft.authUser?.uid) {
+      transaction.set(doc(db, `users/${input.draft.authUser.uid}`), omitUndefined({
+        familyCode: input.draft.familyCode,
+        familyId,
+        uid: input.draft.authUser.uid,
+        email: String(input.draft.authUser.email || '').toLowerCase(),
+      }) as Record<string, unknown>, { merge: true });
+    }
   });
+}
+
+async function assertOnboardingAuthIsAvailable(
+  db: Firestore,
+  authUser: DevOnboardingSetupDraft['authUser'],
+): Promise<void> {
+  if (!authUser?.uid) return;
+  const uidSnap = await getDoc(doc(db, `users/${authUser.uid}`));
+  if (uidSnap.exists()) {
+    const linkedFamily = linkedFamilyForUserDoc(uidSnap.data());
+    if (linkedFamily) throw new AuthAlreadyLinkedError(linkedFamily);
+  }
+
+  const email = String(authUser.email || '').toLowerCase();
+  if (!email) return;
+  const exactEmailSnap = await getDocs(query(collection(db, 'users'), where('email', '==', email), limit(10)));
+  for (const userDoc of exactEmailSnap.docs) {
+    const linkedFamily = linkedFamilyForUserDoc(userDoc.data());
+    if (linkedFamily) throw new AuthAlreadyLinkedError(linkedFamily);
+  }
+
+  const allUsersSnap = await getDocs(collection(db, 'users'));
+  for (const userDoc of allUsersSnap.docs) {
+    const data = userDoc.data();
+    if (String(data.email || '').toLowerCase() !== email) continue;
+    const linkedFamily = linkedFamilyForUserDoc(data);
+    if (linkedFamily) throw new AuthAlreadyLinkedError(linkedFamily);
+  }
+}
+
+function linkedFamilyForUserDoc(data: Record<string, unknown>): string {
+  return String(data.familyCode || data.familyId || data.memberId || '');
 }
 
 async function clearDevSetupCollections(db: Firestore, familyId: string): Promise<void> {

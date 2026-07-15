@@ -1,4 +1,6 @@
-import { deleteUser, getAuth, GoogleAuthProvider, OAuthProvider, signInWithCredential, signInWithPopup, signOut, type User } from 'firebase/auth';
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/auth';
+import { DEV_FIRESTORE_CONFIG } from '../firebase/dev-firestore-config';
 
 type FirebaseAuthenticationPlugin = {
   signInWithGoogle?: () => Promise<NativeSignInResult>;
@@ -7,7 +9,6 @@ type FirebaseAuthenticationPlugin = {
 
 type NativeSignInResult = {
   credential?: { idToken?: string; nonce?: string } | null;
-  user?: AuthUserLike | null;
 };
 
 type AuthUserLike = {
@@ -57,22 +58,22 @@ export function getLastParentAuthError(): string {
 }
 
 export async function signOutParentAuth(): Promise<void> {
-  await signOut(getAuth());
+  await getCompatAuth().signOut();
 }
 
 export async function deleteCurrentParentAuth(): Promise<void> {
-  const user = getAuth().currentUser;
-  if (user) await deleteUser(user);
+  const user = getCompatAuth().currentUser;
+  if (user) await user.delete();
 }
 
 export function getCurrentParentAuthUid(): string {
-  return getAuth().currentUser?.uid || '';
+  return getCompatAuth().currentUser?.uid || '';
 }
 
 export function getCurrentParentAuthUser(): ParentAuthUser | null {
-  const user = getAuth().currentUser;
+  const user = getCompatAuth().currentUser;
   if (!user) return null;
-  const providerId = user.providerData.find(provider => provider.providerId === 'google.com' || provider.providerId === 'apple.com')?.providerId
+  const providerId = user.providerData.find(provider => provider?.providerId === 'google.com' || provider?.providerId === 'apple.com')?.providerId
     || user.providerData[0]?.providerId
     || 'google.com';
   return normalizeAuthUser(user, providerId);
@@ -80,34 +81,38 @@ export function getCurrentParentAuthUser(): ParentAuthUser | null {
 
 async function signInWithGoogle(): Promise<AuthUserLike | null> {
   const nativeAuth = getNativeAuthPlugin();
-  const auth = getAuth();
+  const auth = getCompatAuth();
   if (nativeAuth?.signInWithGoogle) {
     const result = await nativeAuth.signInWithGoogle();
-    if (result.credential?.idToken) {
-      const credential = GoogleAuthProvider.credential(result.credential.idToken);
-      return (await signInWithCredential(auth, credential)).user;
-    }
-    return result.user || auth.currentUser;
+    const credential = firebase.auth.GoogleAuthProvider.credential(result.credential?.idToken);
+    const userCredential = await auth.signInWithCredential(credential);
+    return userCredential.user;
   }
-  return (await signInWithPopup(auth, new GoogleAuthProvider())).user;
+  const provider = new firebase.auth.GoogleAuthProvider();
+  await auth.signInWithPopup(provider);
+  return auth.currentUser;
 }
 
 async function signInWithApple(): Promise<AuthUserLike | null> {
   const nativeAuth = getNativeAuthPlugin();
-  const auth = getAuth();
-  const provider = new OAuthProvider('apple.com');
+  const auth = getCompatAuth();
+  const provider = new firebase.auth.OAuthProvider('apple.com');
   if (nativeAuth?.signInWithApple) {
     const result = await nativeAuth.signInWithApple();
-    if (result.credential?.idToken) {
-      const credential = provider.credential({
-        idToken: result.credential.idToken,
-        rawNonce: result.credential.nonce,
-      });
-      return (await signInWithCredential(auth, credential)).user;
-    }
-    return result.user || auth.currentUser;
+    const credential = provider.credential({
+      idToken: result.credential?.idToken,
+      rawNonce: result.credential?.nonce,
+    });
+    const userCredential = await auth.signInWithCredential(credential);
+    return userCredential.user;
   }
-  return (await signInWithPopup(auth, provider)).user;
+  await auth.signInWithPopup(provider);
+  return auth.currentUser;
+}
+
+function getCompatAuth(): firebase.auth.Auth {
+  const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(DEV_FIRESTORE_CONFIG);
+  return app.auth();
 }
 
 function getNativeAuthPlugin(): FirebaseAuthenticationPlugin | null {
