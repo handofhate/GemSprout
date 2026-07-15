@@ -14,6 +14,7 @@ type RevenueCatPackage = {
 type CustomerInfo = {
   entitlements?: { active?: Record<string, unknown> };
   activeSubscriptions?: string[];
+  allPurchasedProductIdentifiers?: string[];
 };
 
 type PurchasesPlugin = {
@@ -246,8 +247,11 @@ function delay(ms: number): Promise<void> {
 function hasProAccess(customerInfo?: CustomerInfo): boolean {
   const activeEntitlements = customerInfo?.entitlements?.active || {};
   if (activeEntitlements[RC_ENTITLEMENT] || activeEntitlements[RC_ENTITLEMENT_FALLBACK]) return true;
+  if (Object.keys(activeEntitlements).some(key => /pro|gemsprout/i.test(key))) return true;
   const activeSubscriptions = customerInfo?.activeSubscriptions || [];
-  return RC_PRODUCT_IDS.some(productId => activeSubscriptions.includes(productId));
+  const purchasedProducts = customerInfo?.allPurchasedProductIdentifiers || [];
+  const recognizedProducts = [...activeSubscriptions, ...purchasedProducts];
+  return recognizedProducts.some(productId => RC_PRODUCT_IDS.includes(productId) || /^com\.gemsprout\.ios\./.test(productId));
 }
 
 function getPurchasesPlugin(): PurchasesPlugin | null {

@@ -44,6 +44,38 @@ export async function assertDevOnboardingAuthIsAvailable(input: {
   await assertOnboardingAuthIsAvailable(getDevFirestore(), input.authUser);
 }
 
+export async function lookupDevAuthFamily(input: {
+  uid?: string;
+  email?: string;
+}): Promise<{ familyId: string; familyCode: string; memberId: string } | null> {
+  const db = getDevFirestore();
+  const email = String(input.email || '').toLowerCase();
+  const candidates: Array<Record<string, unknown>> = [];
+  if (input.uid) {
+    const uidSnap = await getDoc(doc(db, `users/${input.uid}`));
+    if (uidSnap.exists()) candidates.push(uidSnap.data());
+  }
+  if (email) {
+    const exactEmailSnap = await getDocs(query(collection(db, 'users'), where('email', '==', email), limit(10)));
+    exactEmailSnap.docs.forEach(userDoc => candidates.push(userDoc.data()));
+    const allUsersSnap = await getDocs(collection(db, 'users'));
+    allUsersSnap.docs.forEach(userDoc => {
+      const data = userDoc.data();
+      if (String(data.email || '').toLowerCase() === email) candidates.push(data);
+    });
+  }
+  for (const data of candidates) {
+    const familyId = String(data.familyId || data.familyCode || '');
+    if (!familyId) continue;
+    return {
+      familyId,
+      familyCode: String(data.familyCode || ''),
+      memberId: String(data.memberId || ''),
+    };
+  }
+  return null;
+}
+
 function setById<T extends { id?: string }>(target: Record<string, T>, value: T | null | undefined): void {
   if (!value?.id) return;
   target[value.id] = value;
@@ -811,7 +843,7 @@ export async function commitDevOnboardingSetup(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = input.familyId || makeNewFamilyDocumentId();
   const now = input.now || Date.now();
   await assertOnboardingAuthIsAvailable(db, input.draft.authUser);
   await clearDevSetupCollections(db, familyId);
@@ -929,10 +961,12 @@ export async function commitDevOnboardingSetup(input: {
       }) as Record<string, unknown>, { merge: false });
     });
 
+    const primaryParentId = parents.find(parent => parent.role === 'parent')?.id || parents[0]?.id || '';
     if (input.draft.authUser?.uid) {
       transaction.set(doc(db, `users/${input.draft.authUser.uid}`), omitUndefined({
         familyCode: input.draft.familyCode,
         familyId,
+        memberId: primaryParentId,
         uid: input.draft.authUser.uid,
         email: String(input.draft.authUser.email || '').toLowerCase(),
       }) as Record<string, unknown>, { merge: true });
@@ -970,6 +1004,11 @@ async function assertOnboardingAuthIsAvailable(
 
 function linkedFamilyForUserDoc(data: Record<string, unknown>): string {
   return String(data.familyCode || data.familyId || data.memberId || '');
+}
+
+function makeNewFamilyDocumentId(): string {
+  const random = Math.random().toString(36).slice(2, 8);
+  return `family_${Date.now().toString(36)}_${random}`;
 }
 
 async function clearDevSetupCollections(db: Firestore, familyId: string): Promise<void> {
