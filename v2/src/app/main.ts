@@ -6399,6 +6399,12 @@ async function refreshDevFirestoreState(options: { rerender?: boolean } = {}): P
     await syncNativeAppBadge();
     if (options.rerender !== false) void renderDevFirestore();
   } catch (error) {
+    if (isMissingDevFirestoreFamilyError(error)) {
+      firestoreState = null;
+      firestoreError = '';
+      if (options.rerender !== false) renderLandingPreview();
+      return;
+    }
     firestoreError = error instanceof Error ? error.message : String(error);
   } finally {
     devFirestoreRefreshInFlight = false;
@@ -6441,6 +6447,11 @@ async function renderDevFirestore(): Promise<void> {
       firestoreState = await loadDevFirestoreState();
       ensureDevFirestoreSubscription();
     } catch (error) {
+      if (isMissingDevFirestoreFamilyError(error)) {
+        firestoreError = '';
+        renderLandingPreview();
+        return;
+      }
       firestoreError = error instanceof Error ? error.message : String(error);
     }
   }
@@ -6514,6 +6525,10 @@ async function renderDevFirestore(): Promise<void> {
     bounceFirstHint('.activity-swipe-shell');
   }
   showWeekReviewIfNeeded(firestoreState);
+}
+
+function isMissingDevFirestoreFamilyError(error: unknown): boolean {
+  return error instanceof Error && /^Dev Firestore family ".+" was not found\.$/.test(error.message);
 }
 
 function render(): void {
