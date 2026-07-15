@@ -1483,28 +1483,8 @@ function cancelLeaveDevicePin(): void {
 async function leaveDevice(): Promise<void> {
   leaveDevicePinBuffer = '';
   leaveDevicePreviousMemberId = null;
-  try {
-    await signOutParentAuth();
-  } catch (error) {
-    console.warn('Parent sign-out failed before leaving device:', error);
-  }
-  activeViewerMemberId = null;
-  activeParentTab = 'overview';
-  activeKidTab = 'chores';
   activeKidTimeTaskId = null;
-  activeSettingsPage = 'main';
-  activeOnboardingStep = null;
-  landingMode = 'landing';
-  signInMessage = '';
-  kidEntryMessage = '';
-  kidEntryMembers = [];
-  firestoreState = null;
-  firestoreError = '';
-  const url = new URL(window.location.href);
-  if (useDevFirestore()) url.searchParams.set('source', 'firestore');
-  url.searchParams.set('landing', '1');
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-  render();
+  await sendDeviceToLandingAfterAccountChange();
 }
 
 function shouldUseAppLock(): boolean {
@@ -6436,14 +6416,19 @@ function clearLocalAccountSecurityState(): void {
 }
 
 async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
+  redirectDeviceToLanding();
   try {
-    await signOutParentAuth();
+    await withTimeout(signOutParentAuth(), 3000, 'Parent sign-out timed out.');
   } catch (error) {
     console.warn('Parent sign-out failed after account change:', error);
   }
+}
+
+function redirectDeviceToLanding(): void {
   activeViewerMemberId = null;
   activeParentTab = 'overview';
   activeKidTab = 'chores';
+  activeKidTimeTaskId = null;
   activeSettingsPage = 'main';
   activeOnboardingStep = null;
   landingMode = 'landing';

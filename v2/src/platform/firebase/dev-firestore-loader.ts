@@ -1,14 +1,24 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { collection, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, orderBy, query, type Firestore, type Unsubscribe } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, getFirestore, initializeFirestore, limit, onSnapshot, orderBy, query, type Firestore, type Unsubscribe } from 'firebase/firestore';
 import { type DemoAppState, type DemoCompletion, type DemoFamilySettings, type DemoHistoryRow, type DemoMember, type DemoPrize, type DemoRequest, type DemoTask, type DemoTeamGoal } from '../../app/local-demo-state';
 import { DEV_FIRESTORE_CONFIG, DEV_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
 
 type CompletionDoc = DemoCompletion;
 type OperationDoc = { id?: string; status?: string; error?: { reason?: string } };
 
+let devFirestore: Firestore | null = null;
+
 export function getDevFirestore(): Firestore {
+  if (devFirestore) return devFirestore;
   const app = getApps().length ? getApp() : initializeApp(DEV_FIRESTORE_CONFIG);
-  return getFirestore(app);
+  try {
+    devFirestore = initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+    });
+  } catch {
+    devFirestore = getFirestore(app);
+  }
+  return devFirestore;
 }
 
 function byCreatedAtAsc<T extends { createdAt?: number }>(left: T, right: T): number {
