@@ -1,4 +1,4 @@
-import { DEV_FIRESTORE_FAMILY_ID } from '../platform/firebase/dev-firestore-config';
+import { DEFAULT_FIRESTORE_FAMILY_ID, IS_V2_DEV_BUILD } from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
 import { createParentDashboardModel } from '../features/parent-dashboard/model';
 import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
@@ -1976,7 +1976,7 @@ async function applyAutoSavingsInterest(): Promise<void> {
 
 function maybeApplyAutoSavingsInterest(state: AppState): void {
   const todayKey = todayKeyForTimezone(state.settings.familyTimezone);
-  const key = `${state.familyId || DEV_FIRESTORE_FAMILY_ID}:${todayKey}`;
+  const key = `${state.familyId || currentFirestoreFamilyId()}:${todayKey}`;
   if (autoSavingsInterestRunKey === key) return;
   if (getSavingsInterestMode(state) !== 'auto_claim' || !isSavingsInterestDay(state, todayKey)) return;
   autoSavingsInterestRunKey = key;
@@ -4143,7 +4143,7 @@ async function ensureParentPushRegistration(settings = currentSettings()): Promi
     : state.members.find(member => member.role === 'parent') || null;
   await registerParentPushNotifications({
     userId: String(parent?.id || ''),
-    familyId: String(state.familyId || (DEV_FIRESTORE_FAMILY_ID)),
+    familyId: String(state.familyId || currentFirestoreFamilyId()),
     memberId: String(parent?.id || ''),
     notifyChoreApproval: settings.notifyChoreApproval !== false,
     notifySavingsSpend: settings.notifySavingsSpend !== false,
@@ -4162,7 +4162,7 @@ async function ensureParentPushRegistration(settings = currentSettings()): Promi
 function maybeEnsureParentPushRegistration(state: AppState, parent: AppMember): void {
   const settings = state.settings || {};
   if (settings.notifyChoreApproval === false && settings.notifySavingsSpend === false) return;
-  const key = `${state.familyId || DEV_FIRESTORE_FAMILY_ID}:${parent.id || ''}:${settings.notifyChoreApproval !== false}:${settings.notifySavingsSpend !== false}`;
+  const key = `${state.familyId || currentFirestoreFamilyId()}:${parent.id || ''}:${settings.notifyChoreApproval !== false}:${settings.notifySavingsSpend !== false}`;
   if (parentPushRegistrationKey === key) return;
   parentPushRegistrationKey = key;
   void ensureParentPushRegistration(settings);
@@ -4233,7 +4233,7 @@ async function sendParentApprovalPush(input: { memberId: string; title: string; 
     const sendApprovalNotification = httpsCallable(getFunctions(), 'sendApprovalNotification');
     await sendApprovalNotification({
       familyCode: String(state.familyCode || ''),
-      familyId: String(state.familyId || (DEV_FIRESTORE_FAMILY_ID)),
+      familyId: String(state.familyId || currentFirestoreFamilyId()),
       kidName: String(member?.name || 'A kid'),
       choreName: input.title,
       prizeName: input.title,
@@ -4254,7 +4254,7 @@ async function sendSavingsSpendPush(input: { memberId: string; amount: number; r
     const sendSpendNotification = httpsCallable(getFunctions(), 'sendSpendNotification');
     await sendSpendNotification({
       familyCode: String(state.familyCode || ''),
-      familyId: String(state.familyId || (DEV_FIRESTORE_FAMILY_ID)),
+      familyId: String(state.familyId || currentFirestoreFamilyId()),
       kidName: String(member?.name || 'A kid'),
       amount: input.amount,
       reason: input.reason || '',
@@ -4669,7 +4669,7 @@ async function awardSavedComboIfComplete(kidId: string, finalIds: string[], toda
       const { commitDevDailyComboOverrideAward } = await import('../platform/firebase/dev-firestore-operations.js');
       await commitDevDailyComboOverrideAward({ familyId: currentFirestoreFamilyId(), memberId: kidId, comboIds: finalIds, now: Date.now() });
       const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
-      firestoreState = await loadDevFirestoreState();
+      firestoreState = await loadDevFirestoreState(currentFirestoreFamilyId());
     } catch (error) {
       firestoreError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -5217,9 +5217,10 @@ function paywallHtml(): string {
             <button data-paywall-start type="button" style="width:100%;padding:16px;border-radius:14px;border:none;background:linear-gradient(180deg,#2a7560,#1f5f4f);color:#f8fbf9;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:0 10px 22px rgba(31,54,46,0.24)">
               Start ${trialDays}-Day Free Trial
             </button>
-            <button data-paywall-dev-bypass type="button" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px dashed rgba(31,95,79,0.45);background:#fffdf8;color:#1f5f4f;font-size:0.86rem;font-weight:800;cursor:pointer">
-              Continue Without Subscription
-            </button>
+            ${IS_V2_DEV_BUILD ? `
+              <button data-paywall-dev-bypass type="button" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px dashed rgba(31,95,79,0.45);background:#fffdf8;color:#1f5f4f;font-size:0.86rem;font-weight:800;cursor:pointer">
+                Continue Without Subscription
+              </button>` : ''}
             ${subscriptionState.offeringsStatus === 'error' ? `
               <div style="margin-top:8px;color:#9A3412;background:#FFF7ED;border:1px solid #FDBA74;border-radius:10px;padding:8px 10px;font-size:0.78rem;line-height:1.4">
                 Could not load subscription products. Tap Retry or Restore Purchases.
@@ -6402,7 +6403,7 @@ function renderError(message: string): void {
 }
 
 function currentFirestoreFamilyId(): string {
-  return firestoreState?.familyId || activeFamilyId || DEV_FIRESTORE_FAMILY_ID;
+  return firestoreState?.familyId || activeFamilyId || DEFAULT_FIRESTORE_FAMILY_ID;
 }
 
 function ensureDevFirestoreSubscription(familyId = currentFirestoreFamilyId()): void {
@@ -6569,7 +6570,10 @@ async function renderDevFirestore(): Promise<void> {
 }
 
 function isMissingDevFirestoreFamilyError(error: unknown): boolean {
-  return error instanceof Error && /^Dev Firestore family ".+" was not found\.$/.test(error.message);
+  return error instanceof Error && (
+    error.message === 'No family is selected.'
+    || /^Dev Firestore family ".+" was not found\.$/.test(error.message)
+  );
 }
 
 function readStoredActiveFamilyId(): string {
@@ -6770,11 +6774,14 @@ async function enterKidFamily(): Promise<void> {
 
 async function resolveKidDevFamily(code: string): Promise<{ found: boolean; members: AppMember[] }> {
   try {
-    const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
-    const state = await loadDevFirestoreState();
-    const familyCode = normalizeFamilyCode(String(state.familyCode || ''));
-    if (code === familyCode) return { found: true, members: state.members };
-    return { found: false, members: [] };
+    const [{ lookupDevFamilyByCode }, { loadDevFirestoreState }] = await Promise.all([
+      import('../platform/firebase/dev-firestore-operations.js'),
+      import('../platform/firebase/dev-firestore-loader.js'),
+    ]);
+    const family = await lookupDevFamilyByCode(normalizeFamilyCode(code));
+    if (!family) return { found: false, members: [] };
+    const state = await loadDevFirestoreState(family.familyId);
+    return { found: true, members: state.members };
   } catch {
     return { found: false, members: [] };
   }
@@ -7009,7 +7016,7 @@ async function finishOnboardingPreview(): Promise<void> {
 
 async function finishOnboardingEdit(draft: ReturnType<typeof getOnboardingSetupDraft>): Promise<void> {
   const state = currentAppState();
-  const familyId = state.familyId || (DEV_FIRESTORE_FAMILY_ID);
+  const familyId = state.familyId || currentFirestoreFamilyId();
   const nextActiveMembers = [...draft.parents, ...draft.kids].map(member => {
     const existing = state.members.find(item => item.id === member.id) || {};
     return {
@@ -7213,7 +7220,7 @@ async function submitKidTaskCompletion(taskId: string, slotId: string | null, ph
       if (autoApprove) {
         await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action: 'approve', requestId, actorMemberId: 'parent_1', now });
         const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
-        firestoreState = await loadDevFirestoreState();
+        firestoreState = await loadDevFirestoreState(currentFirestoreFamilyId());
         activeViewerMemberId = String(viewer.id);
         void renderDevFirestore();
         restoreKidScrollPosition();

@@ -8,3 +8,19 @@ export const DEV_FIRESTORE_CONFIG = {
   authDomain: 'gemsprout-v2-dev.firebaseapp.com',
   messagingSenderId: '578603238289',
 };
+
+export const PRODUCTION_FIRESTORE_CONFIG = {
+  projectId: 'gemsprout1',
+  appId: '1:493782739457:web:64d2afa5766ee1b481ee00',
+  storageBucket: 'gemsprout1.firebasestorage.app',
+  apiKey: 'AIzaSyCypfI4iSfTdTZWBAm1p4OO2MfzHH4zjNU',
+  authDomain: 'gemsprout1.firebaseapp.com',
+  messagingSenderId: '493782739457',
+  measurementId: 'G-1WDH5Q2STT',
+};
+
+declare const GEMSPROUT_V2_FIREBASE_TARGET: string;
+
+export const IS_V2_DEV_BUILD = GEMSPROUT_V2_FIREBASE_TARGET !== 'production';
+export const FIRESTORE_CONFIG = IS_V2_DEV_BUILD ? DEV_FIRESTORE_CONFIG : PRODUCTION_FIRESTORE_CONFIG;
+export const DEFAULT_FIRESTORE_FAMILY_ID = IS_V2_DEV_BUILD ? DEV_FIRESTORE_FAMILY_ID : '';

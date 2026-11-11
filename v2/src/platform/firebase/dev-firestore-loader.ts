@@ -1,13 +1,13 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { collection, doc, getDoc, getDocs, getFirestore, limit, onSnapshot, orderBy, query, type Firestore, type Unsubscribe } from 'firebase/firestore';
 import { type AppState, type AppCompletion, type AppFamilySettings, type AppHistoryRow, type AppMember, type AppPrize, type AppRequest, type AppTask, type AppTeamGoal } from '../../app/app-state';
-import { DEV_FIRESTORE_CONFIG, DEV_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
+import { DEFAULT_FIRESTORE_FAMILY_ID, FIRESTORE_CONFIG } from './dev-firestore-config';
 
 type CompletionDoc = AppCompletion;
 type OperationDoc = { id?: string; status?: string; error?: { reason?: string } };
 
 export function getDevFirestore(): Firestore {
-  const app = getApps().length ? getApp() : initializeApp(DEV_FIRESTORE_CONFIG);
+  const app = getApps().length ? getApp() : initializeApp(FIRESTORE_CONFIG);
   return getFirestore(app);
 }
 
@@ -49,7 +49,8 @@ async function loadHistory(db: Firestore, familyId: string): Promise<AppHistoryR
   }
 }
 
-export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID): Promise<AppState> {
+export async function loadDevFirestoreState(familyId = DEFAULT_FIRESTORE_FAMILY_ID): Promise<AppState> {
+  if (!familyId) throw new Error('No family is selected.');
   const db = getDevFirestore();
   const [familyDoc, members, tasks, prizes, requests, completions, operations, historyRows] = await Promise.all([
     getDoc(doc(db, `families/${familyId}`)),
@@ -105,8 +106,9 @@ export async function loadDevFirestoreState(familyId = DEV_FIRESTORE_FAMILY_ID):
 
 export function subscribeDevFirestoreState(
   onChange: () => void,
-  familyId = DEV_FIRESTORE_FAMILY_ID,
+  familyId = DEFAULT_FIRESTORE_FAMILY_ID,
 ): Unsubscribe {
+  if (!familyId) return () => undefined;
   const db = getDevFirestore();
   let initialSnapshotsRemaining = 7;
   let debounceTimer = 0;

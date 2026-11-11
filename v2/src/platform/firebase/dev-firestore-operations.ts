@@ -2,7 +2,7 @@ import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, qu
 import { approveRequest, denyRequest, REQUEST_KINDS, REQUEST_STATUSES, type ApprovalRequest, type Completion, type Member, type Prize } from '../../domain/requests';
 import { makeRequestOperation, OPERATION_KINDS, type OperationExecutionResult, type OperationRecord, type OperationState, planRequestOperationTransaction } from '../../sync';
 import { chorePath, completionPath, familyPath, historyPath, memberPath, operationPath, prizePath, requestPath } from '../../sync/firestore-paths';
-import { DEV_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
+import { DEFAULT_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
 import { getDevFirestore } from './dev-firestore-loader';
 import { todayKeyForTimezone } from '../../app/date-keys';
 import { getBaseBadgeDef, getLevels } from '../../features/parent-levels/view';
@@ -58,11 +58,6 @@ export async function lookupDevAuthFamily(input: {
   if (email) {
     const exactEmailSnap = await getDocs(query(collection(db, 'users'), where('email', '==', email), limit(10)));
     exactEmailSnap.docs.forEach(userDoc => candidates.push(userDoc.data()));
-    const allUsersSnap = await getDocs(collection(db, 'users'));
-    allUsersSnap.docs.forEach(userDoc => {
-      const data = userDoc.data();
-      if (String(data.email || '').toLowerCase() === email) candidates.push(data);
-    });
   }
   for (const data of candidates) {
     const familyId = String(data.familyId || data.familyCode || '');
@@ -74,6 +69,20 @@ export async function lookupDevAuthFamily(input: {
     };
   }
   return null;
+}
+
+export async function lookupDevFamilyByCode(code: string): Promise<{ familyId: string } | null> {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) return null;
+  const snapshot = await getDocs(query(collection(getDevFirestore(), 'families'), where('familyCode', '==', normalizedCode), limit(1)));
+  const family = snapshot.docs[0];
+  return family ? { familyId: family.id } : null;
+}
+
+function requireFamilyId(familyId?: string): string {
+  const resolved = familyId || DEFAULT_FIRESTORE_FAMILY_ID;
+  if (!resolved) throw new Error('No family is selected.');
+  return resolved;
 }
 
 function setById<T extends { id?: string }>(target: Record<string, T>, value: T | null | undefined): void {
@@ -186,7 +195,7 @@ function executeRequestOperation(state: OperationState, operation: OperationReco
 
 export async function commitDevRequestAction(input: { action: 'approve' | 'deny'; requestId: string; actorMemberId?: string; familyId?: string; now?: number }): Promise<OperationExecutionResult> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   const now = input.now || Date.now();
   const operation = makeRequestOperation({
     id: `op:request:${input.action}:${input.requestId}`,
@@ -356,7 +365,7 @@ export async function commitDevDailyComboOverrideAward(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   const now = input.now || Date.now();
   const familySnap = await getDoc(doc(db, familyPath(familyId)));
   const settings = (familySnap.exists() ? (familySnap.data() as { settings?: Record<string, unknown> }).settings : {}) || {};
@@ -553,7 +562,7 @@ function nextComboStreak(current: { current?: number; best?: number; lastDate?: 
 
 export async function undoDevHistoryAction(input: { historyId: string; familyId?: string }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     const historyRef = doc(db, historyPath(familyId, input.historyId));
     const historySnap = await transaction.get(historyRef);
@@ -645,7 +654,7 @@ export async function undoDevHistoryAction(input: { historyId: string; familyId?
 
 export async function cleanupDevSettledCompletionPhotos(input: { familyId?: string; undoableHistoryLimit?: number } = {}): Promise<number> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   const undoableHistoryLimit = input.undoableHistoryLimit ?? 5;
   const [historySnap, requestsSnap, completionsSnap] = await Promise.all([
     getDocs(query(collection(db, `${familyPath(familyId)}/history`), orderBy('createdAt', 'desc'), limit(100))),
@@ -686,7 +695,7 @@ export async function commitDevManualQuickAction(input: {
   historyWrites: Array<Record<string, unknown> & { id?: string }>;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     input.memberWrites.forEach(write => {
       if (!write.memberId || !write.data) return;
@@ -705,7 +714,7 @@ export async function commitDevTaskWrite(input: {
   data: Record<string, unknown>;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     transaction.set(doc(db, chorePath(familyId, input.taskId)), omitUndefined(input.data) as Record<string, unknown>, { merge: false });
   });
@@ -716,7 +725,7 @@ export async function commitDevTaskDelete(input: {
   taskId: string;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     transaction.delete(doc(db, chorePath(familyId, input.taskId)));
   });
@@ -728,7 +737,7 @@ export async function commitDevPrizeWrite(input: {
   data: Record<string, unknown>;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     transaction.set(doc(db, prizePath(familyId, input.prizeId)), omitUndefined(input.data) as Record<string, unknown>, { merge: false });
   });
@@ -739,7 +748,7 @@ export async function commitDevPrizeDelete(input: {
   prizeId: string;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     transaction.delete(doc(db, prizePath(familyId, input.prizeId)));
   });
@@ -750,7 +759,7 @@ export async function commitDevTeamGoalsWrite(input: {
   teamGoals: unknown[];
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     const familyRef = doc(db, familyPath(familyId));
     const familySnap = await transaction.get(familyRef);
@@ -767,7 +776,7 @@ export async function commitDevKidTeamContribution(input: {
   history: Record<string, unknown> & { id?: string };
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     const familyRef = doc(db, familyPath(familyId));
     const familySnap = await transaction.get(familyRef);
@@ -789,7 +798,7 @@ export async function commitDevMemberWrite(input: {
   data: Record<string, unknown>;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     transaction.set(doc(db, memberPath(familyId, input.memberId)), omitUndefined(input.data) as Record<string, unknown>, { merge: false });
   });
@@ -800,7 +809,7 @@ export async function commitDevFamilyWrite(input: {
   data: Record<string, unknown>;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     const familyRef = doc(db, familyPath(familyId));
     const familySnap = await transaction.get(familyRef);
@@ -811,7 +820,7 @@ export async function commitDevFamilyWrite(input: {
 
 export async function deleteDevFamilyData(input: { familyId?: string } = {}): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await clearDevSetupCollections(db, familyId);
   await deleteDoc(doc(db, familyPath(familyId)));
 }
@@ -992,14 +1001,6 @@ async function assertOnboardingAuthIsAvailable(
     const linkedFamily = linkedFamilyForUserDoc(userDoc.data());
     if (linkedFamily) throw new AuthAlreadyLinkedError(linkedFamily);
   }
-
-  const allUsersSnap = await getDocs(collection(db, 'users'));
-  for (const userDoc of allUsersSnap.docs) {
-    const data = userDoc.data();
-    if (String(data.email || '').toLowerCase() !== email) continue;
-    const linkedFamily = linkedFamilyForUserDoc(data);
-    if (linkedFamily) throw new AuthAlreadyLinkedError(linkedFamily);
-  }
 }
 
 function linkedFamilyForUserDoc(data: Record<string, unknown>): string {
@@ -1033,7 +1034,7 @@ export async function commitDevKidCompletionRequest(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   const now = input.now || Date.now();
   const familySnap = await getDoc(doc(db, familyPath(familyId)));
   const family = familySnap.exists() ? familySnap.data() as { settings?: Record<string, unknown> } : {};
@@ -1095,7 +1096,7 @@ export async function commitDevKidSavingsSpendRequest(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   const now = input.now || Date.now();
   await runTransaction(db, async transaction => {
     transaction.set(doc(db, requestPath(familyId, input.requestId)), omitUndefined({
@@ -1124,7 +1125,7 @@ export async function commitDevKidPrizeRequest(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   const now = input.now || Date.now();
   await runTransaction(db, async transaction => {
     transaction.set(doc(db, requestPath(familyId, input.requestId)), omitUndefined({
@@ -1153,7 +1154,7 @@ export async function commitDevKidPrizeRedeem(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || DEV_FIRESTORE_FAMILY_ID;
+  const familyId = requireFamilyId(input.familyId);
   await runTransaction(db, async transaction => {
     const memberRef = doc(db, memberPath(familyId, input.memberId));
     const prizeRef = doc(db, prizePath(familyId, input.prizeId));

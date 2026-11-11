@@ -196,7 +196,8 @@ workflows:
 
       - name: Build v2 web app and sync Capacitor to iOS
         script: |
-          VITE_GEMSPROUT_DATA_SOURCE=firestore npm run build:v2:app
+          cp GoogleService-Info.production.plist GoogleService-Info.plist
+          VITE_GEMSPROUT_DATA_SOURCE=firestore VITE_GEMSPROUT_FIREBASE_TARGET=production npm run build:v2:app
           rm -rf www
           mkdir -p www
           cp -R v2/dist-app/. www/
@@ -326,5 +327,5 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: false
+        submit_to_testflight: true
         submit_to_app_store: false

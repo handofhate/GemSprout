@@ -1,6 +1,6 @@
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
-import { DEV_FIRESTORE_CONFIG } from '../firebase/dev-firestore-config';
+import { FIRESTORE_CONFIG } from '../firebase/dev-firestore-config';
 
 type FirebaseAuthenticationPlugin = {
   signInWithGoogle?: () => Promise<NativeSignInResult>;
@@ -111,7 +111,7 @@ async function signInWithApple(): Promise<AuthUserLike | null> {
 }
 
 function getCompatAuth(): firebase.auth.Auth {
-  const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(DEV_FIRESTORE_CONFIG);
+  const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIRESTORE_CONFIG);
   return app.auth();
 }
 
