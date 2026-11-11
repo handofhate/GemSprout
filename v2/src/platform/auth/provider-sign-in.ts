@@ -61,6 +61,17 @@ export async function signOutParentAuth(): Promise<void> {
   await getCompatAuth().signOut();
 }
 
+export async function ensureFirestoreAuth(): Promise<void> {
+  const auth = getCompatAuth();
+  await new Promise<void>(resolve => {
+    const unsubscribe = auth.onAuthStateChanged(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+  if (!auth.currentUser) await auth.signInAnonymously();
+}
+
 export async function deleteCurrentParentAuth(): Promise<void> {
   const user = getCompatAuth().currentUser;
   if (user) await user.delete();

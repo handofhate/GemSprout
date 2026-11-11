@@ -31,7 +31,7 @@ import {
   type OnboardingTransitionDirection,
 } from '../features/onboarding/view';
 import { registerParentPushNotifications } from '../platform/notifications/push-registration';
-import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid } from '../platform/auth/provider-sign-in';
+import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid, ensureFirestoreAuth } from '../platform/auth/provider-sign-in';
 import {
   initRevenueCat,
   loadOfferings,
@@ -6399,7 +6399,7 @@ function renderLoadingScreen(message = 'Loading'): void {
 function renderError(message: string): void {
   showScreen('screen-parent');
   const content = document.getElementById('parent-content');
-  if (content) content.innerHTML = `<section class="card"><div class="card-title">Could not load dev Firestore</div><div class="text-muted">${message}</div></section>`;
+  if (content) content.innerHTML = `<section class="card"><div class="card-title">Could not load GemSprout</div><div class="text-muted">${message}</div></section>`;
 }
 
 function currentFirestoreFamilyId(): string {
@@ -7274,5 +7274,12 @@ function applySubmittedCompletionToState(
 }
 
 registerAppSecurityListeners();
-render();
+void ensureFirestoreAuth().then(
+  () => render(),
+  error => {
+    console.warn('Firebase sign-in unavailable:', error);
+    firestoreError = '';
+    renderLandingPreview();
+  },
+);
 
