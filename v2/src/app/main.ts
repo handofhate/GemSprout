@@ -88,6 +88,7 @@ let kidQrScanSession = 0;
 let parentPushRegistrationKey = '';
 let subscriptionAppUserId = '';
 let paywallOpen = false;
+let paywallCheckingEntitlement = false;
 let devPhotoCleanupInFlight = false;
 let devPhotoCleanupLastRun = 0;
 let autoSavingsInterestRunKey = '';
@@ -1123,6 +1124,7 @@ async function leaveDevice(): Promise<void> {
   subscriptionState.initialized = false;
   subscriptionState.isPro = true;
   paywallOpen = false;
+  paywallCheckingEntitlement = false;
   clearOnboardingAuthUser();
   startNewOnboardingDraft();
   landingMode = 'landing';
@@ -3199,6 +3201,7 @@ function closeKidPhotoCapture(): void {
 }
 
 function bindParentQuickActions(state: AppState): void {
+  bindWeekReviewLaunch(document, state);
   const trigger = document.querySelector<HTMLButtonElement>('[data-parent-quick-trigger]');
   const host = document.getElementById('parent-quick-launch');
   trigger?.addEventListener('click', () => {
@@ -5191,16 +5194,23 @@ function shouldShowSubscriptionPaywall(viewer: AppMember): boolean {
 
 async function showPaywall(forcePreview = false): Promise<void> {
   paywallOpen = true;
-  showScreen('screen-auth');
-  renderPaywall();
-  await loadOfferings();
-  if (!forcePreview) await refreshEntitlement();
-  if (!forcePreview && subscriptionState.isPro) {
-    paywallOpen = false;
-    render();
-    return;
+  if (!forcePreview) {
+    paywallCheckingEntitlement = true;
+    renderLoadingScreen('Checking subscription');
+    await loadOfferings();
+    await refreshEntitlement();
+    paywallCheckingEntitlement = false;
+    if (subscriptionState.isPro) {
+      paywallOpen = false;
+      render();
+      return;
+    }
+  } else {
+    paywallCheckingEntitlement = false;
+    showScreen('screen-auth');
   }
   renderPaywall();
+  if (forcePreview) await loadOfferings();
 }
 
 function renderPaywall(): void {
@@ -5291,6 +5301,7 @@ function paywallHtml(): string {
 function bindPaywallActions(root: HTMLElement): void {
   root.querySelector<HTMLElement>('[data-paywall-close]')?.addEventListener('click', () => {
     paywallOpen = false;
+    paywallCheckingEntitlement = false;
     render();
   });
   root.querySelectorAll<HTMLElement>('[data-paywall-plan]').forEach(button => {
@@ -5318,6 +5329,7 @@ function bindPaywallActions(root: HTMLElement): void {
 function bypassPaywallForCurrentSession(): void {
   subscriptionState.isPro = true;
   paywallOpen = false;
+  paywallCheckingEntitlement = false;
   render();
 }
 
@@ -5327,6 +5339,7 @@ async function startSubscriptionPurchase(): Promise<void> {
   setPaywallPrimaryBusy(false);
   if (result.ok) {
     paywallOpen = false;
+    paywallCheckingEntitlement = false;
     toast('Subscription active!');
     render();
     return;
@@ -5347,6 +5360,7 @@ async function restoreSubscriptionFromPaywall(): Promise<void> {
   const restored = await restorePurchases();
   if (restored) {
     paywallOpen = false;
+    paywallCheckingEntitlement = false;
     toast('Subscription restored!');
     render();
   } else {
@@ -5542,6 +5556,7 @@ async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
   subscriptionState.initialized = false;
   subscriptionState.isPro = true;
   paywallOpen = false;
+  paywallCheckingEntitlement = false;
   clearOnboardingAuthUser();
   startNewOnboardingDraft();
   landingMode = 'landing';
@@ -6594,10 +6609,12 @@ async function renderDevFirestore(): Promise<void> {
   await ensureSubscriptionForState(firestoreState);
   if (shouldShowSubscriptionPaywall(activeViewer)) {
     if (!paywallOpen) await showPaywall();
+    else if (paywallCheckingEntitlement) renderLoadingScreen('Checking subscription');
     else renderPaywall();
     return;
   }
   paywallOpen = false;
+  paywallCheckingEntitlement = false;
   showScreen('screen-parent');
   maybeEnsureParentPushRegistration(firestoreState, activeViewer);
   const header = document.getElementById('parent-header');

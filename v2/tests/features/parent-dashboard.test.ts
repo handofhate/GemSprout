@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createParentDashboardModel } from '../../src/features/parent-dashboard/model';
 import { renderParentNav } from '../../src/features/parent-dashboard/view';
+import { renderParentQuickLaunch } from '../../src/features/parent-dashboard/quick-actions';
 import { type AppState } from '../../src/app/app-state';
 
 function state(requestStatuses: string[]): AppState {
@@ -31,4 +32,11 @@ test('parent inbox count and navigation badge use only the visible pending reque
   const cleared = createParentDashboardModel(state(['approved', 'denied']));
   assert.equal(cleared.pendingCount, 0);
   assert.doesNotMatch(renderParentNav('overview', cleared.pendingCount), /nav-badge/);
+});
+
+test('family control center exposes a matching Week in Review icon button', () => {
+  const markup = renderParentQuickLaunch(state([]));
+  assert.match(markup, /class="hero-quick-trigger hero-week-review-trigger" data-week-review-open/);
+  assert.match(markup, /ph-hand-tap/);
+  assert.match(markup, /aria-label="Open Week in Review"/);
 });

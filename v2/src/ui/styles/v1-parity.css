@@ -2050,10 +2050,17 @@
       opacity: 0.84;
       line-height: 1.5;
     }
+    .parent-hero-launch-actions {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
     .hero-quick-launch {
       position: relative;
       flex-shrink: 0;
-      margin-left: auto;
+      margin-left: 0;
       align-self: flex-start;
       display: flex;
       flex-direction: column;
@@ -2279,6 +2286,9 @@
     @media (max-width: 520px) {
       .parent-hero-head {
         gap: 12px;
+      }
+      .parent-hero-launch-actions {
+        gap: 6px;
       }
       .hero-quick-action {
         width: 78px;
