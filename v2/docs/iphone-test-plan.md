@@ -4,7 +4,8 @@ Use this manual pass with the exact production-target build installed from TestF
 
 ## Setup
 
-- Install the build submitted by `ios-v2-testflight`; it points at production project `gemsprout1`.
+- Install version 1.1 (build 129) from `ios-v2-testflight` only after Apple finishes processing it and it appears in TestFlight. It points at production project `gemsprout1`.
+- If build 129 is not listed for the internal tester, check its availability/assignment in the App Store Connect internal testing group.
 - Use COLLUM only for non-destructive reads. Use ABC123 for test writes. Keep the family code private.
 - Sign in as a real parent with Apple and/or Google. The production build has no paywall bypass; verify real sandbox purchase/restore.
 - Enable parent notifications on the parent iPhone. Do not enable push on the kid device.

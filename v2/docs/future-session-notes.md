@@ -12,29 +12,27 @@ Last reviewed: 2026-11-12
 ## Current Release Path
 
 - Build workflow: `ios-v2-testflight` in `codemagic.yaml`.
-- It targets production Firebase project `gemsprout1`, uses marketing version 1.1, increments the build number, and submits to TestFlight.
+- It targets production Firebase project `gemsprout1`, uses marketing version 1.1, increments the build number, and uploads the IPA to App Store Connect. `submit_to_testflight` and `submit_to_app_store` are both false: Codemagic does not run the separate beta-review submission step.
 - `ios-release` is the V1 workflow; do not select it for V2.
 - The local Vite server defaults to `gemsprout-v2-dev`; it is not the production TestFlight build.
 - The full V1 family data migration to the V2 structure was previously completed in `gemsprout1`. Keep V1 data and the Cloud Storage export intact. Never rerun the migration to test a build.
 
-## Current Work
+## Current Release State
 
-- Production Firestore rules are being narrowed to a family's code-linked records while preserving V1's code-based kid join behavior.
-- V2 family documents are being keyed by their six-character family code so direct join does not need a collection-wide family query.
-- Parent account deletion requires fresh Google/Apple reauthentication. A server-side Auth deletion trigger removes the associated family data only after Firebase confirms the account deletion.
+- Codemagic build 1.1 (129), source commit `6c23f2f`, uploaded successfully to App Store Connect and finished without the prior post-processing failure. Apple processing and TestFlight availability are still unverified. [View build](https://codemagic.io/app/69b8903edf292c5ec8a27216/build/6af64fed10a05158d812310a).
+- Recent app changes: Week in Review's Stats-card shortcut follows the existing UI-hints toggle; startup, subscription-check, and initial-load screens use the generic `Loading...` text, while purchase restore remains `Restoring...`.
+- Validation at app source commit `bc8cbf9`: `npm run typecheck:v2`, all 33 `npm run test:v2` tests, and a production-target `npm run build:v2:web` passed.
+- Production Firestore rules and the Auth deletion trigger are deployed. Family-code lookup remains compatible with V1; parent deletion cleanup waits until no linked parent account remains.
 - The paywall bypass is only present in development builds. TestFlight must verify real RevenueCat purchase/restore behavior.
 - Two local `all-families-*-preview.json` files contain private family data. Never commit or attach them.
 
-## Before TestFlight
+## Next Steps
 
-1. Run typecheck, the current V2 tests, Firestore rules emulator tests, and the app build.
-2. Deploy and verify the production rules and Auth deletion function in `gemsprout1`.
-3. Commit and push the intended app changes without local data exports.
-4. Run `ios-v2-testflight` from `main`, install that exact build on iPhone, and complete the focused device pass in `iphone-test-plan.md`.
+1. Wait for Apple to finish processing build 129; then confirm it appears in TestFlight and is assigned to the internal tester group if needed.
+2. Install version 1.1 (129) on iPhone and complete the focused device pass in `iphone-test-plan.md`.
+3. Use `ABC123` for non-destructive test writes. Use a newly created throwaway family/account for data reset or account deletion; never delete COLLUM or ABC123.
+4. Complete the remaining device checks for RevenueCat, photo proof and undo, QR, badge counts, push routing, offline recovery, and maintenance/update gates before App Store release.
 
 ## After TestFlight
 
-- Test login, migrated family lookup, kid code join, role switching/auth guard, and persistence after relaunch.
-- Use `ABC123` for non-destructive test writes. Use a newly created throwaway family/account for data reset or account deletion; never delete COLLUM or ABC123.
-- Finish checks for RevenueCat, photo proof and undo, QR, badge counts, push routing, offline recovery, and maintenance/update gates before App Store release.
 - Keep the V1 source/build available, but use the verified Firestore export for data rollback; the old V1 app may not interpret the migrated V2 document layout.
