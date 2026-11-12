@@ -14,7 +14,7 @@ export function renderAppAccessGate(gate: AppAccessGate, onRetry: () => void): v
   panel.className = 'access-gate__panel';
 
   const logo = document.createElement('img');
-  logo.src = '/gemsprout.png';
+  logo.src = 'gemsprout.png';
   logo.alt = 'GemSprout';
   logo.className = 'access-gate__logo';
 
