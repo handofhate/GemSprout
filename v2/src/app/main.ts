@@ -5196,7 +5196,7 @@ async function showPaywall(forcePreview = false): Promise<void> {
   paywallOpen = true;
   if (!forcePreview) {
     paywallCheckingEntitlement = true;
-    renderLoadingScreen('Checking subscription');
+    renderLoadingScreen();
     await loadOfferings();
     await refreshEntitlement();
     paywallCheckingEntitlement = false;
@@ -6617,7 +6617,7 @@ async function renderDevFirestore(): Promise<void> {
   await ensureSubscriptionForState(firestoreState);
   if (shouldShowSubscriptionPaywall(activeViewer)) {
     if (!paywallOpen) await showPaywall();
-    else if (paywallCheckingEntitlement) renderLoadingScreen('Checking subscription');
+    else if (paywallCheckingEntitlement) renderLoadingScreen();
     else renderPaywall();
     return;
   }
@@ -7522,7 +7522,7 @@ function applySubmittedCompletionToState(
 let appInitialized = false;
 
 async function startApp(forceRefresh = false): Promise<void> {
-  renderLoadingScreen('Checking for updates');
+  renderLoadingScreen();
   const gate = await checkAppAccess(forceRefresh);
   if (gate) {
     renderAppAccessGate(gate, () => void startApp(true));
