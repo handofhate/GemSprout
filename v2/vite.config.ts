@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   root: __dirname,
   publicDir: 'public',
+  base: process.env.VITE_GEMSPROUT_WEB_BASE || '/',
   define: {
     GEMSPROUT_V2_DATA_SOURCE: JSON.stringify(process.env.VITE_GEMSPROUT_DATA_SOURCE || ''),
     GEMSPROUT_V2_FIREBASE_TARGET: JSON.stringify(process.env.VITE_GEMSPROUT_FIREBASE_TARGET || 'dev'),

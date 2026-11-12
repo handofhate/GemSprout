@@ -7,6 +7,7 @@
     "dev": "http-server . -a 0.0.0.0 -p 4173 -c-1",
     "dev:v2": "vite --config v2/vite.config.ts --host 127.0.0.1 --port 4273",
     "build:v2:app": "vite build --config v2/vite.config.ts",
+    "build:v2:web": "vite build --config v2/vite.config.ts",
     "test": "echo \"No default test configured. Use: npm run test:e2e\"",
     "build:v2": "tsc -p v2/tsconfig.json",
     "typecheck:v2": "tsc -p v2/tsconfig.json --noEmit",
