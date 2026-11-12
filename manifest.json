@@ -1,8 +1,9 @@
 {
   "name": "GemSprout",
   "short_name": "GemSprout",
-  "description": "Family routines, photo proof, savings, and weekly growth across one home or two",
-  "start_url": ".",
+  "description": "Family routines, chores, savings, and weekly growth.",
+  "start_url": "/GemSprout/",
+  "scope": "/GemSprout/",
   "display": "standalone",
   "background_color": "#F0F4FF",
   "theme_color": "#1D6B57",
