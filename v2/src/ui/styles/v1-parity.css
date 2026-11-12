@@ -2258,6 +2258,9 @@
       font-size: 1rem;
     }
     .inbox-refresh-btn:active { transform: scale(0.95); }
+    .inbox-refresh-btn[disabled] { opacity: 0.65; cursor: wait; }
+    .inbox-refresh-btn .is-refreshing { animation: inbox-refresh-spin 0.8s linear infinite; }
+    @keyframes inbox-refresh-spin { to { transform: rotate(360deg); } }
     .inbox-title {
       font-size: 1rem;
       font-weight: 800;

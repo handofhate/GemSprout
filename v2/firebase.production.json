@@ -1,5 +1,10 @@
 {
   "firestore": {
     "rules": "firestore.production.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8180
+    }
   }
 }

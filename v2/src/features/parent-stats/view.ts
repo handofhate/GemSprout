@@ -14,8 +14,9 @@ type MemberStats = {
   currentLevel: { level?: number; name?: string; icon?: string };
 };
 
-export function renderParentStats(state: AppState): string {
+export function renderParentStats(state: AppState, activeParent?: AppMember | null): string {
   const kids = state.members.filter(member => member.role === 'kid');
+  const parent = resolveActiveParent(state, activeParent);
   return `
     <section data-motion-key="stats-launch">
       <div class="section-row">
@@ -23,21 +24,22 @@ export function renderParentStats(state: AppState): string {
       </div>
       <div class="overview-kids-grid overview-kids-grid-spaced">
         ${renderWeekReviewLaunchCard(state)}
-        ${renderFamilyStatsLaunchCard(kids, state)}
+        ${renderFamilyStatsLaunchCard(kids, state, parent)}
         ${kids.map((kid, index) => renderMemberStatsLaunchCard(kid, state, index % 2 === 1 ? 'right' : 'left')).join('')}
       </div>
     </section>
   `;
 }
 
-export function renderStatsDetailModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left'): string {
+export function renderStatsDetailModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left', activeParent?: AppMember | null): string {
   if (kind === 'family') {
     const kids = state.members.filter(member => member.role === 'kid');
+    const parent = resolveActiveParent(state, activeParent);
     return `
       <div class="snapshot-panel-head stats-panel-head" style="--snapshot-accent:#6C63FF">
         <button class="snapshot-panel-close" data-close-modal type="button"><i class="ph-duotone ph-arrow-left"></i></button>
         <div class="snapshot-panel-person">
-          <div class="snapshot-panel-avatar"><img src="/gemsprout.png" alt="" style="width:100%;height:100%;border-radius:20px"></div>
+          <div class="snapshot-panel-avatar">${renderMemberAvatar(parent)}</div>
           <div>
             <div class="snapshot-panel-name">The Family</div>
             <div class="snapshot-panel-sub">Combined lifetime stats</div>
@@ -64,7 +66,7 @@ export function renderStatsDetailModal(state: AppState, kind: 'family' | 'kid', 
   `;
 }
 
-function renderFamilyStatsLaunchCard(kids: AppMember[], state: AppState): string {
+function renderFamilyStatsLaunchCard(kids: AppMember[], state: AppState, parent: AppMember | null): string {
   const choreHist = state.historyRows.filter(row => row.type === 'chore');
   const totalDiamonds = kids.reduce((sum, kid) => sum + Number(kid.totalEarned || 0), 0);
   const totalPrizes = state.prizes.reduce((sum, prize) => sum + (prize.redemptions || []).length, 0);
@@ -72,7 +74,7 @@ function renderFamilyStatsLaunchCard(kids: AppMember[], state: AppState): string
   return `
     <button class="snapshot-summary-card stats-launch-card stats-launch-card-family" data-open-stats="family" type="button" style="--stats-accent:#365e4f">
       <div class="stats-launch-head">
-        <div class="stats-launch-avatar stats-launch-avatar-family"><img src="/gemsprout.png" alt="" style="width:100%;height:100%;border-radius:18px"></div>
+        <div class="stats-launch-avatar stats-launch-avatar-family">${renderMemberAvatar(parent)}</div>
         <div class="stats-launch-hero">
           <div class="stats-launch-name">The Family</div>
           <div class="stats-launch-sub">Family snapshot</div>
@@ -211,10 +213,23 @@ function buildMemberStats(member: AppMember, state: AppState): MemberStats {
   };
 }
 
-function renderMemberAvatar(member: AppMember): string {
-  const avatar = String(member.avatar || member.icon || 'smiley');
-  const iconName = avatar.replace(/^ph-/, '');
-  return `<i class="ph-duotone ph-${escapeHtml(iconName)}" style="color:${escapeHtml(String(member.color || '#6C63FF'))}"></i>`;
+function renderMemberAvatar(member: AppMember | null): string {
+  const avatar = String(member?.avatar || member?.icon || (member?.role === 'parent' ? 'user-circle' : 'smiley'));
+  const color = String(member?.avatarColor || member?.color || '#6C63FF');
+  if (/\.(png|jpe?g|gif|webp)(?:[?#].*)?$/i.test(avatar)) {
+    return `<img src="${escapeHtml(avatar)}" class="avatar-img" alt="">`;
+  }
+  const embeddedIcon = [...avatar.matchAll(/\bph-([a-z0-9-]+)\b/gi)]
+    .map(match => match[1])
+    .find(name => name !== 'duotone');
+  const iconName = embeddedIcon || avatar.replace(/^ph-duotone\s+/i, '').replace(/^ph-/i, '');
+  const safeIconName = /^[a-z0-9-]+$/i.test(iconName) ? iconName : (member?.role === 'parent' ? 'user-circle' : 'smiley');
+  return `<i class="ph-duotone ph-${escapeHtml(safeIconName)}" style="color:${escapeHtml(color)}"></i>`;
+}
+
+function resolveActiveParent(state: AppState, activeParent?: AppMember | null): AppMember | null {
+  if (activeParent?.role === 'parent') return activeParent;
+  return state.members.find(member => member.role === 'parent') || null;
 }
 
 function renderStatTile(icon: string, label: string, value: string, color: string, sub = ''): string {

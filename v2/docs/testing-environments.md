@@ -1,26 +1,18 @@
 # Testing Environments
 
-v2 can continue using pure unit tests and the fake Firestore adapter without a second Firebase project.
+## Real App Testing
 
-Before live SDK integration tests or device testing, use one of these non-production targets:
+- Codemagic workflow `ios-v2-testflight` builds against production Firebase project `gemsprout1`.
+- The local Vite server defaults to `gemsprout-v2-dev`. It is for browser iteration, not proof that the production iOS build works.
+- Use a TestFlight build on an iPhone for Google/Apple auth, StoreKit, camera, push, app badge, and native QR behavior.
+- Use COLLUM only for non-destructive parent/kid read checks. Use ABC123 for test writes. Create a separate throwaway family/account for destructive reset or account-deletion checks.
+- Do not rerun a production migration to test an app build. The migrated family documents already exist in `gemsprout1`.
 
-1. Firebase Emulator Suite for local transaction/rules tests.
-2. A separate Firebase project, for example `gemsprout-v2-dev`, for device, push, auth, and Cloud Functions testing.
-3. A named Firestore database only after guardrails are in place, because it still lives near production project resources.
+## Automated Checks
 
-Do not run v2 migration or write-path tests against the production `gemsprout1` project until the migration plan, rollback plan, and test fixtures are complete.
+- `npm run typecheck:v2` checks the TypeScript contracts.
+- `npm run test:v2` clears stale compiled tests before running the current suite.
+- `npm run test:rules:v2` runs production Firestore rules against the local emulator. It never connects to production.
+- `npm run build:v2:app` checks the web bundle produced for Capacitor.
 
-## Why
-
-- v2 uses a different document layout from v1.
-- Operation tests need to retry and fail safely.
-- Account deletion, auth, push tokens, and Cloud Functions need realistic testing without touching public families.
-- Firestore security rules will need their own validation pass.
-
-## Near-Term Recommendation
-
-Keep building against the fake adapter for UI/domain work. Start migration rehearsal with a local snapshot preview, then a second Firebase project or emulator before implementing the real live transaction runner.
-
-The current local browser lab runs through Vite on port `4273` and uses the fake adapter only.
-
-See `live-migration-runway.md` for the step-by-step data-copy plan.
+Automated checks supplement real-device testing; they do not replace it. There is no fake-family URL or local fake-Firestore app lane.

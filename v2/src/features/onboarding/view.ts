@@ -742,12 +742,11 @@ function renderOnboardingModal(): string {
           <div style="text-align:center;padding:4px 0 8px">
             <i class="ph-duotone ph-device-mobile" style="font-size:2.5rem;color:#6C63FF"></i>
             <div class="modal-title" style="margin-top:8px">Add a kid device</div>
-            <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">On the kid's device, open GemSprout, tap <strong>I'm a Kid</strong>, then scan this QR code or type the code below.</p>
+            <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">After finishing setup, open GemSprout on the kid's device, tap <strong>I'm a Kid</strong>, then scan this QR code or type the code below.</p>
           </div>
           <div style="display:flex;justify-content:center;margin-bottom:14px">
-            <div style="width:200px;height:200px;display:grid;grid-template-columns:repeat(7,1fr);gap:5px;background:#fff;border:1px solid rgba(76,29,149,0.08);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);padding:18px;box-sizing:border-box">
-              ${Array.from({ length: 49 }, (_, index) => `<span style="background:${index % 3 === 0 || index % 7 === 0 || [2, 10, 16, 28, 36, 40].includes(index) ? '#4C1D95' : '#fff'};border-radius:2px"></span>`).join('')}
-            </div>
+            <img data-onboarding-family-qr data-family-code="${escapeHtml(previewSettings.familyCode)}" alt="Scannable family code QR code" width="200" height="200" style="display:none;width:200px;height:200px;object-fit:contain;background:#fff;border:1px solid rgba(76,29,149,0.08);border-radius:12px;padding:8px;box-sizing:border-box">
+            <div data-onboarding-family-qr-status role="status" style="width:200px;height:200px;display:grid;place-items:center;text-align:center;font-size:0.85rem;color:var(--muted)">Preparing QR code...</div>
           </div>
           <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:'Jost','Avenir Next','Segoe UI',system-ui,sans-serif;margin-bottom:16px">${escapeHtml(previewSettings.familyCode)}</div>
           <button class="btn btn-secondary" style="width:100%" data-onboarding-local-action="close-modal" type="button">Done</button>

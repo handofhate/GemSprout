@@ -1,24 +1,84 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validFamilyCode(code) {
+      return code.matches('^[A-Z0-9]{6}$');
+    }
+
+    function familyUserPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function isLinkedToFamily(code) {
+      return signedIn()
+        && exists(familyUserPath(request.auth.uid))
+        && get(familyUserPath(request.auth.uid)).data.familyCode == code;
+    }
+
+    function isLinkedAfterWrite(code) {
+      return signedIn()
+        && existsAfter(familyUserPath(request.auth.uid))
+        && getAfter(familyUserPath(request.auth.uid)).data.familyCode == code;
+    }
+
+    function isLegacyV1Family(data) {
+      return data.keys().hasAny(['family']);
+    }
+
     match /families/{familyCode} {
-      allow read, write: if request.auth != null;
+      // V1 stores its full family record at this code path. A valid family code
+      // permits the initial direct lookup; a user link is required to change it.
+      allow get: if signedIn() && (isLinkedToFamily(familyCode) || validFamilyCode(familyCode));
+      allow list: if false;
+      allow create: if signedIn() && (
+        isLinkedAfterWrite(familyCode)
+        || (validFamilyCode(familyCode) && isLegacyV1Family(request.resource.data))
+      );
+      allow update, delete: if isLinkedToFamily(familyCode) || isLinkedAfterWrite(familyCode);
+
       match /{document=**} {
-        allow read, write: if request.auth != null;
+        allow read: if isLinkedToFamily(familyCode);
+        allow create, update, delete: if isLinkedToFamily(familyCode) || isLinkedAfterWrite(familyCode);
       }
     }
 
     match /backups/{familyCode}/{document=**} {
-      allow read, write: if request.auth != null;
-    }
-
-    match /invites/{inviteId} {
-      allow read, write: if request.auth != null;
+      allow read: if isLinkedToFamily(familyCode);
+      allow create, update, delete: if isLinkedToFamily(familyCode);
     }
 
     match /users/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow get: if signedIn() && (
+        request.auth.uid == uid
+        || (request.auth.token.email != null && resource.data.email == request.auth.token.email)
+      );
+      allow list: if signedIn()
+        && request.auth.token.email != null
+        && resource.data.email == request.auth.token.email;
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.familyCode is string
+        && validFamilyCode(request.resource.data.familyCode);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /invites/{inviteId} {
+      allow get, list: if signedIn()
+        && request.auth.token.email != null
+        && resource.data.email == request.auth.token.email;
+      allow create: if isLinkedToFamily(request.resource.data.familyCode)
+        || isLinkedAfterWrite(request.resource.data.familyCode);
+      allow update: if signedIn() && (
+        (request.auth.token.email != null
+          && resource.data.email == request.auth.token.email
+          && request.resource.data.familyCode == resource.data.familyCode)
+        || isLinkedToFamily(resource.data.familyCode)
+      );
+      allow delete: if isLinkedToFamily(resource.data.familyCode);
     }
   }
 }

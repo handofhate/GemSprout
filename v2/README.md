@@ -33,18 +33,17 @@ Run:
 npm run dev:v2
 ```
 
-The default v2 entry path now acts like the real app: landing, sign-in, kid join, onboarding, and Firestore-backed family state are the normal route.
+The default V2 entry path is the real app: landing, sign-in, kid join, onboarding, and Firestore-backed family state.
 
 ```text
 http://127.0.0.1:4273/
 ```
 
-During replacement work this still reads and writes the isolated `gemsprout-v2-dev` project, not production. The current imported preview family is `families/migration-preview`, but it should be treated as migration/test data behind the real app entry path, not as a separate app lane.
-The old fake-data approval lab, local-store route, and preview-family URL lane have been removed. Use the real app entry path for review and device testing.
+The local Vite server reads and writes the isolated `gemsprout-v2-dev` project. The Codemagic `ios-v2-testflight` workflow is configured for production `gemsprout1`. Do not use local-browser success as proof that the production iOS build works.
 
 ## Current App State
 
-Parent dashboard visuals, landing/login/onboarding, regular kid dashboard, little kid mode, main settings behavior, account/security settings, notification settings, Week in Review, and kid in-app notification modals are mostly migrated for the replacement app path. Current next step is the readiness pass: production-shaped auth/family selection, real-time sync/refresh, RevenueCat/paywall, photo proof lifecycle, QR/invite/maintenance behavior, iOS build wiring, and full on-device verification.
+The V1 family data migration to the V2 Firestore document layout is complete in `gemsprout1`. Parent and kid sign-in, family-code join, family dashboards, onboarding, settings, approvals, rewards, savings, badges, Week in Review, QR generation/scanning, app badge handling, and Remote Config gates are implemented. Source checks pass locally; production rules/function deployment and the iPhone verification pass are still required before release.
 
 For browser review work, prefer targeted UI changes plus `npm run typecheck:v2`. Avoid broad rewrites and preserve v1 behavior/visuals unless the user explicitly approves a change.
 
@@ -52,9 +51,9 @@ See `docs/v2-readiness-audit.md` and `docs/iphone-test-plan.md` for the current 
 
 ## Current Rule
 
-Do not point production users at v2 until:
+Do not release V2 publicly until:
 
-- v1 data can migrate forward safely.
+- production Firestore rules and account-deletion cleanup are deployed and verified.
 - critical v1 workflows have parity tests.
 - auth, account deletion, push registration, and subscription boundaries are verified on device.
 - rollback behavior is documented.

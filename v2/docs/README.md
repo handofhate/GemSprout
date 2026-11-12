@@ -10,5 +10,5 @@ Suggested order:
 4. `parity-checklist.md` - v1 workflows that must work before release.
 5. `decisions.md` - decisions that should guide future sessions.
 6. `testing-environments.md` - emulator/dev project guidance.
-7. `live-migration-runway.md` - safe copied-data migration rehearsal plan.
-7. `open-questions.md` - questions that should not block scaffolding.
+7. `live-migration-runway.md` - record of the completed production data migration.
+8. `open-questions.md` - remaining release verification items.

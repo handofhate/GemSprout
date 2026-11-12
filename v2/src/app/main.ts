@@ -31,7 +31,9 @@ import {
   type OnboardingTransitionDirection,
 } from '../features/onboarding/view';
 import { registerParentPushNotifications } from '../platform/notifications/push-registration';
-import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, getCurrentParentAuthUid, ensureFirestoreAuth } from '../platform/auth/provider-sign-in';
+import { syncNativeAppBadge as syncNativeAppBadgeCount } from '../platform/notifications/app-badge';
+import { decodeFamilyCodeQr, makeFamilyCodeQrDataUrl } from '../platform/qr-code';
+import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, reauthenticateCurrentParentAuth, getCurrentParentAuthUid, ensureFirestoreAuth, ensureAnonymousFirestoreAuth } from '../platform/auth/provider-sign-in';
 import {
   initRevenueCat,
   loadOfferings,
@@ -65,6 +67,9 @@ import { REQUEST_KINDS, REQUEST_STATUSES } from '../domain/requests';
 import { type AppState, type AppCompletion, type AppHistoryRow, type AppMember, type AppPrize, type AppRequest, type AppTask, type AppTeamGoal } from './app-state';
 import { todayKeyForTimezone } from './date-keys';
 import '../ui/styles/index.css';
+import '../features/app-access-gate/access-gate.css';
+import { checkAppAccess } from '../platform/remote-config/app-access';
+import { renderAppAccessGate } from '../features/app-access-gate/view';
 
 declare const GEMSPROUT_V2_DATA_SOURCE: string | undefined;
 
@@ -76,6 +81,9 @@ let devFirestoreSubscriptionFamilyId = '';
 let devFirestoreRefreshTimer = 0;
 let devFirestoreRefreshInFlight = false;
 let devFirestoreRefreshQueued = false;
+let kidQrScanStream: MediaStream | null = null;
+let kidQrScanTimer = 0;
+let kidQrScanSession = 0;
 let parentPushRegistrationKey = '';
 let subscriptionAppUserId = '';
 let paywallOpen = false;
@@ -130,6 +138,8 @@ let activeIconPicker: { kind: 'level' | 'baseBadge' | 'taskBadge'; a: number | s
 let activeSettingsPage: ParentSettingsPage = 'main';
 let pendingComboOverrides: Record<string, Record<number, string>> = {};
 let activeViewerMemberId: string | null = null;
+let trustedParentViewer: { uid: string; familyId: string; memberId: string } | null = null;
+let pendingParentProfileAuth: { familyId: string; memberId: string; returnMemberId: string | null } | null = null;
 let activeKidTab: KidTabId = 'chores';
 let activeKidTimeTaskId: string | null = null;
 let activeKidTimeOpenedAt = 0;
@@ -188,7 +198,7 @@ function allowImplicitViewerSelection(): boolean {
 }
 
 function pendingCount(state: AppState | null): number {
-  return state?.requests.filter(request => request.status === 'pending').length || 0;
+  return state ? createParentDashboardModel(state).pendingCount : 0;
 }
 
 function hasPendingFirestoreOverviewWrites(): boolean {
@@ -630,17 +640,14 @@ function refreshParentOverviewSections(): void {
 }
 
 function decrementInboxCounts(): void {
+  const count = firestoreState ? createParentDashboardModel(firestoreState).pendingCount : 0;
   document.querySelectorAll<HTMLElement>('.inbox-count').forEach(node => {
-    const current = Number((node.textContent || '').match(/\d+/)?.[0] || 0);
-    const next = Math.max(0, current - 1);
-    node.textContent = `${next} Item${next === 1 ? '' : 's'}`;
+    node.textContent = `${count} Item${count === 1 ? '' : 's'}`;
   });
-  document.querySelectorAll<HTMLElement>('.nav-badge').forEach(node => {
-    const current = Number((node.textContent || '').match(/\d+/)?.[0] || 0);
-    const next = Math.max(0, current - 1);
-    if (next === 0) node.remove();
-    else node.textContent = String(next);
-  });
+  const badge = document.querySelector<HTMLElement>('.nav-badge');
+  if (count === 0) badge?.remove();
+  else if (badge) badge.textContent = String(count);
+  void syncNativeAppBadge(firestoreState);
 }
 
 function showScreen(id: string): void {
@@ -818,6 +825,22 @@ function bindFirestoreActions(): void {
     button.addEventListener('click', () => void handleFirestoreInboxAction(button, 'deny', button.dataset.denyRequestId || ''));
   });
   document.getElementById('reset-state-btn')?.addEventListener('click', openSettingsPane);
+  document.getElementById('reset-hero-btn')?.addEventListener('click', event => {
+    const button = event.currentTarget as HTMLButtonElement;
+    if (button.disabled) return;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.querySelector('i')?.classList.add('is-refreshing');
+    void refreshDevFirestoreState({ rerender: true }).then(() => {
+      if (firestoreError) toast('Could not refresh the family inbox. Check your connection and try again.');
+    }).finally(() => {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        button.querySelector('i')?.classList.remove('is-refreshing');
+      }
+    });
+  });
   if (firestoreState) bindParentQuickActions(firestoreState);
   if (firestoreState) bindHomeScreenActions(firestoreState);
   bindKidPlaceholderActions();
@@ -833,6 +856,7 @@ async function handleFirestoreInboxAction(button: HTMLButtonElement, action: 'ap
   });
   animateInboxRowElement(row);
   firestoreState = applyOptimisticRequestAction(firestoreState, action, requestId) || firestoreState;
+  decrementInboxCounts();
   refreshParentOverviewSections();
   const pendingAction = enqueueFirestoreInboxWrite(action, requestId);
   const applied = await pendingAction;
@@ -1078,6 +1102,7 @@ function cancelLeaveDevicePin(): void {
 async function leaveDevice(): Promise<void> {
   leaveDevicePinBuffer = '';
   leaveDevicePreviousMemberId = null;
+  trustedParentViewer = null;
   try {
     await signOutParentAuth();
   } catch (error) {
@@ -1119,6 +1144,8 @@ function shouldUseAppLock(): boolean {
 
 function registerAppSecurityListeners(): void {
   document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && landingMode === 'kid-qr') stopKidQrScanner();
+    else if (document.visibilityState === 'visible' && landingMode === 'kid-qr') void startKidQrScanner();
     if (document.visibilityState === 'hidden') {
       if (shouldUseAppLock()) appLockRequired = true;
       return;
@@ -1132,6 +1159,7 @@ function registerAppSecurityListeners(): void {
     scheduleDevFirestoreRefresh(40);
     if (appLockRequired) openAppLockModal();
   });
+  window.addEventListener('pagehide', stopKidQrScanner);
 }
 
 function openAppLockModal(): void {
@@ -2452,6 +2480,19 @@ function bindHomeScreenActions(state: AppState): void {
     button.addEventListener('click', () => {
       const memberId = button.dataset.selectViewer || '';
       if (!memberId) return;
+      const member = state.members.find(item => item.id === memberId);
+      if (member?.role === 'parent' && !hasTrustedParentAccess(member)) {
+        pendingParentProfileAuth = {
+          familyId: state.familyId || currentFirestoreFamilyId(),
+          memberId,
+          returnMemberId: activeViewerMemberId,
+        };
+        activeViewerMemberId = memberId;
+        landingMode = 'signin';
+        signInMessage = '';
+        renderLandingPreview();
+        return;
+      }
       activeViewerMemberId = memberId;
       activeKidTab = 'chores';
       closeSettingsPane();
@@ -3460,14 +3501,14 @@ function bindPrizeTabActions(state: AppState): void {
   });
 }
 
-function bindStatsTabActions(state: AppState): void {
+function bindStatsTabActions(state: AppState, activeParent?: AppMember | null): void {
   bindWeekReviewLaunch(document, state);
   document.querySelectorAll<HTMLElement>('[data-open-stats]').forEach(button => {
     button.addEventListener('click', () => {
       const kind = button.dataset.openStats === 'family' ? 'family' : 'kid';
       const memberId = button.dataset.statsMemberId || '';
       const side = button.dataset.statsSide === 'right' ? 'right' : 'left';
-      openStatsModal(state, kind, memberId, side);
+      openStatsModal(state, kind, memberId, side, activeParent);
     });
   });
 }
@@ -3743,10 +3784,10 @@ function openSnapshotModal(state: AppState, snapshotId: string, side: 'left' | '
   root.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
 }
 
-function openStatsModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left'): void {
+function openStatsModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left', activeParent?: AppMember | null): void {
   const root = document.getElementById('modal-root');
   if (!root) return;
-  const panel = renderStatsDetailModal(state, kind, memberId, side);
+  const panel = renderStatsDetailModal(state, kind, memberId, side, activeParent);
   if (!panel) return;
   root.innerHTML = `
     <div class="modal-overlay snapshot-modal-overlay" data-modal-overlay>
@@ -5428,9 +5469,19 @@ function openDestructiveSettingsConfirm(options: {
         if (error) error.textContent = `Type ${options.confirmText} to continue`;
         return;
       }
+      const button = root.querySelector<HTMLButtonElement>('[data-danger-confirm]');
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Please wait...';
+      }
       void Promise.resolve(options.onConfirm()).catch(error => {
         console.warn(`${options.confirmLabel} failed:`, error);
-        toast(`${options.confirmLabel} did not complete`);
+        const errorNode = root.querySelector<HTMLElement>('[data-danger-confirm-error]');
+        if (errorNode) errorNode.textContent = error instanceof Error ? error.message : `${options.confirmLabel} did not complete. Please try again.`;
+        if (button) {
+          button.disabled = false;
+          button.textContent = options.confirmLabel;
+        }
       });
     });
     window.setTimeout(() => input?.focus(), 100);
@@ -5438,39 +5489,24 @@ function openDestructiveSettingsConfirm(options: {
 }
 
 async function resetAllFamilyData(): Promise<void> {
+  const { deleteDevFamilyData, deleteDevUserDoc } = await import('../platform/firebase/dev-firestore-operations.js');
+  const authUid = getCurrentParentAuthUid();
+  const familyId = currentFirestoreFamilyId();
+  await deleteDevFamilyData({ familyId });
+  if (authUid) await deleteDevUserDoc({ uid: authUid });
   closeModal();
   closeSettingsPane();
   clearLocalAccountSecurityState();
-  
-    try {
-      const { deleteDevFamilyData } = await import('../platform/firebase/dev-firestore-operations.js');
-      await deleteDevFamilyData();
-    } catch (error) {
-      console.warn('Dev family reset failed:', error);
-    }
-  
   await sendDeviceToLandingAfterAccountChange();
 }
 
 async function deleteAccountAndReturnHome(): Promise<void> {
+  if (!getCurrentParentAuthUid()) throw new Error('Sign in with your parent account before deleting it.');
+  await reauthenticateCurrentParentAuth();
+  await deleteCurrentParentAuth();
   closeModal();
   closeSettingsPane();
   clearLocalAccountSecurityState();
-  const authUid = getCurrentParentAuthUid();
-  
-    try {
-      const { deleteDevFamilyData, deleteDevUserDoc } = await import('../platform/firebase/dev-firestore-operations.js');
-      await deleteDevFamilyData();
-      await deleteDevUserDoc({ uid: authUid });
-    } catch (error) {
-      console.warn('Dev family delete failed:', error);
-    }
-  
-  try {
-    await deleteCurrentParentAuth();
-  } catch (error) {
-    console.warn('Firebase account delete failed:', error);
-  }
   await sendDeviceToLandingAfterAccountChange();
 }
 
@@ -5484,6 +5520,7 @@ function clearLocalAccountSecurityState(): void {
 }
 
 async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
+  trustedParentViewer = null;
   try {
     await signOutParentAuth();
   } catch (error) {
@@ -5578,9 +5615,8 @@ function openSettingsKidQrModal(): void {
           <p style="font-size:0.88rem;color:var(--muted);margin:8px 0 16px;line-height:1.5">On the kid's device, open GemSprout, tap <strong>I'm a Kid</strong>, then scan this QR code or type the code below.</p>
         </div>
         <div style="display:flex;justify-content:center;margin-bottom:14px">
-          <div style="width:200px;height:200px;display:grid;grid-template-columns:repeat(7,1fr);gap:5px;background:#fff;border:1px solid rgba(76,29,149,0.08);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);padding:18px;box-sizing:border-box">
-            ${Array.from({ length: 49 }, (_, index) => `<span style="background:${index % 3 === 0 || index % 7 === 0 || [2, 10, 16, 28, 36, 40].includes(index) ? '#4C1D95' : '#fff'};border-radius:2px"></span>`).join('')}
-          </div>
+          <img data-settings-family-qr alt="Scannable family code QR code" width="200" height="200" style="display:none;width:200px;height:200px;object-fit:contain;background:#fff;border:1px solid rgba(76,29,149,0.08);border-radius:12px;padding:8px;box-sizing:border-box">
+          <div data-settings-family-qr-status role="status" style="width:200px;height:200px;display:grid;place-items:center;text-align:center;font-size:0.85rem;color:var(--muted)">Preparing QR code...</div>
         </div>
         <div style="text-align:center;font-size:1.8rem;font-weight:900;letter-spacing:0.2em;color:#4C1D95;font-family:'Jost','Avenir Next','Segoe UI',system-ui,sans-serif;margin-bottom:16px">${escapeHtmlAttr(code)}</div>
         <button class="btn btn-secondary" style="width:100%" data-settings-add-user-back type="button">Done</button>
@@ -5590,6 +5626,18 @@ function openSettingsKidQrModal(): void {
     if (event.target === event.currentTarget) closeModal();
   });
   root.querySelector<HTMLElement>('[data-settings-add-user-back]')?.addEventListener('click', () => openSettingsAddUserModal());
+  const qrImage = root.querySelector<HTMLImageElement>('[data-settings-family-qr]');
+  const qrStatus = root.querySelector<HTMLElement>('[data-settings-family-qr-status]');
+  if (qrImage) {
+    void makeFamilyCodeQrDataUrl(code).then(dataUrl => {
+      if (!qrImage.isConnected) return;
+      qrImage.src = dataUrl;
+      qrImage.style.display = 'block';
+      if (qrStatus) qrStatus.style.display = 'none';
+    }).catch(() => {
+      if (qrStatus) qrStatus.textContent = 'Could not generate a QR code. Use the family code shown below.';
+    });
+  }
 }
 
 function openSettingsInviteParentModal(): void {
@@ -5868,6 +5916,7 @@ function closeJoinDifferentFamilyConfirm(): void {
 async function confirmJoinDifferentFamily(): Promise<void> {
   joinDifferentFamilyConfirmOpen = false;
   closeModal();
+  trustedParentViewer = null;
   try {
     await signOutParentAuth();
   } catch (error) {
@@ -6471,13 +6520,7 @@ async function cleanupSettledCompletionPhotos(): Promise<void> {
 }
 
 async function syncNativeAppBadge(state = firestoreState): Promise<void> {
-  const capacitor = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean; Plugins?: { Badge?: { set?: (input: { count: number }) => Promise<void>; clear?: () => Promise<void> } } } }).Capacitor;
-  if (!capacitor?.isNativePlatform?.()) return;
-  const badge = capacitor.Plugins?.Badge;
-  if (!badge) return;
-  const count = pendingCount(state);
-  if (count > 0) await badge.set?.({ count }).catch(() => undefined);
-  else await badge.clear?.().catch(() => badge.set?.({ count: 0 }).catch(() => undefined));
+  await syncNativeAppBadgeCount(pendingCount(state));
 }
 
 async function renderDevFirestore(): Promise<void> {
@@ -6508,6 +6551,17 @@ async function renderDevFirestore(): Promise<void> {
   maybeApplyAutoSavingsInterest(firestoreState);
 
   const activeViewer = getActiveViewer(firestoreState);
+  if (activeViewer?.role === 'parent' && !hasTrustedParentAccess(activeViewer)) {
+    pendingParentProfileAuth ||= {
+      familyId: firestoreState.familyId || currentFirestoreFamilyId(),
+      memberId: String(activeViewer.id || ''),
+      returnMemberId: null,
+    };
+    landingMode = 'signin';
+    signInMessage = '';
+    renderLandingPreview();
+    return;
+  }
   if (!activeViewer) {
     renderLandingPreview();
     return;
@@ -6546,7 +6600,7 @@ async function renderDevFirestore(): Promise<void> {
       : activeParentTab === 'levels'
         ? renderParentLevels(firestoreState, pendingComboOverrides)
         : activeParentTab === 'stats'
-          ? renderParentStats(firestoreState)
+          ? renderParentStats(firestoreState, activeViewer)
     : `${renderParentDashboard(firestoreState)}`;
   bindParentTabNav();
   bindFirestoreActions();
@@ -6558,7 +6612,7 @@ async function renderDevFirestore(): Promise<void> {
     bounceFirstHint('.parent-prize-shell');
   }
   else if (activeParentTab === 'levels') bindLevelsTabActions(firestoreState);
-  else if (activeParentTab === 'stats') bindStatsTabActions(firestoreState);
+  else if (activeParentTab === 'stats') bindStatsTabActions(firestoreState, activeViewer);
   else {
     bindOverviewSwipeActions();
     animateOverviewLayoutShift(previousLayout);
@@ -6591,9 +6645,12 @@ function writeStoredActiveFamilyId(familyId: string): void {
   } catch {}
 }
 
-function makeNewFamilyDocumentId(): string {
-  const random = Math.random().toString(36).slice(2, 8);
-  return `family_${Date.now().toString(36)}_${random}`;
+function hasTrustedParentAccess(member: AppMember): boolean {
+  const trusted = trustedParentViewer;
+  return !!trusted
+    && trusted.uid === getCurrentParentAuthUid()
+    && trusted.familyId === currentFirestoreFamilyId()
+    && trusted.memberId === member.id;
 }
 
 function render(): void {
@@ -6605,6 +6662,7 @@ function render(): void {
 }
 
 function renderLandingPreview(): void {
+  if (!firestoreState) void syncNativeAppBadgeCount(0);
   if (activeOnboardingStep) {
     renderActiveOnboardingFlow();
     return;
@@ -6692,6 +6750,14 @@ function bindReturningSignInActions(): void {
   });
   document.querySelectorAll<HTMLElement>('[data-signin-back]').forEach(button => {
     button.addEventListener('click', () => {
+      if (pendingParentProfileAuth) {
+        activeViewerMemberId = pendingParentProfileAuth.returnMemberId;
+        pendingParentProfileAuth = null;
+        landingMode = 'landing';
+        signInMessage = '';
+        render();
+        return;
+      }
       landingMode = 'landing';
       signInMessage = '';
       renderLandingPreview();
@@ -6707,11 +6773,13 @@ function bindReturningSignInActions(): void {
 
 function bindKidEntryActions(): void {
   document.querySelector<HTMLElement>('[data-kid-back]')?.addEventListener('click', () => {
+    stopKidQrScanner();
     landingMode = landingMode === 'kid-qr' ? 'kid-entry' : 'landing';
     kidEntryMessage = '';
     renderLandingPreview();
   });
   document.querySelector<HTMLElement>('[data-kid-scan]')?.addEventListener('click', () => {
+    stopKidQrScanner();
     landingMode = 'kid-qr';
     kidEntryMessage = '';
     renderLandingPreview();
@@ -6736,22 +6804,38 @@ function bindKidEntryActions(): void {
       render();
     });
   });
+  if (landingMode === 'kid-qr') void startKidQrScanner();
+  else stopKidQrScanner();
 }
 
-async function enterKidFamily(): Promise<void> {
+async function enterKidFamily(scannedCode = ''): Promise<void> {
   const input = document.querySelector<HTMLInputElement>('[data-kid-family-code]');
-  const code = normalizeFamilyCode(input?.value || '');
+  const code = normalizeFamilyCode(scannedCode || input?.value || '');
   if (!code) {
     kidEntryMessage = 'Enter your family code first.';
+    landingMode = 'kid-entry';
+    renderLandingPreview();
+    return;
+  }
+  try {
+    await ensureAnonymousFirestoreAuth();
+  } catch {
+    kidEntryMessage = 'Could not start a kid session. Please try again.';
+    landingMode = 'kid-entry';
     renderLandingPreview();
     return;
   }
   const result = await resolveKidDevFamily(code);
   if (!result.found) {
     kidEntryMessage = 'Family code not found.';
+    landingMode = 'kid-entry';
     renderLandingPreview();
     return;
   }
+  trustedParentViewer = null;
+  pendingParentProfileAuth = null;
+  activeFamilyId = result.familyId || activeFamilyId;
+  writeStoredActiveFamilyId(activeFamilyId);
   kidEntryMembers = result.members;
   const kids = kidEntryMembers.filter(member => member.role !== 'parent' && !member.deleted);
   if (kids.length === 1 && kids[0]?.id) {
@@ -6772,16 +6856,17 @@ async function enterKidFamily(): Promise<void> {
   renderLandingPreview();
 }
 
-async function resolveKidDevFamily(code: string): Promise<{ found: boolean; members: AppMember[] }> {
+async function resolveKidDevFamily(code: string): Promise<{ found: boolean; familyId?: string; members: AppMember[] }> {
   try {
-    const [{ lookupDevFamilyByCode }, { loadDevFirestoreState }] = await Promise.all([
+    const [{ lookupDevFamilyByCode, commitDevKidFamilyJoin }, { loadDevFirestoreState }] = await Promise.all([
       import('../platform/firebase/dev-firestore-operations.js'),
       import('../platform/firebase/dev-firestore-loader.js'),
     ]);
     const family = await lookupDevFamilyByCode(normalizeFamilyCode(code));
     if (!family) return { found: false, members: [] };
+    await commitDevKidFamilyJoin({ familyCode: normalizeFamilyCode(code), familyId: family.familyId });
     const state = await loadDevFirestoreState(family.familyId);
-    return { found: true, members: state.members };
+    return { found: true, familyId: family.familyId, members: state.members };
   } catch {
     return { found: false, members: [] };
   }
@@ -6789,6 +6874,75 @@ async function resolveKidDevFamily(code: string): Promise<{ found: boolean; memb
 
 function normalizeFamilyCode(value: string): string {
   return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
+function stopKidQrScanner(): void {
+  kidQrScanSession += 1;
+  if (kidQrScanTimer) window.clearTimeout(kidQrScanTimer);
+  kidQrScanTimer = 0;
+  kidQrScanStream?.getTracks().forEach(track => track.stop());
+  kidQrScanStream = null;
+  const video = document.querySelector<HTMLVideoElement>('[data-kid-qr-video]');
+  if (video) video.srcObject = null;
+}
+
+async function startKidQrScanner(): Promise<void> {
+  stopKidQrScanner();
+  const session = kidQrScanSession;
+  const video = document.querySelector<HTMLVideoElement>('[data-kid-qr-video]');
+  const status = document.querySelector<HTMLElement>('[data-kid-qr-status]');
+  if (!video || !status || landingMode !== 'kid-qr') return;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    status.textContent = 'Camera scanning is not available here. Enter the family code instead.';
+    return;
+  }
+
+  status.textContent = 'Allow camera access, then point it at the family QR code.';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    });
+    if (session !== kidQrScanSession || landingMode !== 'kid-qr') {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    kidQrScanStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('Camera image processing is unavailable.');
+
+    const scanFrame = (): void => {
+      if (session !== kidQrScanSession || landingMode !== 'kid-qr') return;
+      if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+        const scale = Math.min(1, 960 / video.videoWidth);
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const code = decodeFamilyCodeQr(context.getImageData(0, 0, canvas.width, canvas.height));
+        if (code) {
+          status.textContent = 'Family code found. Opening family...';
+          stopKidQrScanner();
+          void enterKidFamily(code);
+          return;
+        }
+      }
+      kidQrScanTimer = window.setTimeout(scanFrame, 120);
+    };
+    scanFrame();
+  } catch (error) {
+    stopKidQrScanner();
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    status.textContent = message.includes('permission') || message.includes('denied')
+      ? 'Camera access was denied. Enter the family code instead.'
+      : 'Camera could not start. Enter the family code instead.';
+  }
 }
 
 async function handleReturningSignIn(action: string): Promise<void> {
@@ -6803,10 +6957,27 @@ async function handleReturningSignIn(action: string): Promise<void> {
   }
   const family = await resolveReturningDevFamily(authUser);
   if (!family.found) {
+    if (pendingParentProfileAuth) {
+      signInMessage = 'This account is not linked to the selected parent profile. Try the other sign-in option.';
+      renderLandingPreview();
+      return;
+    }
     landingMode = 'signin-not-found';
     renderLandingPreview();
     return;
   }
+  if (pendingParentProfileAuth && (
+    family.familyId !== pendingParentProfileAuth.familyId
+    || family.parentMemberId !== pendingParentProfileAuth.memberId
+  )) {
+    signInMessage = 'This account is not linked to the selected parent profile. Try the other sign-in option.';
+    renderLandingPreview();
+    return;
+  }
+  trustedParentViewer = family.parentMemberId
+    ? { uid: authUser.uid || '', familyId: family.familyId || '', memberId: family.parentMemberId }
+    : null;
+  pendingParentProfileAuth = null;
   activeFamilyId = family.familyId || '';
   writeStoredActiveFamilyId(activeFamilyId);
   firestoreState = family.state || null;
@@ -6920,6 +7091,19 @@ function bindOnboardingPreviewActions(): void {
       void handleOnboardingAuth(button.dataset.onboardingAuth || '');
     });
   });
+  const qrImage = document.querySelector<HTMLImageElement>('[data-onboarding-family-qr]');
+  const qrStatus = document.querySelector<HTMLElement>('[data-onboarding-family-qr-status]');
+  const familyCode = qrImage?.dataset.familyCode || '';
+  if (qrImage && familyCode) {
+    void makeFamilyCodeQrDataUrl(familyCode).then(dataUrl => {
+      if (!qrImage.isConnected) return;
+      qrImage.src = dataUrl;
+      qrImage.style.display = 'block';
+      if (qrStatus) qrStatus.style.display = 'none';
+    }).catch(() => {
+      if (qrStatus) qrStatus.textContent = 'Could not generate a QR code. Use the family code shown below.';
+    });
+  }
 }
 
 async function handleOnboardingAuth(action: string): Promise<void> {
@@ -6976,12 +7160,15 @@ async function finishOnboardingPreview(): Promise<void> {
   }
   try {
     const { commitDevOnboardingSetup } = await import('../platform/firebase/dev-firestore-operations.js');
-    const familyId = makeNewFamilyDocumentId();
+    const familyId = normalizeFamilyCode(draft.familyCode);
     await commitDevOnboardingSetup({ familyId, draft });
     activeFamilyId = familyId;
     writeStoredActiveFamilyId(familyId);
     const parent = draft.parents[0] || null;
     activeViewerMemberId = parent?.id || null;
+    trustedParentViewer = draft.authUser?.uid && parent?.id
+      ? { uid: draft.authUser.uid, familyId, memberId: parent.id }
+      : null;
     activeOnboardingStep = null;
     onboardingTransitionDirection = 'none';
     firestoreState = null;
@@ -7273,13 +7460,27 @@ function applySubmittedCompletionToState(
   return next;
 }
 
-registerAppSecurityListeners();
-void ensureFirestoreAuth().then(
-  () => render(),
-  error => {
+let appInitialized = false;
+
+async function startApp(forceRefresh = false): Promise<void> {
+  renderLoadingScreen('Checking for updates');
+  const gate = await checkAppAccess(forceRefresh);
+  if (gate) {
+    renderAppAccessGate(gate, () => void startApp(true));
+    return;
+  }
+  if (appInitialized) return;
+  appInitialized = true;
+  registerAppSecurityListeners();
+  try {
+    await ensureFirestoreAuth();
+    render();
+  } catch (error) {
     console.warn('Firebase sign-in unavailable:', error);
     firestoreError = '';
     renderLandingPreview();
-  },
-);
+  }
+}
+
+void startApp();
 

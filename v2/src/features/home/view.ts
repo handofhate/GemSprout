@@ -119,11 +119,12 @@ export function renderKidQrScannerScreen(): string {
   return `
     <div class="setup-gate-shell">
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
-        <div style="width:220px;height:220px;border:3px solid rgba(76,29,149,0.42);border-radius:18px;box-shadow:0 0 0 999px rgba(39,66,57,0.08);margin-bottom:22px;display:flex;align-items:center;justify-content:center;color:#4C1D95;font-size:3rem">
-          <i class="ph-duotone ph-qr-code"></i>
+        <div style="position:relative;width:min(100%,320px);aspect-ratio:4/3;overflow:hidden;border-radius:16px;background:#17251f;margin-bottom:18px">
+          <video data-kid-qr-video autoplay muted playsinline style="width:100%;height:100%;object-fit:cover"></video>
+          <div aria-hidden="true" style="position:absolute;inset:16%;border:3px solid #fff;border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,0.34);pointer-events:none"></div>
         </div>
         <div style="color:#24453c;font-size:1.4rem;font-weight:800;margin-bottom:6px;text-align:center">Point at the QR code</div>
-        <div style="color:#5f746a;font-size:0.92rem;margin-bottom:20px;text-align:center;max-width:320px">Camera scanning will use the native adapter on device. For now, enter the family code manually.</div>
+        <div data-kid-qr-status role="status" aria-live="polite" style="color:#5f746a;font-size:0.92rem;margin-bottom:20px;text-align:center;max-width:320px">Starting camera...</div>
         <button class="setup-gate-btn setup-gate-btn-primary" data-kid-back type="button">Enter Code Instead</button>
       </div>
     </div>

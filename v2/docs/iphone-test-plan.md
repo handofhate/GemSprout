@@ -1,14 +1,15 @@
 # iPhone Test Plan
 
-Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audit.md` are closed. Test with one parent iPhone and one kid iPhone when possible. If only one iPhone is available, repeat the role-switching steps after fully leaving/rejoining the family.
+Use this manual pass with the exact production-target build installed from TestFlight. Test with one parent iPhone and one kid iPhone when possible. If only one iPhone is available, repeat role-switching after leaving and rejoining the family.
 
 ## Setup
 
-- Install a v2 build that points at the dev Firebase project, not production.
-- Use a fresh dev family and keep the family code visible for kid-device joins.
-- Sign in as a real parent with Apple and/or Google. Use the temporary dev bypass only when testing non-auth UI.
+- Install the build submitted by `ios-v2-testflight`; it points at production project `gemsprout1`.
+- Use COLLUM only for non-destructive reads. Use ABC123 for test writes. Keep the family code private.
+- Sign in as a real parent with Apple and/or Google. The production build has no paywall bypass; verify real sandbox purchase/restore.
 - Enable parent notifications on the parent iPhone. Do not enable push on the kid device.
 - Set family timezone to a known value and note the local date/time before testing streak and "today" behavior.
+- Never reset or delete COLLUM or ABC123. Create a disposable family and account for destructive data/account-deletion checks.
 
 ## Front Door And Onboarding
 
@@ -97,7 +98,7 @@ Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audi
 2. Split household configure: set labels and confirm home/away labels propagate to dashboard slideouts.
 3. Notifications: task approval, savings spend, and interest-day notification toggles persist and affect behavior.
 4. Account/security: provider link/switch/unlink, PIN setup/reset/remove, biometric setup/remove, lock on background, join different family, reset family data, delete account.
-5. Delete account: confirm subscription warning copy, typed `delete`, reauth if required, and safe stop on failure.
+5. Delete account: confirm subscription warning copy, type `delete`, reauthenticate with the same Google/Apple account, and verify server-side family cleanup. Use only the disposable family/account. Cancel and retry if reauthentication fails; its data must remain untouched.
 
 ## Native/iOS
 
@@ -112,6 +113,6 @@ Use this as the manual release-style pass once the P0 gaps in `v2-readiness-audi
 
 ## Migration
 
-1. Import a current v1 backup into the dev v2 project.
-2. Confirm family code/name, parent profiles, kid profiles, display mode, balances, savings, tasks, prizes, team goals, settings, badges, history, pending approvals, and completed tasks.
-3. Run the parent and kid smoke tests on the imported family.
+1. Confirm the production-migrated family code/name, parent and kid profiles, display mode, balances, savings, tasks, prizes, settings, badges, history, pending approvals, and completed tasks.
+2. Run non-destructive parent and kid smoke tests against COLLUM. Use ABC123 for test writes.
+3. Do not rerun the migration during device testing; preserve the V1 export and original data.

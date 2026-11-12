@@ -5,6 +5,7 @@ type RecordValue = Record<string, unknown>;
 
 export type V1ToV2MigrationOptions = {
   familyId: string;
+  familyCode?: string;
   migratedAt?: number;
 };
 
@@ -57,12 +58,14 @@ export function migrateV1FamilySnapshot(snapshotInput: unknown, options: V1ToV2M
   const snapshot = asRecord(snapshotInput);
   const family = asRecord(snapshot.family);
   const familyId = options.familyId;
+  const familyCode = asString(options.familyCode || family.familyCode || family.code, familyId).trim().toUpperCase();
   const migratedAt = options.migratedAt || Date.now();
   const warnings: string[] = [];
   const writes: V2DocumentWrite[] = [];
 
   write(writes, familyPath(familyId), {
     id: familyId,
+    familyCode,
     name: asString(family.name, 'Our Family'),
     setup: snapshot.setup === true,
     settings: asRecord(snapshot.settings),
@@ -93,6 +96,7 @@ export function migrateV1FamilySnapshot(snapshotInput: unknown, options: V1ToV2M
       write(writes, `users/${uid}`, {
         uid,
         familyId,
+        familyCode,
         memberId,
         role: asString(member.role),
         email: firstProviderEmail(member),

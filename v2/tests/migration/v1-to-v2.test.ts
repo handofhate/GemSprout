@@ -28,7 +28,7 @@ test('v1 migration splits a broad family snapshot into v2 documents', () => {
     prizeRequests: [{ id: 'prize_req_1', prizeId: 'prize_1', memberId: 'kid_1', status: 'pending', createdAt: 2000 }],
     savingsRequests: [{ id: 'sav_req_1', memberId: 'kid_1', status: 'pending', amount: 3.25, reason: 'Book fair', createdAt: 3000 }],
     history: [{ id: 'hist_1', type: 'chore', title: 'Clean Room', memberId: 'kid_1' }],
-  }, { familyId: 'family_1', migratedAt: 4000 });
+  }, { familyId: 'family_1', familyCode: 'COLLUM', migratedAt: 4000 });
 
   assert.equal(result.summary.families, 1);
   assert.equal(result.summary.members, 2);
@@ -38,6 +38,10 @@ test('v1 migration splits a broad family snapshot into v2 documents', () => {
   assert.equal(result.summary.prizes, 1);
   assert.equal(result.summary.requests, 3);
   assert.equal(result.summary.history, 1);
+  const family = result.writes.find(write => write.path === 'families/family_1');
+  const user = result.writes.find(write => write.path === 'users/uid_1');
+  assert.equal(family?.data.familyCode, 'COLLUM');
+  assert.equal(user?.data.familyCode, 'COLLUM');
   assert.ok(result.writes.some(write => write.path === 'families/family_1/requests/request:chore:completion_1'));
   assert.ok(result.writes.some(write => write.path === 'families/family_1/requests/prize_req_1'));
   assert.ok(result.writes.some(write => write.path === 'families/family_1/requests/sav_req_1'));

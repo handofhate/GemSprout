@@ -1,17 +1,15 @@
-# Migration Plan
+# V1 To V2 Data Migration
 
-v2 will be built in parallel with v1.
+## Completed Production Migration
 
-## Phases
+The V1 `gemsprout1` Firestore data was exported, reviewed, transformed into the V2 family/subcollection layout, and imported into the same production project. The import merged V2 documents without deleting the original V1 family documents. The duplicate test family `975ZLK` was excluded; `ABC123` was retained.
 
-1. Define v2 data contracts and pure domain tests.
-2. Build v1-to-v2 import from a cloned v1 family snapshot.
-3. Build v2 state and sync using the new data contracts.
-4. Port high-risk flows first: approvals, history, notifications, account deletion.
-5. Port user-facing screens after the state contracts are stable.
-6. Run v1 parity fixtures through v2.
-7. Test on device with real auth, push, and subscription boundaries.
+The Cloud Storage export and older app JSON backup are rollback references. Local migration previews contain private family data and are excluded from source control.
 
-## Release Shape
+## Release Rules
 
-v1 remains public. v2 should be hidden behind a separate local entry point until data migration and rollback are safe.
+- Do not rerun the import for TestFlight or for ordinary bug fixes.
+- Do not delete or overwrite the V1 root documents while V1 remains the public App Store build.
+- Test using the migrated production records, but keep destructive checks on a disposable family/account.
+- Before production Firestore rules change, run emulator rule tests and confirm the existing V1 code-based join and linked-parent sign-in still work.
+- V1 and V2 do not synchronize their distinct document layouts bidirectionally. The old V1 build is not a data rollback by itself; restoring the verified Firestore export is required to return to the old schema.

@@ -1,0 +1,47 @@
+#screen-auth.access-gate {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  background: linear-gradient(180deg, #365e4f 0%, #365e4f 45%, #f4efe4 45%, #f4efe4 100%);
+}
+
+.access-gate__panel {
+  width: min(100%, 480px);
+  box-sizing: border-box;
+  padding: 26px 22px 22px;
+  border: 1px solid rgba(39, 66, 57, 0.14);
+  border-radius: 20px;
+  background: #fffdf8;
+  box-shadow: 0 20px 42px rgba(31, 54, 46, 0.24);
+  text-align: center;
+}
+
+.access-gate__logo {
+  display: block;
+  width: 108px;
+  height: 108px;
+  object-fit: contain;
+  margin: 0 auto 12px;
+}
+
+.access-gate__title {
+  margin: 0;
+  color: #24453c;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.access-gate__message {
+  max-width: 360px;
+  margin: 10px auto 20px;
+  color: #4f675d;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.access-gate__button {
+  width: 100%;
+  min-height: 48px;
+}

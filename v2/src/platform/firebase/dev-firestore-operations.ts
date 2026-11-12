@@ -1,4 +1,5 @@
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, where, writeBatch, type Firestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, setDoc, where, writeBatch, type Firestore } from 'firebase/firestore';
 import { approveRequest, denyRequest, REQUEST_KINDS, REQUEST_STATUSES, type ApprovalRequest, type Completion, type Member, type Prize } from '../../domain/requests';
 import { makeRequestOperation, OPERATION_KINDS, type OperationExecutionResult, type OperationRecord, type OperationState, planRequestOperationTransaction } from '../../sync';
 import { chorePath, completionPath, familyPath, historyPath, memberPath, operationPath, prizePath, requestPath } from '../../sync/firestore-paths';
@@ -74,9 +75,24 @@ export async function lookupDevAuthFamily(input: {
 export async function lookupDevFamilyByCode(code: string): Promise<{ familyId: string } | null> {
   const normalizedCode = code.trim().toUpperCase();
   if (!normalizedCode) return null;
-  const snapshot = await getDocs(query(collection(getDevFirestore(), 'families'), where('familyCode', '==', normalizedCode), limit(1)));
-  const family = snapshot.docs[0];
-  return family ? { familyId: family.id } : null;
+  const db = getDevFirestore();
+  const directFamily = await getDoc(doc(db, `families/${normalizedCode}`));
+  if (directFamily.exists()) return { familyId: directFamily.id };
+  return null;
+}
+
+export async function commitDevKidFamilyJoin(input: { familyCode: string; familyId: string }): Promise<void> {
+  const db = getDevFirestore();
+  const user = getAuth().currentUser;
+  const familyCode = input.familyCode.trim().toUpperCase();
+  if (!user?.isAnonymous) throw new Error('The kid session must be signed in anonymously.');
+  if (!familyCode || input.familyId !== familyCode) throw new Error('The family code is invalid.');
+  await setDoc(doc(db, `users/${user.uid}`), {
+    uid: user.uid,
+    familyId: input.familyId,
+    familyCode,
+    role: 'kid',
+  }, { merge: true });
 }
 
 function requireFamilyId(familyId?: string): string {
@@ -852,12 +868,17 @@ export async function commitDevOnboardingSetup(input: {
   now?: number;
 }): Promise<void> {
   const db = getDevFirestore();
-  const familyId = input.familyId || makeNewFamilyDocumentId();
+  const familyId = input.familyId || input.draft.familyCode.trim().toUpperCase();
   const now = input.now || Date.now();
+  if (!input.draft.authUser?.uid) throw new Error('Sign in before creating a family.');
+  if (!/^[A-Z0-9]{6}$/.test(familyId) || familyId !== input.draft.familyCode.trim().toUpperCase()) {
+    throw new Error('The family code is invalid.');
+  }
   await assertOnboardingAuthIsAvailable(db, input.draft.authUser);
-  await clearDevSetupCollections(db, familyId);
   await runTransaction(db, async transaction => {
-    transaction.set(doc(db, familyPath(familyId)), omitUndefined({
+    const familyRef = doc(db, familyPath(familyId));
+    if ((await transaction.get(familyRef)).exists()) throw new Error('That family code is already in use. Please try again.');
+    transaction.set(familyRef, omitUndefined({
       id: familyId,
       name: input.draft.familyName,
       familyCode: input.draft.familyCode,
@@ -1005,11 +1026,6 @@ async function assertOnboardingAuthIsAvailable(
 
 function linkedFamilyForUserDoc(data: Record<string, unknown>): string {
   return String(data.familyCode || data.familyId || data.memberId || '');
-}
-
-function makeNewFamilyDocumentId(): string {
-  const random = Math.random().toString(36).slice(2, 8);
-  return `family_${Date.now().toString(36)}_${random}`;
 }
 
 async function clearDevSetupCollections(db: Firestore, familyId: string): Promise<void> {

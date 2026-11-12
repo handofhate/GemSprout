@@ -10,11 +10,19 @@
     "test": "echo \"No default test configured. Use: npm run test:e2e\"",
     "build:v2": "tsc -p v2/tsconfig.json",
     "typecheck:v2": "tsc -p v2/tsconfig.json --noEmit",
+    "test:rules:v2": "firebase emulators:exec --config v2/firebase.production.json --project demo-gemsprout-rules --only firestore \"node scripts/test-v2-firestore-rules.cjs\"",
     "migration:v2:preview": "npm run build:v2 && node v2/scripts/preview-v1-migration.cjs 6.10backup.json migration-preview",
+    "migration:v2:preview:full": "npm run build:v2 && node v2/scripts/preview-full-v1-firestore-migration.cjs",
+    "migration:v2:preview:full:prod": "npm run build:v2 && node v2/scripts/preview-full-v1-firestore-migration.cjs all-families-firestore-restore-raw.json all-families-v2-production-migration-preview.json --exclude-family 975ZLK",
+    "migration:v2:import:full:dry": "npm run migration:v2:preview:full && node v2/scripts/import-full-v1-firestore.cjs --project gemsprout-v2-dev --database \"(default)\"",
+    "migration:v2:import:full:write:dev": "npm run migration:v2:preview:full && node v2/scripts/import-full-v1-firestore.cjs --project gemsprout-v2-dev --database \"(default)\" --write",
+    "migration:v2:import:full:prod:dry": "npm run migration:v2:preview:full:prod && node v2/scripts/import-full-v1-firestore.cjs --input all-families-v2-production-migration-preview.json --project gemsprout1 --database \"(default)\" --allow-production-project",
+    "migration:v2:import:full:dev:production-scope:dry": "npm run migration:v2:preview:full:prod && node v2/scripts/import-full-v1-firestore.cjs --input all-families-v2-production-migration-preview.json --project gemsprout-v2-dev --database \"(default)\"",
+    "migration:v2:import:full:dev:production-scope:write": "npm run migration:v2:preview:full:prod && node v2/scripts/import-full-v1-firestore.cjs --input all-families-v2-production-migration-preview.json --project gemsprout-v2-dev --database \"(default)\" --write",
     "migration:v2:import:dry": "npm run build:v2 && node v2/scripts/import-v1-migration.cjs --input 6.10backup.json --family-id migration-preview --project gemsprout-v2-dev --database \"(default)\"",
     "migration:v2:import:write:dev": "npm run build:v2 && node v2/scripts/import-v1-migration.cjs --input 6.10backup.json --family-id migration-preview --project gemsprout-v2-dev --database \"(default)\" --write",
     "rules:v2:deploy:dev": "firebase deploy --config v2/firebase.dev.json --only firestore:rules --project gemsprout-v2-dev",
-    "test:v2": "npm run build:v2 && node --test \"v2/dist/tests/**/*.test.js\"",
+    "test:v2": "node -e \"require('node:fs').rmSync('v2/dist', { recursive: true, force: true })\" && npm run build:v2 && node --test \"v2/dist/tests/**/*.test.js\"",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
@@ -35,8 +43,10 @@
   "homepage": "https://github.com/handofhate/GemSprout#readme",
   "devDependencies": {
     "@capacitor/assets": "^3.0.0",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.59.1",
     "@types/node": "^26.1.1",
+    "@types/qrcode": "^1.5.6",
     "firebase-admin": "^14.1.0",
     "http-server": "^14.1.1",
     "typescript": "^7.0.2",
@@ -45,6 +55,7 @@
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.1.0",
     "@capacitor-firebase/messaging": "^8.1.0",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
@@ -52,6 +63,11 @@
     "@capawesome/capacitor-badge": "^8.0.1",
     "@capgo/capacitor-native-biometric": "^8.0.0",
     "@revenuecat/purchases-capacitor": "^12.3.0",
-    "firebase": "^12.15.0"
+    "firebase": "^12.15.0",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.7"
   }
 }

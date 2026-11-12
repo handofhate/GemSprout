@@ -61,6 +61,44 @@ export async function signOutParentAuth(): Promise<void> {
   await getCompatAuth().signOut();
 }
 
+export async function reauthenticateCurrentParentAuth(): Promise<void> {
+  const auth = getCompatAuth();
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) throw new Error('Sign in with your parent account before deleting it.');
+
+  const providerId = user.providerData.find(provider => provider?.providerId === 'google.com' || provider?.providerId === 'apple.com')?.providerId;
+  const nativeAuth = getNativeAuthPlugin();
+  if (providerId === 'google.com') {
+    if (nativeAuth?.signInWithGoogle) {
+      const result = await nativeAuth.signInWithGoogle();
+      const token = result.credential?.idToken;
+      if (!token) throw new Error('Google did not return a sign-in token.');
+      await user.reauthenticateWithCredential(firebase.auth.GoogleAuthProvider.credential(token));
+      return;
+    }
+    await user.reauthenticateWithPopup(new firebase.auth.GoogleAuthProvider());
+    return;
+  }
+
+  if (providerId === 'apple.com') {
+    const provider = new firebase.auth.OAuthProvider('apple.com');
+    if (nativeAuth?.signInWithApple) {
+      const result = await nativeAuth.signInWithApple();
+      const token = result.credential?.idToken;
+      if (!token) throw new Error('Apple did not return a sign-in token.');
+      await user.reauthenticateWithCredential(provider.credential({
+        idToken: token,
+        rawNonce: result.credential?.nonce,
+      }));
+      return;
+    }
+    await user.reauthenticateWithPopup(provider);
+    return;
+  }
+
+  throw new Error('This account cannot be reauthenticated with its linked sign-in provider.');
+}
+
 export async function ensureFirestoreAuth(): Promise<void> {
   const auth = getCompatAuth();
   await new Promise<void>(resolve => {
@@ -69,6 +107,18 @@ export async function ensureFirestoreAuth(): Promise<void> {
       resolve();
     });
   });
+  if (!auth.currentUser) await auth.signInAnonymously();
+}
+
+export async function ensureAnonymousFirestoreAuth(): Promise<void> {
+  const auth = getCompatAuth();
+  await new Promise<void>(resolve => {
+    const unsubscribe = auth.onAuthStateChanged(() => {
+      unsubscribe();
+      resolve();
+    });
+  });
+  if (auth.currentUser && !auth.currentUser.isAnonymous) await auth.signOut();
   if (!auth.currentUser) await auth.signInAnonymously();
 }
 

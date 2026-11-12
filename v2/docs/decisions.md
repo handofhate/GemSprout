@@ -45,18 +45,16 @@ Direction:
 - operation records remain the source of idempotency,
 - future analytical views can be derived from operations if useful.
 
-## 2026-07-08: Test Firebase Contracts Before Real SDK Work
+## 2026-11-12: Production Family Paths Use The Family Code
 
-v2 should prove Firestore behavior against a fake path-based adapter before wiring the Firebase SDK.
+Production family documents are keyed by their six-character code.
 
 Why:
 
-- transaction and idempotency bugs are easier to catch without network/rules noise,
-- the fake adapter makes the intended document layout executable,
-- real Firebase code should be a thin adapter over the sync contracts.
+- V1 already uses `families/{familyCode}`.
+- V2 family-code joining can use a direct document lookup instead of listing/querying every family.
+- Family-scoped rules can map the authenticated device to the family without exposing a family collection query.
 
-Implementation direction:
+The code remains a shared bearer credential for kid access, not a strong private identity. Keep it out of public channels. A stronger join credential would require a separately planned V1-compatible flow.
 
-- `FirestoreGateway` is the SDK-free boundary,
-- fake and real adapters should both implement the same gateway,
-- Firebase SDK types should stay inside the real adapter.
+Pure domain tests are useful, but there is no fake-Firestore app lane. Firestore rules are tested in the emulator and app behavior is verified on the real TestFlight build.

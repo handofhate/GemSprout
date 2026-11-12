@@ -10,6 +10,7 @@ Emails/
 .claude/
 *-service-account.json
 firebase-debug.log
+firestore-debug.log
 .firebase/
 playwright-report/
 test-results/
@@ -37,4 +38,10 @@ branding/
 
 fixedraw.json
 6.10backup.json
+collum-firestore-restore-raw.json
+collum-v1-to-v2-preview.json
+all-families-firestore-restore-raw.json
+all-families-v2-migration-preview.json
+all-families-v2-production-migration-preview.json
+all-families-v2-*-preview.json
 .codex-temp-auth-export.json
