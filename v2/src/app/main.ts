@@ -33,7 +33,8 @@ import {
 import { registerParentPushNotifications } from '../platform/notifications/push-registration';
 import { syncNativeAppBadge as syncNativeAppBadgeCount } from '../platform/notifications/app-badge';
 import { decodeFamilyCodeQr, makeFamilyCodeQrDataUrl } from '../platform/qr-code';
-import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, reauthenticateCurrentParentAuth, getCurrentParentAuthUid, ensureFirestoreAuth, ensureAnonymousFirestoreAuth } from '../platform/auth/provider-sign-in';
+import { signInParentWithProvider, getLastParentAuthError, signOutParentAuth, deleteCurrentParentAuth, reauthenticateCurrentParentAuth, getCurrentParentAuthUid, getCurrentParentAuthUser, ensureFirestoreAuth, ensureAnonymousFirestoreAuth } from '../platform/auth/provider-sign-in';
+import { isParentAuthLinkedToMember, readActiveProfileMemberId, serializeActiveProfile } from './profile-session';
 import {
   initRevenueCat,
   loadOfferings,
@@ -90,6 +91,7 @@ let paywallOpen = false;
 let devPhotoCleanupInFlight = false;
 let devPhotoCleanupLastRun = 0;
 let autoSavingsInterestRunKey = '';
+const ACTIVE_PROFILE_SESSION_KEY = 'gemsprout.v2.activeProfile';
 let activeFamilyId = readStoredActiveFamilyId();
 type FirestoreOverviewWrite =
   | { kind: 'request'; action: 'approve' | 'deny'; requestId: string; resolve: (applied: boolean) => void }
@@ -137,7 +139,7 @@ let activePrizeDeleteKind: 'prize' | 'goal' | null = null;
 let activeIconPicker: { kind: 'level' | 'baseBadge' | 'taskBadge'; a: number | string; b?: number } | null = null;
 let activeSettingsPage: ParentSettingsPage = 'main';
 let pendingComboOverrides: Record<string, Record<number, string>> = {};
-let activeViewerMemberId: string | null = null;
+let activeViewerMemberId: string | null = readStoredActiveViewerMemberId(activeFamilyId);
 let trustedParentViewer: { uid: string; familyId: string; memberId: string } | null = null;
 let pendingParentProfileAuth: { familyId: string; memberId: string; returnMemberId: string | null } | null = null;
 let activeKidTab: KidTabId = 'chores';
@@ -1109,6 +1111,7 @@ async function leaveDevice(): Promise<void> {
     console.warn('Parent sign-out failed before leaving device:', error);
   }
   activeViewerMemberId = null;
+  persistActiveViewerMemberId(null);
   activeParentTab = 'overview';
   activeKidTab = 'chores';
   activeKidTimeTaskId = null;
@@ -2494,6 +2497,7 @@ function bindHomeScreenActions(state: AppState): void {
         return;
       }
       activeViewerMemberId = memberId;
+      persistActiveViewerMemberId(memberId, state.familyId || currentFirestoreFamilyId());
       activeKidTab = 'chores';
       closeSettingsPane();
       render();
@@ -5527,6 +5531,7 @@ async function sendDeviceToLandingAfterAccountChange(): Promise<void> {
     console.warn('Parent sign-out failed after account change:', error);
   }
   activeViewerMemberId = null;
+  persistActiveViewerMemberId(null);
   activeParentTab = 'overview';
   activeKidTab = 'chores';
   activeSettingsPage = 'main';
@@ -5923,6 +5928,7 @@ async function confirmJoinDifferentFamily(): Promise<void> {
     console.warn('Parent sign-out failed before family switch:', error);
   }
   activeViewerMemberId = null;
+  persistActiveViewerMemberId(null);
   activeParentTab = 'overview';
   activeKidTab = 'chores';
   activeSettingsPage = 'main';
@@ -6552,6 +6558,14 @@ async function renderDevFirestore(): Promise<void> {
 
   const activeViewer = getActiveViewer(firestoreState);
   if (activeViewer?.role === 'parent' && !hasTrustedParentAccess(activeViewer)) {
+    const authUser = getCurrentParentAuthUser();
+    const familyId = firestoreState.familyId || currentFirestoreFamilyId();
+    if (isParentAuthLinkedToMember(activeViewer, authUser)) {
+      trustedParentViewer = { uid: authUser!.uid, familyId, memberId: String(activeViewer.id || '') };
+      persistActiveViewerMemberId(String(activeViewer.id || ''), familyId);
+    }
+  }
+  if (activeViewer?.role === 'parent' && !hasTrustedParentAccess(activeViewer)) {
     pendingParentProfileAuth ||= {
       familyId: firestoreState.familyId || currentFirestoreFamilyId(),
       memberId: String(activeViewer.id || ''),
@@ -6642,6 +6656,22 @@ function writeStoredActiveFamilyId(familyId: string): void {
   try {
     if (familyId) window.localStorage.setItem('gemsprout.v2.activeFamilyId', familyId);
     else window.localStorage.removeItem('gemsprout.v2.activeFamilyId');
+  } catch {}
+}
+
+function readStoredActiveViewerMemberId(familyId: string): string | null {
+  try {
+    return readActiveProfileMemberId(window.localStorage.getItem(ACTIVE_PROFILE_SESSION_KEY), familyId);
+  } catch {
+    return null;
+  }
+}
+
+function persistActiveViewerMemberId(memberId: string | null, familyId = activeFamilyId): void {
+  try {
+    const serialized = memberId ? serializeActiveProfile(familyId, memberId) : null;
+    if (serialized) window.localStorage.setItem(ACTIVE_PROFILE_SESSION_KEY, serialized);
+    else window.localStorage.removeItem(ACTIVE_PROFILE_SESSION_KEY);
   } catch {}
 }
 
@@ -6792,6 +6822,7 @@ function bindKidEntryActions(): void {
       const memberId = button.dataset.kidSelect || '';
       if (!memberId) return;
       activeViewerMemberId = memberId;
+      persistActiveViewerMemberId(memberId, activeFamilyId);
       activeKidTab = 'chores';
       landingMode = 'landing';
       kidEntryMessage = '';
@@ -6840,6 +6871,7 @@ async function enterKidFamily(scannedCode = ''): Promise<void> {
   const kids = kidEntryMembers.filter(member => member.role !== 'parent' && !member.deleted);
   if (kids.length === 1 && kids[0]?.id) {
     activeViewerMemberId = String(kids[0].id);
+    persistActiveViewerMemberId(activeViewerMemberId, activeFamilyId);
     activeKidTab = 'chores';
     landingMode = 'landing';
     kidEntryMessage = '';
@@ -6982,6 +7014,7 @@ async function handleReturningSignIn(action: string): Promise<void> {
   writeStoredActiveFamilyId(activeFamilyId);
   firestoreState = family.state || null;
   activeViewerMemberId = family.parentMemberId || null;
+  persistActiveViewerMemberId(activeViewerMemberId, activeFamilyId);
   landingMode = 'landing';
   signInMessage = '';
   activeOnboardingStep = null;
@@ -7166,6 +7199,7 @@ async function finishOnboardingPreview(): Promise<void> {
     writeStoredActiveFamilyId(familyId);
     const parent = draft.parents[0] || null;
     activeViewerMemberId = parent?.id || null;
+    persistActiveViewerMemberId(activeViewerMemberId, activeFamilyId);
     trustedParentViewer = draft.authUser?.uid && parent?.id
       ? { uid: draft.authUser.uid, familyId, memberId: parent.id }
       : null;
