@@ -81,13 +81,16 @@ export function renderWeekReviewLaunchCard(state: AppState): string {
   const { start, end } = getWeekRange(state);
   const summary = buildWeekReviewSummary(state, start, end);
   return `
-    <button class="snapshot-summary-card stats-launch-card stats-launch-card-family" data-week-review-open type="button" style="--stats-accent:#7C3AED">
+    <div class="snapshot-summary-card stats-launch-card stats-launch-card-family week-review-launch-card" style="--stats-accent:#7C3AED">
       <div class="stats-launch-head">
         <div class="stats-launch-avatar stats-launch-avatar-family"><i class="ph-duotone ph-calendar-star" style="color:#7C3AED;font-size:2rem"></i></div>
         <div class="stats-launch-hero">
           <div class="stats-launch-name">Week in Review</div>
           <div class="stats-launch-sub">${escapeHtml(formatWeekReviewDateRange(start, end))}</div>
         </div>
+        <button class="hero-quick-trigger stats-week-review-open" data-week-review-open type="button" aria-label="Open Week in Review" title="Open Week in Review">
+          <i class="ph-duotone ph-hand-tap" aria-hidden="true"></i>
+        </button>
       </div>
       <div class="stats-launch-spotlight-grid">
         <div class="stats-launch-spotlight">
@@ -104,7 +107,7 @@ export function renderWeekReviewLaunchCard(state: AppState): string {
         <span class="stats-launch-chip"><strong>${summary.totalBadges}</strong><small>Badges</small></span>
         <span class="stats-launch-chip"><strong>${summary.savedLabel || '$0.00'}</strong><small>Saved</small></span>
       </div>
-    </button>
+    </div>
   `;
 }
 

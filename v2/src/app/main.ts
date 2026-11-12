@@ -3201,7 +3201,6 @@ function closeKidPhotoCapture(): void {
 }
 
 function bindParentQuickActions(state: AppState): void {
-  bindWeekReviewLaunch(document, state);
   const trigger = document.querySelector<HTMLButtonElement>('[data-parent-quick-trigger]');
   const host = document.getElementById('parent-quick-launch');
   trigger?.addEventListener('click', () => {

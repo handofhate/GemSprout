@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createParentDashboardModel } from '../../src/features/parent-dashboard/model';
 import { renderParentNav } from '../../src/features/parent-dashboard/view';
 import { renderParentQuickLaunch } from '../../src/features/parent-dashboard/quick-actions';
+import { renderWeekReviewLaunchCard } from '../../src/features/week-review/view';
 import { type AppState } from '../../src/app/app-state';
 
 function state(requestStatuses: string[]): AppState {
@@ -34,9 +35,16 @@ test('parent inbox count and navigation badge use only the visible pending reque
   assert.doesNotMatch(renderParentNav('overview', cleared.pendingCount), /nav-badge/);
 });
 
-test('family control center exposes a matching Week in Review icon button', () => {
+test('family control center keeps its quick-actions button separate from Week in Review', () => {
   const markup = renderParentQuickLaunch(state([]));
-  assert.match(markup, /class="hero-quick-trigger hero-week-review-trigger" data-week-review-open/);
+  assert.match(markup, /data-parent-quick-trigger/);
+  assert.doesNotMatch(markup, /data-week-review-open/);
+});
+
+test('Week in Review has its hand-tap shortcut in the stats card header', () => {
+  const markup = renderWeekReviewLaunchCard(state([]));
+  assert.match(markup, /week-review-launch-card/);
+  assert.match(markup, /class="hero-quick-trigger stats-week-review-open" data-week-review-open/);
   assert.match(markup, /ph-hand-tap/);
   assert.match(markup, /aria-label="Open Week in Review"/);
 });

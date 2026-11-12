@@ -58,16 +58,11 @@ export function renderParentQuickLaunch(state: AppState): string {
   `).join('');
 
   return `
-    <div class="parent-hero-launch-actions">
-      <div id="parent-quick-launch" class="hero-quick-launch" aria-expanded="false">
-        <button class="hero-quick-trigger" data-parent-quick-trigger type="button" aria-label="Quick actions">
-          <i class="ph-duotone ph-plus-circle"></i>
-        </button>
-        <div class="hero-quick-fan" data-parent-quick-fan>${quickActionsHtml}</div>
-      </div>
-      <button class="hero-quick-trigger hero-week-review-trigger" data-week-review-open type="button" aria-label="Open Week in Review" title="Open Week in Review">
-        <i class="ph-duotone ph-hand-tap" aria-hidden="true"></i>
+    <div id="parent-quick-launch" class="hero-quick-launch" aria-expanded="false">
+      <button class="hero-quick-trigger" data-parent-quick-trigger type="button" aria-label="Quick actions">
+        <i class="ph-duotone ph-plus-circle"></i>
       </button>
+      <div class="hero-quick-fan" data-parent-quick-fan>${quickActionsHtml}</div>
     </div>
   `;
 }
