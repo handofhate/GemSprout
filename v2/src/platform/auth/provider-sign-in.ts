@@ -134,10 +134,8 @@ export function getCurrentParentAuthUid(): string {
 export function getCurrentParentAuthUser(): ParentAuthUser | null {
   const user = getCompatAuth().currentUser;
   if (!user) return null;
-  const providerId = user.providerData.find(provider => provider?.providerId === 'google.com' || provider?.providerId === 'apple.com')?.providerId
-    || user.providerData[0]?.providerId
-    || 'google.com';
-  return normalizeAuthUser(user, providerId);
+  const providerId = user.providerData.find(provider => provider?.providerId === 'google.com' || provider?.providerId === 'apple.com')?.providerId;
+  return providerId ? normalizeAuthUser(user, providerId) : null;
 }
 
 async function signInWithGoogle(): Promise<AuthUserLike | null> {
