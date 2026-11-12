@@ -3509,6 +3509,7 @@ function bindPrizeTabActions(state: AppState): void {
 
 function bindStatsTabActions(state: AppState, activeParent?: AppMember | null): void {
   bindWeekReviewLaunch(document, state);
+  showWeekReviewCoachMark();
   document.querySelectorAll<HTMLElement>('[data-open-stats]').forEach(button => {
     button.addEventListener('click', () => {
       const kind = button.dataset.openStats === 'family' ? 'family' : 'kid';
@@ -6006,7 +6007,7 @@ function uiHintsEnabled(): boolean {
 
 function clearUiHintAnimations(): void {
   document.querySelectorAll('.hint-bounce').forEach(node => node.classList.remove('hint-bounce'));
-  document.getElementById('parent-quick-launch')?.classList.remove('coach-mark');
+  document.querySelectorAll('.coach-mark').forEach(node => node.classList.remove('coach-mark'));
   if (parentQuickCoachTimer) {
     window.clearTimeout(parentQuickCoachTimer);
     parentQuickCoachTimer = null;
@@ -6029,15 +6030,15 @@ function bounceFirstHint(selector: string, scope: Document | HTMLElement = docum
   }, 180);
 }
 
-function showParentQuickCoachMark(): void {
+function showUiHintCoachMark(hostSelector: string, triggerSelector: string): void {
   if (!uiHintsEnabled()) {
     clearUiHintAnimations();
     return;
   }
   window.setTimeout(() => {
     if (!uiHintsEnabled()) return;
-    const host = document.getElementById('parent-quick-launch');
-    const trigger = host?.querySelector<HTMLElement>('.hero-quick-trigger');
+    const host = document.querySelector<HTMLElement>(hostSelector);
+    const trigger = host?.querySelector<HTMLElement>(triggerSelector);
     if (!host) return;
     host.classList.remove('coach-mark');
     void host.offsetWidth;
@@ -6059,6 +6060,14 @@ function showParentQuickCoachMark(): void {
       parentQuickCoachTimer = null;
     }, 2800);
   }, 180);
+}
+
+function showParentQuickCoachMark(): void {
+  showUiHintCoachMark('#parent-quick-launch', '.hero-quick-trigger');
+}
+
+function showWeekReviewCoachMark(): void {
+  showUiHintCoachMark('.week-review-launch-card', '.stats-week-review-open');
 }
 
 function rerenderActiveQuickActionModal(): void {

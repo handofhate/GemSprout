@@ -2089,7 +2089,11 @@
     .hero-quick-launch.coach-mark .hero-quick-trigger {
       animation: quickCoachTriggerPulse 0.72s ease-in-out 3;
     }
-    .hero-quick-launch.coach-mark .hero-quick-trigger::after {
+    .week-review-launch-card.coach-mark .stats-week-review-open {
+      animation: weekReviewCoachTriggerPulse 0.72s ease-in-out 3;
+    }
+    .hero-quick-launch.coach-mark .hero-quick-trigger::after,
+    .week-review-launch-card.coach-mark .stats-week-review-open::after {
       content: '';
       position: absolute;
       inset: -7px;
@@ -2099,9 +2103,17 @@
       animation: quickCoachRingPulse 0.72s ease-out 3;
       pointer-events: none;
     }
+    .week-review-launch-card.coach-mark .stats-week-review-open::after {
+      border-color: rgba(167,139,250,0.98);
+      box-shadow: 0 0 0 0 rgba(139,92,246,0.68);
+    }
     @keyframes quickCoachTriggerPulse {
       0%, 100% { transform: scale(1); background: rgba(255,255,255,0.16); }
       50% { transform: scale(1.08); background: rgba(255,255,255,0.28); }
+    }
+    @keyframes weekReviewCoachTriggerPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.08); }
     }
     @keyframes quickCoachRingPulse {
       0% { opacity: 0.72; transform: scale(0.92); }

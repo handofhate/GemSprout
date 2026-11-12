@@ -40,7 +40,7 @@ function renderMainSettings(state: AppState, options: RenderSettingsOptions): st
           ${renderToggleRow('Auto-approve tasks', 'Kids earn gems instantly without a final review - pre-approval photos still require manual approval', 'autoApprove', settings.autoApprove === true)}
           ${renderToggleRow('Hide unavailable tasks', 'Tasks outside their allowed time window will not show on kids screens', 'hideUnavailable', settings.hideUnavailable === true)}
           ${renderToggleRow('Hide redeemed recurring prizes', 'Daily, weekly, and monthly prizes disappear after they are redeemed until their next reset', 'showLockedRecurringPrizes', settings.showLockedRecurringPrizes === false, true)}
-          ${renderToggleRow('Show UI hints', 'Bounce swipe hints and the quick actions button when a screen first opens', 'tooltipBounceEnabled', settings.tooltipBounceEnabled !== false)}
+          ${renderToggleRow('Show UI hints', 'Bounce swipe hints and pulse action buttons when a screen first opens', 'tooltipBounceEnabled', settings.tooltipBounceEnabled !== false)}
           <div class="form-group mb-0">
             <label class="form-label">Family timezone</label>
             <select data-settings-select="familyTimezone" style="width:100%">
