@@ -5,7 +5,7 @@ export function renderLandingScreen(): string {
   return `
     <div class="setup-gate-shell">
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
-        <img src="/gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome to GemSprout</div>
         <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">An easy to use family system for rewards, savings, and shared goals</div>
         <div class="setup-gate-actions">
@@ -28,7 +28,7 @@ export function renderReturningSignInScreen(message = ''): string {
   return `
     <div class="setup-gate-shell">
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
-        <img src="/gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Welcome back!</div>
         <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">Sign in to access your family on this device</div>
         <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
@@ -52,7 +52,7 @@ export function renderSignInNotFoundScreen(): string {
   return `
     <div class="setup-gate-shell">
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
-        <img src="/gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">No family found</div>
         <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px;line-height:1.5">This account isn't linked to a GemSprout family yet. Go back and tap <strong>Get Started</strong> to create one, or make sure you're signing in with the same account your family invite was sent to.</div>
         <div class="setup-gate-actions">
@@ -72,7 +72,7 @@ export function renderKidEntryScreen(message = ''): string {
   return `
     <div class="setup-gate-shell">
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 460px)">
-        <img src="/gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">I'm a Kid</div>
         <div style="color:#5f746a;font-size:0.95rem;margin-bottom:24px;text-align:center;max-width:320px">Enter your family code or scan the QR code from your parent.</div>
         <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px">
@@ -96,7 +96,7 @@ export function renderKidMemberSelectScreen(members: AppMember[], message = ''):
   return `
     <div class="setup-gate-shell">
       <div class="setup-gate-card" style="width:min(calc(100% - 44px), 520px)">
-        <img src="/gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
+        <img src="gemsprout.png" class="setup-gate-mark loading-img" alt="GemSprout">
         <div style="color:#24453c;font-size:1.6rem;font-weight:800;margin-bottom:6px;text-align:center">Who are you?</div>
         <div style="color:#5f746a;font-size:0.95rem;margin-bottom:20px;text-align:center;max-width:320px">Choose your profile to open your dashboard.</div>
         <div class="profile-grid" style="padding:0;width:100%">
@@ -159,7 +159,7 @@ export function renderHomeScreen(state: AppState): string {
                 <div class="home-family-line home-family-line-bottom">Family</div>
               </div>
             </div>
-            <img class="home-logo" src="/gemsprout.png" alt="GemSprout">
+            <img class="home-logo" src="gemsprout.png" alt="GemSprout">
             <div class="home-hero-meta">
               <div class="home-subtitle">Choose who is using GemSprout right now.</div>
               <div class="home-pill-row">

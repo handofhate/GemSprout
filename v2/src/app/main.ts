@@ -2388,7 +2388,7 @@ function launchBadgeRain(iconHtml: string, count = 110, rootElement: HTMLElement
 }
 
 function launchGemsproutRain(count = 80): void {
-  launchAvatarRain('/gemsprout.png', count);
+  launchAvatarRain('gemsprout.png', count);
 }
 
 function setRapidTapPulse(element: HTMLElement | null, scale = 1, opacity: number | null = null): void {
@@ -5235,7 +5235,7 @@ function paywallHtml(): string {
       <div class="paywall-top-inner">
         <div style="position:relative;text-align:center;padding:26px 0 20px">
           <button data-paywall-close type="button" style="position:absolute;top:8px;left:-8px;background:none;border:none;color:rgba(244,252,248,0.82);font-size:1.5rem;cursor:pointer;padding:4px;line-height:1" aria-label="Close"><i class="ph-duotone ph-x"></i></button>
-          <img src="/gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)" alt="GemSprout">
+          <img src="gemsprout.png" style="width:82px;height:82px;border-radius:20px;box-shadow:0 12px 28px rgba(31,54,46,0.28)" alt="GemSprout">
           <div style="color:#f7fbf8;font-size:1.78rem;font-weight:900;margin-top:14px;letter-spacing:-0.02em">GemSprout Pro</div>
           <div style="color:rgba(245,252,247,0.78);font-size:0.95rem;margin-top:6px">An easy to use family system for rewards, savings, and shared goals</div>
         </div>
@@ -6457,7 +6457,7 @@ function renderLoadingScreen(message = 'Loading'): void {
       @keyframes _ldot { 0%,80%,100%{opacity:0;transform:translateY(0)} 40%{opacity:1;transform:translateY(-3px)} }
     </style>
     <div style="width:min(calc(100% - 40px),780px);transform:translateY(-5dvh);background:#fffdf8;border:1px solid rgba(39,66,57,0.14);border-radius:28px;padding:22px 18px 20px;box-shadow:0 20px 42px rgba(31,54,46,0.24)">
-      <img src="/gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px" alt="GemSprout">
+      <img src="gemsprout.png" class="loading-img" style="width:108px;height:108px;display:block;margin:0 auto 10px" alt="GemSprout">
       <div style="color:#24453c;font-size:1.8rem;font-weight:900;letter-spacing:-0.02em">GemSprout</div>
       <div class="loading-text" style="margin-top:6px;color:#355b4e;font-size:0.98rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:2px">
         ${escapeHtmlAttr(message)}<span style="animation:_ldot 1.2s infinite 0s">.</span><span style="animation:_ldot 1.2s infinite 0.2s">.</span><span style="animation:_ldot 1.2s infinite 0.4s">.</span>

@@ -561,7 +561,7 @@ function renderKidStats(state: AppState, member: AppMember): string {
       </div>
       ${renderKidStatsCard(state, member)}
       <div class="tab-end-cap tab-end-cap-gem">
-        <img src="/gemsprout.png" id="egg-gem" data-stats-egg-gem alt="" style="width:36px;height:36px;cursor:pointer">
+        <img src="gemsprout.png" id="egg-gem" data-stats-egg-gem alt="" style="width:36px;height:36px;cursor:pointer">
       </div>
     </div>
   `;
