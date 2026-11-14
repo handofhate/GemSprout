@@ -4,6 +4,7 @@ import { createParentDashboardModel } from '../features/parent-dashboard/model';
 import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
 import {
   formatPrizeRedeemStatusMessage,
+  getTaskProgressForMember,
   getKidPrizeRedeemStatus,
   getPrizePeriodKey,
   getPrizeRequirementSummary,
@@ -3789,6 +3790,64 @@ function openSnapshotModal(state: AppState, snapshotId: string, side: 'left' | '
     if (event.target === event.currentTarget) closeModal();
   });
   root.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
+  root.querySelectorAll<HTMLButtonElement>('[data-parent-task-complete]').forEach(button => {
+    button.addEventListener('click', () => void markTaskDoneForParent(
+      button.dataset.parentTaskComplete || '',
+      button.dataset.parentTaskMember || '',
+      button.dataset.parentTaskSlot || null,
+      side,
+    ));
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-parent-task-undo]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const historyId = button.dataset.parentTaskUndo || '';
+      await handleFirestoreUndoAction(historyId);
+      if (!firestoreError && firestoreState) openSnapshotModal(firestoreState, snapshotId, side);
+    });
+  });
+}
+
+async function markTaskDoneForParent(taskId: string, memberId: string, slotId: string | null, side: 'left' | 'right'): Promise<void> {
+  if (firestoreBusy) return;
+  const state = currentAppState();
+  const viewer = getActiveViewer(state);
+  const task = state.tasks.find(item => item.id === taskId && item.assignedTo?.includes(memberId));
+  const member = state.members.find(item => item.id === memberId && item.role === 'kid');
+  if (viewer?.role !== 'parent' || !task || !member) return;
+  const progress = getTaskProgressForMember(state, member, task);
+  const slotProgress = slotId ? progress.slots.find(slot => slot.id === slotId) : null;
+  if (progress.status === 'done' || (slotId ? slotProgress?.status === 'done' || slotProgress?.status === 'pending' : progress.status === 'pending')) return;
+  firestoreBusy = true;
+  firestoreError = '';
+  try {
+    const { commitDevKidCompletionRequest, commitDevRequestAction } = await import('../platform/firebase/dev-firestore-operations.js');
+    const now = Date.now();
+    const completionId = `completion:parent:${memberId}:${taskId}:${now}`;
+    const requestId = `request:parent-completion:${memberId}:${taskId}:${now}`;
+    await commitDevKidCompletionRequest({
+      familyId: currentFirestoreFamilyId(),
+      completionId,
+      requestId,
+      memberId,
+      choreId: taskId,
+      title: String(task.title || 'Task'),
+      points: Number(task.gems ?? task.diamonds ?? 0),
+      entryType: 'after',
+      slotId,
+      now,
+    });
+    const execution = await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action: 'approve', requestId, actorMemberId: String(viewer.id || 'parent_1'), now });
+    if (!execution.ok) throw new Error(execution.error?.message || execution.error?.reason || 'Could not mark the task complete.');
+    const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
+    firestoreState = await loadDevFirestoreState(currentFirestoreFamilyId());
+    renderDevFirestore();
+    if (firestoreState) openSnapshotModal(firestoreState, memberId, side);
+  } catch (error) {
+    firestoreError = error instanceof Error ? error.message : String(error);
+    toast(firestoreError || 'Could not mark the task complete.');
+  } finally {
+    firestoreBusy = false;
+  }
 }
 
 function openStatsModal(state: AppState, kind: 'family' | 'kid', memberId = '', side: 'left' | 'right' = 'left', activeParent?: AppMember | null): void {
@@ -3942,7 +4001,38 @@ function bindTaskEditorModal(): void {
       bindTaskEditorModal();
     });
   });
+  root.querySelectorAll<HTMLInputElement>('[data-task-day]').forEach(input => {
+    input.addEventListener('change', () => {
+      const day = input.dataset.taskDay || '';
+      root.querySelectorAll<HTMLInputElement>(`[data-task-window-start="${day}"],[data-task-window-end="${day}"]`).forEach(time => { time.disabled = !input.checked; });
+    });
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-task-slot-add], [data-task-slot-remove]').forEach(button => {
+    button.addEventListener('click', () => {
+      activeTaskEditorDraft = readTaskEditorDraftFromDom() || activeTaskEditorDraft;
+      if (!activeTaskEditorDraft) return;
+      const slots = [...(activeTaskEditorDraft.schedule.slots || [])];
+      if (button.hasAttribute('data-task-slot-remove')) slots.splice(Number(button.dataset.taskSlotRemove), 1);
+      else slots.push({ id: `slot_${Date.now()}`, label: '', start: '', end: '' });
+      activeTaskEditorDraft.schedule = { ...activeTaskEditorDraft.schedule, slots, windows: slots.length ? {} : activeTaskEditorDraft.schedule.windows };
+      rerenderTaskEditorModal(editorMode);
+    });
+  });
   root.querySelector<HTMLButtonElement>('[data-task-save]')?.addEventListener('click', () => void saveTaskDraft());
+}
+
+function rerenderTaskEditorModal(mode: 'create' | 'edit'): void {
+  const root = document.getElementById('modal-root');
+  if (!root || !activeTaskEditorDraft) return;
+  const overlayStyle = root.querySelector<HTMLElement>('[data-modal-overlay]')?.getAttribute('style') || '';
+  root.innerHTML = `
+    <div class="modal-overlay quick-modal-overlay modal-overlay-origin" data-modal-overlay style="${overlayStyle}">
+      <div class="modal quick-action-modal quick-action-modal-wide chore-editor-modal modal-origin-sheet" role="dialog" aria-modal="true">
+        ${renderTaskEditorModal(currentAppState(), activeTaskEditorDraft, mode)}
+      </div>
+    </div>
+  `;
+  bindTaskEditorModal();
 }
 
 function bindTaskDeleteModal(): void {
@@ -4087,6 +4177,21 @@ function readTaskEditorDraftFromDom(): ParentTaskEditorDraft | null {
   const photoMode = (document.getElementById('task-photo-mode') as HTMLSelectElement | null)?.value || activeTaskEditorDraft.photoMode;
   const description = (document.getElementById('task-description') as HTMLTextAreaElement | null)?.value || '';
   const assignedTo = [...document.querySelectorAll<HTMLInputElement>('[data-task-assign]:checked')].map(input => input.value);
+  const period = (document.getElementById('task-period') as HTMLSelectElement | null)?.value || activeTaskEditorDraft.schedule.period || 'day';
+  const daysOfWeek = [...document.querySelectorAll<HTMLInputElement>('[data-task-day]:checked')].map(input => Number(input.dataset.taskDay));
+  const windows: NonNullable<ParentTaskEditorDraft['schedule']['windows']> = {};
+  daysOfWeek.forEach(day => {
+    const start = document.querySelector<HTMLInputElement>(`[data-task-window-start="${day}"]`)?.value || '';
+    const end = document.querySelector<HTMLInputElement>(`[data-task-window-end="${day}"]`)?.value || '';
+    if (start || end) windows[String(day)] = { start, end };
+  });
+  const slots = (activeTaskEditorDraft.schedule.slots || []).map((slot, index) => ({
+    ...slot,
+    label: document.querySelector<HTMLInputElement>(`[data-task-slot-label="${index}"]`)?.value.trim() || '',
+    start: document.querySelector<HTMLInputElement>(`[data-task-slot-start="${index}"]`)?.value || '',
+    end: document.querySelector<HTMLInputElement>(`[data-task-slot-end="${index}"]`)?.value || '',
+  }));
+  const targetCount = Math.max(1, Math.min(12, Number((document.getElementById('task-target-count') as HTMLInputElement | null)?.value || 1)));
   return {
     ...activeTaskEditorDraft,
     title,
@@ -4094,6 +4199,13 @@ function readTaskEditorDraftFromDom(): ParentTaskEditorDraft | null {
     photoMode,
     description,
     assignedTo,
+    schedule: {
+      period,
+      targetCount,
+      daysOfWeek: period === 'once' ? [] : daysOfWeek,
+      windows: period === 'once' || slots.length ? {} : windows,
+      slots: period === 'once' ? [] : slots,
+    },
   };
 }
 
@@ -4361,13 +4473,21 @@ function taskDocFromDraft(state: AppState, draft: ParentTaskEditorDraft, taskId:
     assignedTo: draft.assignedTo,
     description: draft.description,
     photoMode: draft.photoMode,
-    schedule: existing?.schedule || { period: 'day', targetCount: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6], windows: {} },
+    schedule: draft.schedule,
   };
 }
 
 async function saveTaskDraft(): Promise<void> {
   const draft = readTaskEditorDraftFromDom();
   if (!draft) return;
+  if (!draft.title) {
+    toast('Enter a task name.');
+    return;
+  }
+  if (draft.schedule.period !== 'once' && !draft.schedule.daysOfWeek?.length) {
+    toast('Choose at least one day for this task.');
+    return;
+  }
   const state = currentAppState();
   const taskId = activeTaskId || `task_${Date.now()}`;
   const docData = taskDocFromDraft(state, draft, taskId);

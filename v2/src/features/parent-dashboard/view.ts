@@ -2,6 +2,7 @@ import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app
 import { escapeHtml, statusPill } from '../../ui/html';
 import { createParentDashboardModel, type ParentDashboardModel, type ParentSnapshotCard } from './model';
 import { renderParentQuickLaunch } from './quick-actions';
+import { getTaskProgressForMember } from '../kid-dashboard/view';
 
 export type ParentTabId = 'overview' | 'tasks' | 'prizes' | 'levels' | 'stats';
 
@@ -165,7 +166,7 @@ function renderSnapshotCard(snapshot: ParentSnapshotCard, index: number): string
         `<span class="snapshot-summary-status"><strong>${snapshot.completeCount}/${totalTasks}</strong> Complete</span>`,
         ...(snapshot.waitingCount > 0 ? [`<span class="snapshot-summary-status"><strong>${snapshot.waitingCount}</strong> Waiting</span>`] : []),
       ].join('')
-    : '<span class="snapshot-summary-status-empty">No tasks assigned yet</span>';
+    : '<span class="snapshot-summary-status-empty">No tasks due today</span>';
 
   return `
     <div class="snapshot-summary-shell" data-summary-id="summary_${escapeHtml(snapshot.id)}" data-side="${side}">
@@ -368,6 +369,41 @@ export function renderParentSnapshotModal(state: AppState, snapshotId: string, s
         </div>
       `;
     }).join('');
+  const member = state.members.find(item => item.id === snapshotId);
+  const assignedTasks = state.tasks.filter(task => task.assignedTo?.includes(snapshotId));
+  const taskRows = member ? assignedTasks.map(task => {
+    const progress = getTaskProgressForMember(state, member, task);
+    const taskId = String(task.id || '');
+    const points = Number(task.gems ?? task.diamonds ?? 0);
+    const taskHistory = state.historyRows.find(row => row.memberId === snapshotId && row.type === 'chore' && row.metadata?.choreId === taskId);
+    const actionForStatus = (status: string, slotId = '') => {
+      if (status === 'done') {
+        return taskHistory?.id
+          ? `<button class="snapshot-reveal-btn snapshot-reveal-btn-danger" type="button" data-parent-task-undo="${escapeHtml(String(taskHistory.id))}"><i class="ph-duotone ph-arrow-counter-clockwise"></i><span>Undo</span></button>`
+          : '<span class="text-muted">Done</span>';
+      }
+      if (status === 'pending') return '<span class="text-muted">Waiting</span>';
+      if (status === 'waiting') return '<span class="text-muted">Later</span>';
+      return `<button class="snapshot-reveal-btn snapshot-reveal-btn-approve" type="button" data-parent-task-complete="${escapeHtml(taskId)}" data-parent-task-member="${escapeHtml(snapshotId)}"${slotId ? ` data-parent-task-slot="${escapeHtml(slotId)}"` : ''}><i class="ph-duotone ph-check-circle"></i><span>Done</span></button>`;
+    };
+    const schedule = task.schedule || {};
+    const scheduleLabel = schedule.period === 'once'
+      ? 'One-time'
+      : Array.isArray(schedule.slots) && schedule.slots.length
+        ? `${schedule.slots.length} scheduled times`
+        : schedule.period === 'week'
+          ? `${Number(schedule.targetCount || 1)}x per week`
+          : `${Number(schedule.targetCount || 1)}x per day`;
+    const slots = progress.slots.length > 1
+      ? `<div class="snapshot-task-slots">${progress.slots.map(slot => `<div class="snapshot-task-slot-row"><span>${escapeHtml(slot.label)}</span>${actionForStatus(slot.status, slot.id)}</div>`).join('')}</div>`
+      : '';
+    const action = progress.slots.length > 1 ? '' : actionForStatus(progress.status, progress.slots[0]?.id || '');
+    return `<div class="snapshot-routine-card snapshot-panel-task-card ${escapeHtml(progress.status)}" data-snapshot-task-row>
+      <div class="snapshot-routine-main"><div class="snapshot-routine-title">${escapeHtml(String(task.title || 'Task'))}</div><div class="chore-meta">${escapeHtml(scheduleLabel)}</div></div>
+      <div class="snapshot-routine-diamond-badge"><span class="snapshot-routine-glyph-main"><i class="ph-duotone ph-${escapeHtml(String(task.icon || 'broom').replace(/^ph-/, ''))}" style="color:${escapeHtml(String(task.iconColor || '#6BCB77'))}"></i></span><span class="snapshot-routine-glyph-badge">${points}</span></div>
+      ${action}${slots}
+    </div>`;
+  }).join('') : '';
 
   return `
     <div class="modal-overlay snapshot-panel-overlay" data-modal-overlay>
@@ -390,6 +426,8 @@ export function renderParentSnapshotModal(state: AppState, snapshotId: string, s
           </div>
         </div>
         <div class="snapshot-panel-body">
+          <div class="section-row"><span class="section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Tasks</span></div>
+          <div class="snapshot-panel-tasks">${taskRows || '<div class="text-muted">No tasks assigned.</div>'}</div>
           <div class="section-row"><span class="section-title"><i class="ph-duotone ph-clipboard-text" style="color:#9CA3AF;font-size:1rem;vertical-align:middle"></i> Recent Activity</span></div>
           <div class="card activity-card">${memberHistory || '<div class="text-muted">No activity yet.</div>'}</div>
         </div>

@@ -936,7 +936,7 @@ function getMemberCompletedTaskIdsOnDate(state: AppState, memberId: string, date
   state.historyRows.forEach(row => {
     if (row.memberId !== memberId) return;
     if (!(row.type === 'chore' || row.type === 'request.approved')) return;
-    if (!isHistoryFromToday(row, { period: 'day', targetCount: 1, daysOfWeek: [], windows: {}, slots: [] }, dateStr)) return;
+    if (!isHistoryFromToday(row, { period: 'day', targetCount: 1, daysOfWeek: [], windows: {}, slots: [] }, dateStr, state.settings.familyTimezone)) return;
     const choreId = row.metadata?.choreId;
     if (choreId) ids.add(String(choreId));
   });
@@ -1083,7 +1083,7 @@ function renderStage(title: string, icon: string, color: string, items: ChoreCar
 }
 
 type ChoreStatus = 'todo' | 'partial' | 'pending' | 'done' | 'unavailable';
-type ChoreCardModel = {
+export type ChoreCardModel = {
   id: string;
   title: string;
   icon: string;
@@ -1096,6 +1096,7 @@ type ChoreCardModel = {
   entryType: 'before' | 'after' | null;
   slotId?: string | null;
   hasSlots: boolean;
+  slots: Array<{ id: string; label: string; status: 'done' | 'pending' | 'available' | 'waiting' }>;
   metaLines: string[];
   isCombo: boolean;
 };
@@ -1350,6 +1351,10 @@ function summarizeChores(state: AppState, member: AppMember, chores: AppTask[]) 
   return { models, todo, partial, pending, done, unavailable, totalUnits, doneUnits, earnedGems, percent };
 }
 
+export function getTaskProgressForMember(state: AppState, member: AppMember, task: AppTask): ChoreCardModel {
+  return buildChoreCardModel(state, member, task);
+}
+
 function buildChoreCardModel(state: AppState, member: AppMember, task: AppTask, comboIds = new Set<string>()): ChoreCardModel {
   const taskId = String(task.id || '');
   const schedule = normalizeSchedule(task);
@@ -1369,7 +1374,7 @@ function buildChoreCardModel(state: AppState, member: AppMember, task: AppTask, 
     row.memberId === member.id
     && (row.type === 'chore' || row.type === 'request.approved')
     && row.metadata?.choreId === taskId
-    && isHistoryFromToday(row, schedule, today)
+    && isHistoryFromToday(row, schedule, today, state.settings.familyTimezone)
   ).length;
   const scheduledToday = schedule.period === 'once' || schedule.daysOfWeek.includes(dayIndex);
   const targetCount = schedule.slots.length > 0
@@ -1440,6 +1445,11 @@ function buildChoreCardModel(state: AppState, member: AppMember, task: AppTask, 
     entryType,
     slotId: schedule.slots.length === 1 ? String(schedule.slots[0]?.id || '') : null,
     hasSlots: schedule.slots.length > 1,
+    slots: slotStatuses.map((slot, index) => ({
+      id: String(schedule.slots[index]?.id || ''),
+      label: String(slot.label || ''),
+      status: slot.status,
+    })),
     metaLines,
     isCombo: comboIds.has(taskId),
   };
@@ -1701,11 +1711,10 @@ function isCompletionRelevant(completion: AppCompletion, schedule: ReturnType<ty
   return String(completion.date || '') === today;
 }
 
-function isHistoryFromToday(row: AppState['historyRows'][number], schedule: ReturnType<typeof normalizeSchedule>, today: string): boolean {
+function isHistoryFromToday(row: AppState['historyRows'][number], schedule: ReturnType<typeof normalizeSchedule>, today: string, timezone?: string): boolean {
   const createdAt = Number(row.createdAt || 0);
   if (!createdAt) return false;
-  const date = new Date(createdAt);
-  const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const dateKey = todayKeyForTimezone(timezone, createdAt);
   if (schedule.period === 'once') return true;
   if (schedule.period === 'week') {
     const start = startOfWeekKey(today);

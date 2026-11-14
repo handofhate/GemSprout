@@ -1,5 +1,6 @@
 import { type AppState, type AppHistoryRow, type AppMember } from '../../app/app-state';
-import { todayKeyForTimezone } from '../../app/date-keys';
+import { dayIndexForDateKey, todayKeyForTimezone } from '../../app/date-keys';
+import { getTaskProgressForMember } from '../kid-dashboard/view';
 
 export type ParentInboxItem = {
   id: string;
@@ -55,6 +56,19 @@ export function createParentDashboardModel(state: AppState): ParentDashboardMode
     ? kidMembers
     : [state.member].filter((member): member is AppMember => !!member && member.role !== 'parent');
   const snapshots = kids.map((member, index) => snapshotForMember(member, state, index));
+  const today = todayKeyForTimezone(state.settings.familyTimezone);
+  const todaysCompletions = state.completions.filter(completion =>
+    completion.status === 'approved'
+    && completion.entryType !== 'before'
+    && completion.date === today
+  );
+  const completionIds = new Set(todaysCompletions.map(completion => String(completion.id || '')).filter(Boolean));
+  const legacyTodaysHistory = state.historyRows.filter(row => {
+    if (row.type !== 'chore' && row.type !== 'request.approved') return false;
+    if (todayKeyForTimezone(state.settings.familyTimezone, Number(row.createdAt || 0)) !== today) return false;
+    const completionId = String(row.metadata?.completionId || '');
+    return !completionId || !completionIds.has(completionId);
+  });
   const requestStatus = state.request?.status || 'missing';
   const completionStatus = state.completion?.status || 'missing';
   const inboxItems = state.requests.filter(request => request.status === 'pending').map(request => {
@@ -96,7 +110,7 @@ export function createParentDashboardModel(state: AppState): ParentDashboardMode
     totalEarned: snapshots.reduce((sum, item) => sum + item.totalEarned, 0),
     savings: snapshots.reduce((sum, item) => sum + item.savings, 0),
     pendingCount: inboxItems.length,
-    finishedToday: state.historyRows.filter(row => row.type === 'chore' || row.type === 'request.approved').length,
+    finishedToday: todaysCompletions.length + legacyTodaysHistory.length,
     historyCount: state.historyRows.length,
     requestStatus,
     completionStatus,
@@ -109,9 +123,18 @@ export function createParentDashboardModel(state: AppState): ParentDashboardMode
 function snapshotForMember(member: AppMember, state: AppState, index: number): ParentSnapshotCard {
   const id = String(member.id || `kid_${index + 1}`);
   const requests = state.requests;
-  const historyRows = state.historyRows;
-  const memberHistory = historyRows.filter(row => !('memberId' in row) || (row as AppHistoryRow & { memberId?: string }).memberId === id);
-  const completeCount = memberHistory.filter(row => row.type === 'chore' || row.type === 'request.approved').length;
+  const today = todayKeyForTimezone(state.settings.familyTimezone);
+  const todayDay = dayIndexForDateKey(today);
+  const memberTasks = state.tasks.filter(task => task.assignedTo?.includes(id));
+  const tasksToday = memberTasks.filter(task => {
+    const schedule = task.schedule || {};
+    if (schedule.period === 'once') return getTaskProgressForMember(state, member, task).status !== 'done';
+    const days = Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length
+      ? schedule.daysOfWeek
+      : [0, 1, 2, 3, 4, 5, 6];
+    return days.includes(todayDay);
+  });
+  const completeCount = tasksToday.filter(task => getTaskProgressForMember(state, member, task).status === 'done').length;
   const waitingCount = requests.filter(request => request.status === 'pending' && request.targetMemberId === id).length;
   return {
     id,
@@ -122,7 +145,7 @@ function snapshotForMember(member: AppMember, state: AppState, index: number): P
     savings: Number(member.savings || 0),
     totalEarned: Number(member.totalEarned || 0),
     completeCount,
-    totalTasks: Math.max(completeCount + waitingCount, completeCount, waitingCount),
+    totalTasks: tasksToday.length,
     waitingCount,
     isHereToday: isMemberHereOnDate(member, todayKeyForTimezone(state.settings.familyTimezone)),
     claimableSavingsInterest: calculateSavingsInterest(state, member),

@@ -2628,6 +2628,43 @@
       overflow-y: auto;
       padding: 18px 18px 34px;
     }
+    .snapshot-panel-tasks {
+      display: grid;
+      gap: 8px;
+      margin: 8px 0 20px;
+    }
+    .snapshot-panel-task-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+    }
+    .snapshot-panel-task-card .snapshot-routine-title {
+      font-size: 0.92rem;
+    }
+    .snapshot-panel-task-card .snapshot-routine-diamond-badge {
+      min-width: 48px;
+    }
+    .snapshot-task-slots {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 6px;
+    }
+    .snapshot-task-slot-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 0 0;
+      border-top: 1px solid rgba(39, 50, 41, 0.08);
+      font-size: 0.82rem;
+    }
+    .task-schedule-days {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
     @keyframes snapshotSlideLeft {
       from { transform: translateX(-100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }

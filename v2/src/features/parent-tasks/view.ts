@@ -1,4 +1,4 @@
-import { type AppState, type AppTask } from '../../app/app-state';
+import { type AppState, type AppTask, type AppTaskSchedule } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
 
 export type ParentTaskEditorDraft = {
@@ -10,6 +10,7 @@ export type ParentTaskEditorDraft = {
   assignedTo: string[];
   photoMode: string;
   description: string;
+  schedule: AppTaskSchedule;
 };
 
 const TASK_ICON_OPTIONS = ['broom', 'tooth', 'bed', 'dog', 't-shirt', 'backpack', 'book-open-text', 'sparkle', 'fork-knife', 'bathtub'];
@@ -93,6 +94,7 @@ function parentChoreMetaSummary(task: AppTask): string {
 }
 
 export function createTaskEditorDraft(task: AppTask | null): ParentTaskEditorDraft {
+  const schedule = task?.schedule || { period: 'day', targetCount: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6], windows: {} };
   return {
     id: String(task?.id || ''),
     title: String(task?.title || ''),
@@ -102,11 +104,21 @@ export function createTaskEditorDraft(task: AppTask | null): ParentTaskEditorDra
     assignedTo: Array.isArray(task?.assignedTo) ? [...task.assignedTo] : [],
     photoMode: String(task?.photoMode || 'none'),
     description: String(task?.description || ''),
+    schedule: {
+      period: schedule.period || 'day',
+      targetCount: Math.max(1, Number(schedule.targetCount || 1)),
+      daysOfWeek: Array.isArray(schedule.daysOfWeek) ? [...schedule.daysOfWeek] : [0, 1, 2, 3, 4, 5, 6],
+      windows: { ...(schedule.windows || {}) },
+      slots: Array.isArray(schedule.slots) ? schedule.slots.map(slot => ({ ...slot })) : [],
+    },
   };
 }
 
 export function renderTaskEditorModal(state: AppState, draft: ParentTaskEditorDraft, mode: 'create' | 'edit'): string {
   const kids = state.members.filter(member => member.role === 'kid');
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const period = draft.schedule.period || 'day';
+  const slots = draft.schedule.slots || [];
   return `
     <button class="modal-close-x" data-close-modal type="button" aria-label="Close">
       <i class="ph-duotone ph-x"></i>
@@ -132,6 +144,33 @@ export function renderTaskEditorModal(state: AppState, draft: ParentTaskEditorDr
           <option value="before_after" ${draft.photoMode === 'before_after' ? 'selected' : ''}>Before + after</option>
         </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Schedule</label>
+      <div class="input-row">
+        <select id="task-period">
+          <option value="day" ${period === 'day' ? 'selected' : ''}>Per day</option>
+          <option value="week" ${period === 'week' ? 'selected' : ''}>Per week</option>
+          <option value="once" ${period === 'once' ? 'selected' : ''}>One-time</option>
+        </select>
+        <input id="task-target-count" type="number" min="1" max="12" value="${Math.max(1, Number(draft.schedule.targetCount || 1))}" aria-label="Required completions">
+      </div>
+      <div class="schedule-help">Choose which days a task appears, and optionally limit the hours when it is available.</div>
+      <div class="task-schedule-days">${days.map((day, index) => {
+        const enabled = period !== 'once' && (draft.schedule.daysOfWeek || days.map((_, i) => i)).includes(index);
+        const window = draft.schedule.windows?.[String(index)] || {};
+        return `<div class="schedule-day-row">
+          <label class="schedule-day-toggle"><input type="checkbox" data-task-day="${index}" ${enabled ? 'checked' : ''}><span>${day}</span></label>
+          <div class="schedule-day-hours"><input type="time" data-task-window-start="${index}" value="${escapeHtml(String(window.start || ''))}" ${enabled ? '' : 'disabled'}><span>to</span><input type="time" data-task-window-end="${index}" value="${escapeHtml(String(window.end || ''))}" ${enabled ? '' : 'disabled'}></div>
+        </div>`;
+      }).join('')}</div>
+      ${slots.length ? `<div class="form-group"><label class="form-label">Timed slots</label><div class="schedule-help">This task has separate completion times. Each slot earns its own gems.</div><div class="task-schedule-slots">${slots.map((slot, index) => `<div class="slot-editor-row">
+        <input type="text" data-task-slot-label="${index}" placeholder="Label (e.g. Morning)" value="${escapeHtml(String(slot.label || ''))}">
+        <input type="time" data-task-slot-start="${index}" value="${escapeHtml(String(slot.start || ''))}">
+        <input type="time" data-task-slot-end="${index}" value="${escapeHtml(String(slot.end || ''))}">
+        <button class="slot-remove-btn" type="button" data-task-slot-remove="${index}" aria-label="Remove time slot"><i class="ph-duotone ph-x"></i></button>
+      </div>`).join('')}</div></div>` : ''}
+      <button class="btn btn-secondary btn-sm" type="button" data-task-slot-add>${slots.length ? 'Add time slot' : 'Use timed slots'}</button>
     </div>
     ${kids.length ? `<div class="form-group"><label class="form-label">Assign to</label>${kids.map(kid => `
       <label class="chore-checkbox-row">
