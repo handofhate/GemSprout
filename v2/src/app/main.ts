@@ -1,7 +1,7 @@
 import { DEFAULT_FIRESTORE_FAMILY_ID, IS_V2_DEV_BUILD } from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
 import { createParentDashboardModel } from '../features/parent-dashboard/model';
-import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
+import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderParentSnapshotTimePicker, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
 import {
   formatPrizeRedeemStatusMessage,
   getTaskProgressForMember,
@@ -96,8 +96,8 @@ let autoSavingsInterestRunKey = '';
 const ACTIVE_PROFILE_SESSION_KEY = 'gemsprout.v2.activeProfile';
 let activeFamilyId = readStoredActiveFamilyId();
 type FirestoreOverviewWrite =
-  | { kind: 'request'; action: 'approve' | 'deny'; requestId: string; resolve: (applied: boolean) => void }
-  | { kind: 'undo'; historyId: string; resolve: (applied: boolean) => void };
+  | { kind: 'request'; action: 'approve' | 'deny'; requestId: string; familyId: string; resolve: (applied: boolean) => void }
+  | { kind: 'undo'; historyId: string; familyId: string; resolve: (applied: boolean) => void };
 const firestoreOverviewWriteQueue: FirestoreOverviewWrite[] = [];
 const queuedFirestoreOverviewWriteKeys = new Set<string>();
 let parentQuickCloseTimer: number | null = null;
@@ -334,13 +334,15 @@ function applyUndoToFirestoreState(current: AppState | null, historyId: string):
   if (!history) return current;
   const requestId = getUndoRequestId(historyId, history.requestId);
   if (!requestId) return current;
+  const originalRequest = current.requests.find(item => item.id === requestId);
+  const parentMarkedDone = (originalRequest?.snapshot as (AppRequest['snapshot'] & { parentMarkedDone?: boolean }) | undefined)?.parentMarkedDone === true;
   const nextRequests = current.requests.map(request => {
     if (request.id !== requestId) return request;
     return {
       ...request,
-      status: 'pending',
-      resolvedAt: null,
-      resolvedByMemberId: null,
+      status: parentMarkedDone ? 'denied' : 'pending',
+      resolvedAt: parentMarkedDone ? Date.now() : null,
+      resolvedByMemberId: parentMarkedDone ? 'parent_undo' : null,
     };
   });
   const request = nextRequests.find(item => item.id === requestId);
@@ -351,7 +353,13 @@ function applyUndoToFirestoreState(current: AppState | null, historyId: string):
     if (request.kind === 'chore_completion') {
       const points = Number(request.snapshot?.points || history.gems || 0);
       const gems = Number(member.gems || member.diamonds || 0) - points;
-      return { ...member, gems, diamonds: gems, totalEarned: Number(member.totalEarned || 0) - points };
+      return {
+        ...member,
+        gems,
+        diamonds: gems,
+        totalEarned: Number(member.totalEarned || 0) - points,
+        ...(parentMarkedDone && current.settings.levelingEnabled !== false ? { xp: Math.max(0, Number(member.xp || 0) - points) } : {}),
+      };
     }
     if (request.kind === 'prize_redeem') {
       const gems = Number(member.gems || member.diamonds || 0) + Math.abs(Number(history.gems || 0));
@@ -385,10 +393,10 @@ function applyUndoToFirestoreState(current: AppState | null, historyId: string):
   const resetsCompletion = request.kind === REQUEST_KINDS.CHORE_START || request.kind === REQUEST_KINDS.CHORE_COMPLETION;
   const nextCompletions = current.completions.map(completion => {
     if (!resetsCompletion || !completionId || completion.id !== completionId) return completion;
-    return { ...completion, status: 'pending', approvedAt: null, approvedByMemberId: null };
+    return { ...completion, status: parentMarkedDone ? 'denied' : 'pending', approvedAt: null, approvedByMemberId: null };
   });
   const completion = completionId && current.completion && primaryCompletionMatches(current.completion, completionId)
-    ? { ...current.completion, status: 'pending', approvedAt: null, approvedByMemberId: null }
+    ? { ...current.completion, status: parentMarkedDone ? 'denied' : 'pending', approvedAt: null, approvedByMemberId: null }
     : current.completion;
   const nextHistoryRows = current.historyRows.filter(row => row.id !== historyId);
   const primaryRequest = pickPrimaryAppRequest(nextRequests);
@@ -702,7 +710,7 @@ function enqueueFirestoreInboxWrite(action: 'approve' | 'deny', requestId: strin
   if (!requestId || queuedFirestoreOverviewWriteKeys.has(key)) return Promise.resolve(false);
   queuedFirestoreOverviewWriteKeys.add(key);
   return new Promise(resolve => {
-    firestoreOverviewWriteQueue.push({ kind: 'request', action, requestId, resolve });
+    firestoreOverviewWriteQueue.push({ kind: 'request', action, requestId, familyId: currentFirestoreFamilyId(), resolve });
     void processFirestoreOverviewWriteQueue();
   });
 }
@@ -712,7 +720,7 @@ function enqueueFirestoreUndoWrite(historyId: string): Promise<boolean> {
   if (!historyId || queuedFirestoreOverviewWriteKeys.has(key)) return Promise.resolve(false);
   queuedFirestoreOverviewWriteKeys.add(key);
   return new Promise(resolve => {
-    firestoreOverviewWriteQueue.push({ kind: 'undo', historyId, resolve });
+    firestoreOverviewWriteQueue.push({ kind: 'undo', historyId, familyId: currentFirestoreFamilyId(), resolve });
     void processFirestoreOverviewWriteQueue();
   });
 }
@@ -731,7 +739,7 @@ async function processFirestoreOverviewWriteQueue(): Promise<void> {
   try {
     if (item.kind === 'request') {
       const { commitDevRequestAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      const execution = await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action: item.action, requestId: item.requestId });
+      const execution = await commitDevRequestAction({ familyId: item.familyId, action: item.action, requestId: item.requestId });
       applied = execution.ok || execution.duplicate;
       firestoreState = item.action === 'approve' && execution.ok && !execution.duplicate
         ? null
@@ -739,7 +747,7 @@ async function processFirestoreOverviewWriteQueue(): Promise<void> {
       if (!applied) firestoreError = execution.error?.message || execution.error?.reason || 'Request action failed.';
     } else {
       const { undoDevHistoryAction } = await import('../platform/firebase/dev-firestore-operations.js');
-      await undoDevHistoryAction({ historyId: item.historyId });
+      await undoDevHistoryAction({ familyId: item.familyId, historyId: item.historyId });
       applied = true;
     }
   } catch (error) {
@@ -2487,20 +2495,26 @@ function bindHomeScreenActions(state: AppState): void {
       const memberId = button.dataset.selectViewer || '';
       if (!memberId) return;
       const member = state.members.find(item => item.id === memberId);
+      const familyId = state.familyId || currentFirestoreFamilyId();
       if (member?.role === 'parent' && !hasTrustedParentAccess(member)) {
-        pendingParentProfileAuth = {
-          familyId: state.familyId || currentFirestoreFamilyId(),
-          memberId,
-          returnMemberId: activeViewerMemberId,
-        };
-        activeViewerMemberId = memberId;
-        landingMode = 'signin';
-        signInMessage = '';
-        renderLandingPreview();
-        return;
+        const authUser = getCurrentParentAuthUser();
+        if (isParentAuthLinkedToMember(member, authUser)) {
+          trustedParentViewer = { uid: authUser!.uid, familyId, memberId };
+        } else {
+          pendingParentProfileAuth = {
+            familyId,
+            memberId,
+            returnMemberId: activeViewerMemberId,
+          };
+          activeViewerMemberId = memberId;
+          landingMode = 'signin';
+          signInMessage = '';
+          renderLandingPreview();
+          return;
+        }
       }
       activeViewerMemberId = memberId;
-      persistActiveViewerMemberId(memberId, state.familyId || currentFirestoreFamilyId());
+      persistActiveViewerMemberId(memberId, familyId);
       activeKidTab = 'chores';
       closeSettingsPane();
       render();
@@ -3790,6 +3804,29 @@ function openSnapshotModal(state: AppState, snapshotId: string, side: 'left' | '
     if (event.target === event.currentTarget) closeModal();
   });
   root.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
+  bindParentSnapshotBodyActions(root, state, snapshotId, side);
+}
+
+function bindParentSnapshotBodyActions(root: HTMLElement, state: AppState, snapshotId: string, side: 'left' | 'right'): void {
+  const modalRoot = document.getElementById('modal-root') || root;
+  root.querySelectorAll<HTMLElement>('.snapshot-panel-task-card').forEach(card => {
+    card.addEventListener('pointerdown', event => startSnapshotSwipe(event));
+    card.addEventListener('pointermove', event => moveSnapshotSwipe(event));
+    card.addEventListener('pointerup', event => endSnapshotSwipe(event));
+    card.addEventListener('pointercancel', cancelSnapshotSwipe);
+    card.addEventListener('click', event => handleSnapshotSwipeTap(event));
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-parent-task-swipe-hint]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const shell = button.closest('.snapshot-routine-shell');
+      if (!shell) return;
+      const willReveal = !shell.classList.contains('revealed');
+      closeAllSnapshotSwipes(willReveal ? shell : null);
+      shell.classList.toggle('revealed', willReveal);
+    });
+  });
   root.querySelectorAll<HTMLButtonElement>('[data-parent-task-complete]').forEach(button => {
     button.addEventListener('click', () => void markTaskDoneForParent(
       button.dataset.parentTaskComplete || '',
@@ -3798,13 +3835,85 @@ function openSnapshotModal(state: AppState, snapshotId: string, side: 'left' | '
       side,
     ));
   });
+  root.querySelectorAll<HTMLButtonElement>('[data-parent-task-times]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const activePicker = modalRoot.querySelector<HTMLElement>('[data-parent-time-picker]');
+      if (activePicker) {
+        closeParentSnapshotTimePicker(modalRoot);
+        return;
+      }
+      const taskId = button.dataset.parentTaskTimes || '';
+      const member = state.members.find(item => item.id === snapshotId);
+      const task = state.tasks.find(item => item.id === taskId && item.assignedTo?.includes(snapshotId));
+      if (!member || !task) return;
+      const rect = button.getBoundingClientRect();
+      closeAllSnapshotSwipes();
+      modalRoot.insertAdjacentHTML('beforeend', renderParentSnapshotTimePicker(state, member, task, rect.left + rect.width / 2, rect.top + rect.height / 2));
+      bindParentSnapshotTimePicker(modalRoot, snapshotId, side);
+      const picker = modalRoot.querySelector<HTMLElement>('[data-parent-time-picker]');
+      window.requestAnimationFrame(() => {
+        if (picker?.isConnected && !picker.classList.contains('closing')) picker.classList.add('open');
+      });
+    });
+  });
   root.querySelectorAll<HTMLButtonElement>('[data-parent-task-undo]').forEach(button => {
     button.addEventListener('click', async () => {
       const historyId = button.dataset.parentTaskUndo || '';
       await handleFirestoreUndoAction(historyId);
-      if (!firestoreError && firestoreState) openSnapshotModal(firestoreState, snapshotId, side);
+      if (!firestoreError && firestoreState) refreshParentSnapshotBody(firestoreState, snapshotId, side);
     });
   });
+}
+
+function refreshParentSnapshotBody(state: AppState, snapshotId: string, side: 'left' | 'right'): void {
+  const root = document.getElementById('modal-root');
+  const currentBody = root?.querySelector<HTMLElement>('.snapshot-panel-body');
+  if (!root || !currentBody) return;
+  const scrollTop = currentBody.scrollTop;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = renderParentSnapshotModal(state, snapshotId, side);
+  const nextBody = wrapper.querySelector<HTMLElement>('.snapshot-panel-body');
+  if (!nextBody) return;
+  currentBody.innerHTML = nextBody.innerHTML;
+  currentBody.scrollTop = scrollTop;
+  bindParentSnapshotBodyActions(currentBody, state, snapshotId, side);
+}
+
+function bindParentSnapshotTimePicker(root: HTMLElement, snapshotId: string, side: 'left' | 'right'): void {
+  root.querySelector<HTMLElement>('[data-parent-time-picker]')?.addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeParentSnapshotTimePicker(root);
+  });
+  root.querySelector<HTMLElement>('[data-parent-time-picker-grid]')?.addEventListener('click', event => event.stopPropagation());
+  root.querySelectorAll<HTMLButtonElement>('[data-parent-time-done]').forEach(button => {
+    button.addEventListener('click', () => closeParentSnapshotTimePicker(root, () => void markTaskDoneForParent(
+      button.dataset.parentTimeDone || '',
+      snapshotId,
+      button.dataset.parentTimeSlot || null,
+      side,
+    )));
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-parent-time-undo]').forEach(button => {
+    button.addEventListener('click', () => closeParentSnapshotTimePicker(root, async () => {
+      await handleFirestoreUndoAction(button.dataset.parentTimeUndo || '');
+      if (!firestoreError && firestoreState) refreshParentSnapshotBody(firestoreState, snapshotId, side);
+    }));
+  });
+}
+
+function closeParentSnapshotTimePicker(root: HTMLElement, afterClose?: () => void): void {
+  const picker = root.querySelector<HTMLElement>('[data-parent-time-picker]');
+  if (!picker) {
+    afterClose?.();
+    return;
+  }
+  picker.classList.remove('open');
+  picker.classList.add('closing');
+  window.setTimeout(() => {
+    picker.remove();
+    afterClose?.();
+  }, 220);
 }
 
 async function markTaskDoneForParent(taskId: string, memberId: string, slotId: string | null, side: 'left' | 'right'): Promise<void> {
@@ -3820,28 +3929,27 @@ async function markTaskDoneForParent(taskId: string, memberId: string, slotId: s
   firestoreBusy = true;
   firestoreError = '';
   try {
-    const { commitDevKidCompletionRequest, commitDevRequestAction } = await import('../platform/firebase/dev-firestore-operations.js');
+    const familyId = currentFirestoreFamilyId();
+    const { commitDevParentChoreCompletion } = await import('../platform/firebase/dev-firestore-operations.js');
     const now = Date.now();
     const completionId = `completion:parent:${memberId}:${taskId}:${now}`;
     const requestId = `request:parent-completion:${memberId}:${taskId}:${now}`;
-    await commitDevKidCompletionRequest({
-      familyId: currentFirestoreFamilyId(),
+    const execution = await commitDevParentChoreCompletion({
+      familyId,
       completionId,
       requestId,
       memberId,
       choreId: taskId,
-      title: String(task.title || 'Task'),
-      points: Number(task.gems ?? task.diamonds ?? 0),
-      entryType: 'after',
       slotId,
+      actorMemberId: String(viewer.id || 'parent_1'),
       now,
     });
-    const execution = await commitDevRequestAction({ familyId: currentFirestoreFamilyId(), action: 'approve', requestId, actorMemberId: String(viewer.id || 'parent_1'), now });
     if (!execution.ok) throw new Error(execution.error?.message || execution.error?.reason || 'Could not mark the task complete.');
     const { loadDevFirestoreState } = await import('../platform/firebase/dev-firestore-loader.js');
-    firestoreState = await loadDevFirestoreState(currentFirestoreFamilyId());
-    renderDevFirestore();
-    if (firestoreState) openSnapshotModal(firestoreState, memberId, side);
+    firestoreState = await loadDevFirestoreState(familyId);
+    firestoreError = '';
+    refreshParentOverviewSections();
+    refreshParentSnapshotBody(firestoreState, memberId, side);
   } catch (error) {
     firestoreError = error instanceof Error ? error.message : String(error);
     toast(firestoreError || 'Could not mark the task complete.');

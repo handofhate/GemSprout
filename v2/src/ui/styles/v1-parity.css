@@ -2640,6 +2640,21 @@
       gap: 10px;
       padding: 12px;
     }
+    .snapshot-panel-task-shell {
+      --snapshot-reveal-width: 108px;
+      --snapshot-reveal-shift: 100px;
+      border-radius: 20px;
+    }
+    .snapshot-panel-task-shell .snapshot-routine-reveal {
+      align-items: center;
+    }
+    .snapshot-panel-task-shell .snapshot-panel-task-card {
+      min-height: 76px;
+      cursor: grab;
+    }
+    .snapshot-panel-task-shell .snapshot-panel-task-card:active {
+      cursor: grabbing;
+    }
     .snapshot-panel-task-card .snapshot-routine-title {
       font-size: 0.92rem;
     }
@@ -4232,11 +4247,15 @@
       transition: opacity 0.22s ease;
       pointer-events: auto;
     }
+    .snapshot-time-picker-shell[data-parent-time-picker] {
+      z-index: 5001;
+    }
     .snapshot-time-picker-shell.open {
       opacity: 1;
     }
     .snapshot-time-picker-shell.closing {
       opacity: 0;
+      pointer-events: none;
     }
     .snapshot-time-orb-grid {
       width: min(100%, var(--picker-grid-max, 320px));

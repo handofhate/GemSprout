@@ -5,7 +5,7 @@ import { renderParentNav } from '../../src/features/parent-dashboard/view';
 import { renderParentQuickLaunch } from '../../src/features/parent-dashboard/quick-actions';
 import { renderWeekReviewLaunchCard } from '../../src/features/week-review/view';
 import { type AppState } from '../../src/app/app-state';
-import { renderParentSnapshotModal } from '../../src/features/parent-dashboard/view';
+import { renderParentSnapshotModal, renderParentSnapshotTimePicker } from '../../src/features/parent-dashboard/view';
 import { todayKeyForTimezone } from '../../src/app/date-keys';
 
 function state(requestStatuses: string[]): AppState {
@@ -76,6 +76,38 @@ test('parent kid snapshot includes assigned tasks and direct completion actions'
   const markup = renderParentSnapshotModal(current, 'kid_1');
   assert.match(markup, /Tasks/);
   assert.match(markup, /Read a book/);
+  assert.match(markup, /snapshot-panel-task-shell/);
+  assert.match(markup, /data-parent-task-swipe-hint/);
+  assert.match(markup, /snapshot-routine-reveal snapshot-routine-reveal-approve/);
   assert.match(markup, /data-parent-task-complete="task_open"/);
   assert.match(markup, /Recent Activity/);
+});
+
+test('parent snapshot opens a slot picker from the revealed Times action', () => {
+  const current = state([]);
+  current.tasks = [{
+    id: 'task_teeth',
+    title: 'Brush your teeth',
+    gems: 2,
+    assignedTo: ['kid_1'],
+    schedule: {
+      period: 'day',
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      slots: [
+        { id: 'morning', label: 'Morning', start: '06:00', end: '12:00' },
+        { id: 'night', label: 'Night', start: '18:00', end: '23:00' },
+      ],
+    },
+  }];
+
+  const closed = renderParentSnapshotModal(current, 'kid_1');
+  assert.match(closed, /data-parent-task-times="task_teeth"/);
+  assert.doesNotMatch(closed, /data-parent-time-done/);
+
+  const picker = renderParentSnapshotTimePicker(current, current.members[1]!, current.tasks[0]!, 180, 240);
+  assert.match(picker, /data-parent-time-picker/);
+  assert.doesNotMatch(picker, /snapshot-time-picker-shell open/);
+  assert.match(picker, /--picker-origin-x:180px;--picker-origin-y:240px/);
+  assert.match(picker, /data-parent-time-slot="morning"/);
+  assert.match(picker, /data-parent-time-slot="night"/);
 });

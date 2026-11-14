@@ -394,17 +394,20 @@ export function renderParentSnapshotModal(state: AppState, snapshotId: string, s
         : schedule.period === 'week'
           ? `${Number(schedule.targetCount || 1)}x per week`
           : `${Number(schedule.targetCount || 1)}x per day`;
-    const slots = progress.slots.length > 1
-      ? `<div class="snapshot-task-slots">${progress.slots.map(slot => `<div class="snapshot-task-slot-row"><span>${escapeHtml(slot.label)}</span>${actionForStatus(slot.status, slot.id)}</div>`).join('')}</div>`
-      : '';
-    const action = progress.slots.length > 1 ? '' : actionForStatus(progress.status, progress.slots[0]?.id || '');
-    return `<div class="snapshot-routine-card snapshot-panel-task-card ${escapeHtml(progress.status)}" data-snapshot-task-row>
-      <div class="snapshot-routine-main"><div class="snapshot-routine-title">${escapeHtml(String(task.title || 'Task'))}</div><div class="chore-meta">${escapeHtml(scheduleLabel)}</div></div>
-      <div class="snapshot-routine-diamond-badge"><span class="snapshot-routine-glyph-main"><i class="ph-duotone ph-${escapeHtml(String(task.icon || 'broom').replace(/^ph-/, ''))}" style="color:${escapeHtml(String(task.iconColor || '#6BCB77'))}"></i></span><span class="snapshot-routine-glyph-badge">${points}</span></div>
-      ${action}${slots}
+    const multipleSlots = progress.slots.length > 1;
+    const actions = multipleSlots
+      ? `<button class="snapshot-reveal-btn snapshot-reveal-btn-secondary" type="button" data-parent-task-times="${escapeHtml(taskId)}"><i class="ph-duotone ph-clock"></i><span>Times</span></button>`
+      : actionForStatus(progress.status, progress.slots[0]?.id || '');
+    const revealTone = progress.status === 'done' ? 'danger' : multipleSlots ? 'secondary' : 'approve';
+    return `<div class="snapshot-routine-shell snapshot-panel-task-shell" data-swipe-id="parent_snapshot_${escapeHtml(snapshotId)}_${escapeHtml(taskId)}">
+      <div class="snapshot-routine-reveal snapshot-routine-reveal-${revealTone}">${actions}</div>
+      <div class="snapshot-routine-card snapshot-panel-task-card ${escapeHtml(progress.status)}" data-snapshot-task-row>
+        <div class="snapshot-routine-main"><div class="snapshot-routine-title">${escapeHtml(String(task.title || 'Task'))}</div><div class="chore-meta">${escapeHtml(scheduleLabel)}</div></div>
+        <div class="snapshot-routine-diamond-badge"><span class="snapshot-routine-glyph-main"><i class="ph-duotone ph-${escapeHtml(String(task.icon || 'broom').replace(/^ph-/, ''))}" style="color:${escapeHtml(String(task.iconColor || '#6BCB77'))}"></i></span><span class="snapshot-routine-glyph-badge">${points}</span></div>
+        <div class="snapshot-routine-utility"><button class="snapshot-routine-swipe-hint" data-parent-task-swipe-hint type="button" aria-label="Reveal task action"><i class="ph-duotone ph-caret-double-left"></i></button></div>
+      </div>
     </div>`;
   }).join('') : '';
-
   return `
     <div class="modal-overlay snapshot-panel-overlay" data-modal-overlay>
       <div class="modal snapshot-panel snapshot-panel-${side}">
@@ -434,6 +437,35 @@ export function renderParentSnapshotModal(state: AppState, snapshotId: string, s
       </div>
     </div>
   `;
+}
+
+export function renderParentSnapshotTimePicker(state: AppState, member: AppState['members'][number], task: AppState['tasks'][number], originX: number, originY: number): string {
+  const progress = getTaskProgressForMember(state, member, task);
+  const buttons = progress.slots.map((slot, index) => {
+    const completion = state.completions.find(item =>
+      item.memberId === member.id
+      && item.choreId === task.id
+      && item.slotId === slot.id
+      && item.status === 'approved'
+    );
+    const history = completion
+      ? state.historyRows.find(row => row.memberId === member.id && row.metadata?.completionId === completion.id)
+      : null;
+    const status = slot.status === 'done' ? 'done' : slot.status === 'pending' ? 'pending' : slot.status === 'waiting' ? 'later' : 'todo';
+    const icon = status === 'done' ? 'ph-arrow-counter-clockwise' : status === 'pending' ? 'ph-hourglass' : status === 'later' ? 'ph-clock' : 'ph-check-circle';
+    const disabled = status === 'pending' || (status === 'done' && !history?.id);
+    const action = status === 'done'
+      ? history?.id ? `data-parent-time-undo="${escapeHtml(String(history.id))}"` : ''
+      : status === 'pending' ? '' : `data-parent-time-done="${escapeHtml(String(task.id || ''))}" data-parent-time-slot="${escapeHtml(String(slot.id || ''))}"`;
+    const actionLabel = status === 'done' ? 'undo completion' : status === 'pending' ? 'waiting for approval' : 'mark done';
+    return `<button class="snapshot-time-orb ${status}" style="--slot-index:${index}" type="button" ${disabled ? 'disabled' : ''} ${action} aria-label="${escapeHtml(`${slot.label}: ${actionLabel}`)}">
+      <i class="ph-duotone ${icon}" aria-hidden="true"></i><span class="snapshot-time-orb-label">${escapeHtml(slot.label)}</span>
+    </button>`;
+  }).join('');
+  const layout = progress.slots.length <= 3 ? 'wide' : 'compact';
+  return `<div class="snapshot-time-picker-shell" style="--picker-origin-x:${originX}px;--picker-origin-y:${originY}px" data-parent-time-picker>
+    <div class="snapshot-time-orb-grid snapshot-time-orb-grid-${layout}" data-parent-time-picker-grid>${buttons}</div>
+  </div>`;
 }
 
 function formatActivityTimestamp(createdAt?: number): string {

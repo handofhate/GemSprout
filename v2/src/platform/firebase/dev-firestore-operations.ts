@@ -605,6 +605,9 @@ export async function undoDevHistoryAction(input: { historyId: string; familyId?
     const completionId = String((request.source as { completionId?: string } | undefined)?.completionId || request.completionId || history.metadata?.completionId || '');
     const completionRef = completionId ? doc(db, completionPath(familyId, completionId)) : null;
     const completionSnap = completionRef ? await transaction.get(completionRef) : null;
+    const parentMarkedDone = (request.snapshot as { parentMarkedDone?: boolean } | undefined)?.parentMarkedDone === true;
+    const familySnap = parentMarkedDone ? await transaction.get(doc(db, familyPath(familyId))) : null;
+    const levelingEnabled = !familySnap?.exists() || (familySnap.data() as { settings?: { levelingEnabled?: boolean } }).settings?.levelingEnabled !== false;
     const prizeId = String((request.source as { prizeId?: string } | undefined)?.prizeId || history.metadata?.prizeId || '');
     const prizeRef = prizeId ? doc(db, prizePath(familyId, prizeId)) : null;
     const prizeSnap = prizeRef ? await transaction.get(prizeRef) : null;
@@ -612,9 +615,9 @@ export async function undoDevHistoryAction(input: { historyId: string; familyId?
 
     transaction.set(requestRef, {
       ...request,
-      status: 'pending',
-      resolvedAt: null,
-      resolvedByMemberId: null,
+      status: parentMarkedDone ? 'denied' : 'pending',
+      resolvedAt: parentMarkedDone ? Date.now() : null,
+      resolvedByMemberId: parentMarkedDone ? 'parent_undo' : null,
     }, { merge: false });
 
     if (String(input.historyId).endsWith(':approve')) {
@@ -626,11 +629,12 @@ export async function undoDevHistoryAction(input: { historyId: string; familyId?
           gems: currentGems - points,
           diamonds: currentGems - points,
           totalEarned: Number(member.totalEarned || 0) - points,
+          ...(parentMarkedDone && levelingEnabled ? { xp: Math.max(0, Number(member.xp || 0) - points) } : {}),
         }, { merge: false });
         if (completionRef && completionSnap?.exists()) {
           transaction.set(completionRef, {
               ...completionSnap.data(),
-              status: 'pending',
+              status: parentMarkedDone ? 'denied' : 'pending',
               approvedAt: null,
               approvedByMemberId: null,
           }, { merge: false });
@@ -1101,6 +1105,102 @@ export async function commitDevKidCompletionRequest(input: {
       snapshot: { title: input.title, points: input.points },
     }) as Record<string, unknown>, { merge: false });
   });
+}
+
+export async function commitDevParentChoreCompletion(input: {
+  familyId?: string;
+  completionId: string;
+  requestId: string;
+  memberId: string;
+  choreId: string;
+  slotId?: string | null;
+  actorMemberId: string;
+  now?: number;
+}): Promise<OperationExecutionResult> {
+  const db = getDevFirestore();
+  const familyId = requireFamilyId(input.familyId);
+  const now = input.now || Date.now();
+  const operation = makeRequestOperation({
+    id: `op:request:approve:${input.requestId}`,
+    familyId,
+    kind: OPERATION_KINDS.REQUEST_APPROVE,
+    requestId: input.requestId,
+    actorMemberId: input.actorMemberId,
+    createdAt: now,
+  });
+
+  const execution = await runTransaction(db, async transaction => {
+    const [existingOperation, existingRequest, existingCompletion, member, task] = await Promise.all([
+      transactionGet<OperationRecord>(transaction, db, operationPath(familyId, operation.id)),
+      transactionGet<ApprovalRequest>(transaction, db, requestPath(familyId, input.requestId)),
+      transactionGet<Completion & Record<string, unknown>>(transaction, db, completionPath(familyId, input.completionId)),
+      transactionGet<Member>(transaction, db, memberPath(familyId, input.memberId)),
+      transactionGet<Record<string, unknown> & { assignedTo?: string[]; title?: string; gems?: number; diamonds?: number }>(transaction, db, chorePath(familyId, input.choreId)),
+    ]);
+    const state: OperationState = {
+      operationsById: existingOperation ? { [existingOperation.id]: existingOperation } : {},
+      requestsById: existingRequest ? { [existingRequest.id]: existingRequest } : {},
+      completionsById: existingCompletion ? { [existingCompletion.id]: existingCompletion } : {},
+      membersById: member ? { [member.id]: member } : {},
+    };
+    if (existingOperation?.status === 'applied') return executeRequestOperation(state, operation, now);
+    if (existingRequest || existingCompletion) throw new Error('A task completion with this ID already exists. Please try again.');
+    if (!member || member.role !== 'kid') throw new Error('Kid profile was not found.');
+    if (!task || !Array.isArray(task.assignedTo) || !task.assignedTo.includes(input.memberId)) {
+      throw new Error('This task is no longer assigned to that kid.');
+    }
+
+    const familySnap = await transaction.get(doc(db, familyPath(familyId)));
+    const family = familySnap.exists() ? familySnap.data() as { settings?: Record<string, unknown> } : {};
+    const familyTimezone = String(family.settings?.familyTimezone || '');
+    const date = todayKeyForTimezone(familyTimezone, now);
+    const title = String(task.title || 'Task');
+    const points = Number(task.gems ?? task.diamonds ?? 0);
+    const completion = {
+      id: input.completionId,
+      familyId,
+      choreId: input.choreId,
+      memberId: input.memberId,
+      status: 'pending',
+      points,
+      title,
+      createdAt: now,
+      approvedAt: undefined,
+      approvedByMemberId: null,
+      entryType: 'after',
+      slotId: input.slotId || null,
+      photoUrl: null,
+      date,
+    } as Completion & Record<string, unknown>;
+    const request: ApprovalRequest = {
+      id: input.requestId,
+      familyId,
+      kind: REQUEST_KINDS.CHORE_COMPLETION,
+      status: REQUEST_STATUSES.PENDING,
+      requesterMemberId: input.memberId,
+      targetMemberId: input.memberId,
+      createdAt: now,
+      resolvedAt: null,
+      resolvedByMemberId: null,
+      source: { choreId: input.choreId, completionId: input.completionId, prizeId: null, amount: null, reason: '' },
+      snapshot: { title, points, parentMarkedDone: true },
+    };
+    state.requestsById = { [request.id]: request };
+    state.completionsById = { [completion.id]: completion };
+    const result = executeRequestOperation(state, operation, now);
+    if (!result.ok) throw new Error(result.error?.message || 'Could not mark the task complete.');
+    const plan = planRequestOperationTransaction(result);
+    for (const write of plan.writes) {
+      transaction.set(doc(db, write.path), omitUndefined(write.data) as Record<string, unknown>, { merge: write.merge });
+    }
+    return result;
+  });
+
+  if (execution.ok && !execution.duplicate) {
+    await applyDevApprovalProgression(db, familyId, execution, now);
+    await applyDevDailyComboBonus(db, familyId, execution, now);
+  }
+  return execution;
 }
 
 export async function commitDevKidSavingsSpendRequest(input: {
