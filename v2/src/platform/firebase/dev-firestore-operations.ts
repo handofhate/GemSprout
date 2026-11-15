@@ -7,6 +7,7 @@ import { DEFAULT_FIRESTORE_FAMILY_ID } from './dev-firestore-config';
 import { getDevFirestore } from './dev-firestore-loader';
 import { todayKeyForTimezone } from '../../app/date-keys';
 import { getBaseBadgeDef, getLevels } from '../../features/parent-levels/view';
+import { compareDailyComboTasks } from '../../domain/chores/daily-combo';
 
 type DevOnboardingSetupDraft = {
   familyName: string;
@@ -410,7 +411,7 @@ function getAllDailyComboIds(members: Array<Record<string, unknown>>, tasks: Arr
       && (task.assignedTo as unknown[]).includes(kidId)
       && (task.schedule as { period?: string } | undefined)?.period !== 'once'
       && !used.has(String(task.id || ''))
-    );
+    ).sort(compareDailyComboTasks);
     const ids = eligible.length <= 3
       ? eligible.map(task => String(task.id || ''))
       : seededShuffle(eligible, dailyComboSeed(`${today}|${kidId}`)).slice(0, 3).map(task => String(task.id || ''));

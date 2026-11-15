@@ -1,6 +1,7 @@
 import { type AppState, type AppCompletion, type AppMember, type AppPrize, type AppTask, type AppTeamGoal } from '../../app/app-state';
 import { getBaseBadgeDef } from '../parent-levels/view';
 import { escapeHtml } from '../../ui/html';
+import { compareDailyComboTasks } from '../../domain/chores/daily-combo';
 import { dayIndexForDateKey, todayKeyForTimezone } from '../../app/date-keys';
 
 export type KidTabId = 'chores' | 'diamonds' | 'shop' | 'team' | 'stats';
@@ -1622,7 +1623,7 @@ function getAllDailyComboIds(state: AppState): Record<string, string[]> {
       && task.assignedTo.includes(kidId)
       && task.schedule?.period !== 'once'
       && !used.has(String(task.id || ''))
-    );
+    ).sort(compareDailyComboTasks);
     const ids = eligible.length <= 3
       ? eligible.map(task => String(task.id || ''))
       : seededShuffle(eligible, dailyComboSeed(`${todayKey(state)}|${kidId}`)).slice(0, 3).map(task => String(task.id || ''));

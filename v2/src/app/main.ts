@@ -1,6 +1,7 @@
 import { DEFAULT_FIRESTORE_FAMILY_ID, IS_V2_DEV_BUILD } from '../platform/firebase/dev-firestore-config';
 import { loadDevFirestoreState, subscribeDevFirestoreState } from '../platform/firebase/dev-firestore-loader';
 import { createParentDashboardModel } from '../features/parent-dashboard/model';
+import { compareDailyComboTasks } from '../domain/chores/daily-combo';
 import { renderFullHistoryModal, renderHero, renderHistory, renderParentDashboard, renderParentHeader, renderParentNav, renderParentSnapshotModal, renderParentSnapshotTimePicker, renderSnapshots, type ParentTabId } from '../features/parent-dashboard/view';
 import {
   formatPrizeRedeemStatusMessage,
@@ -783,7 +784,7 @@ function getAllDailyComboIds(members: AppMember[], tasks: AppTask[], today: stri
       && task.assignedTo.includes(kidId)
       && task.schedule?.period !== 'once'
       && !used.has(String(task.id || ''))
-    );
+    ).sort(compareDailyComboTasks);
     const ids = eligible.length <= 3
       ? eligible.map(task => String(task.id || ''))
       : seededShuffle(eligible, dailyComboSeed(`${today}|${kidId}`)).slice(0, 3).map(task => String(task.id || ''));

@@ -1,5 +1,6 @@
 import { type AppState, type AppFamilySettings, type AppTask } from '../../app/app-state';
 import { escapeHtml } from '../../ui/html';
+import { compareDailyComboTasks } from '../../domain/chores/daily-combo';
 
 export const LEVEL_ICON_OPTIONS = [
   { label: 'Leaf', html: '<i class="ph-duotone ph-leaf" style="color:#22C55E;font-size:1.4rem"></i>' },
@@ -207,7 +208,7 @@ function getAllDailyComboIds(state: AppState, today: string): Record<string, str
       && task.assignedTo.includes(kidId)
       && task.schedule?.period !== 'once'
       && !used.has(String(task.id || ''))
-    );
+    ).sort(compareDailyComboTasks);
     const ids = eligible.length <= 3
       ? eligible.map(task => String(task.id || ''))
       : seededShuffle(eligible, dailyComboSeed(`${today}|${kidId}`)).slice(0, 3).map(task => String(task.id || ''));
