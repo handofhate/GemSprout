@@ -6833,6 +6833,8 @@ async function renderDevFirestore(): Promise<void> {
     return;
   }
   if (activeViewer.role !== 'parent') {
+    const existingKidScreen = document.getElementById('screen-kid');
+    if (pendingKidScrollTop == null && existingKidScreen?.classList.contains('active')) captureKidScrollPosition();
     showScreen('screen-kid');
     const screen = document.getElementById('screen-kid');
     if (screen) screen.innerHTML = `${renderKidScreen(firestoreState, activeViewer, activeKidTab)}${activeKidTimeTaskId ? renderKidTimePicker(firestoreState, activeViewer, activeKidTimeTaskId) : ''}`;
@@ -7612,10 +7614,14 @@ function restoreKidScrollPosition(): void {
   if (pendingKidScrollTop == null) return;
   const scrollTop = pendingKidScrollTop;
   pendingKidScrollTop = null;
-  requestAnimationFrame(() => {
+  const restore = () => {
     const content = document.getElementById('kid-content');
     if (content) content.scrollTop = scrollTop;
     else window.scrollTo({ top: scrollTop });
+  };
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
   });
 }
 

@@ -1347,9 +1347,19 @@ function summarizeChores(state: AppState, member: AppMember, chores: AppTask[]) 
   const totalUnits = Math.max(chores.length, 1);
   const doneUnits = done.length + partial.length;
   const totalGems = models.reduce((sum, item) => sum + item.gems, 0);
-  const earnedGems = done.reduce((sum, item) => sum + item.gems, 0) + partial.reduce((sum, item) => sum + item.gems, 0);
-  const percent = totalGems > 0 ? Math.round((earnedGems / totalGems) * 100) : Math.round((doneUnits / totalUnits) * 100);
+  const taskEarnedGems = done.reduce((sum, item) => sum + item.gems, 0) + partial.reduce((sum, item) => sum + item.gems, 0);
+  const earnedGems = taskEarnedGems + getAwardedDailyComboBonusGems(state, member);
+  const percent = totalGems > 0 ? Math.round((taskEarnedGems / totalGems) * 100) : Math.round((doneUnits / totalUnits) * 100);
   return { models, todo, partial, pending, done, unavailable, totalUnits, doneUnits, earnedGems, percent };
+}
+
+function getAwardedDailyComboBonusGems(state: AppState, member: AppMember): number {
+  if (state.settings.comboEnabled === false || String(member.comboBonusDate || '') !== todayKey(state)) return 0;
+  const comboTasks = getDailyComboTasks(state, member);
+  if (comboTasks.length < 3) return 0;
+  const multiplier = Math.max(2, Number(state.settings.comboMultiplier || 2));
+  const comboBaseGems = comboTasks.slice(0, 3).reduce((sum, task) => sum + Number(task.gems ?? task.diamonds ?? 0), 0);
+  return Math.max(1, multiplier - 1) * comboBaseGems;
 }
 
 export function getTaskProgressForMember(state: AppState, member: AppMember, task: AppTask): ChoreCardModel {

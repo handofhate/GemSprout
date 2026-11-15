@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderKidScreen } from '../../src/features/kid-dashboard/view';
 import { type AppState, type AppMember } from '../../src/app/app-state';
+import { todayKeyForTimezone } from '../../src/app/date-keys';
 
 const kid: AppMember = {
   id: 'kid_1',
@@ -59,4 +60,38 @@ test('kid stats includes the GemSprout easter egg end cap', () => {
   const html = renderKidScreen(state(), kid, 'stats');
   assert.match(html, /id="egg-gem"/);
   assert.match(html, /data-stats-egg-gem/);
+});
+
+test('kid Today\'s Gems includes an awarded daily combo bonus', () => {
+  const today = todayKeyForTimezone('America/Phoenix');
+  const tasks = ['task_1', 'task_2', 'task_3'].map((id, index) => ({
+    id,
+    title: `Task ${index + 1}`,
+    gems: 5,
+    assignedTo: ['kid_1'],
+    schedule: { period: 'day', targetCount: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6] },
+  }));
+  const completions = tasks.map(task => ({
+    id: `completion:${task.id}`,
+    memberId: 'kid_1',
+    choreId: task.id,
+    status: 'approved',
+    points: 5,
+    entryType: 'after',
+    date: today,
+  }));
+  const testKid = { ...kid, comboBonusDate: today };
+  const html = renderKidScreen(state({
+    tasks,
+    completions,
+    settings: {
+      ...state().settings,
+      familyTimezone: 'America/Phoenix',
+      comboAssignments: { kid_1: tasks.map(task => String(task.id)) },
+      comboMultiplier: 2,
+    },
+    member: testKid,
+    members: [testKid],
+  }), testKid, 'chores');
+  assert.match(html, /Today's Gems<\/span><strong class="kid-chores-summary-value">30<\/strong>/);
 });
