@@ -23,6 +23,11 @@ export type ParentGoalEditorDraft = {
   targetPoints: number;
 };
 
+export function normalizePrizeCost(value: unknown, fallback = 100): number {
+  const numeric = typeof value === 'string' && value.trim() === '' ? Number.NaN : Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : fallback;
+}
+
 const ICON_OPTIONS = ['gift', 'popcorn', 'game-controller', 'ice-cream', 'pizza', 'moon-stars', 'trophy', 'sparkle', 'confetti', 'star'];
 const COLOR_OPTIONS = ['#FF6584', '#6C63FF', '#FFD93D', '#45B7D1', '#6BCB77', '#F59E0B', '#1D6B57', '#EF4444'];
 
@@ -151,7 +156,7 @@ export function createPrizeEditorDraft(prize: AppPrize | null): ParentPrizeEdito
     title: String(prize?.title || ''),
     icon: String(prize?.icon || 'gift'),
     iconColor: String(prize?.iconColor || '#FF6584'),
-    cost: Math.max(0, Number(prize?.cost || 100) || 100),
+    cost: normalizePrizeCost(prize?.cost),
     recurrence: String(prize?.recurrence || 'anytime'),
     requireParentApproval: !!prize?.requireParentApproval,
     requirementEnabled: String(prize?.requirementType || 'none') !== 'none',

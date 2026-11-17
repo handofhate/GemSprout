@@ -116,7 +116,7 @@ function renderKidChores(state: AppState, member: AppMember): string {
   }
 
   const summary = summarizeChores(state, member, chores);
-  const todoVisible = hideUnavailable ? summary.todo.filter(item => item.canSubmit) : summary.todo;
+  const todoVisible = hideUnavailable ? summary.todo.filter(item => item.availableNow) : summary.todo;
   const progressHeading = summary.percent === 100
     ? 'Everything for today is wrapped up.'
     : todoVisible.length > 0
@@ -1092,6 +1092,7 @@ export type ChoreCardModel = {
   gems: number;
   status: ChoreStatus;
   canSubmit: boolean;
+  availableNow: boolean;
   revealLabel: string;
   revealIcon: string;
   entryType: 'before' | 'after' | null;
@@ -1408,6 +1409,9 @@ function buildChoreCardModel(state: AppState, member: AppMember, task: AppTask, 
     if (isSlotOpen(slot)) return { label: slotSummary(slot), status: 'available' as const };
     return { label: slotSummary(slot), status: 'waiting' as const };
   });
+  const availableNow = scheduledToday && (schedule.slots.length > 0
+    ? slotStatuses.some(slot => slot.status === 'available')
+    : isWindowOpen(task, dayIndex));
   const beforeApproved = relevantCompletions.some(entry => entry.entryType === 'before' && entry.status === 'approved');
   const beforePending = relevantCompletions.some(entry => entry.entryType === 'before' && entry.status === 'pending') || pendingRequests.some(request => request.kind === 'chore_start');
   const afterPending = relevantCompletions.some(entry => entry.entryType !== 'before' && entry.status === 'pending') || pendingRequests.some(request => request.kind === 'chore_completion');
@@ -1451,6 +1455,7 @@ function buildChoreCardModel(state: AppState, member: AppMember, task: AppTask, 
     gems: Number(task.gems ?? task.diamonds ?? 0),
     status,
     canSubmit,
+    availableNow,
     revealLabel: reveal.label,
     revealIcon: reveal.icon,
     entryType,

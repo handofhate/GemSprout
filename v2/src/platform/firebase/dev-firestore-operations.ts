@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, setDoc, where, writeBatch, type Firestore } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, setDoc, where, writeBatch, type Firestore } from 'firebase/firestore';
 import { approveRequest, denyRequest, REQUEST_KINDS, REQUEST_STATUSES, type ApprovalRequest, type Completion, type Member, type Prize } from '../../domain/requests';
 import { makeRequestOperation, OPERATION_KINDS, type OperationExecutionResult, type OperationRecord, type OperationState, planRequestOperationTransaction } from '../../sync';
 import { chorePath, completionPath, familyPath, historyPath, memberPath, operationPath, prizePath, requestPath } from '../../sync/firestore-paths';
@@ -88,11 +88,24 @@ export async function commitDevKidFamilyJoin(input: { familyCode: string; family
   const familyCode = input.familyCode.trim().toUpperCase();
   if (!user?.isAnonymous) throw new Error('The kid session must be signed in anonymously.');
   if (!familyCode || input.familyId !== familyCode) throw new Error('The family code is invalid.');
-  await setDoc(doc(db, `users/${user.uid}`), {
+  await setDoc(doc(getDevFirestore(), `users/${user.uid}`), {
     uid: user.uid,
     familyId: input.familyId,
     familyCode,
     role: 'kid',
+  }, { merge: true });
+}
+
+export async function commitDevParentPushToken(input: { token: string; metadata?: Record<string, unknown> }): Promise<void> {
+  const user = getAuth().currentUser;
+  if (!user?.uid || user.isAnonymous) throw new Error('A signed-in parent account is required for push notifications.');
+  const metadata = Object.fromEntries(
+    Object.entries(input.metadata || {}).filter(([, value]) => value !== undefined),
+  );
+  await setDoc(doc(getDevFirestore(), `users/${user.uid}`), {
+    ...metadata,
+    uid: user.uid,
+    fcmTokens: arrayUnion(input.token),
   }, { merge: true });
 }
 

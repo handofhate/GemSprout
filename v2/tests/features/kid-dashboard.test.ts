@@ -95,3 +95,27 @@ test('kid Today\'s Gems includes an awarded daily combo bonus', () => {
   }), testKid, 'chores');
   assert.match(html, /Today's Gems<\/span><strong class="kid-chores-summary-value">30<\/strong>/);
 });
+
+test('kid dashboard keeps a multi-slot task visible when a slot is available', () => {
+  const task = {
+    id: 'brush-teeth',
+    title: 'Brush Your Teeth',
+    gems: 5,
+    assignedTo: ['kid_1'],
+    schedule: {
+      period: 'day',
+      targetCount: 1,
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      slots: [
+        { id: 'morning', label: 'Morning' },
+        { id: 'evening', label: 'Evening' },
+      ],
+    },
+  };
+  const html = renderKidScreen(state({
+    tasks: [task],
+    settings: { ...state().settings, hideUnavailable: true },
+  }), kid, 'chores');
+  assert.match(html, /Brush Your Teeth/);
+  assert.match(html, /data-kid-task-times="brush-teeth"/);
+});

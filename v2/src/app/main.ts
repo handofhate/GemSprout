@@ -56,7 +56,7 @@ import { renderParentStats, renderStatsDetailModal } from '../features/parent-st
 import { bindWeekReviewLaunch, showWeekReviewIfNeeded } from '../features/week-review/view';
 import { reconcileKidNotificationModals } from '../features/kid-notifications/view';
 import { createTaskEditorDraft, renderParentTasks, renderTaskDeleteModal, renderTaskEditorModal, type ParentTaskEditorDraft } from '../features/parent-tasks/view';
-import { createGoalEditorDraft, createPrizeEditorDraft, renderGoalEditorModal, renderParentPrizes, renderPrizeDeleteModal, renderPrizeEditorModal, type ParentGoalEditorDraft, type ParentPrizeEditorDraft } from '../features/parent-prizes/view';
+import { createGoalEditorDraft, createPrizeEditorDraft, normalizePrizeCost, renderGoalEditorModal, renderParentPrizes, renderPrizeDeleteModal, renderPrizeEditorModal, type ParentGoalEditorDraft, type ParentPrizeEditorDraft } from '../features/parent-prizes/view';
 import {
   createInitialQuickActionState,
   renderParentQuickActionModal,
@@ -4322,10 +4322,11 @@ function readPrizeEditorDraftFromDom(): ParentPrizeEditorDraft | null {
   if (!activePrizeEditorDraft) return null;
   const requirementEnabled = !!(document.getElementById('prize-requirement-enabled') as HTMLInputElement | null)?.checked;
   const requirementType = (document.getElementById('prize-requirement-type') as HTMLSelectElement | null)?.value || activePrizeEditorDraft.requirementType;
+  const costInput = (document.getElementById('prize-cost') as HTMLInputElement | null)?.value;
   return {
     ...activePrizeEditorDraft,
     title: (document.getElementById('prize-title') as HTMLInputElement | null)?.value.trim() || '',
-    cost: Math.max(0, Number((document.getElementById('prize-cost') as HTMLInputElement | null)?.value || activePrizeEditorDraft.cost) || activePrizeEditorDraft.cost),
+    cost: normalizePrizeCost(costInput, activePrizeEditorDraft.cost),
     recurrence: (document.getElementById('prize-recurrence') as HTMLSelectElement | null)?.value || activePrizeEditorDraft.recurrence,
     requireParentApproval: !!(document.getElementById('prize-parent-approval') as HTMLInputElement | null)?.checked,
     requirementEnabled,
@@ -4410,13 +4411,17 @@ async function ensureParentPushRegistration(settings = currentSettings()): Promi
   const parent = getActiveViewer(state)?.role === 'parent'
     ? getActiveViewer(state)
     : state.members.find(member => member.role === 'parent') || null;
+  const authUser = getCurrentParentAuthUser();
   await registerParentPushNotifications({
-    userId: String(parent?.id || ''),
+    userId: getCurrentParentAuthUid(),
     familyId: String(state.familyId || currentFirestoreFamilyId()),
     memberId: String(parent?.id || ''),
+    email: authUser?.email,
     notifyChoreApproval: settings.notifyChoreApproval !== false,
     notifySavingsSpend: settings.notifySavingsSpend !== false,
     saveToken: async (token, metadata) => {
+      const { commitDevParentPushToken } = await import('../platform/firebase/dev-firestore-operations.js');
+      await commitDevParentPushToken({ token, metadata: { ...metadata, familyCode: state.familyCode || '' } });
       window.localStorage.setItem('gemsprout.v2.devPushToken', JSON.stringify({ token, metadata }));
     },
     onForegroundNotification: event => {
@@ -4504,6 +4509,7 @@ async function sendParentApprovalPush(input: { memberId: string; title: string; 
       familyCode: String(state.familyCode || ''),
       familyId: String(state.familyId || currentFirestoreFamilyId()),
       kidName: String(member?.name || 'A kid'),
+      choreTitle: input.title,
       choreName: input.title,
       prizeName: input.title,
       pendingCount: pendingCount(state),
@@ -7467,12 +7473,15 @@ async function finishOnboardingPreview(): Promise<void> {
     url.searchParams.delete('landing');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     void registerParentPushNotifications({
-      userId: parent?.id,
+      userId: getCurrentParentAuthUid(),
       familyId,
       memberId: parent?.id,
+      email: getCurrentParentAuthUser()?.email,
       notifyChoreApproval: draft.settings.notifyChoreApproval,
       notifySavingsSpend: draft.settings.notifySavingsSpend,
       saveToken: async (token, metadata) => {
+        const { commitDevParentPushToken } = await import('../platform/firebase/dev-firestore-operations.js');
+        await commitDevParentPushToken({ token, metadata: { ...metadata, familyCode: draft.familyCode } });
         window.localStorage.setItem('gemsprout.v2.devPushToken', JSON.stringify({ token, metadata }));
       },
     });

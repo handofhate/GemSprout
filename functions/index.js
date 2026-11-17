@@ -1,11 +1,86 @@
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 const functions = require('firebase-functions/v1');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { getParentAuthUids, isParentAccount } = require('./family-auth');
 
 initializeApp();
 
 const db = getFirestore();
+
+exports.sendApprovalNotification = onCall({ region: 'us-central1' }, async request => {
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Sign in before sending a notification.');
+
+  const data = request.data || {};
+  const familyCode = String(data.familyCode || '').trim().toUpperCase();
+  const familyId = String(data.familyId || familyCode).trim();
+  const kidName = String(data.kidName || 'A kid').trim();
+  const title = String(data.choreTitle || data.choreName || data.prizeName || '').trim();
+  const notificationType = String(data.notificationType || data.type || '').trim().toLowerCase();
+  if (!familyCode && !familyId || !title) {
+    throw new HttpsError('invalid-argument', 'Missing family or task details.');
+  }
+
+  const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
+  const caller = callerSnap.exists ? callerSnap.data() || {} : {};
+  const callerFamily = String(caller.familyId || caller.familyCode || '').trim().toUpperCase();
+  const requestedFamily = (familyCode || familyId).toUpperCase();
+  if (callerFamily && callerFamily !== requestedFamily) {
+    throw new HttpsError('permission-denied', 'The request does not belong to this family.');
+  }
+
+  const userRefs = new Map();
+  const queries = [];
+  if (familyCode) queries.push(db.collection('users').where('familyCode', '==', familyCode).get());
+  if (familyId && familyId !== familyCode) queries.push(db.collection('users').where('familyId', '==', familyId).get());
+  const snapshots = await Promise.all(queries);
+  snapshots.forEach(snapshot => snapshot.docs.forEach(userDoc => userRefs.set(userDoc.id, userDoc)));
+
+  const tokenDocMap = new Map();
+  userRefs.forEach(userDoc => {
+    const userData = userDoc.data() || {};
+    const tokens = Array.isArray(userData.fcmTokens) ? userData.fcmTokens : [];
+    tokens.forEach(token => {
+      if (typeof token === 'string' && token) tokenDocMap.set(token, userDoc.ref);
+    });
+  });
+  const tokens = [...tokenDocMap.keys()];
+  if (!tokens.length) return { sent: 0, reason: 'no_tokens' };
+
+  const isPrize = notificationType === 'prize_request';
+  const response = await getMessaging().sendEachForMulticast({
+    tokens,
+    notification: {
+      title: isPrize ? 'Prize Request!' : 'Task Complete!',
+      body: `${kidName} ${isPrize ? 'requested' : 'finished'} "${title}"`,
+    },
+    data: {
+      type: notificationType || 'approval_request',
+      familyCode: familyCode || familyId,
+      pendingCount: String(data.pendingCount || ''),
+    },
+    apns: {
+      payload: {
+        aps: { sound: 'default', badge: 1 },
+      },
+    },
+  });
+
+  const staleErrors = new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+  ]);
+  const cleanup = [];
+  response.responses.forEach((result, index) => {
+    if (!result.success && staleErrors.has(result.error?.code)) {
+      const userRef = tokenDocMap.get(tokens[index]);
+      if (userRef) cleanup.push(userRef.update({ fcmTokens: FieldValue.arrayRemove(tokens[index]) }));
+    }
+  });
+  if (cleanup.length) await Promise.allSettled(cleanup);
+  return { sent: response.successCount, failed: response.failureCount };
+});
 
 exports.cleanupDeletedParentFamily = functions
   .region('us-central1')
